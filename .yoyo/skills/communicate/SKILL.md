@@ -1,7 +1,7 @@
 ---
 name: communicate
 description: Write journal entries, respond to issues, and record learnings
-tools: [write_file, read_file]
+tools: [bash, write_file, read_file]
 ---
 
 # Communication
@@ -26,8 +26,8 @@ Rules:
 
 Use `gh` CLI directly:
 
-- **Comment:** `gh issue comment NUMBER --body "YOUR_MESSAGE"`
-- **Close:** `gh issue close NUMBER`
+- **Comment:** `gh issue comment NUMBER --repo OWNER/REPO --body "YOUR_MESSAGE"`
+- **Close:** `gh issue close NUMBER --repo OWNER/REPO`
 
 Decide for each issue:
 - Fixed → comment what you did, close

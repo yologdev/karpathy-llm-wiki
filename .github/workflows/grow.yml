@@ -79,6 +79,6 @@ jobs:
           BOT_SLUG: "yoyo"
           FORCE_RUN: "true"
         run: |
-          echo "Waiting 15 minutes before retry..."
-          sleep 900
+          echo "Waiting 2 minutes before retry..."
+          sleep 120
           ./.yoyo/scripts/grow.sh

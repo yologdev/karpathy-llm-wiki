@@ -29,8 +29,8 @@ BOT_LOGINS = set(
 
 
 def generate_boundary():
-    """Generate a unique boundary marker that cannot be predicted or spoofed."""
-    nonce = os.urandom(16).hex()
+    """Generate or reuse a boundary marker. Reuses BOUNDARY_NONCE env var if set (shared with grow.sh)."""
+    nonce = os.environ.get("BOUNDARY_NONCE") or os.urandom(16).hex()
     return f"BOUNDARY-{nonce}"
 
 
@@ -193,5 +193,11 @@ if __name__ == "__main__":
                 pass
 
         print(format_issues(issues, pick=pick))
-    except (json.JSONDecodeError, FileNotFoundError):
+    except json.JSONDecodeError as e:
+        print(f"ERROR: Invalid JSON in {sys.argv[1]}: {e}", file=sys.stderr)
         print("No issues today.")
+        sys.exit(1)
+    except FileNotFoundError:
+        print(f"ERROR: File not found: {sys.argv[1]}", file=sys.stderr)
+        print("No issues today.")
+        sys.exit(1)

@@ -1,8 +1,6 @@
 #!/bin/bash
 # .yoyo/scripts/grow.sh — One growth session for the LLM Wiki project.
-# Multi-phase pipeline: Assessment → Planning → Implementation (with eval + fix loops)
-#
-# Ported from yoyo-evolve's evolve.sh, adapted for a Next.js/pnpm project.
+# Multi-phase pipeline: Assessment → Planning → Implementation (with eval + fix loops) → Communication
 #
 # Usage:
 #   ANTHROPIC_API_KEY=sk-... ./.yoyo/scripts/grow.sh
@@ -11,10 +9,10 @@
 #   ANTHROPIC_API_KEY  — required
 #   REPO               — GitHub repo (default: auto-detect from git remote)
 #   MODEL              — LLM model (default: claude-opus-4-6)
-#   TIMEOUT            — Total planning phase budget in seconds (default: 1200)
+#   TIMEOUT            — Combined assessment + planning budget in seconds (default: 1200, split equally)
 #   FORCE_RUN          — Set to "true" to bypass the run-frequency gate
 #   ALLOWED_AUTHORS    — Comma-separated GitHub logins for agent-input issues (default: karpathy,yuanhao)
-#   BOT_LOGIN          — Bot login for issue filtering (default: yoyo[bot])
+#   BOT_LOGIN          — Bot login for gh CLI commands (default: yoyo[bot])
 
 set -euo pipefail
 
@@ -35,12 +33,18 @@ DATE=$(date +%Y-%m-%d)
 SESSION_TIME=$(date +%H:%M)
 
 # Security nonce for content boundary markers (prevents spoofing)
-BOUNDARY_NONCE=$(python3 -c "import os; print(os.urandom(16).hex())" 2>/dev/null || echo "fallback-$(date +%s)")
+BOUNDARY_NONCE=$(python3 -c "import os; print(os.urandom(16).hex())") || {
+    echo "ERROR: python3 required for security nonce generation."
+    exit 1
+}
 BOUNDARY_BEGIN="[BOUNDARY-${BOUNDARY_NONCE}-BEGIN]"
 BOUNDARY_END="[BOUNDARY-${BOUNDARY_NONCE}-END]"
 
 # Pull latest changes
-git pull --rebase --quiet 2>/dev/null || true
+if ! git pull --rebase --quiet 2>&1; then
+    echo "ERROR: git pull failed. Running on stale checkout is unsafe."
+    exit 1
+fi
 
 echo "=== Growth Session ($DATE $SESSION_TIME) ==="
 echo "Repo: $REPO | Model: $MODEL"
@@ -61,6 +65,7 @@ if ! command -v timeout &>/dev/null; then
         TIMEOUT_CMD="gtimeout"
     else
         TIMEOUT_CMD=""
+        echo "WARNING: Neither timeout nor gtimeout found. Agent calls will have no time limit."
     fi
 fi
 
@@ -124,23 +129,39 @@ ISSUES_FILE="/tmp/issues_formatted.md"
 echo "→ Fetching issues..."
 
 if command -v gh &>/dev/null; then
-    gh issue list --repo "$REPO" \
+    if ! gh issue list --repo "$REPO" \
         --state open \
         --label "agent-input" \
         --limit 10 \
         --json number,title,body,labels,author,comments \
-        > /tmp/issues_raw.json 2>/dev/null || true
+        > /tmp/issues_raw.json 2>&1; then
+        echo "  WARNING: Failed to fetch issues (check GH_TOKEN)."
+        echo "No issues available (fetch failed)." > "$ISSUES_FILE"
+    else
 
-    ALLOWED_AUTHORS="${ALLOWED_AUTHORS:-karpathy}" \
-    BOT_LOGIN="$BOT_LOGIN" \
-    BOT_SLUG="$BOT_SLUG" \
-    python3 .yoyo/scripts/format_issues.py /tmp/issues_raw.json > "$ISSUES_FILE" 2>/dev/null \
-        || echo "No issues found." > "$ISSUES_FILE"
-    echo "  $(grep -c '^### Issue' "$ISSUES_FILE" 2>/dev/null || echo 0) issues loaded."
+        ALLOWED_AUTHORS="${ALLOWED_AUTHORS:-karpathy,yuanhao}" \
+        BOT_SLUG="$BOT_SLUG" \
+        BOUNDARY_NONCE="$BOUNDARY_NONCE" \
+        python3 .yoyo/scripts/format_issues.py /tmp/issues_raw.json > "$ISSUES_FILE" 2>&1 \
+            || { echo "  WARNING: format_issues.py failed"; echo "No issues found." > "$ISSUES_FILE"; }
+        echo "  $(grep -c '^### Issue' "$ISSUES_FILE" 2>/dev/null || echo 0) issues loaded."
+    fi
 else
     echo "  gh CLI not available."
     echo "No issues available." > "$ISSUES_FILE"
 fi
+
+# Helper: sanitize issue content (strip HTML comments + boundary markers, truncate)
+sanitize_issue_content() {
+    python3 -c "
+import sys, re
+bb, be = sys.argv[1], sys.argv[2]
+text = sys.stdin.read()
+text = re.sub(r'<!--.*?-->', '', text, flags=re.DOTALL)
+text = text.replace(bb, '[marker-stripped]').replace(be, '[marker-stripped]')
+print(text)
+" "$BOUNDARY_BEGIN" "$BOUNDARY_END"
+}
 
 # Fetch self-issues
 SELF_ISSUES=""
@@ -149,22 +170,22 @@ if command -v gh &>/dev/null; then
         --label "agent-self" --limit 5 \
         --author "$BOT_LOGIN" \
         --json number,title,body \
-        --jq ".[] | \"${BOUNDARY_BEGIN}\n### Issue #\(.number)\n**Title:** \(.title)\n\(.body)\n${BOUNDARY_END}\n\"" 2>/dev/null \
-        | python3 -c "import sys,re; print(re.sub(r'<!--.*?-->','',sys.stdin.read(),flags=re.DOTALL))" 2>/dev/null || true)
+        --jq ".[] | \"${BOUNDARY_BEGIN}\n### Issue #\(.number)\n**Title:** \(.title)\n\(.body | .[0:500])\n${BOUNDARY_END}\n\"" 2>/dev/null \
+        | sanitize_issue_content || true)
     if [ -n "$SELF_ISSUES" ]; then
         echo "  $(echo "$SELF_ISSUES" | grep -c '^### Issue' 2>/dev/null || echo 0) self-issues."
     fi
 fi
 
-# Fetch help-wanted issues
+# Fetch help-wanted issues (comments are untrusted — sanitize and truncate)
 HELP_ISSUES=""
 if command -v gh &>/dev/null; then
     HELP_ISSUES=$(gh issue list --repo "$REPO" --state open \
         --label "agent-help-wanted" --limit 5 \
         --author "$BOT_LOGIN" \
         --json number,title,body,comments \
-        --jq ".[] | \"${BOUNDARY_BEGIN}\n### Issue #\(.number)\n**Title:** \(.title)\n\(.body)\n\(if (.comments | length) > 0 then \"Human replied:\n\" + (.comments | map(.body) | join(\"\n---\n\")) else \"No replies yet.\" end)\n${BOUNDARY_END}\n\"" 2>/dev/null \
-        | python3 -c "import sys,re; print(re.sub(r'<!--.*?-->','',sys.stdin.read(),flags=re.DOTALL))" 2>/dev/null || true)
+        --jq ".[] | \"${BOUNDARY_BEGIN}\n### Issue #\(.number)\n**Title:** \(.title)\n\(.body | .[0:500])\n\(if (.comments | length) > 0 then \"Human replied:\n\" + ([.comments[-3:][] | \"@\" + .author.login + \": \" + (.body | .[0:200])] | join(\"\n---\n\")) else \"No replies yet.\" end)\n${BOUNDARY_END}\n\"" 2>/dev/null \
+        | sanitize_issue_content || true)
     if [ -n "$HELP_ISSUES" ]; then
         echo "  $(echo "$HELP_ISSUES" | grep -c '^### Issue' 2>/dev/null || echo 0) help-wanted issues."
     fi
@@ -174,8 +195,12 @@ echo ""
 # ── Step 2: Verify starting state ──
 echo "→ Checking current build state..."
 if [ -f package.json ]; then
-    pnpm build 2>&1 | tail -5 || echo "  WARNING: Build currently failing."
-    echo "  Build checked."
+    if BUILD_OUT=$(pnpm build 2>&1); then
+        echo "  Build: PASS"
+    else
+        echo "  WARNING: Build currently failing."
+        echo "$BUILD_OUT" | tail -10 | sed 's/^/    /'
+    fi
 else
     echo "  No package.json yet (first session). Build check skipped."
 fi
@@ -365,7 +390,11 @@ fi
 TASK_COUNT=0
 for _f in session_plan/task_*.md; do [ -f "$_f" ] && TASK_COUNT=$((TASK_COUNT + 1)); done
 if [ "$TASK_COUNT" -eq 0 ]; then
-    echo "  No tasks produced — writing fallback."
+    if [ -z "$ASSESSMENT" ]; then
+        echo "  ERROR: Both assessment and planning failed. Session is non-functional."
+        exit 1
+    fi
+    echo "  No tasks produced — writing fallback (assessment was available)."
     mkdir -p session_plan
     cat > session_plan/task_01.md <<FALLBACK
 Title: Project improvement
@@ -717,7 +746,13 @@ Write a journal entry at the TOP of .yoyo/journal.md:
 Then commit: git add .yoyo/journal.md && git commit -m "yoyo: journal entry"
 JEOF
     JOURNAL_LOG=$(mktemp)
-    run_agent 120 "$JOURNAL_PROMPT" "$JOURNAL_LOG" || true
+    JOURNAL_EXIT=0
+    run_agent 120 "$JOURNAL_PROMPT" "$JOURNAL_LOG" || JOURNAL_EXIT=$?
+    if grep -q '"type":"error"' "$JOURNAL_LOG" 2>/dev/null; then
+        echo "  WARNING: Journal agent API error."
+    elif [ "$JOURNAL_EXIT" -ne 0 ]; then
+        echo "  WARNING: Journal agent exited with code $JOURNAL_EXIT."
+    fi
     rm -f "$JOURNAL_PROMPT" "$JOURNAL_LOG"
 fi
 
@@ -743,7 +778,13 @@ Then commit: git add .yoyo/learnings.md && git commit -m "yoyo: update learnings
 If nothing non-obvious, do nothing. Not every session produces a lesson.
 REOF
     REFLECT_LOG=$(mktemp)
-    run_agent 120 "$REFLECT_PROMPT" "$REFLECT_LOG" || true
+    REFLECT_EXIT=0
+    run_agent 120 "$REFLECT_PROMPT" "$REFLECT_LOG" || REFLECT_EXIT=$?
+    if grep -q '"type":"error"' "$REFLECT_LOG" 2>/dev/null; then
+        echo "  WARNING: Learnings agent API error."
+    elif [ "$REFLECT_EXIT" -ne 0 ]; then
+        echo "  WARNING: Learnings agent exited with code $REFLECT_EXIT."
+    fi
     rm -f "$REFLECT_PROMPT" "$REFLECT_LOG"
 fi
 
@@ -779,7 +820,13 @@ Commands:
 Be concise. Comment at most once per issue. Skip issues with nothing useful to say.
 RESPONDEOF
     RESPOND_LOG=$(mktemp)
-    run_agent 180 "$RESPOND_PROMPT" "$RESPOND_LOG" || true
+    RESPOND_EXIT=0
+    run_agent 180 "$RESPOND_PROMPT" "$RESPOND_LOG" || RESPOND_EXIT=$?
+    if grep -q '"type":"error"' "$RESPOND_LOG" 2>/dev/null; then
+        echo "  WARNING: Issue response agent API error."
+    elif [ "$RESPOND_EXIT" -ne 0 ]; then
+        echo "  WARNING: Issue response agent exited with code $RESPOND_EXIT."
+    fi
     rm -f "$RESPOND_PROMPT" "$RESPOND_LOG"
 fi
 
@@ -793,7 +840,10 @@ fi
 
 echo ""
 echo "→ Pushing..."
-git push || echo "  WARNING: Push failed."
+if ! git push; then
+    echo "ERROR: Push failed. This session's commits will be lost."
+    exit 1
+fi
 
 # ── Sync journal to yoyo-evolve ──
 if [ -n "${YOYO_EVOLVE_TOKEN:-}" ] && [ -f .yoyo/journal.md ]; then
@@ -801,10 +851,10 @@ if [ -n "${YOYO_EVOLVE_TOKEN:-}" ] && [ -f .yoyo/journal.md ]; then
     LATEST_ENTRY=$(awk '/^## /{if(n++)exit}1' .yoyo/journal.md)
     if [ -n "$LATEST_ENTRY" ]; then
         JOURNAL_FILE="JOURNAL-llm-wiki.md"
-        CURRENT=$(GH_TOKEN="$YOYO_EVOLVE_TOKEN" gh api "repos/yologdev/yoyo-evolve/contents/$JOURNAL_FILE" 2>/dev/null || echo "")
-        if [ -n "$CURRENT" ]; then
-            CURRENT_SHA=$(echo "$CURRENT" | python3 -c "import sys,json; print(json.load(sys.stdin).get('sha',''))" 2>/dev/null || echo "")
-            CURRENT_CONTENT=$(echo "$CURRENT" | python3 -c "import sys,json,base64; print(base64.b64decode(json.load(sys.stdin).get('content','')).decode())" 2>/dev/null || echo "")
+        CURRENT=$(GH_TOKEN="$YOYO_EVOLVE_TOKEN" gh api "repos/yologdev/yoyo-evolve/contents/$JOURNAL_FILE" 2>&1 || true)
+        if echo "$CURRENT" | python3 -c "import sys,json; json.load(sys.stdin)" 2>/dev/null; then
+            CURRENT_SHA=$(echo "$CURRENT" | python3 -c "import sys,json; print(json.load(sys.stdin).get('sha',''))")
+            CURRENT_CONTENT=$(echo "$CURRENT" | python3 -c "import sys,json,base64; print(base64.b64decode(json.load(sys.stdin).get('content','')).decode())")
             NEW_CONTENT="$LATEST_ENTRY
 
 $CURRENT_CONTENT"
@@ -819,7 +869,7 @@ $LATEST_ENTRY"
         [ -n "$CURRENT_SHA" ] && SHA_FIELD="\"sha\":\"$CURRENT_SHA\","
         GH_TOKEN="$YOYO_EVOLVE_TOKEN" gh api "repos/yologdev/yoyo-evolve/contents/$JOURNAL_FILE" \
             -X PUT \
-            --input - <<APEOF 2>/dev/null || echo "  WARNING: Journal sync failed."
+            --input - <<APEOF 2>&1 || echo "  WARNING: Journal sync API call failed."
 {"message":"sync: llm-wiki growth session ($DATE)","content":"$ENCODED",${SHA_FIELD}"branch":"main"}
 APEOF
         echo "  Journal synced."
@@ -830,7 +880,8 @@ fi
 SESSION_END_SHA=$(git rev-parse HEAD)
 if [ "$SESSION_END_SHA" = "$SESSION_START_SHA" ]; then
     echo ""
-    echo "WARNING: Growth session produced no commits."
+    echo "ERROR: Growth session produced no commits. All phases failed or were empty."
+    exit 1
 fi
 
 echo ""

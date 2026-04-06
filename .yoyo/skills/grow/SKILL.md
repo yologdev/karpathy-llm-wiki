@@ -19,7 +19,7 @@ You are growing the LLM Wiki project from a founding prompt into a working produ
 - Compare what exists to the YOYO.md vision and llm-wiki.md pattern
 - Identify the highest-impact gaps and decide what to build next
 - Factor in open issues if they align with the vision — but the vision drives, issues steer
-- Write SESSION_PLAN.md
+- Write task files to session_plan/ directory
 
 ## Phase 3: Implement
 - Execute tasks from plan
@@ -40,6 +40,7 @@ You are growing the LLM Wiki project from a founding prompt into a working produ
 - **Never modify .github/workflows/.** That's the automation safety net.
 - **Never modify .yoyo/scripts/.** That's the harness.
 - **Never modify .yoyo/config.toml.** That's the build configuration.
+- **Never modify .yoyo/.gitignore.**
 - **Never modify core skills** (grow, communicate, research).
 - **Never delete tests.** Tests protect the project.
 - If you're not sure a change is safe, skip it. Write about it in the journal.
