@@ -1,3 +1,4 @@
+import Link from "next/link";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
@@ -12,17 +13,27 @@ export function MarkdownRenderer({ content }: MarkdownRendererProps) {
         remarkPlugins={[remarkGfm]}
         components={{
           a: ({ href, children, ...props }) => {
-            // Rewrite internal .md links to /wiki/ routes
+            // Rewrite internal .md links to /wiki/ routes using Next.js Link
             if (href && href.endsWith(".md") && !href.startsWith("http")) {
               const slug = href.replace(/\.md$/, "");
               return (
-                <a href={`/wiki/${slug}`} {...props}>
+                <Link href={`/wiki/${slug}`} {...props}>
                   {children}
-                </a>
+                </Link>
               );
             }
+            // External links: open in new tab
+            const isExternal =
+              href &&
+              (href.startsWith("http://") || href.startsWith("https://"));
             return (
-              <a href={href} {...props}>
+              <a
+                href={href}
+                {...(isExternal
+                  ? { target: "_blank", rel: "noopener noreferrer" }
+                  : {})}
+                {...props}
+              >
                 {children}
               </a>
             );

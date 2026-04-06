@@ -334,10 +334,16 @@ describe("fetchUrlContent", () => {
     </html>
   `;
 
+  /** Helper to create a mock headers object */
+  function mockHeaders(h: Record<string, string> = {}) {
+    return { get: (key: string) => h[key.toLowerCase()] ?? null };
+  }
+
   it("extracts title and content from HTML", async () => {
     const originalFetch = global.fetch;
     global.fetch = vi.fn().mockResolvedValue({
       ok: true,
+      headers: mockHeaders(),
       text: () => Promise.resolve(sampleHtml),
     });
 
@@ -359,6 +365,7 @@ describe("fetchUrlContent", () => {
     const originalFetch = global.fetch;
     global.fetch = vi.fn().mockResolvedValue({
       ok: true,
+      headers: mockHeaders(),
       text: () => Promise.resolve("<html><body><p>Some content</p></body></html>"),
     });
 
@@ -386,6 +393,78 @@ describe("fetchUrlContent", () => {
       global.fetch = originalFetch;
     }
   });
+
+  it("throws when Content-Length header exceeds 5 MB", async () => {
+    const originalFetch = global.fetch;
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      headers: mockHeaders({ "content-length": "10000000" }),
+      text: () => Promise.resolve("<p>should not be read</p>"),
+    });
+
+    try {
+      await expect(fetchUrlContent("https://example.com/huge")).rejects.toThrow(
+        /Content too large.*10000000/,
+      );
+    } finally {
+      global.fetch = originalFetch;
+    }
+  });
+
+  it("throws when body exceeds 5 MB (no Content-Length header)", async () => {
+    const originalFetch = global.fetch;
+    const hugeBody = "<p>" + "x".repeat(6 * 1024 * 1024) + "</p>";
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      headers: mockHeaders(), // no content-length
+      text: () => Promise.resolve(hugeBody),
+    });
+
+    try {
+      await expect(fetchUrlContent("https://example.com/huge")).rejects.toThrow(
+        /Content too large/,
+      );
+    } finally {
+      global.fetch = originalFetch;
+    }
+  });
+
+  it("truncates extracted content exceeding 100K characters", async () => {
+    const originalFetch = global.fetch;
+    // Build HTML whose stripped text will be > 100K chars
+    const longText = "word ".repeat(25_000); // 125K chars
+    const html = `<html><head><title>Long Doc</title></head><body><p>${longText}</p></body></html>`;
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      headers: mockHeaders(),
+      text: () => Promise.resolve(html),
+    });
+
+    try {
+      const result = await fetchUrlContent("https://example.com/long");
+      expect(result.content.length).toBeLessThanOrEqual(100_000 + 30); // allow for suffix
+      expect(result.content).toContain("[Content truncated]");
+    } finally {
+      global.fetch = originalFetch;
+    }
+  });
+
+  it("passes AbortSignal.timeout to fetch", async () => {
+    const originalFetch = global.fetch;
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      headers: mockHeaders(),
+      text: () => Promise.resolve("<html><body><p>Hello</p></body></html>"),
+    });
+
+    try {
+      await fetchUrlContent("https://example.com/test");
+      const fetchCall = (global.fetch as ReturnType<typeof vi.fn>).mock.calls[0];
+      expect(fetchCall[1]).toHaveProperty("signal");
+    } finally {
+      global.fetch = originalFetch;
+    }
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -409,6 +488,7 @@ describe("ingestUrl", () => {
     const originalFetch = global.fetch;
     global.fetch = vi.fn().mockResolvedValue({
       ok: true,
+      headers: { get: () => null },
       text: () => Promise.resolve(sampleHtml),
     });
 

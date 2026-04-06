@@ -79,10 +79,20 @@ export function extractTitle(html: string): string {
   return match[1].replace(/<[^>]+>/g, "").replace(/\s+/g, " ").trim();
 }
 
+/** Maximum response body size in bytes (5 MB). */
+const MAX_RESPONSE_SIZE = 5 * 1024 * 1024;
+
+/** Maximum extracted text content length passed downstream (100 K chars). */
+const MAX_CONTENT_LENGTH = 100_000;
+
+/** Fetch timeout in milliseconds (15 seconds). */
+const FETCH_TIMEOUT_MS = 15_000;
+
 /**
  * Fetch a URL and extract its text content and title.
  *
  * Uses Node.js native `fetch()` and regex-based HTML stripping.
+ * Applies a 15-second timeout and a 5 MB response size limit for safety.
  */
 export async function fetchUrlContent(
   url: string,
@@ -92,6 +102,7 @@ export async function fetchUrlContent(
       "User-Agent": "llm-wiki/1.0",
       Accept: "text/html,application/xhtml+xml,*/*",
     },
+    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
   });
 
   if (!response.ok) {
@@ -100,13 +111,33 @@ export async function fetchUrlContent(
     );
   }
 
+  // Check Content-Length header before reading body
+  const contentLength = response.headers.get("content-length");
+  if (contentLength && parseInt(contentLength, 10) > MAX_RESPONSE_SIZE) {
+    throw new Error(
+      `Content too large: ${contentLength} bytes (max ${MAX_RESPONSE_SIZE})`,
+    );
+  }
+
   const html = await response.text();
 
+  // Check actual body size after reading
+  if (html.length > MAX_RESPONSE_SIZE) {
+    throw new Error(
+      `Content too large: ${html.length} chars (max ${MAX_RESPONSE_SIZE})`,
+    );
+  }
+
   const title = extractTitle(html) || new URL(url).hostname;
-  const content = stripHtml(html);
+  let content = stripHtml(html);
 
   if (!content) {
     throw new Error("No text content could be extracted from the URL");
+  }
+
+  // Truncate very long extracted text to a reasonable size for LLM processing
+  if (content.length > MAX_CONTENT_LENGTH) {
+    content = content.slice(0, MAX_CONTENT_LENGTH) + "\n\n[Content truncated]";
   }
 
   return { title, content };
