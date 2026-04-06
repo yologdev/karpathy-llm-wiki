@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { readWikiPage } from "@/lib/wiki";
+import { MarkdownRenderer } from "@/components/MarkdownRenderer";
 
 interface WikiPageProps {
   params: Promise<{ slug: string }>;
@@ -35,9 +36,7 @@ export default async function WikiPageView({ params }: WikiPageProps) {
         ← Back to index
       </Link>
       <article className="mt-6">
-        <div className="whitespace-pre-wrap font-mono text-sm leading-relaxed">
-          {page.content}
-        </div>
+        <MarkdownRenderer content={page.content} />
       </article>
     </main>
   );
