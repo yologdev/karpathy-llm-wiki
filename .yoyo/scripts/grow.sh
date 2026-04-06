@@ -845,6 +845,12 @@ if ! git push; then
     exit 1
 fi
 
+# ── Tag known-good state ──
+TAG_NAME="grow-${DATE}-$(echo "$SESSION_TIME" | tr ':' '-')"
+git tag "$TAG_NAME" -m "Growth session ($DATE $SESSION_TIME)" 2>/dev/null || true
+git push origin "$TAG_NAME" 2>/dev/null || true
+echo "  Tagged: $TAG_NAME"
+
 # ── Sync journal to yoyo-evolve ──
 if [ -n "${YOYO_EVOLVE_TOKEN:-}" ] && [ -f .yoyo/journal.md ]; then
     echo "→ Syncing journal to yoyo-evolve..."

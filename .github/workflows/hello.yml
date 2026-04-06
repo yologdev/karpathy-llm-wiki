@@ -9,8 +9,17 @@ jobs:
     timeout-minutes: 5
 
     steps:
+      - name: Generate bot token
+        id: bot-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.APP_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          token: ${{ steps.bot-token.outputs.token }}
 
       - name: Install yoyo
         run: |
