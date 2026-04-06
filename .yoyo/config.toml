@@ -1,0 +1,6 @@
+mode = "auto"
+
+[commands]
+build = "pnpm build"
+test = "pnpm test"
+lint = "pnpm lint"

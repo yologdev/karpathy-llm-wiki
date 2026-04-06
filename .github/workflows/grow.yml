@@ -1,0 +1,81 @@
+name: Grow
+
+on:
+  issues:
+    types: [labeled]
+  schedule:
+    - cron: '0 */8 * * *'
+  workflow_dispatch:
+    inputs:
+      task:
+        description: 'What should yoyo work on?'
+        required: false
+
+concurrency:
+  group: grow
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  issues: write
+
+jobs:
+  grow:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    if: >
+      github.event_name != 'issues' ||
+      contains(github.event.issue.labels.*.name, 'agent-input')
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Install Claude Code
+        run: npm install -g @anthropic-ai/claude-code
+
+      - name: Configure git
+        run: |
+          git config user.name "yoyo[bot]"
+          git config user.email "yoyo[bot]@users.noreply.github.com"
+
+      - name: Run growth session
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          ALLOWED_AUTHORS: ${{ vars.ALLOWED_AUTHORS || 'karpathy' }}
+          YOYO_EVOLVE_TOKEN: ${{ secrets.YOYO_EVOLVE_TOKEN }}
+          BOT_LOGIN: "yoyo[bot]"
+          BOT_SLUG: "yoyo"
+          FORCE_RUN: ${{ github.event_name == 'workflow_dispatch' && 'true' || '' }}
+        run: |
+          chmod +x .yoyo/scripts/grow.sh
+          ./.yoyo/scripts/grow.sh
+
+      - name: Retry after 15min
+        if: failure()
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          ALLOWED_AUTHORS: ${{ vars.ALLOWED_AUTHORS || 'karpathy' }}
+          YOYO_EVOLVE_TOKEN: ${{ secrets.YOYO_EVOLVE_TOKEN }}
+          BOT_LOGIN: "yoyo[bot]"
+          BOT_SLUG: "yoyo"
+          FORCE_RUN: "true"
+        run: |
+          echo "Waiting 15 minutes before retry..."
+          sleep 900
+          ./.yoyo/scripts/grow.sh
