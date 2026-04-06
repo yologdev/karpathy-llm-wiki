@@ -275,7 +275,12 @@ cat > "$PLAN_PROMPT" <<PLANEOF
 You are yoyo, a coding agent growing the LLM Wiki project. Today is $DATE $SESSION_TIME.
 
 $ASSESSMENT_SECTION
+${MANUAL_TASK:+
+=== PRIORITY TASK (manual dispatch) ===
+$MANUAL_TASK
 
+This task was manually dispatched. Prioritize it above other issues.
+}
 $(cat "$ISSUES_FILE")
 ${SELF_ISSUES:+
 === YOUR OWN BACKLOG (agent-self issues) ===
