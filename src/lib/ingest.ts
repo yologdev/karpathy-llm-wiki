@@ -31,6 +31,53 @@ function generateFallbackPage(title: string, content: string): string {
 }
 
 // ---------------------------------------------------------------------------
+// Summary extraction
+// ---------------------------------------------------------------------------
+
+/**
+ * Extract a short summary from content by finding the first sentence.
+ *
+ * Uses sentence-ending punctuation followed by whitespace (`[.!?]\s`) or
+ * paragraph breaks (`\n\n`) as boundaries — avoids splitting on abbreviations
+ * like "Dr." or "U.S." where the period is not followed by a space that starts
+ * a new sentence (though it's a heuristic, not perfect).
+ *
+ * Returns at most `maxLen` characters.
+ */
+export function extractSummary(content: string, maxLen = 200): string {
+  const trimmed = content.trim();
+  if (!trimmed) return "";
+
+  // Look for a sentence boundary: period/exclamation/question followed by a space
+  const sentenceEnd = trimmed.search(/[.!?]\s/);
+  // Look for a paragraph break
+  const paraBreak = trimmed.indexOf("\n\n");
+
+  // Pick the earliest valid boundary
+  let cutoff = -1;
+  if (sentenceEnd !== -1 && paraBreak !== -1) {
+    cutoff = Math.min(sentenceEnd + 1, paraBreak); // +1 to include the punctuation
+  } else if (sentenceEnd !== -1) {
+    cutoff = sentenceEnd + 1;
+  } else if (paraBreak !== -1) {
+    cutoff = paraBreak;
+  }
+
+  let summary: string;
+  if (cutoff !== -1 && cutoff <= maxLen) {
+    summary = trimmed.slice(0, cutoff).trim();
+  } else {
+    // No sentence boundary found or it's too far — just truncate
+    summary =
+      trimmed.length > maxLen
+        ? trimmed.slice(0, maxLen).trim() + "..."
+        : trimmed.trim();
+  }
+
+  return summary;
+}
+
+// ---------------------------------------------------------------------------
 // Ingest pipeline
 // ---------------------------------------------------------------------------
 
@@ -51,7 +98,7 @@ Output pure markdown and nothing else. Do not wrap in code fences.`;
  * 2. Save the raw source
  * 3. Generate a wiki page via LLM (or fallback stub)
  * 4. Write the wiki page
- * 5. Update the index
+ * 5. Update the index (insert or update existing entry)
  * 6. Append to the log
  */
 export async function ingest(
@@ -74,14 +121,15 @@ export async function ingest(
   // 3. Write wiki page
   await writeWikiPage(slug, wikiContent);
 
-  // 4. Update index
+  // 4. Update index — insert new entry or update existing one
   const entries = await listWikiPages();
-  // Only add if not already present
-  if (!entries.some((e) => e.slug === slug)) {
-    // Derive a short summary from the content (first sentence or first 100 chars)
-    const firstLine = content.split(/[.\n]/)[0].trim();
-    const summary =
-      firstLine.length > 100 ? firstLine.slice(0, 100) + "..." : firstLine;
+  const summary = extractSummary(content);
+  const existingIdx = entries.findIndex((e) => e.slug === slug);
+  if (existingIdx !== -1) {
+    // Re-ingest: update title and summary of the existing entry
+    entries[existingIdx].title = title;
+    entries[existingIdx].summary = summary;
+  } else {
     entries.push({ title, slug, summary });
   }
   await updateIndex(entries);

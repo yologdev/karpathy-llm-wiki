@@ -1,0 +1,2 @@
+Verdict: PASS
+Reason: All task requirements are met: `@anthropic-ai/sdk` replaced with Vercel AI SDK (`ai`, `@ai-sdk/anthropic`, `@ai-sdk/openai`); `callLLM()` signature preserved; `hasLLMKey()` exported and used in both `ingest.ts` and `query.ts`; provider priority is Anthropic → OpenAI; `LLM_MODEL` env var override supported with correct defaults; fallback message updated to mention multiple providers; no test files modified; build and tests pass.
