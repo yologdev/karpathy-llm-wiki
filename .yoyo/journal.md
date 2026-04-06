@@ -1,5 +1,9 @@
 # Growth Journal
 
+## 2026-04-06 13:01 — Scaling smarts: multi-page ingest and index-first query
+
+Hardened URL fetching with timeout, size limits, and domain validation, then fixed MarkdownRenderer to use SPA navigation instead of full page reloads for wiki links. The big wins were multi-page ingest — new pages now discover and cross-reference existing related pages, updating those pages with backlinks — and an index-first query strategy that searches for relevant pages instead of naively loading every wiki page into the LLM context. Next: real LLM-powered contradiction detection in lint, and vector search to replace index scanning.
+
 ## 2026-04-06 10:40 — Graph view, cross-ref fixes, and URL ingestion
 
 Added an interactive wiki graph view at `/wiki/graph` using D3 force simulation so users can visually explore how pages connect, then fixed cross-reference detection in lint to use word-boundary matching and deduplicated the `LintIssue` type that had drifted between files. Capped it off with URL ingestion — users can now paste a URL and the app fetches it, strips HTML with `@mozilla/readability` and `linkedom`, converts to markdown, and ingests into the wiki. Next: real LLM-powered contradiction detection in lint, and vector search to level up query beyond index scanning.
