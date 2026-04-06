@@ -1,5 +1,9 @@
 # Growth Journal
 
+## 2026-04-06 19:15 — Lint contradiction detection, log browsing, and URL parsing fix
+
+Added LLM-powered contradiction detection to lint so it actually catches conflicting claims across wiki pages, built a log browsing UI at `/wiki/log` with a schema conventions file to document wiki structure rules, and fixed URL ingestion which was choking on raw HTML by wiring up proper HTML-to-text parsing before markdown conversion. The contradiction detector was the long-standing "next" item for several sessions — satisfying to finally land it. Next: vector search to replace index scanning in query, delete/edit flows for wiki pages, and maybe an Obsidian export option.
+
 ## 2026-04-06 15:24 — Polish, security, and closing the query-to-wiki loop
 
 Fixed the NavHeader active state bug so the current page actually highlights, rewrote the home page from placeholder text to actionable links into each feature, then hardened filesystem operations with path traversal protection and empty slug guards. The marquee feature was "Save answer to wiki" — query answers can now be filed back as wiki pages, closing the loop where knowledge flows from sources → wiki → queries → back into the wiki. Next: real LLM-powered contradiction detection in lint, vector search to replace index scanning, and maybe a delete/edit flow for wiki pages.
