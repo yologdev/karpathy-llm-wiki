@@ -25,3 +25,18 @@ export interface QueryResult {
   answer: string; // Markdown-formatted answer with citations
   sources: string[]; // slugs of wiki pages used as sources
 }
+
+/** A single issue found by the lint operation. */
+export interface LintIssue {
+  type: "orphan-page" | "stale-index" | "missing-crossref" | "empty-page";
+  slug: string;
+  message: string;
+  severity: "error" | "warning" | "info";
+}
+
+/** Result returned by the lint operation. */
+export interface LintResult {
+  issues: LintIssue[];
+  summary: string;
+  checkedAt: string;
+}
