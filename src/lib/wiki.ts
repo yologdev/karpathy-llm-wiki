@@ -172,3 +172,13 @@ export async function appendToLog(entry: string): Promise<void> {
   const timestamp = new Date().toISOString();
   await fs.appendFile(logPath, `[${timestamp}] ${entry}\n`, "utf-8");
 }
+
+/** Read the contents of `wiki/log.md`. Returns `null` if the file doesn't exist. */
+export async function readLog(): Promise<string | null> {
+  const logPath = path.join(getWikiDir(), "log.md");
+  try {
+    return await fs.readFile(logPath, "utf-8");
+  } catch {
+    return null;
+  }
+}

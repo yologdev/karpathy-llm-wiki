@@ -24,6 +24,15 @@ export default async function WikiIndex() {
         </div>
       </div>
 
+      <div className="mb-6">
+        <Link
+          href="/wiki/log"
+          className="inline-flex items-center gap-2 rounded-lg border border-foreground/10 px-4 py-2 text-sm text-foreground/70 hover:border-foreground/30 hover:text-foreground transition-colors"
+        >
+          📋 Activity Log
+        </Link>
+      </div>
+
       {pages.length === 0 ? (
         <p className="text-foreground/60">
           No wiki pages yet. Ingest some content to get started!

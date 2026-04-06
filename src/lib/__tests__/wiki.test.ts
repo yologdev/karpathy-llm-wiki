@@ -9,6 +9,7 @@ import {
   updateIndex,
   saveRawSource,
   appendToLog,
+  readLog,
   ensureDirectories,
   validateSlug,
 } from "../wiki";
@@ -129,6 +130,25 @@ describe("appendToLog", () => {
     expect(lines).toHaveLength(2);
     expect(lines[0]).toMatch(/^\[.+\] first entry$/);
     expect(lines[1]).toMatch(/^\[.+\] second entry$/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// readLog
+// ---------------------------------------------------------------------------
+
+describe("readLog", () => {
+  it("should return null when log.md does not exist", async () => {
+    await ensureDirectories();
+    const result = await readLog();
+    expect(result).toBeNull();
+  });
+
+  it("should return log content after entries are appended", async () => {
+    await appendToLog("test entry");
+    const result = await readLog();
+    expect(result).not.toBeNull();
+    expect(result).toMatch(/test entry/);
   });
 });
 
