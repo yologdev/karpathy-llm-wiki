@@ -1,12 +1,13 @@
 import {
   saveRawSource,
+  readWikiPage,
   writeWikiPage,
   listWikiPages,
   updateIndex,
   appendToLog,
 } from "./wiki";
 import { callLLM, hasLLMKey } from "./llm";
-import type { IngestResult } from "./types";
+import type { IngestResult, IndexEntry } from "./types";
 
 // ---------------------------------------------------------------------------
 // Slug generation
@@ -179,6 +180,112 @@ export function extractSummary(content: string, maxLen = 200): string {
 }
 
 // ---------------------------------------------------------------------------
+// Cross-referencing
+// ---------------------------------------------------------------------------
+
+const RELATED_PAGES_PROMPT = `Given this new wiki page and the existing wiki index, return a JSON array of slugs for pages that are related and should cross-reference this new page. Return at most 5 slugs. Return only the JSON array, nothing else.`;
+
+/**
+ * Identify existing wiki pages that are related to a newly ingested page.
+ *
+ * Sends the index entries + a summary of the new content to the LLM and asks
+ * it to return a JSON array of related slugs.  Falls back to an empty array
+ * when there is no LLM key, no existing pages, or any error occurs.
+ */
+export async function findRelatedPages(
+  newSlug: string,
+  newContent: string,
+  existingEntries: IndexEntry[],
+): Promise<string[]> {
+  // Nothing to cross-reference when there's no LLM or no existing pages
+  if (!hasLLMKey() || existingEntries.length === 0) {
+    return [];
+  }
+
+  // Build a user message with the index and the new page's content
+  const indexList = existingEntries
+    .filter((e) => e.slug !== newSlug)
+    .map((e) => `- ${e.slug}: ${e.title} — ${e.summary}`)
+    .join("\n");
+
+  if (!indexList) {
+    return [];
+  }
+
+  const userMessage = `## New page (slug: ${newSlug})\n\n${newContent.slice(0, 2000)}\n\n## Existing wiki index\n\n${indexList}`;
+
+  try {
+    const response = await callLLM(RELATED_PAGES_PROMPT, userMessage);
+
+    // Extract JSON array from response — allow surrounding whitespace/text
+    const match = response.match(/\[[\s\S]*?\]/);
+    if (!match) return [];
+
+    const parsed: unknown = JSON.parse(match[0]);
+    if (!Array.isArray(parsed)) return [];
+
+    // Validate: only keep slugs that actually exist in the index (and aren't the new page)
+    const validSlugs = new Set(
+      existingEntries.filter((e) => e.slug !== newSlug).map((e) => e.slug),
+    );
+    return parsed
+      .filter((s): s is string => typeof s === "string" && validSlugs.has(s))
+      .slice(0, 5);
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Append cross-reference links to related wiki pages.
+ *
+ * For each related slug:
+ * - Reads the existing wiki page
+ * - Skips if it already contains a link to the new slug
+ * - Appends a "See also" link (or extends an existing "See also" section)
+ *
+ * Returns the slugs that were actually modified.
+ */
+export async function updateRelatedPages(
+  newSlug: string,
+  newTitle: string,
+  relatedSlugs: string[],
+): Promise<string[]> {
+  const updatedSlugs: string[] = [];
+
+  for (const slug of relatedSlugs) {
+    const page = await readWikiPage(slug);
+    if (!page) continue;
+
+    // Skip if already links to the new page
+    if (page.content.includes(`${newSlug}.md`)) continue;
+
+    const link = `[${newTitle}](${newSlug}.md)`;
+    let updatedContent: string;
+
+    // Check if there's already a "See also" section
+    const seeAlsoPattern = /^(\*\*See also:\*\*.*)$/m;
+    const seeAlsoMatch = page.content.match(seeAlsoPattern);
+
+    if (seeAlsoMatch) {
+      // Append to existing "See also" line
+      updatedContent = page.content.replace(
+        seeAlsoPattern,
+        `${seeAlsoMatch[1]}, ${link}`,
+      );
+    } else {
+      // Add a new "See also" section at the end
+      updatedContent = `${page.content.trimEnd()}\n\n**See also:** ${link}\n`;
+    }
+
+    await writeWikiPage(slug, updatedContent);
+    updatedSlugs.push(slug);
+  }
+
+  return updatedSlugs;
+}
+
+// ---------------------------------------------------------------------------
 // Ingest pipeline
 // ---------------------------------------------------------------------------
 
@@ -235,12 +342,19 @@ export async function ingest(
   }
   await updateIndex(entries);
 
-  // 5. Log
-  await appendToLog(`Ingested "${title}" as ${slug}`);
+  // 5. Cross-reference related pages
+  const updatedEntries = await listWikiPages(); // re-read after index update
+  const relatedSlugs = await findRelatedPages(slug, content, updatedEntries);
+  const updatedSlugs = await updateRelatedPages(slug, title, relatedSlugs);
+
+  // 6. Log
+  await appendToLog(
+    `Ingested "${title}" as ${slug}, updated ${updatedSlugs.length} related pages`,
+  );
 
   return {
     rawPath,
-    wikiPages: [slug],
+    wikiPages: [slug, ...updatedSlugs],
     indexUpdated: true,
   };
 }

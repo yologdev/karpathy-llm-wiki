@@ -11,14 +11,22 @@ import {
   extractTitle,
   fetchUrlContent,
   ingestUrl,
+  findRelatedPages,
+  updateRelatedPages,
 } from "../ingest";
-import { listWikiPages } from "../wiki";
+import { listWikiPages, readWikiPage, writeWikiPage } from "../wiki";
+import type { IndexEntry } from "../types";
 
 // Mock the LLM module so ingest never calls the real API
 vi.mock("../llm", () => ({
-  hasLLMKey: () => false,
+  hasLLMKey: vi.fn(() => false),
   callLLM: vi.fn(),
 }));
+
+// Import the mocked module so we can override per-test
+import { hasLLMKey, callLLM } from "../llm";
+const mockedHasLLMKey = vi.mocked(hasLLMKey);
+const mockedCallLLM = vi.mocked(callLLM);
 
 // ---------------------------------------------------------------------------
 // slugify
@@ -416,5 +424,199 @@ describe("ingestUrl", () => {
     } finally {
       global.fetch = originalFetch;
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// cross-referencing
+// ---------------------------------------------------------------------------
+
+describe("cross-referencing", () => {
+  describe("findRelatedPages", () => {
+    it("returns empty array when no LLM key", async () => {
+      mockedHasLLMKey.mockReturnValue(false);
+      const entries: IndexEntry[] = [
+        { title: "AI", slug: "ai", summary: "About AI" },
+      ];
+      const result = await findRelatedPages("new-page", "some content", entries);
+      expect(result).toEqual([]);
+    });
+
+    it("returns empty array when no existing pages", async () => {
+      mockedHasLLMKey.mockReturnValue(true);
+      const result = await findRelatedPages("new-page", "some content", []);
+      expect(result).toEqual([]);
+    });
+
+    it("returns related slugs from LLM response", async () => {
+      mockedHasLLMKey.mockReturnValue(true);
+      mockedCallLLM.mockResolvedValue('["ai", "machine-learning"]');
+      const entries: IndexEntry[] = [
+        { title: "AI", slug: "ai", summary: "About AI" },
+        { title: "Machine Learning", slug: "machine-learning", summary: "About ML" },
+        { title: "Cooking", slug: "cooking", summary: "About cooking" },
+      ];
+      const result = await findRelatedPages("new-page", "deep learning content", entries);
+      expect(result).toEqual(["ai", "machine-learning"]);
+    });
+
+    it("filters out invalid slugs from LLM response", async () => {
+      mockedHasLLMKey.mockReturnValue(true);
+      mockedCallLLM.mockResolvedValue('["ai", "nonexistent-page"]');
+      const entries: IndexEntry[] = [
+        { title: "AI", slug: "ai", summary: "About AI" },
+      ];
+      const result = await findRelatedPages("new-page", "content", entries);
+      expect(result).toEqual(["ai"]);
+    });
+
+    it("filters out the new page's own slug", async () => {
+      mockedHasLLMKey.mockReturnValue(true);
+      mockedCallLLM.mockResolvedValue('["new-page", "ai"]');
+      const entries: IndexEntry[] = [
+        { title: "New Page", slug: "new-page", summary: "The new page" },
+        { title: "AI", slug: "ai", summary: "About AI" },
+      ];
+      const result = await findRelatedPages("new-page", "content", entries);
+      expect(result).toEqual(["ai"]);
+    });
+
+    it("returns empty array on LLM error", async () => {
+      mockedHasLLMKey.mockReturnValue(true);
+      mockedCallLLM.mockRejectedValue(new Error("API error"));
+      const entries: IndexEntry[] = [
+        { title: "AI", slug: "ai", summary: "About AI" },
+      ];
+      const result = await findRelatedPages("new-page", "content", entries);
+      expect(result).toEqual([]);
+    });
+
+    it("returns empty array on malformed JSON", async () => {
+      mockedHasLLMKey.mockReturnValue(true);
+      mockedCallLLM.mockResolvedValue("not valid json at all");
+      const entries: IndexEntry[] = [
+        { title: "AI", slug: "ai", summary: "About AI" },
+      ];
+      const result = await findRelatedPages("new-page", "content", entries);
+      expect(result).toEqual([]);
+    });
+
+    it("returns empty array when only entry is the new page itself", async () => {
+      mockedHasLLMKey.mockReturnValue(true);
+      const entries: IndexEntry[] = [
+        { title: "New Page", slug: "new-page", summary: "The new page" },
+      ];
+      const result = await findRelatedPages("new-page", "content", entries);
+      // indexList would be empty after filtering out newSlug
+      expect(result).toEqual([]);
+    });
+  });
+
+  describe("updateRelatedPages", () => {
+    it("appends 'See also' link to related pages", async () => {
+      await writeWikiPage("ai", "# AI\n\nContent about AI.");
+      const updated = await updateRelatedPages("new-page", "New Page", ["ai"]);
+      expect(updated).toEqual(["ai"]);
+
+      const page = await readWikiPage("ai");
+      expect(page).not.toBeNull();
+      expect(page!.content).toContain("**See also:** [New Page](new-page.md)");
+    });
+
+    it("skips pages that already link to the new page", async () => {
+      await writeWikiPage(
+        "ai",
+        "# AI\n\nContent about AI. See [New Page](new-page.md).",
+      );
+      const updated = await updateRelatedPages("new-page", "New Page", ["ai"]);
+      expect(updated).toEqual([]);
+    });
+
+    it("appends to existing 'See also' section rather than creating duplicate", async () => {
+      await writeWikiPage(
+        "ai",
+        "# AI\n\nContent about AI.\n\n**See also:** [Other Page](other-page.md)",
+      );
+      const updated = await updateRelatedPages("new-page", "New Page", ["ai"]);
+      expect(updated).toEqual(["ai"]);
+
+      const page = await readWikiPage("ai");
+      expect(page).not.toBeNull();
+      // Should have both links on the same "See also" line
+      expect(page!.content).toContain(
+        "**See also:** [Other Page](other-page.md), [New Page](new-page.md)",
+      );
+      // Should NOT have two separate "See also" lines
+      const seeAlsoCount = (page!.content.match(/\*\*See also:\*\*/g) || []).length;
+      expect(seeAlsoCount).toBe(1);
+    });
+
+    it("skips non-existent pages", async () => {
+      const updated = await updateRelatedPages("new-page", "New Page", [
+        "nonexistent",
+      ]);
+      expect(updated).toEqual([]);
+    });
+
+    it("handles multiple related pages", async () => {
+      await writeWikiPage("ai", "# AI\n\nContent about AI.");
+      await writeWikiPage("ml", "# ML\n\nContent about ML.");
+      const updated = await updateRelatedPages("new-page", "New Page", [
+        "ai",
+        "ml",
+      ]);
+      expect(updated).toEqual(["ai", "ml"]);
+
+      const aiPage = await readWikiPage("ai");
+      const mlPage = await readWikiPage("ml");
+      expect(aiPage!.content).toContain("[New Page](new-page.md)");
+      expect(mlPage!.content).toContain("[New Page](new-page.md)");
+    });
+  });
+
+  describe("ingest with cross-referencing", () => {
+    it("returns multiple wikiPages when cross-refs are updated", async () => {
+      // Pre-populate the wiki with an existing page
+      await writeWikiPage("ai", "# AI\n\nContent about artificial intelligence.");
+
+      // Set up index with the existing page
+      const { updateIndex } = await import("../wiki");
+      await updateIndex([
+        { title: "AI", slug: "ai", summary: "Content about artificial intelligence" },
+      ]);
+
+      // Enable LLM and mock responses
+      mockedHasLLMKey.mockReturnValue(true);
+
+      // First call: generate wiki page content; second call: find related pages
+      mockedCallLLM
+        .mockResolvedValueOnce("# Deep Learning\n\n## Summary\n\nAbout deep learning.")
+        .mockResolvedValueOnce('["ai"]');
+
+      const result = await ingest(
+        "Deep Learning",
+        "Deep learning is a subset of AI. It uses neural networks.",
+      );
+
+      expect(result.wikiPages).toContain("deep-learning");
+      expect(result.wikiPages).toContain("ai");
+      expect(result.wikiPages.length).toBe(2);
+
+      // Verify the AI page was updated with a cross-reference
+      const aiPage = await readWikiPage("ai");
+      expect(aiPage!.content).toContain("[Deep Learning](deep-learning.md)");
+    });
+
+    it("returns only the new page when no LLM key (existing behavior)", async () => {
+      mockedHasLLMKey.mockReturnValue(false);
+      const result = await ingest("Solo Page", "Content for a solo page. More text.");
+      expect(result.wikiPages).toEqual(["solo-page"]);
+    });
+  });
+
+  // Restore default mock after cross-referencing tests
+  afterEach(() => {
+    mockedHasLLMKey.mockReturnValue(false);
+    mockedCallLLM.mockReset();
   });
 });
