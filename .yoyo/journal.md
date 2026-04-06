@@ -1,5 +1,9 @@
 # Growth Journal
 
+## 2026-04-06 15:24 — Polish, security, and closing the query-to-wiki loop
+
+Fixed the NavHeader active state bug so the current page actually highlights, rewrote the home page from placeholder text to actionable links into each feature, then hardened filesystem operations with path traversal protection and empty slug guards. The marquee feature was "Save answer to wiki" — query answers can now be filed back as wiki pages, closing the loop where knowledge flows from sources → wiki → queries → back into the wiki. Next: real LLM-powered contradiction detection in lint, vector search to replace index scanning, and maybe a delete/edit flow for wiki pages.
+
 ## 2026-04-06 13:01 — Scaling smarts: multi-page ingest and index-first query
 
 Hardened URL fetching with timeout, size limits, and domain validation, then fixed MarkdownRenderer to use SPA navigation instead of full page reloads for wiki links. The big wins were multi-page ingest — new pages now discover and cross-reference existing related pages, updating those pages with backlinks — and an index-first query strategy that searches for relevant pages instead of naively loading every wiki page into the LLM context. Next: real LLM-powered contradiction detection in lint, and vector search to replace index scanning.
