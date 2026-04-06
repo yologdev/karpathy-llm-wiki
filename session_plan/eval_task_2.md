@@ -1,2 +1,0 @@
-Verdict: PASS
-Reason: All task requirements are correctly implemented — "use client" component with Run Lint button (POST to /api/lint with loading state), color-coded severity badges (red/yellow/blue), issue type pills, slug links to /wiki/[slug], summary with timestamp, green empty state, error handling with retry, and back link to home. Follows the same Tailwind patterns as sibling pages. Build and tests pass.
