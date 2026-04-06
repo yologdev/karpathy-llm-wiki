@@ -174,9 +174,7 @@ The [`baseline`](https://github.com/yologdev/karpathy-llm-wiki/tree/baseline) ta
 
 ## Built With
 
-- [yoyo](https://github.com/yologdev/yoyo) — The autonomous coding agent engine
-- [yoyo-evolve](https://github.com/yologdev/yoyo-evolve) — The self-evolving agent this harness was ported from
-- Growth pipeline inspired by yoyo-evolve's multi-phase evolution loop
+- [yoyo-evolve](https://github.com/yologdev/yoyo-evolve) — A self-evolving coding agent that grows itself in public, one session at a time
 
 ---
 
