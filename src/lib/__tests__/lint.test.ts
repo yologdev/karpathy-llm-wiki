@@ -1,10 +1,28 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import fs from "fs/promises";
 import os from "os";
 import path from "path";
-import { lint } from "../lint";
 import { writeWikiPage, updateIndex, ensureDirectories } from "../wiki";
 import type { IndexEntry } from "../types";
+
+// Mock the LLM module so lint never calls the real API
+vi.mock("../llm", () => ({
+  hasLLMKey: vi.fn(() => false),
+  callLLM: vi.fn(async () => "[]"),
+}));
+
+import { hasLLMKey, callLLM } from "../llm";
+const mockedHasLLMKey = vi.mocked(hasLLMKey);
+const mockedCallLLM = vi.mocked(callLLM);
+
+// Import lint after mocking
+import { lint } from "../lint";
+import {
+  extractCrossRefSlugs,
+  buildClusters,
+  parseContradictionResponse,
+  checkContradictions,
+} from "../lint";
 
 let tmpDir: string;
 let originalWikiDir: string | undefined;
@@ -16,6 +34,11 @@ beforeEach(async () => {
   originalRawDir = process.env.RAW_DIR;
   process.env.WIKI_DIR = path.join(tmpDir, "wiki");
   process.env.RAW_DIR = path.join(tmpDir, "raw");
+
+  // Default: no LLM key
+  mockedHasLLMKey.mockReturnValue(false);
+  mockedCallLLM.mockReset();
+  mockedCallLLM.mockResolvedValue("[]");
 });
 
 afterEach(async () => {
@@ -33,7 +56,7 @@ afterEach(async () => {
 });
 
 describe("lint", () => {
-  it("should return no issues for a clean wiki", async () => {
+  it("should return only contradiction-skipped info for a clean wiki", async () => {
     // Create a page and list it in the index
     await writeWikiPage(
       "hello",
@@ -46,8 +69,11 @@ describe("lint", () => {
 
     const result = await lint();
 
-    expect(result.issues).toHaveLength(0);
-    expect(result.summary).toContain("clean");
+    // Only the contradiction-skipped info issue (no LLM key)
+    const nonContradiction = result.issues.filter(
+      (i) => i.type !== "contradiction",
+    );
+    expect(nonContradiction).toHaveLength(0);
     expect(result.checkedAt).toBeTruthy();
   });
 
@@ -179,8 +205,11 @@ describe("lint", () => {
 
     const result = await lint();
 
-    expect(result.issues).toHaveLength(0);
-    expect(result.summary).toContain("clean");
+    // Only the contradiction-skipped info issue
+    const nonContradiction = result.issues.filter(
+      (i) => i.type !== "contradiction",
+    );
+    expect(nonContradiction).toHaveLength(0);
   });
 
   it("should NOT flag cross-refs when short title appears inside other words", async () => {
@@ -279,5 +308,248 @@ describe("lint", () => {
 
     // "map" should NOT match inside "bitmap" thanks to word-boundary matching
     expect(crossRefIssues).toHaveLength(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Contradiction detection tests
+// ---------------------------------------------------------------------------
+
+describe("extractCrossRefSlugs", () => {
+  it("extracts slugs from markdown links", () => {
+    const content = "See [Alpha](alpha.md) and [Beta](beta.md) for details.";
+    const slugs = extractCrossRefSlugs(content);
+    expect(slugs).toEqual(new Set(["alpha", "beta"]));
+  });
+
+  it("returns empty set when no links", () => {
+    const slugs = extractCrossRefSlugs("No links here.");
+    expect(slugs.size).toBe(0);
+  });
+});
+
+describe("buildClusters", () => {
+  it("groups linked pages into clusters", () => {
+    const pages = [
+      { slug: "a", content: "Link to [B](b.md)" },
+      { slug: "b", content: "Link to [A](a.md)" },
+      { slug: "c", content: "No links here, standalone page" },
+    ];
+    const clusters = buildClusters(pages);
+    expect(clusters).toHaveLength(1);
+    expect(clusters[0]).toContain("a");
+    expect(clusters[0]).toContain("b");
+  });
+
+  it("returns empty array when no pages link to each other", () => {
+    const pages = [
+      { slug: "a", content: "No links" },
+      { slug: "b", content: "Also no links" },
+    ];
+    const clusters = buildClusters(pages);
+    expect(clusters).toHaveLength(0);
+  });
+
+  it("respects maxClusterSize", () => {
+    const pages = [
+      { slug: "a", content: "[B](b.md) [C](c.md) [D](d.md)" },
+      { slug: "b", content: "[A](a.md)" },
+      { slug: "c", content: "[A](a.md)" },
+      { slug: "d", content: "[A](a.md)" },
+    ];
+    const clusters = buildClusters(pages, 2);
+    // Cluster should be capped at 2
+    for (const cluster of clusters) {
+      expect(cluster.length).toBeLessThanOrEqual(2);
+    }
+  });
+});
+
+describe("parseContradictionResponse", () => {
+  it("parses valid JSON array", () => {
+    const response = '[{"pages": ["alpha", "beta"], "description": "Alpha says X, Beta says Y"}]';
+    const result = parseContradictionResponse(response);
+    expect(result).toHaveLength(1);
+    expect(result[0].pages).toEqual(["alpha", "beta"]);
+    expect(result[0].description).toBe("Alpha says X, Beta says Y");
+  });
+
+  it("parses empty array", () => {
+    const result = parseContradictionResponse("[]");
+    expect(result).toHaveLength(0);
+  });
+
+  it("handles markdown code fences", () => {
+    const response = '```json\n[{"pages": ["a", "b"], "description": "conflict"}]\n```';
+    const result = parseContradictionResponse(response);
+    expect(result).toHaveLength(1);
+    expect(result[0].pages).toEqual(["a", "b"]);
+  });
+
+  it("returns empty array for malformed JSON", () => {
+    const result = parseContradictionResponse("this is not json at all");
+    expect(result).toHaveLength(0);
+  });
+
+  it("returns empty array for non-array JSON", () => {
+    const result = parseContradictionResponse('{"not": "an array"}');
+    expect(result).toHaveLength(0);
+  });
+
+  it("skips items missing required fields", () => {
+    const response = '[{"pages": ["a"], "description": "only one page"}, {"pages": ["a", "b"], "description": "valid"}]';
+    const result = parseContradictionResponse(response);
+    // First item has only 1 page, should be skipped
+    expect(result).toHaveLength(1);
+    expect(result[0].pages).toEqual(["a", "b"]);
+  });
+
+  it("skips items with empty description", () => {
+    const response = '[{"pages": ["a", "b"], "description": ""}]';
+    const result = parseContradictionResponse(response);
+    expect(result).toHaveLength(0);
+  });
+});
+
+describe("checkContradictions", () => {
+  it("returns info issue when no LLM key is configured", async () => {
+    mockedHasLLMKey.mockReturnValue(false);
+    await ensureDirectories();
+
+    const issues = await checkContradictions(["some-slug"]);
+
+    expect(issues).toHaveLength(1);
+    expect(issues[0].type).toBe("contradiction");
+    expect(issues[0].severity).toBe("info");
+    expect(issues[0].message).toContain("skipped");
+    expect(issues[0].message).toContain("no LLM API key");
+  });
+
+  it("returns contradiction issues when LLM finds them", async () => {
+    mockedHasLLMKey.mockReturnValue(true);
+
+    // Create two pages that link to each other
+    await writeWikiPage(
+      "page-a",
+      "# Page A\n\nThe project was founded in 2020. See [Page B](page-b.md).",
+    );
+    await writeWikiPage(
+      "page-b",
+      "# Page B\n\nThe project was founded in 2019. See [Page A](page-a.md).",
+    );
+    await updateIndex([
+      { slug: "page-a", title: "Page A", summary: "About the project" },
+      { slug: "page-b", title: "Page B", summary: "Also about the project" },
+    ]);
+
+    mockedCallLLM.mockResolvedValueOnce(
+      '[{"pages": ["page-a", "page-b"], "description": "Page A says founded in 2020, Page B says 2019"}]',
+    );
+
+    const issues = await checkContradictions(["page-a", "page-b"]);
+
+    expect(issues).toHaveLength(1);
+    expect(issues[0].type).toBe("contradiction");
+    expect(issues[0].severity).toBe("warning");
+    expect(issues[0].slug).toBe("page-a");
+    expect(issues[0].message).toContain("page-a");
+    expect(issues[0].message).toContain("page-b");
+    expect(issues[0].message).toContain("2020");
+  });
+
+  it("returns no issues when LLM finds no contradictions", async () => {
+    mockedHasLLMKey.mockReturnValue(true);
+
+    await writeWikiPage(
+      "consistent-a",
+      "# Consistent A\n\nFact: water boils at 100C. See [Consistent B](consistent-b.md).",
+    );
+    await writeWikiPage(
+      "consistent-b",
+      "# Consistent B\n\nWater boils at 100 degrees Celsius. See [Consistent A](consistent-a.md).",
+    );
+    await updateIndex([
+      { slug: "consistent-a", title: "Consistent A", summary: "Water facts" },
+      { slug: "consistent-b", title: "Consistent B", summary: "Water facts" },
+    ]);
+
+    mockedCallLLM.mockResolvedValueOnce("[]");
+
+    const issues = await checkContradictions(["consistent-a", "consistent-b"]);
+
+    expect(issues).toHaveLength(0);
+  });
+
+  it("handles malformed LLM response gracefully", async () => {
+    mockedHasLLMKey.mockReturnValue(true);
+
+    await writeWikiPage(
+      "mal-a",
+      "# Malformed A\n\nSome content. See [Malformed B](mal-b.md).",
+    );
+    await writeWikiPage(
+      "mal-b",
+      "# Malformed B\n\nSome content. See [Malformed A](mal-a.md).",
+    );
+    await updateIndex([
+      { slug: "mal-a", title: "Malformed A", summary: "Test" },
+      { slug: "mal-b", title: "Malformed B", summary: "Test" },
+    ]);
+
+    mockedCallLLM.mockResolvedValueOnce(
+      "Sorry, I cannot parse these pages properly. Here's some random text.",
+    );
+
+    const issues = await checkContradictions(["mal-a", "mal-b"]);
+
+    // Should not crash, just return empty
+    expect(issues).toHaveLength(0);
+  });
+
+  it("handles LLM call failure gracefully", async () => {
+    mockedHasLLMKey.mockReturnValue(true);
+
+    await writeWikiPage(
+      "err-a",
+      "# Error A\n\nSome content. See [Error B](err-b.md).",
+    );
+    await writeWikiPage(
+      "err-b",
+      "# Error B\n\nSome content. See [Error A](err-a.md).",
+    );
+    await updateIndex([
+      { slug: "err-a", title: "Error A", summary: "Test" },
+      { slug: "err-b", title: "Error B", summary: "Test" },
+    ]);
+
+    mockedCallLLM.mockRejectedValueOnce(new Error("API rate limit exceeded"));
+
+    const issues = await checkContradictions(["err-a", "err-b"]);
+
+    // Should not crash, just return empty
+    expect(issues).toHaveLength(0);
+  });
+
+  it("returns no issues when pages have no cross-references", async () => {
+    mockedHasLLMKey.mockReturnValue(true);
+
+    await writeWikiPage(
+      "isolated-a",
+      "# Isolated A\n\nThis page has no links to other pages at all.",
+    );
+    await writeWikiPage(
+      "isolated-b",
+      "# Isolated B\n\nThis page also has no links to other pages.",
+    );
+    await updateIndex([
+      { slug: "isolated-a", title: "Isolated A", summary: "No links" },
+      { slug: "isolated-b", title: "Isolated B", summary: "No links" },
+    ]);
+
+    const issues = await checkContradictions(["isolated-a", "isolated-b"]);
+
+    // No clusters formed → no LLM calls → no issues
+    expect(issues).toHaveLength(0);
+    expect(mockedCallLLM).not.toHaveBeenCalled();
   });
 });

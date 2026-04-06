@@ -1,5 +1,6 @@
 import fs from "fs/promises";
 import { getWikiDir, listWikiPages, readWikiPage } from "./wiki";
+import { hasLLMKey, callLLM } from "./llm";
 import type { LintIssue, LintResult } from "./types";
 
 // Files that are part of the wiki infrastructure, not content pages.
@@ -143,6 +144,195 @@ async function checkMissingCrossRefs(
 }
 
 /**
+ * Extract cross-reference links from a page's content.
+ * Returns the set of slugs that this page links to.
+ */
+function extractCrossRefSlugs(content: string): Set<string> {
+  const linkRe = /\[([^\]]*)\]\(([^)]+)\.md\)/g;
+  const slugs = new Set<string>();
+  let match;
+  while ((match = linkRe.exec(content)) !== null) {
+    slugs.add(match[2]);
+  }
+  return slugs;
+}
+
+/**
+ * Build clusters of related pages based on cross-references.
+ * Each cluster contains up to `maxClusterSize` pages that link to each other.
+ */
+function buildClusters(
+  pages: { slug: string; content: string }[],
+  maxClusterSize: number = 5,
+): string[][] {
+  // Build adjacency: for each page, which pages does it link to?
+  const links = new Map<string, Set<string>>();
+  const slugSet = new Set(pages.map((p) => p.slug));
+
+  for (const page of pages) {
+    const refs = extractCrossRefSlugs(page.content);
+    // Only keep refs that point to pages that actually exist
+    const validRefs = new Set<string>();
+    for (const ref of refs) {
+      if (slugSet.has(ref) && ref !== page.slug) {
+        validRefs.add(ref);
+      }
+    }
+    links.set(page.slug, validRefs);
+  }
+
+  // Build clusters using connected components via cross-references
+  const visited = new Set<string>();
+  const clusters: string[][] = [];
+
+  for (const page of pages) {
+    if (visited.has(page.slug)) continue;
+
+    const refs = links.get(page.slug) ?? new Set<string>();
+    if (refs.size === 0) continue; // Skip isolated pages
+
+    // BFS to find connected component, capped at maxClusterSize
+    const cluster: string[] = [page.slug];
+    visited.add(page.slug);
+    const queue = [...refs];
+
+    while (queue.length > 0 && cluster.length < maxClusterSize) {
+      const next = queue.shift()!;
+      if (visited.has(next)) continue;
+      visited.add(next);
+      cluster.push(next);
+
+      const nextRefs = links.get(next) ?? new Set<string>();
+      for (const ref of nextRefs) {
+        if (!visited.has(ref)) {
+          queue.push(ref);
+        }
+      }
+    }
+
+    if (cluster.length >= 2) {
+      clusters.push(cluster);
+    }
+  }
+
+  return clusters;
+}
+
+const CONTRADICTION_SYSTEM_PROMPT = `You are a wiki consistency checker. Given the following wiki pages, identify any contradictions, conflicting claims, or cases where one page's information supersedes or conflicts with another's.
+
+For each contradiction found, respond with a JSON array of objects:
+[{"pages": ["slug-a", "slug-b"], "description": "Page A says X while Page B says Y"}]
+
+If no contradictions are found, respond with an empty array: []
+
+Respond ONLY with the JSON array — no additional text, no markdown code fences.`;
+
+/**
+ * Parse the LLM response for contradiction detection.
+ * Returns structured contradiction data or an empty array on malformed responses.
+ */
+function parseContradictionResponse(
+  response: string,
+): { pages: string[]; description: string }[] {
+  try {
+    // Strip optional markdown code fences
+    let cleaned = response.trim();
+    cleaned = cleaned.replace(/^```(?:json)?\s*\n?/i, "").replace(/\n?```\s*$/, "");
+    cleaned = cleaned.trim();
+
+    const parsed = JSON.parse(cleaned);
+    if (!Array.isArray(parsed)) return [];
+
+    const results: { pages: string[]; description: string }[] = [];
+    for (const item of parsed) {
+      if (
+        item &&
+        Array.isArray(item.pages) &&
+        item.pages.length >= 2 &&
+        typeof item.description === "string" &&
+        item.description.length > 0
+      ) {
+        results.push({
+          pages: item.pages.map(String),
+          description: item.description,
+        });
+      }
+    }
+    return results;
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Check for contradictions between related wiki pages using the LLM.
+ * If no LLM key is configured, returns an info-level message and skips.
+ */
+async function checkContradictions(
+  diskSlugs: string[],
+): Promise<LintIssue[]> {
+  if (!hasLLMKey()) {
+    return [
+      {
+        type: "contradiction",
+        slug: "",
+        message:
+          "Contradiction detection skipped — no LLM API key configured",
+        severity: "info",
+      },
+    ];
+  }
+
+  // Read all page contents
+  const pages: { slug: string; content: string }[] = [];
+  for (const slug of diskSlugs) {
+    const page = await readWikiPage(slug);
+    if (page) {
+      pages.push({ slug: page.slug, content: page.content });
+    }
+  }
+
+  // Build clusters of related pages
+  const clusters = buildClusters(pages);
+  if (clusters.length === 0) {
+    return [];
+  }
+
+  // For each cluster, call the LLM
+  const issues: LintIssue[] = [];
+  const pageMap = new Map(pages.map((p) => [p.slug, p.content]));
+
+  for (const cluster of clusters) {
+    // Build the user message with all pages in this cluster
+    const pagesText = cluster
+      .map((slug) => {
+        const content = pageMap.get(slug) ?? "";
+        return `--- Page: ${slug} ---\n${content}`;
+      })
+      .join("\n\n");
+
+    try {
+      const response = await callLLM(CONTRADICTION_SYSTEM_PROMPT, pagesText);
+      const contradictions = parseContradictionResponse(response);
+
+      for (const c of contradictions) {
+        const affectedSlug = c.pages[0] ?? cluster[0];
+        issues.push({
+          type: "contradiction",
+          slug: affectedSlug,
+          message: `Contradiction between ${c.pages.join(", ")}: ${c.description}`,
+          severity: "warning",
+        });
+      }
+    } catch {
+      // LLM call failed — don't crash the lint, just skip this cluster
+    }
+  }
+
+  return issues;
+}
+
+/**
  * Build a human-readable summary of the lint results.
  */
 function buildSummary(issues: LintIssue[]): string {
@@ -163,6 +353,8 @@ function buildSummary(issues: LintIssue[]): string {
   return `Found ${issues.length} issue${issues.length !== 1 ? "s" : ""}: ${parts.join(", ")}.`;
 }
 
+export { extractCrossRefSlugs, buildClusters, parseContradictionResponse, checkContradictions };
+
 /**
  * Run all lint checks against the wiki and return the results.
  */
@@ -175,7 +367,7 @@ export async function lint(): Promise<LintResult> {
   const indexSlugs = new Set(indexEntries.map((e) => e.slug));
   const diskSlugSet = new Set(diskSlugs);
 
-  // Run all checks
+  // Run all checks (structural checks in parallel, then contradiction check)
   const [orphans, stale, empty, crossRefs] = await Promise.all([
     checkOrphanPages(diskSlugs, indexSlugs),
     checkStaleIndex(indexSlugs, diskSlugSet),
@@ -183,7 +375,10 @@ export async function lint(): Promise<LintResult> {
     checkMissingCrossRefs(diskSlugs),
   ]);
 
-  const issues = [...orphans, ...stale, ...empty, ...crossRefs];
+  // Contradiction detection requires LLM calls, run after structural checks
+  const contradictions = await checkContradictions(diskSlugs);
+
+  const issues = [...orphans, ...stale, ...empty, ...crossRefs, ...contradictions];
 
   return {
     issues,

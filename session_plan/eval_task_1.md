@@ -1,0 +1,2 @@
+Verdict: PASS
+Reason: Dependencies (`@mozilla/readability`, `linkedom`) correctly added to package.json and lockfile; `extractWithReadability()` properly implements Readability+linkedom extraction with null fallback; `fetchUrlContent()` tries Readability first then falls back to `stripHtml()`; comprehensive new tests cover the Readability path, fallback path, and title preference; all 140 tests pass.

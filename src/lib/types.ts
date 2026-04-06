@@ -28,7 +28,7 @@ export interface QueryResult {
 
 /** A single issue found by the lint operation. */
 export interface LintIssue {
-  type: "orphan-page" | "stale-index" | "missing-crossref" | "empty-page";
+  type: "orphan-page" | "stale-index" | "missing-crossref" | "empty-page" | "contradiction";
   slug: string;
   message: string;
   severity: "error" | "warning" | "info";
