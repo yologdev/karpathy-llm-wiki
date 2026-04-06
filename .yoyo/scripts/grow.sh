@@ -64,9 +64,9 @@ run_agent() {
     local log_file="$3"
 
     local exit_code=0
-    ${TIMEOUT_CMD:+$TIMEOUT_CMD "$timeout_val"} claude \
+    ${TIMEOUT_CMD:+$TIMEOUT_CMD "$timeout_val"} yoyo \
         --model "$MODEL" \
-        --print \
+        --skills .yoyo/skills \
         < "$prompt_file" 2>&1 | tee "$log_file" || exit_code=$?
 
     return "$exit_code"

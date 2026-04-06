@@ -42,8 +42,8 @@ jobs:
         with:
           version: 9
 
-      - name: Install Claude Code
-        run: npm install -g @anthropic-ai/claude-code
+      - name: Install yoyo
+        run: curl -fsSL https://raw.githubusercontent.com/yologdev/yoyo/main/install.sh | bash
 
       - name: Configure git
         run: |
