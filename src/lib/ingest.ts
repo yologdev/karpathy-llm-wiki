@@ -346,6 +346,12 @@ export async function ingest(
 ): Promise<IngestResult> {
   const slug = slugify(title);
 
+  if (slug === "") {
+    throw new Error(
+      "Cannot ingest: title produces an empty slug",
+    );
+  }
+
   // 1. Save raw source
   const rawPath = await saveRawSource(slug, content);
 

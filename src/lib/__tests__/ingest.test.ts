@@ -59,6 +59,30 @@ describe("slugify", () => {
 });
 
 // ---------------------------------------------------------------------------
+// ingest — empty slug guard
+// ---------------------------------------------------------------------------
+
+describe("ingest — empty slug guard", () => {
+  it('rejects empty title (slug would be "")', async () => {
+    await expect(ingest("", "some content")).rejects.toThrow(
+      /empty slug/,
+    );
+  });
+
+  it("rejects title that produces empty slug after stripping special chars", async () => {
+    await expect(ingest("!!!", "some content")).rejects.toThrow(
+      /empty slug/,
+    );
+  });
+
+  it("rejects whitespace-only title", async () => {
+    await expect(ingest("   ", "some content")).rejects.toThrow(
+      /empty slug/,
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
 // extractSummary
 // ---------------------------------------------------------------------------
 

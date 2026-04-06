@@ -10,6 +10,7 @@ import {
   saveRawSource,
   appendToLog,
   ensureDirectories,
+  validateSlug,
 } from "../wiki";
 import type { IndexEntry } from "../types";
 
@@ -128,5 +129,117 @@ describe("appendToLog", () => {
     expect(lines).toHaveLength(2);
     expect(lines[0]).toMatch(/^\[.+\] first entry$/);
     expect(lines[1]).toMatch(/^\[.+\] second entry$/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// validateSlug
+// ---------------------------------------------------------------------------
+
+describe("validateSlug", () => {
+  it("accepts valid slugs", () => {
+    expect(() => validateSlug("machine-learning")).not.toThrow();
+    expect(() => validateSlug("ai-2024")).not.toThrow();
+    expect(() => validateSlug("a")).not.toThrow();
+    expect(() => validateSlug("2024")).not.toThrow();
+    expect(() => validateSlug("x1")).not.toThrow();
+  });
+
+  it("rejects empty string", () => {
+    expect(() => validateSlug("")).toThrow(/non-empty/);
+  });
+
+  it("rejects whitespace-only string", () => {
+    expect(() => validateSlug("   ")).toThrow(/non-empty/);
+  });
+
+  it("rejects path traversal with ../", () => {
+    expect(() => validateSlug("../")).toThrow(/path/);
+  });
+
+  it("rejects ../../etc/passwd", () => {
+    expect(() => validateSlug("../../etc/passwd")).toThrow();
+  });
+
+  it("rejects slugs with forward slash", () => {
+    expect(() => validateSlug("foo/bar")).toThrow(/path separators/);
+  });
+
+  it("rejects slugs with backslash", () => {
+    expect(() => validateSlug("foo\\bar")).toThrow(/path separators/);
+  });
+
+  it("rejects strings with null bytes", () => {
+    expect(() => validateSlug("foo\0bar")).toThrow(/null bytes/);
+  });
+
+  it("rejects uppercase characters", () => {
+    expect(() => validateSlug("Hello")).toThrow(/safe pattern/);
+  });
+
+  it("rejects slugs starting with hyphen", () => {
+    expect(() => validateSlug("-foo")).toThrow(/safe pattern/);
+  });
+
+  it("rejects slugs ending with hyphen", () => {
+    expect(() => validateSlug("foo-")).toThrow(/safe pattern/);
+  });
+
+  it("rejects slugs with special characters", () => {
+    expect(() => validateSlug("foo@bar")).toThrow(/safe pattern/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Path traversal protection in read/write/save
+// ---------------------------------------------------------------------------
+
+describe("readWikiPage — path traversal protection", () => {
+  it("returns null for path-traversal slug", async () => {
+    await ensureDirectories();
+    const result = await readWikiPage("../../etc/passwd");
+    expect(result).toBeNull();
+  });
+
+  it("returns null for empty slug", async () => {
+    await ensureDirectories();
+    const result = await readWikiPage("");
+    expect(result).toBeNull();
+  });
+
+  it("returns null for slug with slashes", async () => {
+    await ensureDirectories();
+    const result = await readWikiPage("foo/bar");
+    expect(result).toBeNull();
+  });
+});
+
+describe("writeWikiPage — path traversal protection", () => {
+  it("throws for path-traversal slug", async () => {
+    await expect(
+      writeWikiPage("../../etc/passwd", "malicious content"),
+    ).rejects.toThrow();
+  });
+
+  it("throws for empty slug", async () => {
+    await expect(writeWikiPage("", "content")).rejects.toThrow(/non-empty/);
+  });
+
+  it("throws for slug with slashes", async () => {
+    await expect(
+      writeWikiPage("foo/bar", "content"),
+    ).rejects.toThrow(/path separators/);
+  });
+});
+
+describe("saveRawSource — path traversal protection", () => {
+  it("throws for path-traversal id", async () => {
+    await expect(
+      saveRawSource("../../etc/passwd", "malicious content"),
+    ).rejects.toThrow();
+  });
+
+  it("throws for empty id", async () => {
+    await expect(saveRawSource("", "content")).rejects.toThrow(/non-empty/);
   });
 });

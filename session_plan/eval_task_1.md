@@ -1,0 +1,2 @@
+Verdict: PASS
+Reason: All task requirements implemented correctly — API route validates inputs and returns `{ slug, success }`, UI shows Save to Wiki button with inline title form (pre-filled with question), loading/success/error states, link to new wiki page, and `saveAnswerToWiki` correctly writes the page, updates the index, and handles edge cases (duplicate heading, re-save, empty slug). Build and tests pass.
