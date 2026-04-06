@@ -47,6 +47,13 @@ echo "Repo: $REPO | Model: $MODEL"
 echo "Plan timeout: ${TIMEOUT}s (assess: $((TIMEOUT/2))s + plan: $((TIMEOUT/2))s) | Impl timeout: 1200s/task"
 echo ""
 
+# ── Preflight: check yoyo binary ──
+if ! command -v yoyo &>/dev/null; then
+    echo "ERROR: yoyo binary not found on PATH."
+    echo "Install it: curl -fsSL https://raw.githubusercontent.com/yologdev/yoyo/main/install.sh | bash"
+    exit 1
+fi
+
 # ── Timeout command (cross-platform) ──
 TIMEOUT_CMD="timeout"
 if ! command -v timeout &>/dev/null; then
@@ -814,6 +821,13 @@ $LATEST_ENTRY"
 APEOF
         echo "  Journal synced."
     fi
+fi
+
+# ── Final status ──
+SESSION_END_SHA=$(git rev-parse HEAD)
+if [ "$SESSION_END_SHA" = "$SESSION_START_SHA" ]; then
+    echo ""
+    echo "WARNING: Growth session produced no commits."
 fi
 
 echo ""
