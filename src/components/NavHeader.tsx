@@ -11,8 +11,22 @@ const navLinks = [
   { href: "/lint", label: "Lint" },
 ];
 
+function getActiveHref(pathname: string): string | null {
+  // Find the nav link with the longest matching prefix.
+  // This ensures /wiki/graph matches "Graph" (longer) over "Browse" (/wiki).
+  let best: string | null = null;
+  for (const { href } of navLinks) {
+    const matches = pathname === href || pathname.startsWith(href + "/");
+    if (matches && (best === null || href.length > best.length)) {
+      best = href;
+    }
+  }
+  return best;
+}
+
 export function NavHeader() {
   const pathname = usePathname();
+  const activeHref = getActiveHref(pathname);
 
   return (
     <header className="sticky top-0 z-50 h-14 bg-gray-900 border-b border-gray-800">
@@ -26,8 +40,7 @@ export function NavHeader() {
 
         <ul className="flex items-center gap-1 sm:gap-2">
           {navLinks.map(({ href, label }) => {
-            const isActive =
-              pathname === href || pathname.startsWith(href + "/");
+            const isActive = href === activeHref;
 
             return (
               <li key={href}>
