@@ -129,9 +129,12 @@ pnpm install
 Create `.env.local` with your LLM API key:
 
 ```bash
-# Pick your provider — Anthropic, OpenAI, Google, etc.
-ANTHROPIC_API_KEY=sk-ant-...
-# or: OPENAI_API_KEY=sk-...
+# Pick ONE provider — set the API key for whichever you want to use:
+ANTHROPIC_API_KEY=sk-ant-...     # Anthropic Claude (default)
+# OPENAI_API_KEY=sk-...          # OpenAI GPT
+
+# Optional: override the default model
+# LLM_MODEL=claude-sonnet-4-20250514
 ```
 
 ```bash
