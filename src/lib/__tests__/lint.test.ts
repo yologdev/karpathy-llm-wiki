@@ -182,4 +182,102 @@ describe("lint", () => {
     expect(result.issues).toHaveLength(0);
     expect(result.summary).toContain("clean");
   });
+
+  it("should NOT flag cross-refs when short title appears inside other words", async () => {
+    // "AI" appears inside "maintain" and "certain" but not as a standalone word
+    await writeWikiPage(
+      "overview",
+      "# Overview\n\nWe need to maintain certain standards across all projects in our domain.",
+    );
+    await writeWikiPage(
+      "ai",
+      "# AI\n\nArtificial intelligence is a broad field covering many topics and subtopics.",
+    );
+    const entries: IndexEntry[] = [
+      { slug: "overview", title: "Overview", summary: "Overview page" },
+      { slug: "ai", title: "AI", summary: "AI page" },
+    ];
+    await updateIndex(entries);
+
+    const result = await lint();
+    const crossRefIssues = result.issues.filter(
+      (i) => i.type === "missing-crossref" && i.message.includes('"AI"'),
+    );
+
+    // "AI" should NOT match inside "maintain" or "certain"
+    expect(crossRefIssues).toHaveLength(0);
+  });
+
+  it("should flag cross-refs when a multi-word title appears as a phrase", async () => {
+    await writeWikiPage(
+      "intro",
+      "# Intro\n\nThis article covers the basics of neural network architectures in depth.",
+    );
+    await writeWikiPage(
+      "neural-network",
+      "# Neural Network\n\nA neural network is a computational model inspired by biological neurons.",
+    );
+    const entries: IndexEntry[] = [
+      { slug: "intro", title: "Intro", summary: "Intro page" },
+      { slug: "neural-network", title: "Neural Network", summary: "NN page" },
+    ];
+    await updateIndex(entries);
+
+    const result = await lint();
+    const crossRefIssues = result.issues.filter(
+      (i) => i.type === "missing-crossref" && i.message.includes("Neural Network"),
+    );
+
+    expect(crossRefIssues).toHaveLength(1);
+    expect(crossRefIssues[0].slug).toBe("intro");
+  });
+
+  it("should NOT flag cross-refs when short title appears as substring of another word", async () => {
+    // "go" appears inside "algorithm" but not as a standalone word
+    await writeWikiPage(
+      "search",
+      "# Search\n\nThe algorithm performs a depth-first traversal across the entire graph structure.",
+    );
+    await writeWikiPage(
+      "go-lang",
+      "# Go\n\nGo is a programming language designed at Google for systems programming.",
+    );
+    const entries: IndexEntry[] = [
+      { slug: "search", title: "Search", summary: "Search page" },
+      { slug: "go-lang", title: "Go", summary: "Go page" },
+    ];
+    await updateIndex(entries);
+
+    const result = await lint();
+    const crossRefIssues = result.issues.filter(
+      (i) => i.type === "missing-crossref" && i.message.includes('"Go"'),
+    );
+
+    // "Go" should NOT match inside "algorithm" — and it's under 3 chars so also filtered
+    expect(crossRefIssues).toHaveLength(0);
+  });
+
+  it("should NOT flag cross-refs for 'map' inside 'bitmap'", async () => {
+    await writeWikiPage(
+      "graphics",
+      "# Graphics\n\nBitmap images are composed of a grid of pixels and are resolution dependent.",
+    );
+    await writeWikiPage(
+      "map",
+      "# Map\n\nA map is a data structure that stores key-value pairs for efficient lookups.",
+    );
+    const entries: IndexEntry[] = [
+      { slug: "graphics", title: "Graphics", summary: "Graphics page" },
+      { slug: "map", title: "Map", summary: "Map page" },
+    ];
+    await updateIndex(entries);
+
+    const result = await lint();
+    const crossRefIssues = result.issues.filter(
+      (i) => i.type === "missing-crossref" && i.message.includes('"Map"'),
+    );
+
+    // "map" should NOT match inside "bitmap" thanks to word-boundary matching
+    expect(crossRefIssues).toHaveLength(0);
+  });
 });

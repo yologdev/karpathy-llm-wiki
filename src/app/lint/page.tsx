@@ -2,13 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-
-interface LintIssue {
-  type: "orphan-page" | "stale-index" | "missing-crossref" | "empty-page";
-  slug: string;
-  message: string;
-  severity: "error" | "warning" | "info";
-}
+import type { LintIssue } from "@/lib/types";
 
 interface LintResponse {
   issues: LintIssue[];

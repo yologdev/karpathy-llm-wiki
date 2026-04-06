@@ -125,7 +125,10 @@ async function checkMissingCrossRefs(
       const contentLower = current.content.toLowerCase();
 
       // Only check titles with 3+ characters to avoid false positives
-      if (titleLower.length >= 3 && contentLower.includes(titleLower)) {
+      // Use word-boundary regex to prevent matching inside other words
+      const escaped = titleLower.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      const re = new RegExp(`\\b${escaped}\\b`);
+      if (titleLower.length >= 3 && re.test(contentLower)) {
         issues.push({
           type: "missing-crossref",
           slug: current.slug,
