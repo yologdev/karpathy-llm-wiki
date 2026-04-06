@@ -1,0 +1,8 @@
+node_modules/
+.next/
+.env
+.env.local
+raw/
+wiki/
+SESSION_PLAN.md
+ISSUE_RESPONSE.md
