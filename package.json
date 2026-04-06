@@ -10,8 +10,10 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.82.0",
+    "@ai-sdk/anthropic": "^3.0.66",
+    "@ai-sdk/openai": "^3.0.50",
     "@tailwindcss/typography": "^0.5.19",
+    "ai": "^6.0.146",
     "next": "15.5.14",
     "react": "19.1.0",
     "react-dom": "19.1.0",

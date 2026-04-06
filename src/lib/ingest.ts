@@ -5,7 +5,7 @@ import {
   updateIndex,
   appendToLog,
 } from "./wiki";
-import { callLLM } from "./llm";
+import { callLLM, hasLLMKey } from "./llm";
 import type { IngestResult } from "./types";
 
 // ---------------------------------------------------------------------------
@@ -65,7 +65,7 @@ export async function ingest(
 
   // 2. Generate wiki page content
   let wikiContent: string;
-  if (process.env.ANTHROPIC_API_KEY) {
+  if (hasLLMKey()) {
     wikiContent = await callLLM(SYSTEM_PROMPT, content);
   } else {
     wikiContent = generateFallbackPage(title, content);

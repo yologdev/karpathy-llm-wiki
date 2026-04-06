@@ -1,4 +1,4 @@
-import { callLLM } from "./llm";
+import { callLLM, hasLLMKey } from "./llm";
 import { listWikiPages, readWikiPage } from "./wiki";
 import type { QueryResult } from "./types";
 
@@ -82,10 +82,10 @@ export async function query(question: string): Promise<QueryResult> {
   }
 
   // No API key — return a helpful fallback
-  if (!process.env.ANTHROPIC_API_KEY) {
+  if (!hasLLMKey()) {
     const pageList = slugs.map((s) => `- ${s}`).join("\n");
     return {
-      answer: `**No API key configured.** Set the \`ANTHROPIC_API_KEY\` environment variable to enable querying.\n\nYour wiki currently contains these pages:\n${pageList}`,
+      answer: `**No API key configured.** Set an API key (\`ANTHROPIC_API_KEY\`, \`OPENAI_API_KEY\`, etc.) to enable querying.\n\nYour wiki currently contains these pages:\n${pageList}`,
       sources: [],
     };
   }

@@ -1,36 +1,68 @@
-import Anthropic from "@anthropic-ai/sdk";
+import { generateText } from "ai";
+import { createAnthropic } from "@ai-sdk/anthropic";
+import { createOpenAI } from "@ai-sdk/openai";
 
-const MODEL = "claude-sonnet-4-20250514";
+// ---------------------------------------------------------------------------
+// Provider detection
+// ---------------------------------------------------------------------------
 
 /**
- * Call the Anthropic Claude API and return the assistant's text response.
+ * Returns true if at least one supported LLM provider API key is configured.
+ */
+export function hasLLMKey(): boolean {
+  return !!(process.env.ANTHROPIC_API_KEY || process.env.OPENAI_API_KEY);
+}
+
+/**
+ * Build the appropriate Vercel AI SDK model instance based on available env
+ * vars.  Priority: Anthropic → OpenAI.
  *
- * Requires `ANTHROPIC_API_KEY` to be set in the environment.
+ * The model name can be overridden with the `LLM_MODEL` env var.
+ */
+function getModel() {
+  const modelOverride = process.env.LLM_MODEL;
+
+  if (process.env.ANTHROPIC_API_KEY) {
+    const anthropic = createAnthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+    return anthropic(modelOverride ?? "claude-sonnet-4-20250514");
+  }
+
+  if (process.env.OPENAI_API_KEY) {
+    const openai = createOpenAI({ apiKey: process.env.OPENAI_API_KEY });
+    return openai(modelOverride ?? "gpt-4o");
+  }
+
+  throw new Error(
+    "No LLM API key found. Set ANTHROPIC_API_KEY or OPENAI_API_KEY in your environment.",
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Public API
+// ---------------------------------------------------------------------------
+
+/**
+ * Call the configured LLM provider and return the assistant's text response.
+ *
+ * Requires at least one supported API key (ANTHROPIC_API_KEY, OPENAI_API_KEY)
+ * to be set in the environment.
  */
 export async function callLLM(
   systemPrompt: string,
   userMessage: string,
 ): Promise<string> {
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) {
-    throw new Error("ANTHROPIC_API_KEY environment variable is required");
-  }
+  const model = getModel();
 
-  const client = new Anthropic({ apiKey });
-
-  const response = await client.messages.create({
-    model: MODEL,
-    max_tokens: 4096,
+  const { text } = await generateText({
+    model,
     system: systemPrompt,
     messages: [{ role: "user", content: userMessage }],
+    maxOutputTokens: 4096,
   });
 
-  // Extract text from content blocks
-  const textBlocks = response.content.filter(
-    (block) => block.type === "text",
-  );
-  if (textBlocks.length === 0) {
-    throw new Error("LLM response contained no text blocks");
+  if (!text) {
+    throw new Error("LLM response contained no text");
   }
-  return textBlocks.map((b) => b.text).join("");
+
+  return text;
 }
