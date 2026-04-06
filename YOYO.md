@@ -39,7 +39,7 @@ Start simple, iterate:
 - **Runtime**: Node.js with pnpm
 - **Framework**: Next.js 15 (App Router) + TypeScript
 - **Styling**: Tailwind CSS
-- **LLM**: Anthropic Claude API via `@anthropic-ai/sdk`
+- **LLM**: Multi-provider via Vercel AI SDK (`ai` package) — supports Anthropic, OpenAI, Google, Ollama, etc. Users pick their provider and API key at deploy time via environment variables
 - **Testing**: vitest
 - **Storage**: Local filesystem (markdown files in `raw/` and `wiki/`)
 - **Search**: Start with index.md scanning, add vector search later

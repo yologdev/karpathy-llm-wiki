@@ -118,6 +118,26 @@ karpathy-llm-wiki/
 
 Everything under `src/` gets created by the agent. That's the whole point.
 
+## Run It Locally
+
+```bash
+git clone https://github.com/yologdev/karpathy-llm-wiki.git
+cd karpathy-llm-wiki
+pnpm install
+```
+
+Create `.env.local` with your LLM API key:
+
+```bash
+# Pick your provider — Anthropic, OpenAI, Google, etc.
+ANTHROPIC_API_KEY=sk-ant-...
+# or: OPENAI_API_KEY=sk-...
+```
+
+```bash
+pnpm dev        # http://localhost:3000
+```
+
 ## Try It
 
 **Watch:** Star the repo and follow the commits. Each one is the agent's work.
