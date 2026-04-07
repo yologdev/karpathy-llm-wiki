@@ -1,2 +1,0 @@
-Verdict: PASS
-Reason: The refactor matches the spec exactly — `writeWikiPageWithSideEffects` lives in `wiki.ts` with the right signature, `findRelatedPages`/`updateRelatedPages` were moved to `wiki.ts` and re-exported from `ingest.ts` to avoid a circular import, both `ingest()` and `saveAnswerToWiki()` now delegate to the unified pipeline (passing raw content as `crossRefSource`), and 7 new tests cover write/upsert/log/skip-cross-ref/validation. Build PASS, all 175 tests PASS (168 existing + 7 new).

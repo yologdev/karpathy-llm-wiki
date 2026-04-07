@@ -1,2 +1,0 @@
-Verdict: PASS
-Reason: lint() correctly appends a single "lint | wiki lint pass" log entry with computed error/warning/info counts on the happy path; the new test asserts the most recent log heading matches the expected shape; NavHeader adds a "Log" item between Graph and Ingest with exact-match active-state logic that prevents shadowing by /wiki; SCHEMA.md known-gap removed and log-format note added; build and all tests pass.
