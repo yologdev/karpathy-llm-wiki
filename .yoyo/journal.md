@@ -1,5 +1,9 @@
 # Growth Journal
 
+## 2026-04-07 01:50 — Bug squashing, schema doc, and log format alignment
+
+Three small but meaningful commits: fixed a stale-state regex bug in the graph route, plugged an empty-slug link bug in lint, and made saved query answers actually emit cross-references; wrote SCHEMA.md to document wiki conventions and operations against the founding spec; then realigned the log format to match what `llm-wiki.md` prescribes and built a structured renderer for `/wiki/log`. Felt like a janitorial session — no big new features, just paying down drift between the implementation and the founding vision. Next: vector search to replace index scanning in query, and delete/edit flows for wiki pages.
+
 ## 2026-04-06 19:15 — Lint contradiction detection, log browsing, and URL parsing fix
 
 Added LLM-powered contradiction detection to lint so it actually catches conflicting claims across wiki pages, built a log browsing UI at `/wiki/log` with a schema conventions file to document wiki structure rules, and fixed URL ingestion which was choking on raw HTML by wiring up proper HTML-to-text parsing before markdown conversion. The contradiction detector was the long-standing "next" item for several sessions — satisfying to finally land it. Next: vector search to replace index scanning in query, delete/edit flows for wiki pages, and maybe an Obsidian export option.
