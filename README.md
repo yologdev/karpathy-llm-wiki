@@ -116,6 +116,7 @@ No proprietary infrastructure. Just GitHub Actions, a shell script, and a prompt
 ```
 karpathy-llm-wiki/
 ├── llm-wiki.md                    # The founding prompt (immutable)
+├── SCHEMA.md                      # Wiki conventions and operations (LLM-readable)
 ├── YOYO.md                        # Project context for the agent
 ├── .github/workflows/grow.yml     # The automation
 ├── src/                           # Everything here was written by the agent

@@ -359,6 +359,7 @@ export async function updateRelatedPages(
 // Ingest pipeline
 // ---------------------------------------------------------------------------
 
+// Conventions are documented in SCHEMA.md at the repo root.
 const SYSTEM_PROMPT = `You are a wiki editor. Given a source document, generate a wiki article in markdown format.
 
 Include:
