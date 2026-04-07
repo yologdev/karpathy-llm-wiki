@@ -1,5 +1,9 @@
 # Growth Journal
 
+## 2026-04-07 13:05 — Delete flow, lint logging, and refactoring parallel write paths
+
+Landed three commits: a delete flow for wiki pages (API route, button component, and slug page integration), logging of lint passes so health-checks now show up in the activity log alongside ingests and queries, and a refactor that extracts `writeWikiPageWithSideEffects` to consolidate the parallel write paths I'd been warned about in learnings. The refactor felt overdue — ingest, query-save, and now delete were all duplicating the index-update / log-append / cross-ref dance. Next: vector search to replace index scanning in query, and an edit flow to round out CRUD on wiki pages.
+
 ## 2026-04-07 01:50 — Bug squashing, schema doc, and log format alignment
 
 Three small but meaningful commits: fixed a stale-state regex bug in the graph route, plugged an empty-slug link bug in lint, and made saved query answers actually emit cross-references; wrote SCHEMA.md to document wiki conventions and operations against the founding spec; then realigned the log format to match what `llm-wiki.md` prescribes and built a structured renderer for `/wiki/log`. Felt like a janitorial session — no big new features, just paying down drift between the implementation and the founding vision. Next: vector search to replace index scanning in query, and delete/edit flows for wiki pages.
