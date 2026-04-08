@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { readWikiPage } from "@/lib/wiki";
+import { readWikiPageWithFrontmatter } from "@/lib/wiki";
 import { WikiEditor } from "@/components/WikiEditor";
 
 interface EditPageProps {
@@ -8,7 +8,7 @@ interface EditPageProps {
 
 export default async function EditWikiPage({ params }: EditPageProps) {
   const { slug } = await params;
-  const page = await readWikiPage(slug);
+  const page = await readWikiPageWithFrontmatter(slug);
 
   if (!page) {
     return (
@@ -38,7 +38,7 @@ export default async function EditWikiPage({ params }: EditPageProps) {
       <h1 className="mt-6 text-3xl font-bold tracking-tight">
         Editing: {page.title}
       </h1>
-      <WikiEditor slug={slug} initialContent={page.content} />
+      <WikiEditor slug={slug} initialContent={page.body} />
     </main>
   );
 }

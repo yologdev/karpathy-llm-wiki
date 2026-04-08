@@ -896,6 +896,97 @@ describe("serializeFrontmatter", () => {
     const reparsed = parseFrontmatter(serialized);
     expect(reparsed.data).toEqual(original);
   });
+
+  it("empty data round-trips to empty data and preserves body verbatim", () => {
+    // `serializeFrontmatter({}, body)` returns the body unchanged (no YAML
+    // block at all), and parsing that again yields empty frontmatter. This
+    // is the invariant the edit PUT handler relies on so that legacy pages
+    // with no YAML don't suddenly sprout an empty YAML block on first edit.
+    const body = "# Plain\n\nNo metadata here.\n";
+    const serialized = serializeFrontmatter({}, body);
+    expect(serialized).toBe(body);
+    const reparsed = parseFrontmatter(serialized);
+    expect(reparsed.data).toEqual({});
+    expect(reparsed.body).toBe(body);
+  });
+
+  it("preserves extra/unknown keys through a round-trip", () => {
+    // The edit flow merges frontmatter objects with `{ ...existing }` before
+    // bumping `updated`, so any unknown keys an earlier writer put on the
+    // page must survive serialize → parse round-trips untouched.
+    const original = {
+      created: "2026-04-01",
+      updated: "2026-04-08",
+      source_count: "3",
+      tags: ["alpha", "beta"],
+      custom_key: "some value",
+    };
+    const serialized = serializeFrontmatter(original, "# Body\n");
+    const reparsed = parseFrontmatter(serialized);
+    expect(reparsed.data).toEqual(original);
+    expect(reparsed.body).toBe("# Body\n");
+  });
+
+  it("simulates the edit merge: bumping `updated` preserves every other key", () => {
+    // This mirrors what the PUT /api/wiki/[slug] handler does: read the
+    // existing frontmatter, spread it, bump `updated`, re-serialize with
+    // the new body. The `created` date, `source_count`, `tags`, and any
+    // extras must survive that operation.
+    const existing = {
+      created: "2026-01-15",
+      updated: "2026-02-01",
+      source_count: "2",
+      tags: ["original", "tag"],
+    };
+    const originalBody = "# Old Title\n\nOld body.\n";
+    const existingSerialized = serializeFrontmatter(existing, originalBody);
+
+    // Parse it back as the route would via readWikiPageWithFrontmatter.
+    const parsed = parseFrontmatter(existingSerialized);
+
+    // Merge: spread existing, bump updated.
+    const today = "2026-04-08";
+    const merged: Record<string, string | string[]> = { ...parsed.data };
+    if (typeof merged.created !== "string" || merged.created === "") {
+      merged.created = today;
+    }
+    merged.updated = today;
+
+    const newBody = "# New Title\n\nNew body text.\n";
+    const reserialized = serializeFrontmatter(merged, newBody);
+    const reparsed = parseFrontmatter(reserialized);
+
+    // `created` is preserved, `updated` is bumped, everything else survives.
+    expect(reparsed.data.created).toBe("2026-01-15");
+    expect(reparsed.data.updated).toBe("2026-04-08");
+    expect(reparsed.data.source_count).toBe("2");
+    expect(reparsed.data.tags).toEqual(["original", "tag"]);
+    expect(reparsed.body).toBe(newBody);
+  });
+
+  it("simulates the edit merge on a legacy page with no frontmatter", () => {
+    // Legacy pages (written before frontmatter existed) parse to `{}`. The
+    // edit handler must backfill `created` as well as set `updated`, and
+    // the resulting document must round-trip cleanly.
+    const legacyBody = "# Legacy\n\nNo YAML block at all.\n";
+    const parsed = parseFrontmatter(legacyBody);
+    expect(parsed.data).toEqual({});
+
+    const today = "2026-04-08";
+    const merged: Record<string, string | string[]> = { ...parsed.data };
+    if (typeof merged.created !== "string" || merged.created === "") {
+      merged.created = today;
+    }
+    merged.updated = today;
+
+    const newBody = "# Legacy (edited)\n\nNow with an edit.\n";
+    const reserialized = serializeFrontmatter(merged, newBody);
+    const reparsed = parseFrontmatter(reserialized);
+
+    expect(reparsed.data.created).toBe(today);
+    expect(reparsed.data.updated).toBe(today);
+    expect(reparsed.body).toBe(newBody);
+  });
 });
 
 describe("readWikiPageWithFrontmatter", () => {
