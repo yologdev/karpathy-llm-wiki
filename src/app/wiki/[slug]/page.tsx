@@ -39,7 +39,15 @@ export default async function WikiPageView({ params }: WikiPageProps) {
       <article className="mt-6">
         <MarkdownRenderer content={page.content} />
       </article>
-      <DeletePageButton slug={slug} />
+      <div className="mt-12 border-t border-foreground/10 pt-6 flex items-center gap-3">
+        <Link
+          href={`/wiki/${slug}/edit`}
+          className="rounded-md border border-foreground/20 px-4 py-2 text-sm font-medium text-foreground hover:bg-foreground/5 transition-colors"
+        >
+          Edit page
+        </Link>
+        <DeletePageButton slug={slug} />
+      </div>
     </main>
   );
 }

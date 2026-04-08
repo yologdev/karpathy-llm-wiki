@@ -38,7 +38,7 @@ export function DeletePageButton({ slug }: DeletePageButtonProps) {
   }
 
   return (
-    <div className="mt-12 border-t border-foreground/10 pt-6">
+    <>
       <button
         type="button"
         onClick={handleDelete}
@@ -50,6 +50,6 @@ export function DeletePageButton({ slug }: DeletePageButtonProps) {
       {error && (
         <p className="mt-3 text-sm text-red-600">Error: {error}</p>
       )}
-    </div>
+    </>
   );
 }

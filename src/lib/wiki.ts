@@ -172,6 +172,7 @@ export type LogOperation =
   | "query"
   | "lint"
   | "save"
+  | "edit"
   | "delete"
   | "other";
 
@@ -180,6 +181,7 @@ const ALLOWED_LOG_OPERATIONS: readonly LogOperation[] = [
   "query",
   "lint",
   "save",
+  "edit",
   "delete",
   "other",
 ];
