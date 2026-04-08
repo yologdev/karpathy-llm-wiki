@@ -188,6 +188,18 @@ describe("appendToLog", () => {
     await expect(appendToLog("ingest", "")).rejects.toThrow(/non-empty/);
     await expect(appendToLog("ingest", "   ")).rejects.toThrow(/non-empty/);
   });
+
+  it("accepts the 'delete' op kind", async () => {
+    await appendToLog("delete", "Removed Page", "deleted · stripped backlinks from 0 page(s)");
+    const content = await fs.readFile(
+      path.join(tmpDir, "wiki", "log.md"),
+      "utf-8",
+    );
+    expect(content).toMatch(
+      /^## \[\d{4}-\d{2}-\d{2}\] delete \| Removed Page$/m,
+    );
+    expect(content).toContain(" delete | ");
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -622,7 +634,7 @@ describe("deleteWikiPage", () => {
     expect(linker!.content).not.toMatch(/,\s*$/m);
   });
 
-  it("appends a log entry with op 'other' and 'deleted' in the details", async () => {
+  it("appends a log entry with op 'delete' and 'deleted' in the details", async () => {
     await writeWikiPage("zeta", "# Zeta Page\n\nDoomed.");
     await updateIndex([
       { slug: "zeta", title: "Zeta Page", summary: "doomed" },
@@ -632,7 +644,7 @@ describe("deleteWikiPage", () => {
 
     const log = await readLog();
     expect(log).not.toBeNull();
-    expect(log).toMatch(/^## \[\d{4}-\d{2}-\d{2}\] other \| Zeta Page$/m);
+    expect(log).toMatch(/^## \[\d{4}-\d{2}-\d{2}\] delete \| Zeta Page$/m);
     expect(log).toContain("deleted");
     expect(log).toContain("stripped backlinks from 0 page(s)");
   });

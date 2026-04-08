@@ -167,13 +167,20 @@ export async function saveRawSource(
 // ---------------------------------------------------------------------------
 
 /** Allowed operation kinds for log entries. */
-export type LogOperation = "ingest" | "query" | "lint" | "save" | "other";
+export type LogOperation =
+  | "ingest"
+  | "query"
+  | "lint"
+  | "save"
+  | "delete"
+  | "other";
 
 const ALLOWED_LOG_OPERATIONS: readonly LogOperation[] = [
   "ingest",
   "query",
   "lint",
   "save",
+  "delete",
   "other",
 ];
 
@@ -405,7 +412,7 @@ const escapeRegex = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
  * 4. Remove the entry from `index.md`.
  * 5. Strip backlinks from any other wiki page that links to this slug,
  *    cleaning up empty / leading-comma `**See also:**` artefacts.
- * 6. Append an `"other"` log entry recording the deletion.
+ * 6. Append a `"delete"` log entry recording the deletion.
  *
  * Hard delete only — no trash, no undo. Raw source files in `raw/` are
  * intentionally NOT touched (the raw layer is immutable per the founding
@@ -468,10 +475,9 @@ export async function deleteWikiPage(
     }
   }
 
-  // 4. Log the deletion. We don't have a "delete" enum value (out of scope
-  // for this MVP) so use "other" with a descriptive details string.
+  // 4. Log the deletion.
   await appendToLog(
-    "other",
+    "delete",
     title ?? slug,
     `deleted · stripped backlinks from ${strippedBacklinksFrom.length} page(s)`,
   );
