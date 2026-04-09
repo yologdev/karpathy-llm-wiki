@@ -5,6 +5,7 @@ import {
   writeWikiPageWithSideEffects,
 } from "./wiki";
 import { slugify, loadPageConventions } from "./ingest";
+import { extractCitedSlugs } from "./citations";
 import type { IndexEntry, QueryResult } from "./types";
 
 // ---------------------------------------------------------------------------
@@ -88,69 +89,45 @@ export interface CorpusStats {
 }
 
 /**
- * Build BM25 corpus statistics for a list of index entries. Pure + exported
- * so tests can exercise it directly. Each "document" is the tokenized
- * concatenation of an entry's title and summary.
- */
-export function buildCorpusStats(entries: IndexEntry[]): CorpusStats {
-  const docTokens = new Map<string, string[]>();
-  const df = new Map<string, number>();
-  let totalLen = 0;
-
-  for (const entry of entries) {
-    const tokens = tokenize(`${entry.title} ${entry.summary}`);
-    docTokens.set(entry.slug, tokens);
-    totalLen += tokens.length;
-
-    // Count each unique term once for df
-    const seen = new Set<string>();
-    for (const tok of tokens) {
-      if (!seen.has(tok)) {
-        seen.add(tok);
-        df.set(tok, (df.get(tok) ?? 0) + 1);
-      }
-    }
-  }
-
-  const N = entries.length;
-  const avgdl = N > 0 ? totalLen / N : 0;
-
-  return { N, avgdl, df, docTokens };
-}
-
-/**
- * Build BM25 corpus statistics using full page body content.
+ * Build BM25 corpus statistics for a list of index entries.
  *
- * For each entry, reads the wiki page via `readWikiPage()` and tokenizes
- * the full content (title + body) rather than just title + summary. Falls
- * back to title + summary if a page can't be read.
+ * When `fullBody` is true (the default), reads each wiki page from disk and
+ * tokenizes title + full body content, falling back to title + summary if a
+ * page can't be read.  When false, uses only the index-level title + summary
+ * (cheaper, used in tests).
  *
- * Performance note: this reads every page from disk, which is fine at the
- * current scale (tens to low hundreds of pages). This is explicitly a
- * bridge until vector search arrives.
+ * Performance note: the full-body path reads every page from disk, which is
+ * fine at the current scale (tens to low hundreds of pages). This is
+ * explicitly a bridge until vector search arrives.
  */
-export async function buildFullBodyCorpusStats(
+export async function buildCorpusStats(
   entries: IndexEntry[],
+  opts?: { fullBody?: boolean },
 ): Promise<CorpusStats> {
+  const useFullBody = opts?.fullBody ?? true;
   const docTokens = new Map<string, string[]>();
   const df = new Map<string, number>();
   let totalLen = 0;
 
   for (const entry of entries) {
     let text = `${entry.title} ${entry.summary}`;
-    try {
-      const page = await readWikiPage(entry.slug);
-      if (page) {
-        text = `${entry.title} ${page.content}`;
+
+    if (useFullBody) {
+      try {
+        const page = await readWikiPage(entry.slug);
+        if (page) {
+          text = `${entry.title} ${page.content}`;
+        }
+      } catch {
+        // Fall back to title + summary if page can't be read
       }
-    } catch {
-      // Fall back to title + summary if page can't be read
     }
 
     const tokens = tokenize(text);
     docTokens.set(entry.slug, tokens);
     totalLen += tokens.length;
 
+    // Count each unique term once for df
     const seen = new Set<string>();
     for (const tok of tokens) {
       if (!seen.has(tok)) {
@@ -246,9 +223,7 @@ export async function searchIndex(
 
   // Phase 1 — BM25 sparse scoring
   const questionTokens = tokenize(question);
-  const corpusStats = fullBody
-    ? await buildFullBodyCorpusStats(entries)
-    : buildCorpusStats(entries);
+  const corpusStats = await buildCorpusStats(entries, { fullBody });
 
   const scored = entries
     .map((entry) => ({
@@ -332,27 +307,9 @@ export async function buildContext(slugs?: string[]): Promise<{
 // Citation extraction
 // ---------------------------------------------------------------------------
 
-/**
- * Extract cited wiki slugs from the LLM response.
- * Scans for markdown link patterns like `](slug.md)`.
- */
-export function extractCitedSlugs(
-  answer: string,
-  availableSlugs: string[],
-): string[] {
-  const pattern = /\]\(([^)]+?)\.md\)/g;
-  const cited = new Set<string>();
-  let match: RegExpExecArray | null;
-
-  while ((match = pattern.exec(answer)) !== null) {
-    const slug = match[1];
-    if (availableSlugs.includes(slug)) {
-      cited.add(slug);
-    }
-  }
-
-  return Array.from(cited);
-}
+// Re-export extractCitedSlugs from the shared citations module so existing
+// consumers that import from "./query" continue to work.
+export { extractCitedSlugs } from "./citations";
 
 // ---------------------------------------------------------------------------
 // System prompt builder

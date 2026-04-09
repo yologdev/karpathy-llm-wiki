@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import fs from "fs/promises";
 import os from "os";
 import path from "path";
-import { searchIndex, buildContext, query, saveAnswerToWiki, buildCorpusStats, buildFullBodyCorpusStats, bm25Score, extractCitedSlugs } from "../query";
+import { searchIndex, buildContext, query, saveAnswerToWiki, buildCorpusStats, bm25Score, extractCitedSlugs } from "../query";
 import { writeWikiPage, updateIndex, ensureDirectories, readWikiPage, listWikiPages } from "../wiki";
 import type { IndexEntry } from "../types";
 
@@ -56,33 +56,33 @@ afterEach(async () => {
 // BM25 scoring tests
 // ---------------------------------------------------------------------------
 describe("BM25 scoring", () => {
-  it("buildCorpusStats handles an empty corpus safely", () => {
-    const stats = buildCorpusStats([]);
+  it("buildCorpusStats handles an empty corpus safely", async () => {
+    const stats = await buildCorpusStats([], { fullBody: false });
     expect(stats.N).toBe(0);
     expect(stats.avgdl).toBe(0);
     expect(stats.df.size).toBe(0);
     expect(stats.docTokens.size).toBe(0);
   });
 
-  it("bm25Score returns 0 for empty query tokens (no NaN)", () => {
+  it("bm25Score returns 0 for empty query tokens (no NaN)", async () => {
     const entries: IndexEntry[] = [
       { slug: "alpha", title: "Alpha", summary: "Some content here" },
       { slug: "beta", title: "Beta", summary: "Other content here" },
     ];
-    const stats = buildCorpusStats(entries);
+    const stats = await buildCorpusStats(entries, { fullBody: false });
     const score = bm25Score(entries[0], [], stats);
     expect(score).toBe(0);
     expect(Number.isNaN(score)).toBe(false);
   });
 
-  it("bm25Score returns 0 against an empty corpus without throwing", () => {
+  it("bm25Score returns 0 against an empty corpus without throwing", async () => {
     const entry: IndexEntry = { slug: "x", title: "X", summary: "X" };
-    const stats = buildCorpusStats([]);
+    const stats = await buildCorpusStats([], { fullBody: false });
     const score = bm25Score(entry, ["anything"], stats);
     expect(score).toBe(0);
   });
 
-  it("ranks rarer terms higher via IDF (beats substring counting)", () => {
+  it("ranks rarer terms higher via IDF (beats substring counting)", async () => {
     // "learning" appears in every doc, "backpropagation" appears in exactly one.
     // Old substring scorer would give both docs with both terms a score of 2.
     // BM25 should strongly favor the doc that actually contains the rare term.
@@ -109,7 +109,7 @@ describe("BM25 scoring", () => {
       },
     ];
 
-    const stats = buildCorpusStats(entries);
+    const stats = await buildCorpusStats(entries, { fullBody: false });
     const q = tokenizeForTest("backpropagation learning");
 
     const scores = entries.map((e) => ({
@@ -123,7 +123,7 @@ describe("BM25 scoring", () => {
     expect(scores[0].score).toBeGreaterThan(scores[1].score);
   });
 
-  it("produces deterministic ranking on a handcrafted corpus", () => {
+  it("produces deterministic ranking on a handcrafted corpus", async () => {
     const entries: IndexEntry[] = [
       {
         slug: "pasta-recipes",
@@ -152,7 +152,7 @@ describe("BM25 scoring", () => {
       },
     ];
 
-    const stats = buildCorpusStats(entries);
+    const stats = await buildCorpusStats(entries, { fullBody: false });
     const q = tokenizeForTest("transformer neural architecture");
 
     const scores = entries
@@ -172,7 +172,7 @@ describe("BM25 scoring", () => {
     expect(python!.score).toBe(0);
   });
 
-  it("penalizes longer documents via length normalization", () => {
+  it("penalizes longer documents via length normalization", async () => {
     // Both docs contain "widget" exactly once. The shorter one should score
     // higher because BM25's length normalization penalizes the longer doc.
     const entries: IndexEntry[] = [
@@ -189,7 +189,7 @@ describe("BM25 scoring", () => {
       },
     ];
 
-    const stats = buildCorpusStats(entries);
+    const stats = await buildCorpusStats(entries, { fullBody: false });
     const q = tokenizeForTest("widget");
 
     const shortScore = bm25Score(entries[0], q, stats);
@@ -220,12 +220,12 @@ describe("Full-body BM25 indexing", () => {
     ];
 
     // Title+summary only stats should NOT find "entanglement"
-    const titleOnlyStats = buildCorpusStats(entries);
+    const titleOnlyStats = await buildCorpusStats(entries, { fullBody: false });
     const titleTokens = titleOnlyStats.docTokens.get("physics-concepts")!;
     expect(titleTokens).not.toContain("entanglement");
 
     // Full-body stats SHOULD find "entanglement"
-    const fullStats = await buildFullBodyCorpusStats(entries);
+    const fullStats = await buildCorpusStats(entries);
     const fullTokens = fullStats.docTokens.get("physics-concepts")!;
     expect(fullTokens).toContain("entanglement");
     expect(fullTokens).toContain("quantum");
@@ -266,7 +266,7 @@ describe("Full-body BM25 indexing", () => {
     ];
 
     // Should not throw, and should still find terms from title+summary
-    const stats = await buildFullBodyCorpusStats(entries);
+    const stats = await buildCorpusStats(entries);
     expect(stats.N).toBe(1);
     const tokens = stats.docTokens.get("nonexistent-page")!;
     expect(tokens).toContain("neural");
