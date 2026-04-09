@@ -23,6 +23,14 @@ export interface IndexEntry {
 /** Result returned after ingesting a source document. */
 export interface IngestResult {
   rawPath: string;
+  /** Slug of the newly created/updated primary page. */
+  primarySlug: string;
+  /** Slugs of pre-existing pages that had cross-refs updated. Empty if none. */
+  relatedUpdated: string[];
+  /**
+   * Flat list of every page this ingest touched: `[primarySlug, ...relatedUpdated]`.
+   * Kept for backwards compatibility with the existing API consumers.
+   */
   wikiPages: string[];
   indexUpdated: boolean;
 }

@@ -362,6 +362,8 @@ export async function ingest(
 
   return {
     rawPath,
+    primarySlug: slug,
+    relatedUpdated: updatedSlugs,
     wikiPages: [slug, ...updatedSlugs],
     indexUpdated: true,
   };

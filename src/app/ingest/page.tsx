@@ -7,6 +7,8 @@ type Mode = "text" | "url";
 
 interface IngestResponse {
   rawPath: string;
+  primarySlug: string;
+  relatedUpdated: string[];
   wikiPages: string[];
   indexUpdated: boolean;
   error?: string;
@@ -72,7 +74,8 @@ export default function IngestPage() {
   }
 
   if (result) {
-    const slug = result.wikiPages[0];
+    const slug = result.primarySlug;
+    const relatedUpdated = result.relatedUpdated ?? [];
     return (
       <main className="mx-auto max-w-3xl px-6 py-12">
         <div className="rounded-lg border border-foreground/10 p-8 text-center">
@@ -84,6 +87,26 @@ export default function IngestPage() {
             >
               View &ldquo;{slug}&rdquo; →
             </Link>
+            {relatedUpdated.length > 0 && (
+              <div className="mt-4 w-full max-w-md text-left">
+                <p className="text-sm text-foreground/70">
+                  Also updated {relatedUpdated.length} related page
+                  {relatedUpdated.length === 1 ? "" : "s"}:
+                </p>
+                <ul className="mt-2 flex list-none flex-col gap-1 pl-0">
+                  {relatedUpdated.map((relatedSlug) => (
+                    <li key={relatedSlug}>
+                      <Link
+                        href={`/wiki/${relatedSlug}`}
+                        className="text-sm text-foreground/70 hover:text-foreground hover:underline transition-colors"
+                      >
+                        {relatedSlug}
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
             <div className="flex gap-4 mt-2">
               <Link
                 href="/wiki"

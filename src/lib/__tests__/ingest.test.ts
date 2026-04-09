@@ -955,6 +955,8 @@ describe("cross-referencing", () => {
       expect(result.wikiPages).toContain("deep-learning");
       expect(result.wikiPages).toContain("ai");
       expect(result.wikiPages.length).toBe(2);
+      expect(result.primarySlug).toBe("deep-learning");
+      expect(result.relatedUpdated).toEqual(["ai"]);
 
       // Verify the AI page was updated with a cross-reference
       const aiPage = await readWikiPage("ai");
@@ -965,6 +967,8 @@ describe("cross-referencing", () => {
       mockedHasLLMKey.mockReturnValue(false);
       const result = await ingest("Solo Page", "Content for a solo page. More text.");
       expect(result.wikiPages).toEqual(["solo-page"]);
+      expect(result.primarySlug).toBe("solo-page");
+      expect(result.relatedUpdated).toEqual([]);
     });
   });
 
