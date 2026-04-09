@@ -4,6 +4,26 @@ import { useState, useCallback } from "react";
 import Link from "next/link";
 import { MarkdownRenderer } from "@/components/MarkdownRenderer";
 
+/**
+ * Extract wiki slugs actually cited in the answer text.
+ * Mirrors the server-side extractCitedSlugs logic: scans for `](slug.md)` patterns.
+ */
+function extractCitedSources(
+  answer: string,
+  availableSlugs: string[],
+): string[] {
+  const pattern = /\]\(([^)]+?)\.md\)/g;
+  const cited = new Set<string>();
+  let match: RegExpExecArray | null;
+  while ((match = pattern.exec(answer)) !== null) {
+    const slug = match[1];
+    if (availableSlugs.includes(slug)) {
+      cited.add(slug);
+    }
+  }
+  return Array.from(cited);
+}
+
 interface QueryResponse {
   answer: string;
   sources: string[];
@@ -95,8 +115,12 @@ export default function QueryPage() {
           setResult({ answer, sources });
         }
 
-        // Final update with complete answer
-        setResult({ answer, sources });
+        // Refine sources to only those actually cited in the answer
+        const citedSources = extractCitedSources(answer, sources);
+        // Fall back to loaded sources if no citations detected (defensive)
+        const finalSources =
+          citedSources.length > 0 ? citedSources : sources;
+        setResult({ answer, sources: finalSources });
         setStreaming(false);
       } catch {
         setError("Failed to connect to the server");

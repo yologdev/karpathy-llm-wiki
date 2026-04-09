@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import fs from "fs/promises";
 import os from "os";
 import path from "path";
-import { searchIndex, buildContext, query, saveAnswerToWiki, buildCorpusStats, buildFullBodyCorpusStats, bm25Score } from "../query";
+import { searchIndex, buildContext, query, saveAnswerToWiki, buildCorpusStats, buildFullBodyCorpusStats, bm25Score, extractCitedSlugs } from "../query";
 import { writeWikiPage, updateIndex, ensureDirectories, readWikiPage, listWikiPages } from "../wiki";
 import type { IndexEntry } from "../types";
 
@@ -752,5 +752,63 @@ describe("loadPageConventions — cross-module import", () => {
     const result = await loadPageConventions("/nonexistent/path/SCHEMA.md");
     expect(typeof result).toBe("string");
     expect(result).toBe("");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// extractCitedSlugs — citation extraction from answer text
+// ---------------------------------------------------------------------------
+describe("extractCitedSlugs", () => {
+  it("extracts slugs from markdown link patterns", () => {
+    const answer = "See [Alpha](alpha.md) and [Beta](beta.md) for details.";
+    const result = extractCitedSlugs(answer, ["alpha", "beta", "gamma"]);
+    expect(result).toEqual(["alpha", "beta"]);
+  });
+
+  it("ignores slugs not in available list", () => {
+    const answer = "See [Unknown](unknown.md) for details.";
+    const result = extractCitedSlugs(answer, ["alpha", "beta"]);
+    expect(result).toEqual([]);
+  });
+
+  it("deduplicates repeated citations", () => {
+    const answer =
+      "See [A](alpha.md) and also [A again](alpha.md) for details.";
+    const result = extractCitedSlugs(answer, ["alpha"]);
+    expect(result).toEqual(["alpha"]);
+  });
+
+  it("returns empty array when no citations found", () => {
+    const answer = "No links here, just plain text.";
+    const result = extractCitedSlugs(answer, ["alpha", "beta"]);
+    expect(result).toEqual([]);
+  });
+
+  it("returns empty array for empty answer text", () => {
+    const result = extractCitedSlugs("", ["alpha"]);
+    expect(result).toEqual([]);
+  });
+
+  it("returns empty array for empty available slugs", () => {
+    const answer = "See [Alpha](alpha.md).";
+    const result = extractCitedSlugs(answer, []);
+    expect(result).toEqual([]);
+  });
+
+  it("handles slugs with hyphens and numbers", () => {
+    const answer =
+      "See [Topic](my-topic-2.md) and [Other](page-123.md) for details.";
+    const result = extractCitedSlugs(answer, [
+      "my-topic-2",
+      "page-123",
+      "unused",
+    ]);
+    expect(result).toEqual(["my-topic-2", "page-123"]);
+  });
+
+  it("does not match non-md links", () => {
+    const answer = "See [Link](https://example.com) and [File](doc.pdf).";
+    const result = extractCitedSlugs(answer, ["https://example", "doc"]);
+    expect(result).toEqual([]);
   });
 });

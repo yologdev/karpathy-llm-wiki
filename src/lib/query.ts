@@ -336,7 +336,7 @@ export async function buildContext(slugs?: string[]): Promise<{
  * Extract cited wiki slugs from the LLM response.
  * Scans for markdown link patterns like `](slug.md)`.
  */
-function extractCitedSlugs(
+export function extractCitedSlugs(
   answer: string,
   availableSlugs: string[],
 ): string[] {
