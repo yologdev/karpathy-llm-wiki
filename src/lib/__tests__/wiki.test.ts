@@ -17,6 +17,8 @@ import {
   parseFrontmatter,
   serializeFrontmatter,
   readWikiPageWithFrontmatter,
+  listRawSources,
+  readRawSource,
 } from "../wiki";
 import type { IndexEntry } from "../types";
 
@@ -1159,5 +1161,127 @@ describe("readWikiPageWithFrontmatter", () => {
     await ensureDirectories();
     const page = await readWikiPageWithFrontmatter("does-not-exist");
     expect(page).toBeNull();
+  });
+});
+
+describe("listRawSources", () => {
+  it("returns [] when the raw dir does not exist yet", async () => {
+    // Intentionally DO NOT call ensureDirectories — raw/ must be absent.
+    const sources = await listRawSources();
+    expect(sources).toEqual([]);
+  });
+
+  it("returns [] when the raw dir exists but is empty", async () => {
+    await ensureDirectories();
+    const sources = await listRawSources();
+    expect(sources).toEqual([]);
+  });
+
+  it("lists every file, sorted by modified time (newest first)", async () => {
+    await ensureDirectories();
+    const rawDir = path.join(tmpDir, "raw");
+
+    // Write three files, then explicitly set mtimes so the sort is
+    // deterministic regardless of how quickly the writes complete.
+    await fs.writeFile(path.join(rawDir, "oldest.md"), "oldest body");
+    await fs.writeFile(path.join(rawDir, "middle.txt"), "middle body");
+    await fs.writeFile(path.join(rawDir, "newest.html"), "<p>newest</p>");
+
+    const t = (iso: string) => new Date(iso);
+    await fs.utimes(
+      path.join(rawDir, "oldest.md"),
+      t("2026-01-01T00:00:00Z"),
+      t("2026-01-01T00:00:00Z"),
+    );
+    await fs.utimes(
+      path.join(rawDir, "middle.txt"),
+      t("2026-02-01T00:00:00Z"),
+      t("2026-02-01T00:00:00Z"),
+    );
+    await fs.utimes(
+      path.join(rawDir, "newest.html"),
+      t("2026-03-01T00:00:00Z"),
+      t("2026-03-01T00:00:00Z"),
+    );
+
+    const sources = await listRawSources();
+    expect(sources.map((s) => s.filename)).toEqual([
+      "newest.html",
+      "middle.txt",
+      "oldest.md",
+    ]);
+
+    // Slug strips only the final extension.
+    expect(sources[0].slug).toBe("newest");
+    expect(sources[1].slug).toBe("middle");
+    expect(sources[2].slug).toBe("oldest");
+
+    // Size + modified metadata are populated.
+    expect(sources[0].size).toBeGreaterThan(0);
+    expect(sources[0].modified).toBe("2026-03-01T00:00:00.000Z");
+  });
+
+  it("skips dotfiles and subdirectories", async () => {
+    await ensureDirectories();
+    const rawDir = path.join(tmpDir, "raw");
+
+    await fs.writeFile(path.join(rawDir, "visible.md"), "hi");
+    await fs.writeFile(path.join(rawDir, ".hidden"), "secret");
+    await fs.writeFile(path.join(rawDir, ".DS_Store"), "junk");
+    await fs.mkdir(path.join(rawDir, "nested"));
+    await fs.writeFile(path.join(rawDir, "nested", "inside.md"), "inside");
+
+    const sources = await listRawSources();
+    expect(sources).toHaveLength(1);
+    expect(sources[0].filename).toBe("visible.md");
+  });
+});
+
+describe("readRawSource", () => {
+  it("returns the content of an existing raw source", async () => {
+    await ensureDirectories();
+    await fs.writeFile(
+      path.join(tmpDir, "raw", "sample.md"),
+      "# Sample\n\nHello raw world.\n",
+    );
+
+    const source = await readRawSource("sample");
+    expect(source.slug).toBe("sample");
+    expect(source.filename).toBe("sample.md");
+    expect(source.content).toBe("# Sample\n\nHello raw world.\n");
+    expect(source.size).toBeGreaterThan(0);
+    expect(typeof source.modified).toBe("string");
+  });
+
+  it("finds a file even when its extension isn't .md", async () => {
+    await ensureDirectories();
+    await fs.writeFile(
+      path.join(tmpDir, "raw", "plain.txt"),
+      "just plain text",
+    );
+
+    const source = await readRawSource("plain");
+    expect(source.filename).toBe("plain.txt");
+    expect(source.content).toBe("just plain text");
+  });
+
+  it("throws when the slug does not correspond to any file", async () => {
+    await ensureDirectories();
+    await expect(readRawSource("nonexistent")).rejects.toThrow(
+      /raw source not found/,
+    );
+  });
+
+  it("rejects path-traversal slugs via the validateSlug guard", async () => {
+    await ensureDirectories();
+    // Plant a decoy outside raw/ that a traversal attempt would target.
+    await fs.writeFile(path.join(tmpDir, "outside.md"), "secret");
+
+    await expect(readRawSource("../outside")).rejects.toThrow(/Invalid slug/);
+    await expect(readRawSource("../../etc/passwd")).rejects.toThrow(
+      /Invalid slug/,
+    );
+    await expect(readRawSource("foo/bar")).rejects.toThrow(/Invalid slug/);
+    await expect(readRawSource("foo\\bar")).rejects.toThrow(/Invalid slug/);
   });
 });

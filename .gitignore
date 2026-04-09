@@ -2,7 +2,7 @@ node_modules/
 .next/
 .env
 .env.local
-raw/
+/raw/
 /wiki/
 SESSION_PLAN.md
 ISSUE_RESPONSE.md

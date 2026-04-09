@@ -7,6 +7,7 @@ const navLinks = [
   { href: "/wiki", label: "Browse" },
   { href: "/wiki/graph", label: "Graph" },
   { href: "/wiki/log", label: "Log" },
+  { href: "/raw", label: "Raw" },
   { href: "/ingest", label: "Ingest" },
   { href: "/query", label: "Query" },
   { href: "/lint", label: "Lint" },
