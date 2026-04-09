@@ -16,6 +16,7 @@
     "@mozilla/readability": "^0.6.0",
     "@tailwindcss/typography": "^0.5.19",
     "ai": "^6.0.146",
+    "archiver": "^7.0.1",
     "linkedom": "^0.18.12",
     "next": "15.5.14",
     "ollama-ai-provider-v2": "^3.5.0",
@@ -27,6 +28,7 @@
   "devDependencies": {
     "@eslint/eslintrc": "^3",
     "@tailwindcss/postcss": "^4",
+    "@types/archiver": "^7.0.0",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",

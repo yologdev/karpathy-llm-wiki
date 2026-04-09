@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import type { IndexEntry } from "@/lib/types";
 
 /**
@@ -41,6 +41,32 @@ interface WikiIndexClientProps {
 export function WikiIndexClient({ pages }: WikiIndexClientProps) {
   const [searchTerm, setSearchTerm] = useState("");
   const [activeTags, setActiveTags] = useState<string[]>([]);
+  const [exporting, setExporting] = useState(false);
+
+  const handleExport = useCallback(async () => {
+    setExporting(true);
+    try {
+      const res = await fetch("/api/wiki/export");
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({ error: "Export failed" }));
+        throw new Error(body.error ?? "Export failed");
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "llm-wiki-vault.zip";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error("Export failed:", err);
+      alert(err instanceof Error ? err.message : "Export failed");
+    } finally {
+      setExporting(false);
+    }
+  }, []);
 
   // Union of all tags across all pages, de-duped and sorted alphabetically.
   const allTags = useMemo(() => {
@@ -92,16 +118,25 @@ export function WikiIndexClient({ pages }: WikiIndexClientProps) {
 
   return (
     <div>
-      {/* Search input */}
-      <div className="mb-4">
+      {/* Search input + Export button */}
+      <div className="mb-4 flex items-center gap-2">
         <input
           type="search"
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
           placeholder="Search pages…"
           aria-label="Search wiki pages"
-          className="w-full rounded-lg border border-foreground/10 bg-transparent px-4 py-2 text-sm outline-none focus:border-foreground/30 transition-colors"
+          className="flex-1 rounded-lg border border-foreground/10 bg-transparent px-4 py-2 text-sm outline-none focus:border-foreground/30 transition-colors"
         />
+        <button
+          type="button"
+          onClick={handleExport}
+          disabled={exporting}
+          className="shrink-0 inline-flex items-center gap-1.5 rounded-lg border border-foreground/10 px-3 py-2 text-sm text-foreground/70 hover:border-foreground/30 hover:text-foreground disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          title="Download wiki as Obsidian vault (.zip)"
+        >
+          {exporting ? "Exporting…" : "↓ Export"}
+        </button>
       </div>
 
       {/* Tag filter row */}

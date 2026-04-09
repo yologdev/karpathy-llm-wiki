@@ -1,0 +1,2 @@
+Verdict: PASS
+Reason: All task requirements correctly implemented — embed on write/delete with fire-and-forget error handling in wiki.ts, hybrid BM25+vector search with RRF fusion (k=60) in query.ts, graceful fallback to pure BM25 when vector search is unavailable, comprehensive tests covering RRF math, fusion integration, and error handling. SCHEMA.md updated. All 321 tests pass. Note: embeddings.ts imports getWikiDir from wiki.ts (circular dep from Task 1), but it causes no runtime issues.
