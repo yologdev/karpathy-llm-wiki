@@ -119,6 +119,54 @@ export function buildCorpusStats(entries: IndexEntry[]): CorpusStats {
 }
 
 /**
+ * Build BM25 corpus statistics using full page body content.
+ *
+ * For each entry, reads the wiki page via `readWikiPage()` and tokenizes
+ * the full content (title + body) rather than just title + summary. Falls
+ * back to title + summary if a page can't be read.
+ *
+ * Performance note: this reads every page from disk, which is fine at the
+ * current scale (tens to low hundreds of pages). This is explicitly a
+ * bridge until vector search arrives.
+ */
+export async function buildFullBodyCorpusStats(
+  entries: IndexEntry[],
+): Promise<CorpusStats> {
+  const docTokens = new Map<string, string[]>();
+  const df = new Map<string, number>();
+  let totalLen = 0;
+
+  for (const entry of entries) {
+    let text = `${entry.title} ${entry.summary}`;
+    try {
+      const page = await readWikiPage(entry.slug);
+      if (page) {
+        text = `${entry.title} ${page.content}`;
+      }
+    } catch {
+      // Fall back to title + summary if page can't be read
+    }
+
+    const tokens = tokenize(text);
+    docTokens.set(entry.slug, tokens);
+    totalLen += tokens.length;
+
+    const seen = new Set<string>();
+    for (const tok of tokens) {
+      if (!seen.has(tok)) {
+        seen.add(tok);
+        df.set(tok, (df.get(tok) ?? 0) + 1);
+      }
+    }
+  }
+
+  const N = entries.length;
+  const avgdl = N > 0 ? totalLen / N : 0;
+
+  return { N, avgdl, df, docTokens };
+}
+
+/**
  * Okapi BM25 score for a single index entry against a tokenized query.
  *
  * Implements the standard formulation from Robertson, Walker, Jones,
@@ -180,10 +228,17 @@ export function bm25Score(
  * Phase 2: LLM-based selection (if available, overrides BM25 ranking)
  *
  * Falls back to BM25 results if LLM call fails.
+ *
+ * When `fullBody` is true (the default), BM25 indexes the full page content
+ * from disk rather than just the title + summary from the index. This gives
+ * much better recall for queries whose keywords only appear in the body.
+ * Performance note: reads all pages from disk — fine for tens to low hundreds
+ * of pages; vector search will replace this path later.
  */
 export async function searchIndex(
   question: string,
   entries: IndexEntry[],
+  fullBody: boolean = true,
 ): Promise<string[]> {
   if (entries.length === 0) {
     return [];
@@ -191,7 +246,9 @@ export async function searchIndex(
 
   // Phase 1 — BM25 sparse scoring
   const questionTokens = tokenize(question);
-  const corpusStats = buildCorpusStats(entries);
+  const corpusStats = fullBody
+    ? await buildFullBodyCorpusStats(entries)
+    : buildCorpusStats(entries);
 
   const scored = entries
     .map((entry) => ({

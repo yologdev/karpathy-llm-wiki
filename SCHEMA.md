@@ -160,14 +160,10 @@ sessions should pick from this list:
   rerank in `searchIndex()`.
 - No human-in-the-loop diff review on ingest — wiki writes happen
   immediately and silently.
-- No streaming LLM responses — all `callLLM()` calls block until the full
-  response is returned.
 - No context window management or token counting — long pages may exceed
   provider limits without warning.
 - No concurrency safety or file locking — simultaneous ingests could corrupt
   shared files like `index.md` or `log.md`.
-- BM25 scoring in `searchIndex()` indexes title and summary only, not full
-  page body content.
 
 ## Co-evolution
 

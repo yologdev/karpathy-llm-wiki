@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import fs from "fs/promises";
 import os from "os";
 import path from "path";
-import { searchIndex, buildContext, query, saveAnswerToWiki, buildCorpusStats, bm25Score } from "../query";
+import { searchIndex, buildContext, query, saveAnswerToWiki, buildCorpusStats, buildFullBodyCorpusStats, bm25Score } from "../query";
 import { writeWikiPage, updateIndex, ensureDirectories, readWikiPage, listWikiPages } from "../wiki";
 import type { IndexEntry } from "../types";
 
@@ -198,6 +198,79 @@ describe("BM25 scoring", () => {
     expect(shortScore).toBeGreaterThan(0);
     expect(longScore).toBeGreaterThan(0);
     expect(shortScore).toBeGreaterThan(longScore);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Full-body BM25 indexing tests
+// ---------------------------------------------------------------------------
+describe("Full-body BM25 indexing", () => {
+  it("finds terms that only appear in page bodies, not in title/summary", async () => {
+    await ensureDirectories();
+
+    // Write a page whose body contains "quantum entanglement" but whose
+    // title/summary do not mention those words at all.
+    await writeWikiPage(
+      "physics-concepts",
+      "# Physics Concepts\n\nBasic physics overview.\n\nQuantum entanglement is a phenomenon where particles become correlated.",
+    );
+
+    const entries: IndexEntry[] = [
+      { slug: "physics-concepts", title: "Physics Concepts", summary: "Basic physics overview" },
+    ];
+
+    // Title+summary only stats should NOT find "entanglement"
+    const titleOnlyStats = buildCorpusStats(entries);
+    const titleTokens = titleOnlyStats.docTokens.get("physics-concepts")!;
+    expect(titleTokens).not.toContain("entanglement");
+
+    // Full-body stats SHOULD find "entanglement"
+    const fullStats = await buildFullBodyCorpusStats(entries);
+    const fullTokens = fullStats.docTokens.get("physics-concepts")!;
+    expect(fullTokens).toContain("entanglement");
+    expect(fullTokens).toContain("quantum");
+  });
+
+  it("searchIndex with fullBody=true finds body-only terms", async () => {
+    await ensureDirectories();
+
+    await writeWikiPage(
+      "attention-page",
+      "# Attention Mechanisms\n\nOverview of attention.\n\nSelf-attention allows tokens to attend to each other in parallel.",
+    );
+    await writeWikiPage(
+      "rnn-page",
+      "# Recurrent Networks\n\nOverview of RNNs.\n\nRecurrent neural networks process sequences step by step.",
+    );
+
+    const entries: IndexEntry[] = [
+      { slug: "attention-page", title: "Attention Mechanisms", summary: "Overview of attention" },
+      { slug: "rnn-page", title: "Recurrent Networks", summary: "Overview of RNNs" },
+    ];
+
+    // "parallel" only appears in the body of attention-page
+    const results = await searchIndex("parallel processing", entries, true);
+    expect(results).toContain("attention-page");
+
+    // With fullBody=false, "parallel" shouldn't match anything in title+summary
+    const titleOnly = await searchIndex("parallel processing", entries, false);
+    expect(titleOnly).not.toContain("attention-page");
+  });
+
+  it("gracefully falls back to title+summary when a page can't be read", async () => {
+    await ensureDirectories();
+
+    // Don't write any actual page file — readWikiPage will return null
+    const entries: IndexEntry[] = [
+      { slug: "nonexistent-page", title: "Neural Networks", summary: "Deep learning neural network guide" },
+    ];
+
+    // Should not throw, and should still find terms from title+summary
+    const stats = await buildFullBodyCorpusStats(entries);
+    expect(stats.N).toBe(1);
+    const tokens = stats.docTokens.get("nonexistent-page")!;
+    expect(tokens).toContain("neural");
+    expect(tokens).toContain("networks");
   });
 });
 
