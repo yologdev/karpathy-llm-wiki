@@ -1,3 +1,5 @@
+import { readFile } from "fs/promises";
+import path from "path";
 import {
   saveRawSource,
   writeWikiPageWithSideEffects,
@@ -268,7 +270,7 @@ export function extractSummary(content: string, maxLen = 200): string {
 // ---------------------------------------------------------------------------
 
 // Conventions are documented in SCHEMA.md at the repo root.
-const SYSTEM_PROMPT = `You are a wiki editor. Given a source document, generate a wiki article in markdown format.
+const INGEST_SYSTEM_PROMPT_BASE = `You are a wiki editor. Given a source document, generate a wiki article in markdown format.
 
 Include:
 - A title as a level-1 heading (# Title)
@@ -277,6 +279,62 @@ Include:
 - Notable entities, concepts, or terms worth remembering (## Concepts)
 
 Output pure markdown and nothing else. Do not wrap in code fences.`;
+
+/**
+ * Read the "Page conventions" section out of SCHEMA.md at repo root so the
+ * ingest prompt can include it verbatim. This makes SCHEMA.md the source of
+ * truth — change the doc, change ingest behavior on the next call.
+ *
+ * Extracts from the `## Page conventions` heading up to (but not including)
+ * the next `## ` heading. Returns empty string if SCHEMA.md is missing or
+ * the section can't be found, so ingest degrades gracefully rather than
+ * crashing on a fresh clone.
+ *
+ * Accepts an optional `schemaPath` override for tests; defaults to
+ * `<cwd>/SCHEMA.md`.
+ */
+export async function loadPageConventions(
+  schemaPath?: string,
+): Promise<string> {
+  try {
+    const resolved = schemaPath ?? path.join(process.cwd(), "SCHEMA.md");
+    const schema = await readFile(resolved, "utf-8");
+    const startIdx = schema.indexOf("## Page conventions");
+    if (startIdx === -1) return "";
+    const afterStart = schema.slice(startIdx);
+    // Find the next top-level section heading after the Page conventions one
+    const nextHeadingMatch = afterStart
+      .slice("## Page conventions".length)
+      .match(/\n## /);
+    const section = nextHeadingMatch
+      ? afterStart.slice(
+          0,
+          "## Page conventions".length + nextHeadingMatch.index!,
+        )
+      : afterStart;
+    return section.trim();
+  } catch {
+    return "";
+  }
+}
+
+/**
+ * Build the ingest system prompt by composing the base prompt with the
+ * "Page conventions" slice of SCHEMA.md loaded at runtime. Read on every
+ * call (no caching) so live edits to SCHEMA.md take effect immediately —
+ * the whole point is to keep prompt and schema co-evolving.
+ */
+export async function buildIngestSystemPrompt(): Promise<string> {
+  const conventions = await loadPageConventions();
+  if (conventions === "") return INGEST_SYSTEM_PROMPT_BASE;
+  return `${INGEST_SYSTEM_PROMPT_BASE}
+
+The wiki you are editing follows these conventions (from SCHEMA.md):
+
+${conventions}
+
+Follow these conventions when generating the page.`;
+}
 
 /**
  * Ingest a source document into the wiki.
@@ -306,7 +364,7 @@ export async function ingest(
   // 2. Generate wiki page content
   let wikiContent: string;
   if (hasLLMKey()) {
-    wikiContent = await callLLM(SYSTEM_PROMPT, content);
+    wikiContent = await callLLM(await buildIngestSystemPrompt(), content);
   } else {
     wikiContent = generateFallbackPage(title, content);
   }

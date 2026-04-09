@@ -14,6 +14,8 @@ import {
   ingestUrl,
   findRelatedPages,
   updateRelatedPages,
+  loadPageConventions,
+  buildIngestSystemPrompt,
 } from "../ingest";
 import { listWikiPages, readWikiPage, writeWikiPage } from "../wiki";
 import type { IndexEntry } from "../types";
@@ -976,5 +978,74 @@ describe("cross-referencing", () => {
   afterEach(() => {
     mockedHasLLMKey.mockReturnValue(false);
     mockedCallLLM.mockReset();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// schema-aware ingest prompt
+// ---------------------------------------------------------------------------
+
+describe("schema-aware ingest prompt", () => {
+  it("loadPageConventions reads the real SCHEMA.md and starts at the right heading", async () => {
+    const conventions = await loadPageConventions();
+    // The slice must start with the section heading itself.
+    expect(conventions.startsWith("## Page conventions")).toBe(true);
+    // And include a recognizable substring from the current SCHEMA.md.
+    // If SCHEMA.md ever stops mentioning kebab-case slugs in this section,
+    // this test failing is the co-evolution alarm — fix the schema or the
+    // ingest path, not the test, to keep them in sync.
+    expect(conventions).toContain("kebab-case slugs");
+  });
+
+  it("loadPageConventions stops at the next ## heading (no bleed into Operations)", async () => {
+    const conventions = await loadPageConventions();
+    // The very next top-level section after "Page conventions" in the
+    // current SCHEMA.md is "## Operations". The slice MUST NOT include it.
+    expect(conventions).not.toContain("## Operations");
+    // And must not include text from later sections either.
+    expect(conventions).not.toContain("Cross-reference policy");
+    expect(conventions).not.toContain("Lint checks");
+  });
+
+  it("loadPageConventions returns empty string for a missing file", async () => {
+    const result = await loadPageConventions(
+      "/nonexistent/path/SCHEMA-does-not-exist.md",
+    );
+    expect(result).toBe("");
+  });
+
+  it("loadPageConventions returns empty string when section is absent", async () => {
+    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "ingest-schema-"));
+    try {
+      const fakeSchema = path.join(tmpDir, "SCHEMA.md");
+      await fs.writeFile(
+        fakeSchema,
+        "# Wiki Schema\n\n## Layers\n\nNothing about page conventions here.\n",
+      );
+      const result = await loadPageConventions(fakeSchema);
+      expect(result).toBe("");
+    } finally {
+      await fs.rm(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it("buildIngestSystemPrompt composes the base prompt with the conventions slice", async () => {
+    const prompt = await buildIngestSystemPrompt();
+    // Base prompt marker — comes from INGEST_SYSTEM_PROMPT_BASE.
+    expect(prompt).toContain("You are a wiki editor");
+    // Conventions marker — comes from SCHEMA.md.
+    expect(prompt).toContain("## Page conventions");
+    expect(prompt).toContain("kebab-case slugs");
+    // The composition glue text proves we went through the full path,
+    // not just the early-return branch.
+    expect(prompt).toContain("conventions (from SCHEMA.md)");
+  });
+
+  it("buildIngestSystemPrompt always contains the base prompt (graceful composition)", async () => {
+    // Whether or not SCHEMA.md is present, the base prompt must survive
+    // intact — graceful degradation rather than a crash on a fresh clone.
+    const prompt = await buildIngestSystemPrompt();
+    expect(prompt).toContain("You are a wiki editor");
+    expect(prompt).toContain("Output pure markdown and nothing else");
   });
 });
