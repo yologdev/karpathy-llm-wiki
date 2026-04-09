@@ -3,9 +3,9 @@
 ## Build Status
 
 - `pnpm install` — clean
-- `pnpm build` — **pass** (Next 15.5.14, all routes prerender, no warnings)
-- `pnpm lint` — **pass** (eslint clean)
-- `pnpm test` — **pass** (231 tests across 6 suites, ~1.4s)
+- `pnpm build` — **pass** (Next 15.5.14, all routes prerender, no warnings) — re-verified 05:53
+- `pnpm lint` — **pass** (eslint clean) — re-verified 05:53
+- `pnpm test` — **pass** (231 tests across 6 suites, ~1.4s) — re-verified 05:53
 
 Everything is green. No regressions to chase before planning new work.
 
@@ -116,7 +116,7 @@ Total: ~7,900 lines of TypeScript/TSX. Test-to-source ratio is healthy (~3,400 t
 
 Cross-referencing `SCHEMA.md`'s "Known gaps" list against the current state and the founding vision, sorted by leverage:
 
-1. **No vector search.** Query is still index.md scan + LLM rerank. The journal says "vector search to replace index scanning" has been listed as the next step in **8 of the last 11 entries** without ever being picked up. It's the persistent undone item — a clear opportunity for a session that wants to break the streak. The founding doc explicitly says index scanning works "at moderate scale (~100 sources, ~hundreds of pages)" and recommends qmd / hybrid BM25+vector for larger wikis.
+1. **No vector search.** Query is still index.md scan + LLM rerank. The journal says "vector search to replace index scanning" has been listed as the "next" step in **9 of the last 13 journal entries** without ever being picked up — the single most persistent undone item in the project's history. Any session that wants to break the streak has a clear target. The founding doc explicitly says index scanning works "at moderate scale (~100 sources, ~hundreds of pages)" and recommends qmd / hybrid BM25+vector for larger wikis. At this point it's worth asking whether the item keeps getting deferred because it's genuinely lower-leverage than the things that got picked up instead, or because it's intimidating.
 
 2. **No image/asset handling on URL ingest.** `fetchUrlContent` runs Readability + linkedom and produces text-only markdown — images are dropped silently. The founding doc has a whole "Download images locally" section. Two paths: (a) preserve image references in markdown so they render via the URL, (b) actually download to `raw/assets/` for offline viewing. Option (a) is small, option (b) is medium.
 
