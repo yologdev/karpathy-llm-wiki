@@ -105,7 +105,7 @@ ordered sequence of steps, a set of file outputs, and a log entry shape.
 ## Cross-reference policy
 
 - A "related" page is determined by entity/keyword overlap. The current
-  detector is `findRelatedPages()` in `src/lib/ingest.ts` — it tokenizes the
+  detector is `findRelatedPages()` in `src/lib/wiki.ts` — it tokenizes the
   new page's content, scores every other page in the index, and returns the
   top matches above a threshold.
 - When a new page is added, the related-page detector finds candidates and
@@ -132,13 +132,20 @@ Current checks performed by `lint()` in `src/lib/lint.ts`:
 
 ## Provider configuration
 
-- The app talks to LLMs through the Vercel AI SDK (`ai` package). Set one of
-  `ANTHROPIC_API_KEY` or `OPENAI_API_KEY` in your environment. If both are
-  set, Anthropic takes precedence.
-- Override the default model with `LLM_MODEL` (e.g.
-  `LLM_MODEL=claude-sonnet-4-20250514`).
-- Without an API key configured, ingest still works in degraded mode: the raw
-  source is saved and a deterministic fallback page is written. Query and
+- The app talks to LLMs through the Vercel AI SDK (`ai` package). Configure
+  one of the following providers via environment variables. If multiple are
+  set, the first match wins in this order:
+  1. **Anthropic** — `ANTHROPIC_API_KEY` (default model: `claude-sonnet-4-20250514`)
+  2. **OpenAI** — `OPENAI_API_KEY` (default model: `gpt-4o`)
+  3. **Google Generative AI** — `GOOGLE_GENERATIVE_AI_API_KEY` (default model:
+     `gemini-2.0-flash`)
+  4. **Ollama** — `OLLAMA_BASE_URL` and/or `OLLAMA_MODEL`. Ollama is typically
+     keyless; presence of either env var signals intent to use a local Ollama
+     server (default model: `llama3.2`)
+- Override the default model for whichever provider wins with `LLM_MODEL`
+  (e.g. `LLM_MODEL=claude-sonnet-4-20250514`).
+- Without any provider configured, ingest still works in degraded mode: the
+  raw source is saved and a deterministic fallback page is written. Query and
   lint LLM features return a "no LLM key configured" notice instead of an
   answer.
 
@@ -147,19 +154,20 @@ Current checks performed by `lint()` in `src/lib/lint.ts`:
 Things this schema does NOT yet codify, in rough priority order. Future
 sessions should pick from this list:
 
-- No YAML frontmatter on wiki pages — no tags, dates, source counts, or
-  Dataview-friendly metadata.
 - No image or asset handling on URL ingest — images in source HTML are
   dropped.
 - No vector search. The only search corpus is `index.md` plus the keyword/LLM
   rerank in `searchIndex()`.
-- No raw-source browsing UI — users can't see the immutable layer through
-  the app.
-- Schema is not yet wired into runtime system prompts. Each operation has its
-  own hardcoded prompt; this file is a parallel doc that has to be kept in
-  sync by hand.
 - No human-in-the-loop diff review on ingest — wiki writes happen
   immediately and silently.
+- No streaming LLM responses — all `callLLM()` calls block until the full
+  response is returned.
+- No context window management or token counting — long pages may exceed
+  provider limits without warning.
+- No concurrency safety or file locking — simultaneous ingests could corrupt
+  shared files like `index.md` or `log.md`.
+- BM25 scoring in `searchIndex()` indexes title and summary only, not full
+  page body content.
 
 ## Co-evolution
 
