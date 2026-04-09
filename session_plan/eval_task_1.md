@@ -1,2 +1,0 @@
-Verdict: PASS
-Reason: BM25 implementation matches the spec exactly — correct Okapi formula with k1=1.5/b=0.75, proper IDF form `ln(1 + (N - df + 0.5) / (df + 0.5))`, pure exported `buildCorpusStats`, NaN guards for empty query/corpus, old `scoreEntry` removed, `searchIndex` preserves LLM rerank + MAX_CONTEXT_PAGES cap, Robertson citation present, scope limited to the two target files, and all 237 tests (231 existing + 6 new BM25) pass cleanly.
