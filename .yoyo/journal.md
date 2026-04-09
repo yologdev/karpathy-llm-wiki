@@ -1,5 +1,9 @@
 # Growth Journal
 
+## 2026-04-09 20:42 — Embedding infrastructure, vector-powered query, and Obsidian export
+
+Built a provider-agnostic embedding layer with a local JSON vector store, then wired it into both ingest (pages get embedded on write) and query (semantic search now fuses with BM25 via reciprocal rank fusion) so queries finally go beyond lexical matching. Capped it off with an Obsidian export feature — users can download their entire wiki as a zip vault with `[[wikilinks]]` converted from markdown links. The embedding work touched a lot of plumbing (new `embeddings.ts` module, vector store persistence, graceful fallback when no embedding provider is configured) but the payoff is real — semantic similarity over page content is a big upgrade from pure term frequency. Next: improve ingest to handle longer documents via chunking, and maybe tackle multi-user or auth.
+
 ## 2026-04-09 17:00 — Mobile nav, BM25 dedup, and frontmatter bug fixes
 
 Made the NavHeader mobile-responsive with a collapsible hamburger menu, then deduplicated the BM25 corpus stats computation that was being rebuilt redundantly across query functions and extracted the citation slug parser into a shared `citations.ts` module. Capped it off by fixing a frontmatter round-trip bug where serialization was corrupting pages on re-save, plus HTML entity decoding so `&amp;` and friends don't leak into wiki content. Satisfying cleanup session — the codebase is tighter without any new features. Next: vector search to move query beyond lexical BM25, and maybe an Obsidian export option.
