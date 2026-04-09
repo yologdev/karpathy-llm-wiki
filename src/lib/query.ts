@@ -4,7 +4,7 @@ import {
   readWikiPage,
   writeWikiPageWithSideEffects,
 } from "./wiki";
-import { slugify } from "./ingest";
+import { slugify, loadPageConventions } from "./ingest";
 import type { IndexEntry, QueryResult } from "./types";
 
 // ---------------------------------------------------------------------------
@@ -357,9 +357,16 @@ export async function query(question: string): Promise<QueryResult> {
       ? `\nThe wiki also contains these other pages (not loaded in full):\n${indexListing}\n`
       : "";
 
-  const systemPrompt = SYSTEM_PROMPT_TEMPLATE
+  let systemPrompt = SYSTEM_PROMPT_TEMPLATE
     .replace("{context}", context)
     .replace("{index_section}", indexSection);
+
+  // Append SCHEMA.md conventions so the query prompt stays in sync with the
+  // wiki's page conventions — same pattern used by ingest.
+  const conventions = await loadPageConventions();
+  if (conventions) {
+    systemPrompt += `\n\nThe wiki you are querying follows these conventions (from SCHEMA.md):\n\n${conventions}`;
+  }
 
   const answer = await callLLM(systemPrompt, question);
 

@@ -593,3 +593,91 @@ describe("saveAnswerToWiki", () => {
     expect(reactLinks || nextLinks).toBe(true);
   });
 });
+
+// ---------------------------------------------------------------------------
+// SCHEMA.md conventions in query prompt
+// ---------------------------------------------------------------------------
+describe("query — SCHEMA.md conventions", () => {
+  it("includes SCHEMA.md conventions in the system prompt when available", async () => {
+    mockedHasLLMKey.mockReturnValue(true);
+    mockedCallLLM.mockResolvedValue("Answer based on wiki pages.");
+
+    const schemaContent = `# Wiki Schema
+
+## Page conventions
+
+Every page must start with a level-1 heading.
+
+## Operations
+`;
+    const origCwd = process.cwd();
+    const schemaPath = path.join(tmpDir, "SCHEMA.md");
+    await fs.writeFile(schemaPath, schemaContent, "utf-8");
+    process.chdir(tmpDir);
+
+    try {
+      await writeWikiPage(
+        "topic-a",
+        "# Topic A\n\nA page about topic A with plenty of content for the test.",
+      );
+      await updateIndex([
+        { slug: "topic-a", title: "Topic A", summary: "About topic A" },
+      ]);
+
+      await query("What is topic A?");
+
+      expect(mockedCallLLM).toHaveBeenCalled();
+      const systemPromptArg = mockedCallLLM.mock.calls[0][0];
+      expect(systemPromptArg).toContain("conventions (from SCHEMA.md)");
+      expect(systemPromptArg).toContain("Every page must start with a level-1 heading");
+    } finally {
+      process.chdir(origCwd);
+    }
+  });
+
+  it("works without SCHEMA.md (no conventions appended)", async () => {
+    mockedHasLLMKey.mockReturnValue(true);
+    mockedCallLLM.mockResolvedValue("Answer based on wiki pages.");
+
+    // tmpDir has no SCHEMA.md; cwd is unchanged so loadPageConventions
+    // reads from the repo root. To guarantee no conventions, chdir to tmpDir.
+    const origCwd = process.cwd();
+    process.chdir(tmpDir);
+
+    try {
+      await writeWikiPage(
+        "topic-b",
+        "# Topic B\n\nA page about topic B with plenty of content for the test.",
+      );
+      await updateIndex([
+        { slug: "topic-b", title: "Topic B", summary: "About topic B" },
+      ]);
+
+      await query("What is topic B?");
+
+      expect(mockedCallLLM).toHaveBeenCalled();
+      const systemPromptArg = mockedCallLLM.mock.calls[0][0];
+      // Should NOT contain SCHEMA conventions since file is missing
+      expect(systemPromptArg).not.toContain("conventions (from SCHEMA.md)");
+    } finally {
+      process.chdir(origCwd);
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// loadPageConventions importability
+// ---------------------------------------------------------------------------
+describe("loadPageConventions — cross-module import", () => {
+  it("is importable from ingest.ts and callable", async () => {
+    // This test validates that loadPageConventions is properly exported
+    // and can be imported from outside ingest.ts
+    const { loadPageConventions } = await import("../ingest");
+    expect(typeof loadPageConventions).toBe("function");
+
+    // Should return a string (empty is fine when SCHEMA.md is missing)
+    const result = await loadPageConventions("/nonexistent/path/SCHEMA.md");
+    expect(typeof result).toBe("string");
+    expect(result).toBe("");
+  });
+});

@@ -583,4 +583,50 @@ describe("checkContradictions", () => {
     expect(issues).toHaveLength(0);
     expect(mockedCallLLM).not.toHaveBeenCalled();
   });
+
+  it("includes SCHEMA.md conventions in contradiction detection prompt", async () => {
+    mockedHasLLMKey.mockReturnValue(true);
+    mockedCallLLM.mockResolvedValue("[]");
+
+    // Write a temporary SCHEMA.md in tmpDir so loadPageConventions picks it up
+    const schemaContent = `# Wiki Schema
+
+## Page conventions
+
+Every page must start with a level-1 heading.
+
+## Operations
+`;
+    // loadPageConventions reads from process.cwd()/SCHEMA.md by default;
+    // we write into tmpDir and temporarily change cwd.
+    const origCwd = process.cwd();
+    const schemaPath = path.join(tmpDir, "SCHEMA.md");
+    await fs.writeFile(schemaPath, schemaContent, "utf-8");
+    process.chdir(tmpDir);
+
+    try {
+      await writeWikiPage(
+        "schema-a",
+        "# Schema A\n\nContent about topic. See [Schema B](schema-b.md).",
+      );
+      await writeWikiPage(
+        "schema-b",
+        "# Schema B\n\nContent about topic. See [Schema A](schema-a.md).",
+      );
+      await updateIndex([
+        { slug: "schema-a", title: "Schema A", summary: "Test" },
+        { slug: "schema-b", title: "Schema B", summary: "Test" },
+      ]);
+
+      await checkContradictions(["schema-a", "schema-b"]);
+
+      // The system prompt passed to callLLM should include SCHEMA.md conventions
+      expect(mockedCallLLM).toHaveBeenCalled();
+      const systemPromptArg = mockedCallLLM.mock.calls[0][0];
+      expect(systemPromptArg).toContain("conventions (from SCHEMA.md)");
+      expect(systemPromptArg).toContain("Every page must start with a level-1 heading");
+    } finally {
+      process.chdir(origCwd);
+    }
+  });
 });

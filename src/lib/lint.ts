@@ -1,6 +1,7 @@
 import fs from "fs/promises";
 import { appendToLog, getWikiDir, listWikiPages, readWikiPage } from "./wiki";
 import { hasLLMKey, callLLM } from "./llm";
+import { loadPageConventions } from "./ingest";
 import type { LintIssue, LintResult } from "./types";
 
 // Files that are part of the wiki infrastructure, not content pages.
@@ -302,6 +303,14 @@ async function checkContradictions(
   const issues: LintIssue[] = [];
   const pageMap = new Map(pages.map((p) => [p.slug, p.content]));
 
+  // Load SCHEMA.md conventions once for all cluster checks so the
+  // contradiction detector is aware of the wiki's structural rules.
+  const conventions = await loadPageConventions();
+  let systemPrompt = CONTRADICTION_SYSTEM_PROMPT;
+  if (conventions) {
+    systemPrompt += `\n\nThe wiki follows these conventions (from SCHEMA.md):\n\n${conventions}`;
+  }
+
   for (const cluster of clusters) {
     // Build the user message with all pages in this cluster
     const pagesText = cluster
@@ -312,7 +321,7 @@ async function checkContradictions(
       .join("\n\n");
 
     try {
-      const response = await callLLM(CONTRADICTION_SYSTEM_PROMPT, pagesText);
+      const response = await callLLM(systemPrompt, pagesText);
       const contradictions = parseContradictionResponse(response);
 
       for (const c of contradictions) {
