@@ -1,2 +1,0 @@
-Verdict: PASS
-Reason: All hardcoded dark-mode color classes (bg-gray-900, text-white, border-gray-800, text-gray-300, bg-gray-800) replaced with semantic CSS-variable-based equivalents (bg-background, text-foreground, border-foreground/10, etc.) exactly matching the task spec across all 8 locations (header, logo, desktop active/inactive, hamburger, mobile container, mobile active/inactive). shadow-sm added as the optional enhancement. No remaining hardcoded colors, no logic changes, build and tests pass.
