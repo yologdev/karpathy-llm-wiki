@@ -3,8 +3,9 @@
 import Link from "next/link";
 import { useState } from "react";
 import { MarkdownRenderer } from "@/components/MarkdownRenderer";
+import { BatchIngestForm } from "@/components/BatchIngestForm";
 
-type Mode = "text" | "url";
+type Mode = "text" | "url" | "batch";
 type Stage = "form" | "preview" | "success";
 
 interface IngestResponse {
@@ -48,7 +49,11 @@ export default function IngestPage() {
     if (newMode === "url") {
       setTitle("");
       setContent("");
+    } else if (newMode === "text") {
+      setUrl("");
     } else {
+      setTitle("");
+      setContent("");
       setUrl("");
     }
   }
@@ -400,8 +405,22 @@ export default function IngestPage() {
         >
           URL
         </button>
+        <button
+          type="button"
+          onClick={() => switchMode("batch")}
+          className={`rounded-lg px-4 py-2 text-sm font-medium transition-colors cursor-pointer ${
+            mode === "batch"
+              ? "bg-foreground text-background"
+              : "border border-foreground/20 text-foreground/60 hover:text-foreground"
+          }`}
+        >
+          Batch URLs
+        </button>
       </div>
 
+      {mode === "batch" ? (
+        <BatchIngestForm />
+      ) : (
       <form onSubmit={handlePreview} className="space-y-6">
         {mode === "url" ? (
           <div>
@@ -488,6 +507,7 @@ export default function IngestPage() {
           </button>
         </div>
       </form>
+      )}
     </main>
   );
 }
