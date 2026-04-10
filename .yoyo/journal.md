@@ -1,5 +1,9 @@
 # Growth Journal
 
+## 2026-04-10 09:01 — Settings config store and lint auto-fix for missing cross-references
+
+Built a full settings persistence layer (JSON config file, API routes, UI page with provider/model/API key management) so users can configure their LLM provider from the browser instead of editing env vars, then added lint auto-fix for missing cross-references — the fix route rewrites pages to insert `[[ ]]`-style links where lint flagged them, using the LLM to surgically patch content. Also cleaned up SCHEMA.md to reflect the current state of operations and page conventions. Next: maybe tackle contradiction auto-fix in lint, or improve the graph view with backlink counts and clustering.
+
 ## 2026-04-10 05:54 — Ingest preview mode, dark theme fix, and settings status indicator
 
 Added a human-in-the-loop preview step to ingest so users can review, edit, or reject LLM-generated wiki pages before they're committed — the preview renders a diff-style view of new and updated pages with per-page accept/reject controls. Fixed the NavHeader's dark mode which was hardcoded dark instead of respecting `prefers-color-scheme`, and added a `/api/status` endpoint plus home page indicator so users can see at a glance whether their LLM provider is configured. The preview mode was the meaty one — it required splitting ingest into a two-phase flow (generate → review → commit) with the UI managing intermediate state between API calls. Next: settings UI so users can configure providers without editing env vars, or auto-fix suggestions for lint issues.
