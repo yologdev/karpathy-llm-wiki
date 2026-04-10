@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import Link from "next/link";
 import type { LintIssue } from "@/lib/types";
 
@@ -32,15 +32,31 @@ const severityClasses: Record<
   },
 };
 
+/**
+ * Parse the target slug from a missing-crossref lint message.
+ *
+ * Expected format:
+ *   Page "foo.md" mentions "Bar Title" but doesn't link to bar-title.md
+ *
+ * Returns the target slug (e.g. "bar-title") or null if not parseable.
+ */
+function parseTargetSlug(message: string): string | null {
+  const match = message.match(/doesn't link to ([a-z0-9][a-z0-9-]*)\.md$/);
+  return match ? match[1] : null;
+}
+
 export default function LintPage() {
   const [result, setResult] = useState<LintResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [fixingSet, setFixingSet] = useState<Set<string>>(new Set());
+  const [fixMessage, setFixMessage] = useState<string | null>(null);
 
   async function runLint() {
     setLoading(true);
     setError(null);
     setResult(null);
+    setFixMessage(null);
 
     try {
       const res = await fetch("/api/lint", {
@@ -61,6 +77,58 @@ export default function LintPage() {
       setLoading(false);
     }
   }
+
+  const handleFix = useCallback(
+    async (issue: LintIssue, targetSlug: string) => {
+      const key = `${issue.slug}:${targetSlug}`;
+      setFixingSet((prev) => new Set(prev).add(key));
+      setFixMessage(null);
+
+      try {
+        const res = await fetch("/api/lint/fix", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            type: "missing-crossref",
+            slug: issue.slug,
+            targetSlug,
+          }),
+        });
+
+        const data = await res.json();
+
+        if (!res.ok) {
+          setFixMessage(`Fix failed: ${data.error ?? "Unknown error"}`);
+          return;
+        }
+
+        // Remove the fixed issue from the displayed list
+        setResult((prev) => {
+          if (!prev) return prev;
+          const remaining = prev.issues.filter(
+            (i) =>
+              !(
+                i.slug === issue.slug &&
+                i.type === "missing-crossref" &&
+                i.message === issue.message
+              ),
+          );
+          return { ...prev, issues: remaining };
+        });
+
+        setFixMessage(data.message ?? "Fixed!");
+      } catch {
+        setFixMessage("Fix failed: could not connect to the server");
+      } finally {
+        setFixingSet((prev) => {
+          const next = new Set(prev);
+          next.delete(key);
+          return next;
+        });
+      }
+    },
+    [],
+  );
 
   return (
     <main className="mx-auto max-w-3xl px-6 py-16">
@@ -101,6 +169,19 @@ export default function LintPage() {
         </div>
       )}
 
+      {fixMessage && (
+        <div className="mt-4 rounded-lg border border-green-300 bg-green-50 px-4 py-2 text-sm text-green-800 dark:border-green-800 dark:bg-green-950 dark:text-green-200 flex items-center justify-between">
+          <span>{fixMessage}</span>
+          <button
+            onClick={() => setFixMessage(null)}
+            className="ml-4 text-foreground/40 hover:text-foreground/70 transition-colors"
+            aria-label="Dismiss"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
       {result && (
         <div className="mt-8 space-y-6">
           {/* Summary */}
@@ -125,6 +206,15 @@ export default function LintPage() {
             <ul className="space-y-3">
               {result.issues.map((issue, i) => {
                 const styles = severityClasses[issue.severity];
+                const targetSlug =
+                  issue.type === "missing-crossref"
+                    ? parseTargetSlug(issue.message)
+                    : null;
+                const fixKey = targetSlug
+                  ? `${issue.slug}:${targetSlug}`
+                  : null;
+                const isFixing = fixKey ? fixingSet.has(fixKey) : false;
+
                 return (
                   <li
                     key={`${issue.slug}-${issue.type}-${i}`}
@@ -149,6 +239,15 @@ export default function LintPage() {
                       <span className="inline-block rounded-full border border-foreground/20 bg-foreground/5 px-2.5 py-0.5 text-xs font-medium text-foreground/60">
                         system
                       </span>
+                    )}
+                    {targetSlug && (
+                      <button
+                        onClick={() => handleFix(issue, targetSlug)}
+                        disabled={isFixing}
+                        className="ml-auto inline-flex items-center gap-1 rounded border border-foreground/20 bg-transparent px-2 py-0.5 text-xs font-medium text-foreground/60 hover:bg-foreground/5 hover:text-foreground transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        {isFixing ? "Fixing…" : "Fix"}
+                      </button>
                     )}
                     <span className="basis-full text-sm text-foreground/80 mt-1">
                       {issue.message}
