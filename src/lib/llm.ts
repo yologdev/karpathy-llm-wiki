@@ -3,6 +3,7 @@ import { createAnthropic } from "@ai-sdk/anthropic";
 import { createOpenAI } from "@ai-sdk/openai";
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { createOllama } from "ollama-ai-provider-v2";
+import { hasEmbeddingSupport } from "./embeddings";
 
 // ---------------------------------------------------------------------------
 // Provider detection
@@ -37,6 +38,76 @@ export function hasLLMKey(): boolean {
     process.env.OLLAMA_MODEL
   );
 }
+
+// ---------------------------------------------------------------------------
+// Provider info (metadata only — no API calls)
+// ---------------------------------------------------------------------------
+
+export interface ProviderInfo {
+  /** true if any provider key / config is set */
+  configured: boolean;
+  /** "anthropic" | "openai" | "google" | "ollama" | null */
+  provider: string | null;
+  /** resolved model name (including LLM_MODEL override) */
+  model: string | null;
+  /** true if the active provider supports embeddings */
+  embeddingSupport: boolean;
+}
+
+/**
+ * Return metadata about the currently configured LLM provider without
+ * constructing a model instance or making any network calls.
+ */
+export function getProviderInfo(): ProviderInfo {
+  const modelOverride = process.env.LLM_MODEL;
+
+  if (process.env.ANTHROPIC_API_KEY) {
+    return {
+      configured: true,
+      provider: "anthropic",
+      model: modelOverride ?? "claude-sonnet-4-20250514",
+      embeddingSupport: hasEmbeddingSupport(),
+    };
+  }
+
+  if (process.env.OPENAI_API_KEY) {
+    return {
+      configured: true,
+      provider: "openai",
+      model: modelOverride ?? "gpt-4o",
+      embeddingSupport: hasEmbeddingSupport(),
+    };
+  }
+
+  if (process.env.GOOGLE_GENERATIVE_AI_API_KEY) {
+    return {
+      configured: true,
+      provider: "google",
+      model: modelOverride ?? "gemini-2.0-flash",
+      embeddingSupport: hasEmbeddingSupport(),
+    };
+  }
+
+  if (process.env.OLLAMA_BASE_URL || process.env.OLLAMA_MODEL) {
+    return {
+      configured: true,
+      provider: "ollama",
+      model: modelOverride ?? process.env.OLLAMA_MODEL ?? "llama3.2",
+      embeddingSupport: hasEmbeddingSupport(),
+    };
+  }
+
+  return {
+    configured: false,
+    provider: null,
+    model: null,
+    embeddingSupport: false,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Model construction (internal)
+// ---------------------------------------------------------------------------
 
 /**
  * Build the appropriate Vercel AI SDK model instance based on available env

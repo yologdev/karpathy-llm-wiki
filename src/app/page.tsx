@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { StatusBadge } from "@/components/StatusBadge";
 
 const features = [
   {
@@ -37,6 +38,7 @@ export default function Home() {
           questions, and browse an ever-growing wiki of interlinked markdown
           pages.
         </p>
+        <StatusBadge />
       </div>
 
       <div className="mt-12 grid w-full max-w-2xl grid-cols-1 gap-4 sm:grid-cols-2">
