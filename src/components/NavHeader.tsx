@@ -43,11 +43,11 @@ export function NavHeader() {
   }, [pathname]);
 
   return (
-    <header className="sticky top-0 z-50 bg-gray-900 border-b border-gray-800">
+    <header className="sticky top-0 z-50 bg-background border-b border-foreground/10 shadow-sm">
       <nav className="mx-auto flex h-14 max-w-5xl items-center justify-between px-6">
         <Link
           href="/"
-          className="text-lg font-bold text-white tracking-tight hover:opacity-90 transition-opacity"
+          className="text-lg font-bold text-foreground tracking-tight hover:opacity-90 transition-opacity"
         >
           LLM Wiki
         </Link>
@@ -63,8 +63,8 @@ export function NavHeader() {
                   href={href}
                   className={`rounded-md px-3 py-1.5 text-sm transition-colors ${
                     isActive
-                      ? "text-white font-semibold bg-gray-800"
-                      : "text-gray-300 hover:text-white hover:bg-gray-800/50"
+                      ? "text-foreground font-semibold bg-foreground/10"
+                      : "text-foreground/60 hover:text-foreground hover:bg-foreground/5"
                   }`}
                 >
                   {label}
@@ -77,7 +77,7 @@ export function NavHeader() {
         {/* Hamburger button (mobile only) */}
         <button
           type="button"
-          className="sm:hidden text-gray-300 hover:text-white transition-colors p-1 -mr-1"
+          className="sm:hidden text-foreground/60 hover:text-foreground transition-colors p-1 -mr-1"
           onClick={() => setMobileOpen((prev) => !prev)}
           aria-label={mobileOpen ? "Close menu" : "Open menu"}
           aria-expanded={mobileOpen}
@@ -109,7 +109,7 @@ export function NavHeader() {
 
       {/* Mobile dropdown menu */}
       {mobileOpen && (
-        <div className="sm:hidden absolute top-14 left-0 right-0 bg-gray-900 border-b border-gray-800 py-2 z-50">
+        <div className="sm:hidden absolute top-14 left-0 right-0 bg-background border-b border-foreground/10 py-2 z-50">
           {navLinks.map(({ href, label }) => {
             const isActive = href === activeHref;
 
@@ -120,8 +120,8 @@ export function NavHeader() {
                 onClick={() => setMobileOpen(false)}
                 className={`block px-6 py-2 text-sm transition-colors ${
                   isActive
-                    ? "text-white font-semibold bg-gray-800"
-                    : "text-gray-300 hover:text-white hover:bg-gray-800/50"
+                    ? "text-foreground font-semibold bg-foreground/10"
+                    : "text-foreground/60 hover:text-foreground hover:bg-foreground/5"
                 }`}
               >
                 {label}
