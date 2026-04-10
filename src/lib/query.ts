@@ -4,7 +4,7 @@ import {
   readWikiPage,
   writeWikiPageWithSideEffects,
 } from "./wiki";
-import { slugify, loadPageConventions } from "./ingest";
+import { slugify, loadPageConventions, extractSummary } from "./ingest";
 import { extractCitedSlugs } from "./citations";
 import { searchByVector } from "./embeddings";
 import type { IndexEntry, QueryResult } from "./types";
@@ -521,12 +521,7 @@ export async function saveAnswerToWiki(
 
   // Extract a short summary from the content (first sentence or first 200 chars)
   const plainContent = content.replace(/^#.*$/gm, "").trim();
-  const sentenceEnd = plainContent.search(/[.!?]\s/);
-  const summaryText =
-    sentenceEnd !== -1 && sentenceEnd < 200
-      ? plainContent.slice(0, sentenceEnd + 1)
-      : plainContent.slice(0, 200);
-  const summary = summaryText.replace(/\s+/g, " ").trim() || title;
+  const summary = extractSummary(plainContent) || title;
 
   // Hand off to the unified write pipeline. We pass the original answer
   // `content` (rather than `pageContent`) as the cross-ref source so the
