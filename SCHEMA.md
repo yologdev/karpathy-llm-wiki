@@ -37,7 +37,7 @@ yoyo updates this document so future sessions inherit the convention. See
   `[Title](other-slug.md)` — relative, no leading slash, `.md` suffix
   required. The `.md` suffix is what lets the graph builder
   (`src/app/api/wiki/graph/route.ts`) detect inter-page edges.
-- Pages SHOULD link to at least one other page. Orphans are flagged by lint.
+- Pages SHOULD link to at least one other page.
 - Pages SHOULD NOT self-link. Self-links are forbidden by the cross-reference
   policy and filtered out by `findRelatedPages()`.
 - Two special pages exist:
@@ -100,7 +100,8 @@ ordered sequence of steps, a set of file outputs, and a log entry shape.
   2. Cluster pages that already cross-reference each other and ask the LLM
      to flag contradictions inside each cluster.
   3. Aggregate everything into a `LintResult` (see `src/lib/types.ts`).
-- **Outputs:** a report only. Lint never mutates wiki files.
+- **Outputs:** a report only. Lint does not mutate content pages, but it does
+  append a log entry to `wiki/log.md`.
 - **Log entry:** `## [YYYY-MM-DD] lint | wiki lint pass` — appended on every
   run, with a one-line details body summarising issue counts
   (`N issue(s): X error · Y warning · Z info`).
@@ -123,15 +124,18 @@ ordered sequence of steps, a set of file outputs, and a log entry shape.
 
 Current checks performed by `lint()` in `src/lib/lint.ts`:
 
-- **orphan** — page has no inbound `[...](slug.md)` links from any other page.
-- **stale** — page has not been updated in a long time and may be out of date
-  relative to newer ingests.
-- **empty** — page is missing a summary, missing key sections, or otherwise
-  too short to be useful.
-- **missing-crossref** — page mentions a known entity (a slug present in the
-  index) without linking to it.
-- **contradictions** — pages within the same cross-referenced cluster make
-  claims the LLM judges to be in tension. Requires an LLM key.
+- **`orphan-page`** (warning) — wiki page file exists on disk but is not
+  listed in `index.md`. Auto-fix: add to index.
+- **`stale-index`** (error) — entry exists in `index.md` but no corresponding
+  `.md` file on disk. Auto-fix: remove from index.
+- **`empty-page`** (warning) — page has fewer than 50 characters of content
+  after stripping the H1 heading. Auto-fix: delete the page.
+- **`missing-crossref`** (info) — page mentions another page's title (3+ chars,
+  word-boundary match) without linking to it. Auto-fix: append a cross-reference
+  link to a `## Related` section.
+- **`contradiction`** (warning) — LLM detects conflicting claims between pages
+  in a cross-reference cluster (max 5 pages per cluster). Requires an LLM key.
+  No auto-fix yet.
 
 ## Provider configuration
 
