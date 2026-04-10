@@ -22,6 +22,36 @@ interface GraphData {
   edges: GraphEdge[];
 }
 
+interface ColorPalette {
+  bg: string;
+  edge: string;
+  node: string;
+  nodeStroke: string;
+  label: string;
+}
+
+const DARK_PALETTE: ColorPalette = {
+  bg: "#0a0a0a",
+  edge: "#4a5568",
+  node: "#60a5fa",
+  nodeStroke: "#93c5fd",
+  label: "#e2e8f0",
+};
+
+const LIGHT_PALETTE: ColorPalette = {
+  bg: "#ffffff",
+  edge: "#cbd5e1",
+  node: "#3b82f6",
+  nodeStroke: "#2563eb",
+  label: "#1e293b",
+};
+
+function getColorPalette(): ColorPalette {
+  if (typeof window === "undefined") return DARK_PALETTE;
+  const isDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+  return isDark ? DARK_PALETTE : LIGHT_PALETTE;
+}
+
 const REPULSION = 3000;
 const ATTRACTION = 0.005;
 const CENTER_GRAVITY = 0.01;
@@ -33,9 +63,11 @@ export default function GraphPage() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const dataRef = useRef<GraphData | null>(null);
   const animRef = useRef<number>(0);
+  const paletteRef = useRef<ColorPalette>(DARK_PALETTE);
   const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [empty, setEmpty] = useState(false);
+  const [canvasBg, setCanvasBg] = useState<string>(DARK_PALETTE.bg);
 
   // Fetch graph data
   useEffect(() => {
@@ -64,6 +96,28 @@ export default function GraphPage() {
       });
   }, []);
 
+  // Detect color scheme and listen for changes
+  useEffect(() => {
+    const palette = getColorPalette();
+    paletteRef.current = palette;
+    setCanvasBg(palette.bg);
+
+    const mql = window.matchMedia("(prefers-color-scheme: dark)");
+    const handleChange = () => {
+      const newPalette = getColorPalette();
+      paletteRef.current = newPalette;
+      setCanvasBg(newPalette.bg);
+      // Re-trigger a render frame if simulation has stopped
+      if (dataRef.current && canvasRef.current) {
+        cancelAnimationFrame(animRef.current);
+        animRef.current = requestAnimationFrame(simulate);
+      }
+    };
+    mql.addEventListener("change", handleChange);
+    return () => mql.removeEventListener("change", handleChange);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Simulation + render loop
   const simulate = useCallback(() => {
     const data = dataRef.current;
@@ -73,6 +127,7 @@ export default function GraphPage() {
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
+    const palette = paletteRef.current;
     const W = canvas.width;
     const H = canvas.height;
     const cx = W / 2;
@@ -129,11 +184,11 @@ export default function GraphPage() {
 
     // --- Render ---
     ctx.clearRect(0, 0, W, H);
-    ctx.fillStyle = "#0a0a0a";
+    ctx.fillStyle = palette.bg;
     ctx.fillRect(0, 0, W, H);
 
     // Edges
-    ctx.strokeStyle = "#4a5568";
+    ctx.strokeStyle = palette.edge;
     ctx.lineWidth = 1;
     for (const edge of edges) {
       const a = nodeMap.get(edge.source);
@@ -149,14 +204,14 @@ export default function GraphPage() {
     for (const n of nodes) {
       ctx.beginPath();
       ctx.arc(n.x, n.y, NODE_RADIUS, 0, Math.PI * 2);
-      ctx.fillStyle = "#60a5fa";
+      ctx.fillStyle = palette.node;
       ctx.fill();
-      ctx.strokeStyle = "#93c5fd";
+      ctx.strokeStyle = palette.nodeStroke;
       ctx.lineWidth = 1.5;
       ctx.stroke();
 
       // Label
-      ctx.fillStyle = "#e2e8f0";
+      ctx.fillStyle = palette.label;
       ctx.font = "12px sans-serif";
       ctx.textAlign = "center";
       ctx.fillText(n.label, n.x, n.y - NODE_RADIUS - 4);
@@ -244,7 +299,7 @@ export default function GraphPage() {
           ref={canvasRef}
           onClick={handleClick}
           className="block w-full cursor-pointer"
-          style={{ height: 560 }}
+          style={{ height: 560, backgroundColor: canvasBg }}
         />
       </div>
     </main>
