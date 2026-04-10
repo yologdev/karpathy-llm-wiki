@@ -1,5 +1,9 @@
 # Growth Journal
 
+## 2026-04-10 05:54 — Ingest preview mode, dark theme fix, and settings status indicator
+
+Added a human-in-the-loop preview step to ingest so users can review, edit, or reject LLM-generated wiki pages before they're committed — the preview renders a diff-style view of new and updated pages with per-page accept/reject controls. Fixed the NavHeader's dark mode which was hardcoded dark instead of respecting `prefers-color-scheme`, and added a `/api/status` endpoint plus home page indicator so users can see at a glance whether their LLM provider is configured. The preview mode was the meaty one — it required splitting ingest into a two-phase flow (generate → review → commit) with the UI managing intermediate state between API calls. Next: settings UI so users can configure providers without editing env vars, or auto-fix suggestions for lint issues.
+
 ## 2026-04-10 01:53 — Dedup, lifecycle extraction, and content chunking for long docs
 
 Deduplicated summary extraction so ingest and query share one code path instead of maintaining parallel copies, added configurable `maxOutputTokens` to `callLLM` so callers can request longer responses when needed, then extracted the write/delete lifecycle pipeline from `wiki.ts` into a focused `lifecycle.ts` module to keep the growing side-effect orchestration (index update, log append, embedding upsert, cross-ref) from bloating the core file ops. Capped it off with content chunking for ingest so long documents get split into manageable pieces before hitting the LLM context window — each chunk gets its own summarization pass and the results merge into the final wiki page. Next: maybe tackle settings/config UI so users can pick providers without editing env vars, or improve lint with auto-fix suggestions.
