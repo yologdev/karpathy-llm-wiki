@@ -60,3 +60,15 @@ export interface LintResult {
   summary: string;
   checkedAt: string;
 }
+
+/** Metadata about the currently configured LLM provider. */
+export interface ProviderInfo {
+  /** true if any provider key / config is set */
+  configured: boolean;
+  /** "anthropic" | "openai" | "google" | "ollama" | null */
+  provider: string | null;
+  /** resolved model name (including LLM_MODEL override) */
+  model: string | null;
+  /** true if the active provider supports embeddings */
+  embeddingSupport: boolean;
+}

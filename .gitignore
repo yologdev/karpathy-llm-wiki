@@ -4,6 +4,7 @@ node_modules/
 .env.local
 /raw/
 /wiki/
+.llm-wiki-config.json
 SESSION_PLAN.md
 ISSUE_RESPONSE.md
 timelapse.mp4

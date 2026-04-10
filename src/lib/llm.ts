@@ -3,7 +3,15 @@ import { createAnthropic } from "@ai-sdk/anthropic";
 import { createOpenAI } from "@ai-sdk/openai";
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { createOllama } from "ollama-ai-provider-v2";
-import { hasEmbeddingSupport } from "./embeddings";
+import {
+  getEffectiveProvider,
+  getResolvedCredentials,
+  loadConfigSync,
+} from "./config";
+import type { ProviderInfo } from "./types";
+
+// Re-export ProviderInfo from types for backward compatibility
+export type { ProviderInfo } from "./types";
 
 // ---------------------------------------------------------------------------
 // Provider detection
@@ -11,6 +19,10 @@ import { hasEmbeddingSupport } from "./embeddings";
 
 /**
  * Returns true if at least one supported LLM provider is configured.
+ *
+ * Checks both environment variables and the config file
+ * (`.llm-wiki-config.json`).  Env vars take priority but the config file
+ * acts as a fallback so users can configure via the UI.
  *
  * Supported providers and their env vars:
  *   - Anthropic: ANTHROPIC_API_KEY
@@ -30,79 +42,33 @@ import { hasEmbeddingSupport } from "./embeddings";
  *     See `src/lib/embeddings.ts` for the full embedding API.
  */
 export function hasLLMKey(): boolean {
-  return !!(
+  // Fast path: check env vars first
+  if (
     process.env.ANTHROPIC_API_KEY ||
     process.env.OPENAI_API_KEY ||
     process.env.GOOGLE_GENERATIVE_AI_API_KEY ||
     process.env.OLLAMA_BASE_URL ||
     process.env.OLLAMA_MODEL
-  );
+  ) {
+    return true;
+  }
+  // Fallback: check config file (cached sync read)
+  const cfg = loadConfigSync();
+  return !!(cfg.provider || cfg.apiKey);
 }
 
 // ---------------------------------------------------------------------------
 // Provider info (metadata only — no API calls)
 // ---------------------------------------------------------------------------
 
-export interface ProviderInfo {
-  /** true if any provider key / config is set */
-  configured: boolean;
-  /** "anthropic" | "openai" | "google" | "ollama" | null */
-  provider: string | null;
-  /** resolved model name (including LLM_MODEL override) */
-  model: string | null;
-  /** true if the active provider supports embeddings */
-  embeddingSupport: boolean;
-}
-
 /**
  * Return metadata about the currently configured LLM provider without
  * constructing a model instance or making any network calls.
+ *
+ * Merges env vars and config file settings (env wins).
  */
 export function getProviderInfo(): ProviderInfo {
-  const modelOverride = process.env.LLM_MODEL;
-
-  if (process.env.ANTHROPIC_API_KEY) {
-    return {
-      configured: true,
-      provider: "anthropic",
-      model: modelOverride ?? "claude-sonnet-4-20250514",
-      embeddingSupport: hasEmbeddingSupport(),
-    };
-  }
-
-  if (process.env.OPENAI_API_KEY) {
-    return {
-      configured: true,
-      provider: "openai",
-      model: modelOverride ?? "gpt-4o",
-      embeddingSupport: hasEmbeddingSupport(),
-    };
-  }
-
-  if (process.env.GOOGLE_GENERATIVE_AI_API_KEY) {
-    return {
-      configured: true,
-      provider: "google",
-      model: modelOverride ?? "gemini-2.0-flash",
-      embeddingSupport: hasEmbeddingSupport(),
-    };
-  }
-
-  if (process.env.OLLAMA_BASE_URL || process.env.OLLAMA_MODEL) {
-    return {
-      configured: true,
-      provider: "ollama",
-      model: modelOverride ?? process.env.OLLAMA_MODEL ?? "llama3.2",
-      embeddingSupport: hasEmbeddingSupport(),
-    };
-  }
-
-  return {
-    configured: false,
-    provider: null,
-    model: null,
-    embeddingSupport: false,
-  };
+  return getEffectiveProvider();
 }
 
 // ---------------------------------------------------------------------------
@@ -110,52 +76,48 @@ export function getProviderInfo(): ProviderInfo {
 // ---------------------------------------------------------------------------
 
 /**
- * Build the appropriate Vercel AI SDK model instance based on available env
- * vars.  Priority (first match wins):
+ * Build the appropriate Vercel AI SDK model instance based on resolved
+ * credentials.  Resolution merges env vars and the config file, with env
+ * vars taking priority.
  *
- *   1. Anthropic (ANTHROPIC_API_KEY)
- *   2. OpenAI    (OPENAI_API_KEY)
- *   3. Google    (GOOGLE_GENERATIVE_AI_API_KEY)
- *   4. Ollama    (OLLAMA_BASE_URL or OLLAMA_MODEL)
- *
- * The model name can be overridden with the `LLM_MODEL` env var for whichever
- * provider wins.
+ * The model name can be overridden with the `LLM_MODEL` env var, or via
+ * the config file's `model` field.
  */
 function getModel() {
-  const modelOverride = process.env.LLM_MODEL;
+  const creds = getResolvedCredentials();
 
-  if (process.env.ANTHROPIC_API_KEY) {
-    const anthropic = createAnthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-    return anthropic(modelOverride ?? "claude-sonnet-4-20250514");
+  if (!creds.provider) {
+    throw new Error(
+      "No LLM API key found. Set one of ANTHROPIC_API_KEY, OPENAI_API_KEY, " +
+        "GOOGLE_GENERATIVE_AI_API_KEY, or OLLAMA_BASE_URL / OLLAMA_MODEL in " +
+        "your environment, or configure a provider in Settings.",
+    );
   }
 
-  if (process.env.OPENAI_API_KEY) {
-    const openai = createOpenAI({ apiKey: process.env.OPENAI_API_KEY });
-    return openai(modelOverride ?? "gpt-4o");
-  }
+  const model = creds.model!;
 
-  if (process.env.GOOGLE_GENERATIVE_AI_API_KEY) {
-    const google = createGoogleGenerativeAI({
-      apiKey: process.env.GOOGLE_GENERATIVE_AI_API_KEY,
-    });
-    return google(modelOverride ?? "gemini-2.0-flash");
+  switch (creds.provider) {
+    case "anthropic": {
+      const anthropic = createAnthropic({ apiKey: creds.apiKey! });
+      return anthropic(model);
+    }
+    case "openai": {
+      const openai = createOpenAI({ apiKey: creds.apiKey! });
+      return openai(model);
+    }
+    case "google": {
+      const google = createGoogleGenerativeAI({ apiKey: creds.apiKey! });
+      return google(model);
+    }
+    case "ollama": {
+      const ollama = creds.ollamaBaseUrl
+        ? createOllama({ baseURL: creds.ollamaBaseUrl })
+        : createOllama();
+      return ollama(model);
+    }
+    default:
+      throw new Error(`Unsupported provider: ${creds.provider}`);
   }
-
-  if (process.env.OLLAMA_BASE_URL || process.env.OLLAMA_MODEL) {
-    // Ollama's default local endpoint is http://localhost:11434/api.
-    // The createOllama factory accepts a custom baseURL; omit it to use
-    // the provider's built-in default.
-    const ollama = process.env.OLLAMA_BASE_URL
-      ? createOllama({ baseURL: process.env.OLLAMA_BASE_URL })
-      : createOllama();
-    return ollama(modelOverride ?? process.env.OLLAMA_MODEL ?? "llama3.2");
-  }
-
-  throw new Error(
-    "No LLM API key found. Set one of ANTHROPIC_API_KEY, OPENAI_API_KEY, " +
-      "GOOGLE_GENERATIVE_AI_API_KEY, or OLLAMA_BASE_URL / OLLAMA_MODEL in " +
-      "your environment.",
-  );
 }
 
 // ---------------------------------------------------------------------------

@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { hasLLMKey, callLLM, callLLMStream } from "../llm";
+import { _resetConfigCache } from "../config";
 
 // Save and restore env vars around each test so we don't leak state.
 let savedAnthropic: string | undefined;
@@ -8,6 +9,7 @@ let savedGoogle: string | undefined;
 let savedOllamaBaseURL: string | undefined;
 let savedOllamaModel: string | undefined;
 let savedModel: string | undefined;
+let savedDataDir: string | undefined;
 
 beforeEach(() => {
   savedAnthropic = process.env.ANTHROPIC_API_KEY;
@@ -16,6 +18,7 @@ beforeEach(() => {
   savedOllamaBaseURL = process.env.OLLAMA_BASE_URL;
   savedOllamaModel = process.env.OLLAMA_MODEL;
   savedModel = process.env.LLM_MODEL;
+  savedDataDir = process.env.DATA_DIR;
 
   // Start each test from a clean slate so tests don't depend on ordering.
   delete process.env.ANTHROPIC_API_KEY;
@@ -24,6 +27,12 @@ beforeEach(() => {
   delete process.env.OLLAMA_BASE_URL;
   delete process.env.OLLAMA_MODEL;
   delete process.env.LLM_MODEL;
+
+  // Point DATA_DIR at a nonexistent path so no config file is found
+  process.env.DATA_DIR = "/tmp/llm-wiki-test-nonexistent-" + Date.now();
+
+  // Reset config cache so tests don't see stale data
+  _resetConfigCache();
 });
 
 afterEach(() => {
@@ -41,6 +50,9 @@ afterEach(() => {
   restore("OLLAMA_BASE_URL", savedOllamaBaseURL);
   restore("OLLAMA_MODEL", savedOllamaModel);
   restore("LLM_MODEL", savedModel);
+  restore("DATA_DIR", savedDataDir);
+
+  _resetConfigCache();
 });
 
 describe("hasLLMKey", () => {
