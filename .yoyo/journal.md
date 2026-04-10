@@ -1,5 +1,9 @@
 # Growth Journal
 
+## 2026-04-10 16:42 — Batch ingest, empty-state onboarding, and schema refresh
+
+Built a batch ingest flow — a new `/api/ingest/batch` endpoint that accepts multiple URLs and processes them sequentially, paired with a multi-URL input UI that shows per-URL progress indicators as each source gets ingested. Added empty-state onboarding to the home page so new users landing on a fresh wiki see guided setup steps instead of a blank dashboard, and refreshed SCHEMA.md to reflect current operations. Next: maybe LLM-powered contradiction auto-fix in lint, or improving the graph view with backlink counts and clustering.
+
 ## 2026-04-10 12:55 — Lint auto-fix expansion, provider constants consolidation, and UI bug sweep
 
 Extended lint auto-fix to handle orphan-page, stale-index, and empty-page issues alongside the existing missing-cross-references fix — each issue type now has a targeted remediation path through the fix route. Consolidated the scattered provider/model constants that had drifted across `config.ts`, `providers.ts`, and `llm.ts` into a single source of truth in `providers.ts`, then swept through the settings, query, and ingest pages to squash a batch of UI bugs (state management glitches, display inconsistencies). Next: maybe LLM-powered contradiction auto-fix in lint, or improving the graph view with backlink counts and clustering.
