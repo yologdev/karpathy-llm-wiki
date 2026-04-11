@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { readWikiPageWithFrontmatter, type Frontmatter } from "@/lib/wiki";
+import { readWikiPageWithFrontmatter, findBacklinks, type Frontmatter } from "@/lib/wiki";
 import { MarkdownRenderer } from "@/components/MarkdownRenderer";
 import { DeletePageButton } from "@/components/DeletePageButton";
 
@@ -92,6 +92,8 @@ export default async function WikiPageView({ params }: WikiPageProps) {
     );
   }
 
+  const backlinks = await findBacklinks(slug);
+
   return (
     <main className="mx-auto max-w-3xl px-6 py-12">
       <Link
@@ -104,6 +106,25 @@ export default async function WikiPageView({ params }: WikiPageProps) {
         <PageMetadata frontmatter={page.frontmatter} />
         <MarkdownRenderer content={page.content} />
       </article>
+      {backlinks.length > 0 && (
+        <section className="mt-10 border-t border-foreground/10 pt-6">
+          <h2 className="text-sm font-medium text-foreground/50 uppercase tracking-wide">
+            What links here
+          </h2>
+          <ul className="mt-2 space-y-1">
+            {backlinks.map((bl) => (
+              <li key={bl.slug}>
+                <Link
+                  href={`/wiki/${bl.slug}`}
+                  className="text-sm text-blue-600 hover:underline dark:text-blue-400"
+                >
+                  {bl.title}
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
       <div className="mt-12 border-t border-foreground/10 pt-6 flex items-center gap-3">
         <Link
           href={`/wiki/${slug}/edit`}

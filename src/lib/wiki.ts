@@ -422,6 +422,34 @@ export async function updateRelatedPages(
 }
 
 // ---------------------------------------------------------------------------
+// Backlinks — "What links here"
+// ---------------------------------------------------------------------------
+
+/**
+ * Find all wiki pages that link to the given slug.
+ * Returns an array of { slug, title } for pages containing a markdown link
+ * to `targetSlug.md`.
+ */
+export async function findBacklinks(
+  targetSlug: string,
+): Promise<Array<{ slug: string; title: string }>> {
+  const pages = await listWikiPages();
+  const backlinks: Array<{ slug: string; title: string }> = [];
+  const linkPattern = new RegExp(`\\]\\(${targetSlug}\\.md\\)`);
+
+  for (const page of pages) {
+    if (page.slug === targetSlug || page.slug === "index" || page.slug === "log")
+      continue;
+    const wikiPage = await readWikiPage(page.slug);
+    if (wikiPage && linkPattern.test(wikiPage.content)) {
+      backlinks.push({ slug: page.slug, title: page.title });
+    }
+  }
+
+  return backlinks;
+}
+
+// ---------------------------------------------------------------------------
 // Lifecycle pipeline — re-exported from lifecycle.ts for backward compatibility
 // ---------------------------------------------------------------------------
 

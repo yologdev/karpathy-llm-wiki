@@ -19,6 +19,7 @@ import {
   readWikiPageWithFrontmatter,
   listRawSources,
   readRawSource,
+  findBacklinks,
 } from "../wiki";
 import type { IndexEntry } from "../types";
 
@@ -1437,5 +1438,83 @@ describe("concurrent appendToLog", () => {
     expect(log).not.toBeNull();
     expect(log!).toContain("First Article");
     expect(log!).toContain("Second Article");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// findBacklinks
+// ---------------------------------------------------------------------------
+
+describe("findBacklinks", () => {
+  beforeEach(async () => {
+    await ensureDirectories();
+  });
+
+  it("returns pages that link to the target slug", async () => {
+    // Create target page
+    await writeWikiPage("target", "# Target\n\nSome content.");
+    // Create a page that links to target
+    await writeWikiPage("linker", "# Linker\n\nSee [Target](target.md) for details.");
+    // Create index so listWikiPages finds them
+    await updateIndex([
+      { slug: "target", title: "Target", summary: "Target page" },
+      { slug: "linker", title: "Linker", summary: "Linker page" },
+    ]);
+
+    const backlinks = await findBacklinks("target");
+    expect(backlinks).toHaveLength(1);
+    expect(backlinks[0].slug).toBe("linker");
+    expect(backlinks[0].title).toBe("Linker");
+  });
+
+  it("excludes the target page itself", async () => {
+    // Page that links to itself
+    await writeWikiPage("self-ref", "# Self Ref\n\nSee [Self Ref](self-ref.md).");
+    await updateIndex([
+      { slug: "self-ref", title: "Self Ref", summary: "A self-referencing page" },
+    ]);
+
+    const backlinks = await findBacklinks("self-ref");
+    expect(backlinks).toHaveLength(0);
+  });
+
+  it("excludes index.md and log.md", async () => {
+    await writeWikiPage("target", "# Target\n\nContent here.");
+    // Simulate index and log containing a link to target
+    await writeWikiPage("index", "# Index\n\n- [Target](target.md) — desc");
+    await writeWikiPage("log", "# Log\n\n- Ingested [Target](target.md)");
+    await updateIndex([
+      { slug: "target", title: "Target", summary: "Target" },
+      { slug: "index", title: "Index", summary: "Index page" },
+      { slug: "log", title: "Log", summary: "Log page" },
+    ]);
+
+    const backlinks = await findBacklinks("target");
+    expect(backlinks).toHaveLength(0);
+  });
+
+  it("returns empty array when no pages link to target", async () => {
+    await writeWikiPage("lonely", "# Lonely\n\nNo one links here.");
+    await writeWikiPage("other", "# Other\n\nJust some other page.");
+    await updateIndex([
+      { slug: "lonely", title: "Lonely", summary: "Lonely page" },
+      { slug: "other", title: "Other", summary: "Other page" },
+    ]);
+
+    const backlinks = await findBacklinks("lonely");
+    expect(backlinks).toHaveLength(0);
+  });
+
+  it("does not match slug appearing in text but not as a markdown link", async () => {
+    await writeWikiPage("target", "# Target\n\nContent.");
+    // "target.md" appears as plain text, not as a markdown link ](target.md)
+    await writeWikiPage("mentioner", "# Mentioner\n\nThe file target.md is interesting.");
+    await updateIndex([
+      { slug: "target", title: "Target", summary: "Target" },
+      { slug: "mentioner", title: "Mentioner", summary: "Mentions target" },
+    ]);
+
+    const backlinks = await findBacklinks("target");
+    expect(backlinks).toHaveLength(0);
   });
 });
