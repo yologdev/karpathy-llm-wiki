@@ -45,6 +45,19 @@ function parseTargetSlug(message: string): string | null {
   return match ? match[1] : null;
 }
 
+/**
+ * Parse the target slug from a contradiction lint message.
+ *
+ * Expected format:
+ *   Contradiction between slug-a, slug-b: description
+ *
+ * Returns the second slug (e.g. "slug-b") or null if not parseable.
+ */
+function parseContradictionTargetSlug(message: string): string | null {
+  const match = message.match(/^Contradiction between \S+, (\S+):/);
+  return match ? match[1] : null;
+}
+
 export default function LintPage() {
   const [result, setResult] = useState<LintResponse | null>(null);
   const [loading, setLoading] = useState(false);
@@ -81,7 +94,7 @@ export default function LintPage() {
   const handleFix = useCallback(
     async (issue: LintIssue, targetSlug?: string) => {
       const key =
-        issue.type === "missing-crossref" && targetSlug
+        (issue.type === "missing-crossref" || issue.type === "contradiction") && targetSlug
           ? `${issue.slug}:${targetSlug}`
           : `${issue.type}:${issue.slug}`;
       setFixingSet((prev) => new Set(prev).add(key));
@@ -95,6 +108,10 @@ export default function LintPage() {
         };
         if (issue.type === "missing-crossref" && targetSlug) {
           bodyObj.targetSlug = targetSlug;
+        }
+        if (issue.type === "contradiction" && targetSlug) {
+          bodyObj.targetSlug = targetSlug;
+          bodyObj.message = issue.message;
         }
 
         const res = await fetch("/api/lint/fix", {
@@ -217,20 +234,24 @@ export default function LintPage() {
                 const targetSlug =
                   issue.type === "missing-crossref"
                     ? parseTargetSlug(issue.message)
-                    : null;
+                    : issue.type === "contradiction"
+                      ? parseContradictionTargetSlug(issue.message)
+                      : null;
 
                 const fixableTypes = new Set([
                   "missing-crossref",
                   "orphan-page",
                   "stale-index",
                   "empty-page",
+                  "contradiction",
                 ]);
                 const isFixable =
                   fixableTypes.has(issue.type) &&
-                  (issue.type !== "missing-crossref" || targetSlug !== null);
+                  (issue.type !== "missing-crossref" || targetSlug !== null) &&
+                  (issue.type !== "contradiction" || targetSlug !== null);
 
                 const fixKey =
-                  issue.type === "missing-crossref" && targetSlug
+                  (issue.type === "missing-crossref" || issue.type === "contradiction") && targetSlug
                     ? `${issue.slug}:${targetSlug}`
                     : `${issue.type}:${issue.slug}`;
                 const isFixing = fixingSet.has(fixKey);
@@ -240,6 +261,7 @@ export default function LintPage() {
                   "orphan-page": "Add to index",
                   "stale-index": "Remove from index",
                   "empty-page": "Delete page",
+                  "contradiction": "Resolve",
                 };
 
                 return (

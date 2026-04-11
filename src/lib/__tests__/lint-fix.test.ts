@@ -23,17 +23,23 @@ vi.mock("../lifecycle", () => ({
   })),
 }));
 
+vi.mock("../llm", () => ({
+  callLLM: vi.fn(async () => "# Rewritten Page\n\nResolved content."),
+}));
+
 import { readWikiPage, listWikiPages, updateIndex, appendToLog } from "../wiki";
 import {
   writeWikiPageWithSideEffects,
   deleteWikiPage,
 } from "../lifecycle";
+import { callLLM } from "../llm";
 
 import {
   fixOrphanPage,
   fixStaleIndex,
   fixEmptyPage,
   fixMissingCrossRef,
+  fixContradiction,
   fixLintIssue,
   FixValidationError,
   FixNotFoundError,
@@ -47,6 +53,7 @@ const mockedWriteWikiPageWithSideEffects = vi.mocked(
   writeWikiPageWithSideEffects,
 );
 const mockedDeleteWikiPage = vi.mocked(deleteWikiPage);
+const mockedCallLLM = vi.mocked(callLLM);
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -332,6 +339,121 @@ describe("fixMissingCrossRef", () => {
 });
 
 // ---------------------------------------------------------------------------
+// fixContradiction
+// ---------------------------------------------------------------------------
+
+describe("fixContradiction", () => {
+  it("throws FixValidationError when slug is empty", async () => {
+    await expect(fixContradiction("", "target", "msg")).rejects.toThrow(
+      FixValidationError,
+    );
+    await expect(fixContradiction("", "target", "msg")).rejects.toThrow(
+      "Missing required fields: slug and targetSlug",
+    );
+  });
+
+  it("throws FixValidationError when targetSlug is empty", async () => {
+    await expect(fixContradiction("source", "", "msg")).rejects.toThrow(
+      FixValidationError,
+    );
+    await expect(fixContradiction("source", "", "msg")).rejects.toThrow(
+      "Missing required fields: slug and targetSlug",
+    );
+  });
+
+  it("throws FixNotFoundError when source page does not exist", async () => {
+    mockedReadWikiPage.mockResolvedValue(null);
+
+    await expect(
+      fixContradiction("no-such", "other", "msg"),
+    ).rejects.toThrow(FixNotFoundError);
+    await expect(
+      fixContradiction("no-such", "other", "msg"),
+    ).rejects.toThrow("Source page not found: no-such");
+  });
+
+  it("throws FixNotFoundError when target page does not exist", async () => {
+    mockedReadWikiPage
+      .mockResolvedValueOnce({
+        slug: "source",
+        title: "Source",
+        content: "# Source\n\nContent.",
+        path: "/wiki/source.md",
+      })
+      .mockResolvedValueOnce(null);
+
+    await expect(
+      fixContradiction("source", "missing-target", "msg"),
+    ).rejects.toThrow(FixNotFoundError);
+  });
+
+  it("calls LLM with both pages' content and the contradiction description", async () => {
+    mockedReadWikiPage
+      .mockResolvedValueOnce({
+        slug: "page-a",
+        title: "Page A",
+        content: "# Page A\n\nClaims X is true.",
+        path: "/wiki/page-a.md",
+      })
+      .mockResolvedValueOnce({
+        slug: "page-b",
+        title: "Page B",
+        content: "# Page B\n\nClaims X is false.",
+        path: "/wiki/page-b.md",
+      });
+
+    mockedCallLLM.mockResolvedValue("# Page A\n\nRevised: X is false.");
+
+    const msg = "Contradiction between page-a, page-b: X is debated";
+    await fixContradiction("page-a", "page-b", msg);
+
+    expect(mockedCallLLM).toHaveBeenCalledOnce();
+
+    const [systemPrompt, userMessage] = mockedCallLLM.mock.calls[0];
+    expect(systemPrompt).toContain("resolving contradictions");
+    expect(userMessage).toContain("# Page A");
+    expect(userMessage).toContain("# Page B");
+    expect(userMessage).toContain(msg);
+  });
+
+  it("writes the rewritten page via lifecycle pipeline", async () => {
+    mockedReadWikiPage
+      .mockResolvedValueOnce({
+        slug: "page-a",
+        title: "Page A",
+        content: "# Page A\n\nClaims X is true.",
+        path: "/wiki/page-a.md",
+      })
+      .mockResolvedValueOnce({
+        slug: "page-b",
+        title: "Page B",
+        content: "# Page B\n\nClaims X is false.",
+        path: "/wiki/page-b.md",
+      });
+
+    mockedCallLLM.mockResolvedValue("# Page A\n\nRevised: X is false.");
+
+    const result = await fixContradiction(
+      "page-a",
+      "page-b",
+      "Contradiction between page-a, page-b: conflict",
+    );
+
+    expect(result).toEqual({
+      success: true,
+      slug: "page-a",
+      message: "Rewrote page-a.md to resolve contradiction with page-b.md",
+    });
+
+    expect(mockedWriteWikiPageWithSideEffects).toHaveBeenCalledOnce();
+    const call = mockedWriteWikiPageWithSideEffects.mock.calls[0][0];
+    expect(call.slug).toBe("page-a");
+    expect(call.content).toBe("# Page A\n\nRevised: X is false.");
+    expect(call.logOp).toBe("edit");
+  });
+});
+
+// ---------------------------------------------------------------------------
 // fixLintIssue — dispatcher
 // ---------------------------------------------------------------------------
 
@@ -382,6 +504,30 @@ describe("fixLintIssue", () => {
 
     const result = await fixLintIssue("missing-crossref", "src", "tgt");
     expect(result.slug).toBe("src");
+    expect(mockedWriteWikiPageWithSideEffects).toHaveBeenCalledOnce();
+  });
+
+  it("dispatches contradiction to fixContradiction", async () => {
+    mockedReadWikiPage
+      .mockResolvedValueOnce({
+        slug: "alpha",
+        title: "Alpha",
+        content: "# Alpha\n\nClaim A.",
+        path: "/wiki/alpha.md",
+      })
+      .mockResolvedValueOnce({
+        slug: "beta",
+        title: "Beta",
+        content: "# Beta\n\nClaim B.",
+        path: "/wiki/beta.md",
+      });
+
+    mockedCallLLM.mockResolvedValue("# Alpha\n\nResolved claim.");
+
+    const msg = "Contradiction between alpha, beta: conflicting claims";
+    const result = await fixLintIssue("contradiction", "alpha", "beta", msg);
+    expect(result.slug).toBe("alpha");
+    expect(mockedCallLLM).toHaveBeenCalledOnce();
     expect(mockedWriteWikiPageWithSideEffects).toHaveBeenCalledOnce();
   });
 

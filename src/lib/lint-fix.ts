@@ -1,5 +1,6 @@
 import { readWikiPage, listWikiPages, updateIndex, appendToLog } from "./wiki";
 import { writeWikiPageWithSideEffects, deleteWikiPage } from "./lifecycle";
+import { callLLM } from "./llm";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -214,6 +215,63 @@ export async function fixMissingCrossRef(
   };
 }
 
+/**
+ * Fix a contradiction lint issue by calling the LLM to rewrite the first page
+ * so it no longer conflicts with the second page.
+ *
+ * @param slug - The slug of the page to rewrite
+ * @param targetSlug - The slug of the other page involved in the contradiction
+ * @param message - The contradiction description from the linter
+ */
+export async function fixContradiction(
+  slug: string,
+  targetSlug: string,
+  message: string,
+): Promise<FixResult> {
+  if (!slug || !targetSlug) {
+    throw new FixValidationError(
+      "Missing required fields: slug and targetSlug",
+    );
+  }
+
+  const sourcePage = await readWikiPage(slug);
+  if (!sourcePage) {
+    throw new FixNotFoundError(`Source page not found: ${slug}`);
+  }
+
+  const otherPage = await readWikiPage(targetSlug);
+  if (!otherPage) {
+    throw new FixNotFoundError(`Target page not found: ${targetSlug}`);
+  }
+
+  const systemPrompt = `You are a wiki editor resolving contradictions between pages. You will be given two wiki pages and a description of the contradiction. Rewrite ONLY the first page to resolve the contradiction while preserving as much of its original content and structure as possible. Output only the full rewritten markdown for the first page — no explanation, no wrapping.`;
+
+  const userMessage = `## Contradiction\n${message}\n\n## Page to rewrite: ${slug}.md\n\n${sourcePage.content}\n\n## Other page (do not rewrite): ${targetSlug}.md\n\n${otherPage.content}`;
+
+  const rewritten = await callLLM(systemPrompt, userMessage);
+
+  // Extract summary from the rewritten page for the index entry
+  const summaryMatch = rewritten.match(/^#\s+.+\n+(.+)/m);
+  const summary = summaryMatch ? summaryMatch[1].slice(0, 120) : slug;
+
+  await writeWikiPageWithSideEffects({
+    slug,
+    title: sourcePage.title,
+    content: rewritten,
+    summary,
+    logOp: "edit",
+    logDetails: () =>
+      `auto-fix: resolved contradiction with ${targetSlug}.md`,
+    crossRefSource: null,
+  });
+
+  return {
+    success: true,
+    slug,
+    message: `Rewrote ${slug}.md to resolve contradiction with ${targetSlug}.md`,
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Dispatcher
 // ---------------------------------------------------------------------------
@@ -228,6 +286,7 @@ export async function fixLintIssue(
   type: string,
   slug: string,
   targetSlug?: string,
+  message?: string,
 ): Promise<FixResult> {
   switch (type) {
     case "orphan-page":
@@ -238,6 +297,8 @@ export async function fixLintIssue(
       return fixEmptyPage(slug);
     case "missing-crossref":
       return fixMissingCrossRef(slug, targetSlug ?? "");
+    case "contradiction":
+      return fixContradiction(slug, targetSlug ?? "", message ?? "");
     default:
       throw new FixValidationError(
         "Auto-fix not supported for this issue type",

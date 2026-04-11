@@ -13,6 +13,7 @@ import {
  * - `orphan-page`: adds the page to the wiki index.
  * - `stale-index`: removes a stale entry from the wiki index.
  * - `empty-page`: deletes an empty page entirely.
+ * - `contradiction`: rewrites the source page via LLM to resolve a conflict.
  *
  * Request body:
  * ```json
@@ -20,14 +21,15 @@ import {
  * { "type": "orphan-page", "slug": "page-slug" }
  * { "type": "stale-index", "slug": "page-slug" }
  * { "type": "empty-page", "slug": "page-slug" }
+ * { "type": "contradiction", "slug": "page-a", "targetSlug": "page-b", "message": "..." }
  * ```
  */
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { type, slug, targetSlug } = body;
+    const { type, slug, targetSlug, message } = body;
 
-    const result = await fixLintIssue(type, slug, targetSlug);
+    const result = await fixLintIssue(type, slug, targetSlug, message);
     return NextResponse.json(result);
   } catch (error) {
     if (error instanceof FixValidationError) {
