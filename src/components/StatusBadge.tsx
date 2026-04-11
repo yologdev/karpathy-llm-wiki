@@ -25,7 +25,14 @@ export function StatusBadge() {
       .catch(() => setError(true));
   }, []);
 
-  if (error) return null;
+  if (error) {
+    return (
+      <div className="mt-4 flex items-center justify-center gap-2 text-sm text-red-500/60">
+        <span className="inline-block h-2.5 w-2.5 rounded-full bg-red-400" />
+        Unable to check provider status
+      </div>
+    );
+  }
   if (!info) {
     // Loading shimmer
     return (

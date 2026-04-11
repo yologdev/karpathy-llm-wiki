@@ -87,6 +87,7 @@ export default function GraphPage() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [empty, setEmpty] = useState(false);
+  const [fetchError, setFetchError] = useState<string | null>(null);
   const [canvasBg, setCanvasBg] = useState<string>(DARK_PALETTE.bg);
 
   // Fetch graph data
@@ -123,8 +124,8 @@ export default function GraphPage() {
           setLoading(false);
         },
       )
-      .catch(() => {
-        setEmpty(true);
+      .catch((err) => {
+        setFetchError(String(err));
         setLoading(false);
       });
   }, []);
@@ -391,6 +392,17 @@ export default function GraphPage() {
       <main className="mx-auto max-w-5xl px-6 py-12">
         <h1 className="text-3xl font-bold tracking-tight mb-6">Wiki Graph</h1>
         <p className="text-foreground/60">Loading graph…</p>
+      </main>
+    );
+  }
+
+  if (fetchError) {
+    return (
+      <main className="mx-auto max-w-5xl px-6 py-12">
+        <h1 className="text-3xl font-bold tracking-tight mb-6">Wiki Graph</h1>
+        <p className="text-red-500">
+          Failed to load graph data: {fetchError}
+        </p>
       </main>
     );
   }

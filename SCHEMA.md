@@ -166,7 +166,8 @@ sessions should pick from this list:
 - Vector search is partially implemented — embeddings are generated
   incrementally on page write (when an embedding-capable provider like OpenAI,
   Google, or Ollama is configured) and used for hybrid BM25+vector retrieval
-  via RRF. Batch rebuild of the full vector index is not yet supported.
+  via RRF. Batch rebuild of the full vector index is available via the Settings
+  page (`/api/settings/rebuild-embeddings`).
   Anthropic-only users see no regression (pure BM25 fallback).
 - Lint auto-fix handles `missing-crossref`, `orphan-page`, `stale-index`, and
   `empty-page` issues via `POST /api/lint/fix`. Contradiction auto-fix (which
