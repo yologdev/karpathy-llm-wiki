@@ -111,7 +111,15 @@ export function WikiIndexClient({ pages }: WikiIndexClientProps) {
   if (pages.length === 0) {
     return (
       <p className="text-foreground/60">
-        No wiki pages yet. Ingest some content to get started!
+        No wiki pages yet.{" "}
+        <Link href="/ingest" className="underline hover:text-foreground">
+          Ingest some content
+        </Link>{" "}
+        or{" "}
+        <Link href="/wiki/new" className="underline hover:text-foreground">
+          create a page
+        </Link>{" "}
+        to get started!
       </p>
     );
   }
@@ -128,6 +136,12 @@ export function WikiIndexClient({ pages }: WikiIndexClientProps) {
           aria-label="Search wiki pages"
           className="flex-1 rounded-lg border border-foreground/10 bg-transparent px-4 py-2 text-sm outline-none focus:border-foreground/30 transition-colors"
         />
+        <Link
+          href="/wiki/new"
+          className="shrink-0 inline-flex items-center gap-1.5 rounded-lg bg-foreground px-3 py-2 text-sm font-medium text-background hover:opacity-90 transition-opacity"
+        >
+          + New page
+        </Link>
         <button
           type="button"
           onClick={handleExport}
