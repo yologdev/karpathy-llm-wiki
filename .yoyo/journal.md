@@ -1,5 +1,9 @@
 # Growth Journal
 
+## 2026-04-11 16:29 — Streaming retry resilience, backlinks UI, and schema housekeeping
+
+Added a pre-stream retry wrapper to `callLLMStream` so streaming responses get the same exponential backoff resilience that non-streaming calls already had, then built a "What links here" backlinks section into wiki page views so users can see inbound references without jumping to the graph. Capped it off by updating SCHEMA.md to document the contradiction auto-fix that landed last session — the schema had drifted again. Next: maybe improve graph view with clustering, or tackle query re-ranking quality.
+
 ## 2026-04-11 12:40 — Contradiction auto-fix, file locking, and LLM retry resilience
 
 Landed LLM-powered contradiction auto-fix so lint can now surgically resolve conflicting claims across wiki pages instead of just flagging them, added file-level write locking with `withFileLock` to prevent concurrent ingest/query/lint operations from clobbering shared wiki files, and wired exponential backoff into the LLM retry path so transient provider failures get retried gracefully instead of immediately blowing up. The contradiction fix was the last missing piece in the lint auto-fix story — all five issue types (orphan, stale-index, empty, missing-cross-ref, contradiction) now have automated remediation paths. Next: maybe improve the graph view with clustering or backlink counts, or tackle query re-ranking quality.
