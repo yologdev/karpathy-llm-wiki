@@ -127,6 +127,29 @@ describe("callLLMStream", () => {
     );
     expect(() => callLLMStream("system", "hello")).toThrow(/OLLAMA/);
   });
+
+  it("returns synchronously — streamText() is not async, so retryWithBackoff cannot wrap it", () => {
+    // This test documents *why* callLLMStream doesn't use retryWithBackoff:
+    // streamText() returns a StreamTextResult synchronously. The actual API
+    // call happens lazily when the stream is consumed, so connection errors
+    // (429, 503, ECONNRESET) only surface on stream read — not at call time.
+    // Wrapping streamText() in retry would never catch transient errors.
+    //
+    // We set up a provider so getModel() succeeds, then verify callLLMStream
+    // returns a result synchronously (not a Promise).
+    process.env.OPENAI_API_KEY = "sk-test-fake-key";
+    _resetConfigCache();
+
+    const result = callLLMStream("system prompt", "user message");
+
+    // streamText returns an object, not a Promise
+    expect(result).toBeDefined();
+    expect(typeof result).toBe("object");
+    // It should NOT be a Promise (i.e., no retry wrapper making it async)
+    expect(result).not.toBeInstanceOf(Promise);
+    // It should have stream-specific methods
+    expect(typeof result.toTextStreamResponse).toBe("function");
+  });
 });
 
 // ---------------------------------------------------------------------------

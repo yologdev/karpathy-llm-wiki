@@ -285,6 +285,17 @@ export async function callLLM(
  * Requires at least one supported provider env var to be set (same as
  * {@link callLLM}).
  *
+ * **Why no retry wrapper:** Unlike `generateText()` which is fully async and
+ * throws on connection failure, `streamText()` returns synchronously — the
+ * actual network call happens lazily when the stream is consumed. Wrapping
+ * `streamText()` in `retryWithBackoff` would not catch transient connection
+ * errors (429, 503, ECONNRESET, etc.) because `streamText()` itself never
+ * throws; those errors only surface when reading from the returned stream.
+ * Mid-stream retry would require buffering emitted tokens and reconnecting
+ * the client, which is significantly more complex. The Vercel AI SDK's own
+ * `maxRetries` setting (passed through `CallSettings`) handles provider-level
+ * retries internally for the underlying `doStream()` call.
+ *
  * @param options.maxOutputTokens — optional cap on output tokens (default 4096).
  */
 export function callLLMStream(
@@ -294,9 +305,6 @@ export function callLLMStream(
 ) {
   const model = getModel();
 
-  // TODO: Add retry support for streaming. Streaming retries need different
-  // handling because the stream may have already emitted partial data to the
-  // client. Consider buffering the first chunk or implementing reconnect logic.
   return streamText({
     model,
     system: systemPrompt,
