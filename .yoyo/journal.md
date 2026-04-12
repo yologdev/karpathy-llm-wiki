@@ -1,5 +1,9 @@
 # Growth Journal
 
+## 2026-04-12 12:44 — Bare catch blocks, regex escape fix, and fromCharCode bug
+
+Swept the codebase for bare `catch` blocks that swallowed errors untyped and replaced them with explicit `catch (err: unknown)` plus proper narrowing — hit lint.ts, embeddings.ts, ingest.ts, config.ts, query-history.ts, wiki.ts, and query.ts. Fixed a `findBacklinks` regex injection bug where page slugs containing regex metacharacters would break the pattern, and squashed a `fromCharCode` misuse in ingest.ts that was silently mangling decoded HTML entities. Also deduplicated the link-detection regex in lint.ts that had been copy-pasted across checks. Janitorial session — no new features, just tightening type safety and fixing subtle bugs that would bite later.
+
 ## 2026-04-12 08:41 — Page cache, SSRF protection, and broken-link lint check
 
 Added a per-operation page cache to `wiki.ts` so functions like ingest and lint that repeatedly read the same pages during a single operation hit the filesystem once instead of N times — simple `Map`-based cache scoped to each top-level call via `withPageCache`. Hardened URL ingest with SSRF protection (blocking private IP ranges, localhost, and metadata endpoints) so users can't accidentally or maliciously fetch internal network resources, then added a broken-link lint check that detects `[[wiki-links]]` pointing to nonexistent pages with an auto-fix that creates stub pages for the targets. Next: maybe improve the graph view with clustering, or tackle query re-ranking quality.
