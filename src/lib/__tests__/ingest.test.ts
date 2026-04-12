@@ -17,6 +17,7 @@ import {
   loadPageConventions,
   buildIngestSystemPrompt,
   chunkText,
+  validateUrlSafety,
   MAX_LLM_INPUT_CHARS,
 } from "../ingest";
 import { listWikiPages, readWikiPage, writeWikiPage } from "../wiki";
@@ -1294,5 +1295,93 @@ describe("ingest — chunked LLM calls", () => {
 
     mockedHasLLMKey.mockReturnValue(false);
     mockedCallLLM.mockReset();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// validateUrlSafety — SSRF protection
+// ---------------------------------------------------------------------------
+
+describe("validateUrlSafety", () => {
+  // Blocked URLs
+  it("blocks localhost", () => {
+    expect(() => validateUrlSafety("http://localhost/foo")).toThrow(
+      /URL blocked/,
+    );
+  });
+
+  it("blocks 127.0.0.1", () => {
+    expect(() => validateUrlSafety("http://127.0.0.1/foo")).toThrow(
+      /URL blocked/,
+    );
+  });
+
+  it("blocks AWS metadata endpoint 169.254.169.254", () => {
+    expect(() =>
+      validateUrlSafety("http://169.254.169.254/latest/meta-data/"),
+    ).toThrow(/URL blocked/);
+  });
+
+  it("blocks 10.x.x.x private range", () => {
+    expect(() => validateUrlSafety("http://10.0.0.1/internal")).toThrow(
+      /URL blocked/,
+    );
+  });
+
+  it("blocks 192.168.x.x private range", () => {
+    expect(() => validateUrlSafety("http://192.168.1.1/admin")).toThrow(
+      /URL blocked/,
+    );
+  });
+
+  it("blocks 172.16.x.x private range", () => {
+    expect(() => validateUrlSafety("http://172.16.0.1/")).toThrow(
+      /URL blocked/,
+    );
+  });
+
+  it("blocks IPv6 loopback [::1]", () => {
+    expect(() => validateUrlSafety("http://[::1]/")).toThrow(/URL blocked/);
+  });
+
+  it("blocks file:// scheme", () => {
+    expect(() => validateUrlSafety("file:///etc/passwd")).toThrow(
+      /URL blocked.*not allowed/,
+    );
+  });
+
+  it("blocks ftp:// scheme", () => {
+    expect(() => validateUrlSafety("ftp://files.example.com/")).toThrow(
+      /URL blocked.*not allowed/,
+    );
+  });
+
+  it("blocks .local hostnames", () => {
+    expect(() => validateUrlSafety("http://myserver.local/api")).toThrow(
+      /URL blocked/,
+    );
+  });
+
+  it("blocks .internal hostnames", () => {
+    expect(() => validateUrlSafety("http://db.internal/admin")).toThrow(
+      /URL blocked/,
+    );
+  });
+
+  it("blocks 0.0.0.0", () => {
+    expect(() => validateUrlSafety("http://0.0.0.0/")).toThrow(/URL blocked/);
+  });
+
+  // Allowed URLs
+  it("allows https://example.com", () => {
+    expect(() => validateUrlSafety("https://example.com")).not.toThrow();
+  });
+
+  it("allows http://example.com", () => {
+    expect(() => validateUrlSafety("http://example.com")).not.toThrow();
+  });
+
+  it("allows public IP addresses", () => {
+    expect(() => validateUrlSafety("http://8.8.8.8/")).not.toThrow();
   });
 });

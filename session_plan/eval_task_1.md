@@ -1,0 +1,2 @@
+Verdict: PASS
+Reason: All five files were modified exactly as specified — `broken-link` added to the type union, `checkBrokenLinks` correctly extracts internal `.md` links and checks against the disk slug set (skipping infrastructure files), `fixBrokenLink` properly replaces `[text](target.md)` with `text` using an escaped regex, the lint page UI correctly parses the target slug and wires up the fix button, and comprehensive tests cover all four required scenarios. Build and tests pass.
