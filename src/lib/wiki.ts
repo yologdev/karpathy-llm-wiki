@@ -220,14 +220,29 @@ export async function listWikiPages(): Promise<IndexEntry[]> {
  */
 export async function updateIndex(entries: IndexEntry[]): Promise<void> {
   await withFileLock("index.md", async () => {
-    await ensureDirectories();
-    const lines = entries.map(
-      (e) => `- [${e.title}](${e.slug}.md) — ${e.summary}`,
-    );
-    const content = `# Wiki Index\n\n${lines.join("\n")}\n`;
-    const indexPath = path.join(getWikiDir(), "index.md");
-    await fs.writeFile(indexPath, content, "utf-8");
+    await updateIndexUnsafe(entries);
   });
+}
+
+/**
+ * Write `wiki/index.md` from an array of entries **without** acquiring the
+ * `index.md` file lock.
+ *
+ * This exists so that callers who already hold the lock (e.g.
+ * `runPageLifecycleOp` in `lifecycle.ts`) can perform a read → mutate → write
+ * cycle atomically without double-locking.
+ *
+ * **Do not call from outside a `withFileLock("index.md", …)` block** — use
+ * {@link updateIndex} instead.
+ */
+export async function updateIndexUnsafe(entries: IndexEntry[]): Promise<void> {
+  await ensureDirectories();
+  const lines = entries.map(
+    (e) => `- [${e.title}](${e.slug}.md) — ${e.summary}`,
+  );
+  const content = `# Wiki Index\n\n${lines.join("\n")}\n`;
+  const indexPath = path.join(getWikiDir(), "index.md");
+  await fs.writeFile(indexPath, content, "utf-8");
 }
 
 // Re-export raw source utilities for backward compatibility

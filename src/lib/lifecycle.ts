@@ -7,12 +7,13 @@ import {
   writeWikiPage,
   readWikiPage,
   listWikiPages,
-  updateIndex,
+  updateIndexUnsafe,
   findRelatedPages,
   updateRelatedPages,
   appendToLog,
   getWikiDir,
 } from "./wiki";
+import { withFileLock } from "./lock";
 import type { LogOperation } from "./wiki";
 
 // ---------------------------------------------------------------------------
@@ -178,7 +179,8 @@ async function runPageLifecycleOp(
     await fs.unlink(filePath);
   }
 
-  // 2b. Update vector index (fire-and-forget — never fails the operation).
+  // 2b. Update vector index (blocking but failure-tolerant — errors are
+  //      logged and swallowed so they never fail the operation).
   try {
     if (op.kind === "write") {
       await upsertEmbedding(slug, op.content);
@@ -192,26 +194,29 @@ async function runPageLifecycleOp(
     );
   }
 
-  // 3. Mutate the index. Re-read to get the latest entries; the actual
-  //    write to index.md is serialised by withFileLock("index.md") inside
-  //    updateIndex(), so concurrent callers won't clobber each other's writes.
-  const entries = await listWikiPages();
-  let removedFromIndex = false;
+  // 3. Mutate the index. The read → mutate → write cycle is performed under
+  //    a single withFileLock("index.md") so that concurrent lifecycle ops
+  //    cannot clobber each other (TOCTOU race fix). We use updateIndexUnsafe
+  //    since we already hold the lock.
   let postIndexEntries: IndexEntry[];
-  if (op.kind === "write") {
-    const existingIdx = entries.findIndex((e) => e.slug === slug);
-    if (existingIdx !== -1) {
-      entries[existingIdx].title = op.title;
-      entries[existingIdx].summary = op.summary;
+  let removedFromIndex = false;
+  await withFileLock("index.md", async () => {
+    const entries = await listWikiPages();
+    if (op.kind === "write") {
+      const existingIdx = entries.findIndex((e) => e.slug === slug);
+      if (existingIdx !== -1) {
+        entries[existingIdx].title = op.title;
+        entries[existingIdx].summary = op.summary;
+      } else {
+        entries.push({ title: op.title, slug, summary: op.summary });
+      }
+      postIndexEntries = entries;
     } else {
-      entries.push({ title: op.title, slug, summary: op.summary });
+      postIndexEntries = entries.filter((e) => e.slug !== slug);
+      removedFromIndex = postIndexEntries.length !== entries.length;
     }
-    postIndexEntries = entries;
-  } else {
-    postIndexEntries = entries.filter((e) => e.slug !== slug);
-    removedFromIndex = postIndexEntries.length !== entries.length;
-  }
-  await updateIndex(postIndexEntries);
+    await updateIndexUnsafe(postIndexEntries);
+  });
 
   // 4. Cross-reference other pages.
   //    - write: discover related pages and add backlinks TO this slug.
@@ -221,6 +226,7 @@ async function runPageLifecycleOp(
   if (op.kind === "write") {
     if (op.crossRefSource !== null) {
       const sourceForCrossRef = op.crossRefSource ?? op.content;
+      // Re-read entries to get the latest state after the index write.
       const refreshedEntries = await listWikiPages();
       const relatedSlugs = await findRelatedPages(
         slug,
@@ -230,7 +236,7 @@ async function runPageLifecycleOp(
       crossRefedSlugs = await updateRelatedPages(slug, op.title, relatedSlugs);
     }
   } else {
-    for (const entry of postIndexEntries) {
+    for (const entry of postIndexEntries!) {
       const otherPage = await readWikiPage(entry.slug);
       if (!otherPage) continue;
       if (!otherPage.content.includes(`${slug}.md`)) continue;

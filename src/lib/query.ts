@@ -266,6 +266,12 @@ export async function searchIndex(
     return [];
   }
 
+  // Early return for empty/whitespace queries — BM25 would produce
+  // meaningless zero-scores for every document.
+  if (!question.trim()) {
+    return [];
+  }
+
   // Phase 1 — BM25 sparse scoring
   const questionTokens = tokenize(question);
   const corpusStats = await buildCorpusStats(entries, { fullBody });

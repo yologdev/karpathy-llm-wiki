@@ -336,6 +336,17 @@ describe("searchIndex", () => {
     expect(result).toEqual([]);
   });
 
+  it("returns empty array for empty or whitespace-only queries", async () => {
+    const entries: IndexEntry[] = [
+      { slug: "ml", title: "Machine Learning", summary: "Overview of ML" },
+      { slug: "cooking", title: "Cooking Tips", summary: "How to cook pasta" },
+    ];
+
+    expect(await searchIndex("", entries)).toEqual([]);
+    expect(await searchIndex("   ", entries)).toEqual([]);
+    expect(await searchIndex("\t\n", entries)).toEqual([]);
+  });
+
   it("handles empty index", async () => {
     const result = await searchIndex("anything at all", []);
     expect(result).toEqual([]);

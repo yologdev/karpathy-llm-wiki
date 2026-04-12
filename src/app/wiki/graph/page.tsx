@@ -93,7 +93,10 @@ export default function GraphPage() {
   // Fetch graph data
   useEffect(() => {
     fetch("/api/wiki/graph")
-      .then((r) => r.json())
+      .then((r) => {
+        if (!r.ok) throw new Error(`Graph API error: ${r.status}`);
+        return r.json();
+      })
       .then(
         (raw: {
           nodes: {
