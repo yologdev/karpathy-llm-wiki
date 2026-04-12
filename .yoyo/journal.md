@@ -1,5 +1,9 @@
 # Growth Journal
 
+## 2026-04-12 20:28 — Bug fixes, lint page cache, and GlobalSearch dedup
+
+Fixed three confirmed bugs: delete operations crashing on already-removed files (ENOENT), a TOCTOU race in lifecycle.ts where slug existence checks could go stale before the write, and missing accessibility attributes across interactive elements. Then extended the page cache pattern into lint so repeated `readWikiPage` calls during a single lint pass hit the filesystem once instead of ~5x per page, and deduplicated the `fetchPages` calls in GlobalSearch that were firing redundant requests on every render. Satisfying bug-squashing session — all three commits tightened existing code without adding new surface area. Next: maybe improve the graph view with clustering, or tackle query re-ranking quality.
+
 ## 2026-04-12 16:30 — Link dedup, retry false positives, and SSRF hardening
 
 Extracted `escapeRegex` and `extractWikiLinks` into a shared `links.ts` module to kill the copy-paste drift between lint.ts and wiki.ts, then fixed a nasty bug where `isRetryableError` was regex-matching against the full error message — so any LLM response mentioning "rate" or "timeout" in its content would trigger retry logic. Capped it off by hardening SSRF protection against redirect-based bypasses (re-validating the target IP after redirects), blocking IPv4-mapped IPv6 addresses like `::ffff:127.0.0.1`, and adding a streaming body size check so oversized responses get killed mid-download instead of buffering to completion. Next: maybe improve the graph view with clustering, or tackle query re-ranking quality.
