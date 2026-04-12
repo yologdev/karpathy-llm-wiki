@@ -1,5 +1,5 @@
 import fs from "fs/promises";
-import { appendToLog, getWikiDir, listWikiPages, readWikiPage } from "./wiki";
+import { appendToLog, getWikiDir, listWikiPages, readWikiPage, withPageCache } from "./wiki";
 import { hasLLMKey, callLLM } from "./llm";
 import { loadPageConventions } from "./ingest";
 import { extractWikiLinks } from "./links";
@@ -524,46 +524,48 @@ export { parseLLMJsonArray, extractCrossRefSlugs, extractWikiLinks, buildCluster
  * Run all lint checks against the wiki and return the results.
  */
 export async function lint(): Promise<LintResult> {
-  const wikiDir = getWikiDir();
+  return withPageCache(async () => {
+    const wikiDir = getWikiDir();
 
-  // Gather data
-  const diskSlugs = await getOnDiskSlugs(wikiDir);
-  const indexEntries = await listWikiPages();
-  const indexSlugs = new Set(indexEntries.map((e) => e.slug));
-  const diskSlugSet = new Set(diskSlugs);
+    // Gather data
+    const diskSlugs = await getOnDiskSlugs(wikiDir);
+    const indexEntries = await listWikiPages();
+    const indexSlugs = new Set(indexEntries.map((e) => e.slug));
+    const diskSlugSet = new Set(diskSlugs);
 
-  // Run all checks (structural checks in parallel, then contradiction check)
-  const [orphans, stale, empty, crossRefs, brokenLinks] = await Promise.all([
-    checkOrphanPages(diskSlugs, indexSlugs),
-    checkStaleIndex(indexSlugs, diskSlugSet),
-    checkEmptyPages(diskSlugs),
-    checkMissingCrossRefs(diskSlugs),
-    checkBrokenLinks(diskSlugs),
-  ]);
+    // Run all checks (structural checks in parallel, then contradiction check)
+    const [orphans, stale, empty, crossRefs, brokenLinks] = await Promise.all([
+      checkOrphanPages(diskSlugs, indexSlugs),
+      checkStaleIndex(indexSlugs, diskSlugSet),
+      checkEmptyPages(diskSlugs),
+      checkMissingCrossRefs(diskSlugs),
+      checkBrokenLinks(diskSlugs),
+    ]);
 
-  // Contradiction + missing-concept detection both require LLM calls but are
-  // independent read-only checks, so run them in parallel to halve wall-clock time.
-  const [contradictions, missingConcepts] = await Promise.all([
-    checkContradictions(diskSlugs),
-    checkMissingConceptPages(diskSlugs),
-  ]);
+    // Contradiction + missing-concept detection both require LLM calls but are
+    // independent read-only checks, so run them in parallel to halve wall-clock time.
+    const [contradictions, missingConcepts] = await Promise.all([
+      checkContradictions(diskSlugs),
+      checkMissingConceptPages(diskSlugs),
+    ]);
 
-  const issues = [...orphans, ...stale, ...empty, ...crossRefs, ...brokenLinks, ...contradictions, ...missingConcepts];
+    const issues = [...orphans, ...stale, ...empty, ...crossRefs, ...brokenLinks, ...contradictions, ...missingConcepts];
 
-  // Append a log entry so lint passes are visible in the wiki timeline.
-  // The title is a stable string ("wiki lint pass") so log readers can group
-  // lint rows; the details line carries a one-shot summary of issue counts.
-  const errorCount = issues.filter((i) => i.severity === "error").length;
-  const warningCount = issues.filter((i) => i.severity === "warning").length;
-  const infoCount = issues.filter((i) => i.severity === "info").length;
-  const logSummary =
-    `${issues.length} issue(s): ` +
-    `${errorCount} error · ${warningCount} warning · ${infoCount} info`;
-  await appendToLog("lint", "wiki lint pass", logSummary);
+    // Append a log entry so lint passes are visible in the wiki timeline.
+    // The title is a stable string ("wiki lint pass") so log readers can group
+    // lint rows; the details line carries a one-shot summary of issue counts.
+    const errorCount = issues.filter((i) => i.severity === "error").length;
+    const warningCount = issues.filter((i) => i.severity === "warning").length;
+    const infoCount = issues.filter((i) => i.severity === "info").length;
+    const logSummary =
+      `${issues.length} issue(s): ` +
+      `${errorCount} error · ${warningCount} warning · ${infoCount} info`;
+    await appendToLog("lint", "wiki lint pass", logSummary);
 
-  return {
-    issues,
-    summary: buildSummary(issues),
-    checkedAt: new Date().toISOString(),
-  };
+    return {
+      issues,
+      summary: buildSummary(issues),
+      checkedAt: new Date().toISOString(),
+    };
+  });
 }

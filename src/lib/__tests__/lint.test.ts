@@ -344,6 +344,61 @@ describe("lint", () => {
     // Heading shape: "## [YYYY-MM-DD] <op> | <title>"
     expect(last).toMatch(/^## \[\d{4}-\d{2}-\d{2}\] lint \| wiki lint pass$/);
   });
+
+  it("should use page cache to avoid redundant disk reads", async () => {
+    // Import the cache size helper to verify caching is active
+    const { _getPageCacheSize } = await import("../wiki");
+
+    // Create multiple pages so the cache has something to track
+    await writeWikiPage(
+      "alpha",
+      "# Alpha\n\nAlpha is an important concept. See [Beta](beta.md) for more.",
+    );
+    await writeWikiPage(
+      "beta",
+      "# Beta\n\nBeta relates to [Alpha](alpha.md) and expands on gamma.",
+    );
+    await writeWikiPage(
+      "gamma",
+      "# Gamma\n\nGamma is a standalone page with enough content to pass checks.",
+    );
+    const entries: IndexEntry[] = [
+      { slug: "alpha", title: "Alpha", summary: "Alpha concept" },
+      { slug: "beta", title: "Beta", summary: "Beta concept" },
+      { slug: "gamma", title: "Gamma", summary: "Gamma concept" },
+    ];
+    await updateIndex(entries);
+
+    // Spy on fs.readFile to count actual disk reads for .md files
+    const origReadFile = fs.readFile;
+    let mdReadCount = 0;
+    const spy = vi.spyOn(fs, "readFile").mockImplementation(
+      async (...args: Parameters<typeof fs.readFile>) => {
+        const filePath = String(args[0]);
+        if (filePath.endsWith(".md")) {
+          mdReadCount++;
+        }
+        return origReadFile.apply(fs, args);
+      },
+    );
+
+    const result = await lint();
+    spy.mockRestore();
+
+    // There are 3 content pages + index.md + log.md reads.
+    // Without page cache, 5 checks × 3 pages = 15 content page reads.
+    // With page cache, each page is read from disk at most once = 3 content page reads.
+    // Total .md reads should be significantly fewer than without cache.
+    // With 3 pages and 5 reading-checks, uncached = 15+ page reads.
+    // Cached: 3 unique page reads + index.md reads + log writes.
+    // We assert total .md reads are well below the uncached count.
+    expect(mdReadCount).toBeLessThan(15);
+
+    // Verify the cache is cleaned up after lint completes
+    expect(_getPageCacheSize()).toBe(0);
+
+    expect(result.checkedAt).toBeTruthy();
+  });
 });
 
 // ---------------------------------------------------------------------------
