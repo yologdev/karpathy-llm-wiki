@@ -382,10 +382,11 @@ export default function IngestPage() {
       </div>
 
       {/* Mode toggle */}
-      <div className="mb-6 flex gap-2">
+      <div className="mb-6 flex gap-2" role="group" aria-label="Input mode">
         <button
           type="button"
           onClick={() => switchMode("text")}
+          aria-pressed={mode === "text"}
           className={`rounded-lg px-4 py-2 text-sm font-medium transition-colors cursor-pointer ${
             mode === "text"
               ? "bg-foreground text-background"
@@ -397,6 +398,7 @@ export default function IngestPage() {
         <button
           type="button"
           onClick={() => switchMode("url")}
+          aria-pressed={mode === "url"}
           className={`rounded-lg px-4 py-2 text-sm font-medium transition-colors cursor-pointer ${
             mode === "url"
               ? "bg-foreground text-background"
@@ -408,6 +410,7 @@ export default function IngestPage() {
         <button
           type="button"
           onClick={() => switchMode("batch")}
+          aria-pressed={mode === "batch"}
           className={`rounded-lg px-4 py-2 text-sm font-medium transition-colors cursor-pointer ${
             mode === "batch"
               ? "bg-foreground text-background"

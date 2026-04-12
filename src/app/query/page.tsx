@@ -389,10 +389,11 @@ export default function QueryPage() {
 
                   {saveState.status === "editing" && (
                     <form onSubmit={handleSaveSubmit} className="space-y-3">
-                      <label className="block text-sm font-medium text-foreground/70">
+                      <label htmlFor="save-title" className="block text-sm font-medium text-foreground/70">
                         Page title
                       </label>
                       <input
+                        id="save-title"
                         type="text"
                         value={saveTitle}
                         onChange={(e) => setSaveTitle(e.target.value)}

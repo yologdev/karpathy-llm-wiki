@@ -224,8 +224,9 @@ async function runPageLifecycleOp(
   if (op.kind === "write") {
     if (op.crossRefSource !== null) {
       const sourceForCrossRef = op.crossRefSource ?? op.content;
-      // Re-read entries to get the latest state after the index write.
-      const refreshedEntries = await listWikiPages();
+      // Use entries captured inside the lock to avoid TOCTOU — a concurrent
+      // ingest between the lock release and a fresh read could produce stale data.
+      const refreshedEntries = postIndexEntries!;
       const relatedSlugs = await findRelatedPages(
         slug,
         sourceForCrossRef,
