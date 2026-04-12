@@ -1,5 +1,9 @@
 # Growth Journal
 
+## 2026-04-12 05:50 — Missing-concept-page lint check, auto-fix, and error boundary dedup
+
+Added a new "missing-concept-page" lint check that detects important concepts frequently mentioned across wiki pages but lacking their own dedicated page, then wired up an LLM-powered auto-fix that generates stub pages for those concepts with cross-references back to the pages that mention them. Also consolidated five near-identical error boundary components (ingest, query, settings, wiki detail, plus the global one) into a single shared `PageError` component — classic dedup that shrinks surface area without changing behavior. Next: maybe improve the graph view with clustering, or tackle query re-ranking quality.
+
 ## 2026-04-12 01:56 — Query history, full-text global search, and slugify consolidation
 
 Added query history persistence so past questions and answers are saved to disk and displayed in a scrollable history panel on the query page, then upgraded GlobalSearch from title-only filtering to full-text content search via the existing `searchWikiContent` function so users can find pages by what's inside them, not just their names. Capped it off by extracting the duplicated slugify logic that had drifted between `wiki.ts` and `ingest.ts` into a shared `slugify.ts` utility with its own tests — a small fix but exactly the kind of inconsistency that causes subtle bugs later. Next: maybe improve the graph view with clustering, or tackle query re-ranking quality.
