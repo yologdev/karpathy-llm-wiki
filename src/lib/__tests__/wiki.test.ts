@@ -1521,6 +1521,46 @@ describe("findBacklinks", () => {
     const backlinks = await findBacklinks("target");
     expect(backlinks).toHaveLength(0);
   });
+
+  it("escapes dots in slug so 'node.js' doesn't match 'nodejs.md'", async () => {
+    // Write files directly to bypass slug validation (which rejects dots)
+    const wikiDir = process.env.WIKI_DIR!;
+    await fs.mkdir(wikiDir, { recursive: true });
+
+    // A page that links to "nodejs.md" (no dot in slug)
+    await fs.writeFile(
+      path.join(wikiDir, "linker.md"),
+      "# Linker\n\nSee [NodeJS](nodejs.md) for details.",
+      "utf-8",
+    );
+    // Index includes linker
+    await updateIndex([
+      { slug: "linker", title: "Linker", summary: "A linker page" },
+    ]);
+
+    // Search for backlinks to "node.js" — the dot must be literal, not wildcard
+    const backlinks = await findBacklinks("node.js");
+    // "nodejs.md" should NOT match because dot is escaped (literal '.' vs regex any-char)
+    expect(backlinks).toHaveLength(0);
+  });
+
+  it("handles slug with parentheses without throwing regex error", async () => {
+    const wikiDir = process.env.WIKI_DIR!;
+    await fs.mkdir(wikiDir, { recursive: true });
+
+    await fs.writeFile(
+      path.join(wikiDir, "linker.md"),
+      "# Linker\n\nSee [Something](some-page.md).",
+      "utf-8",
+    );
+    await updateIndex([
+      { slug: "linker", title: "Linker", summary: "A linker page" },
+    ]);
+
+    // Should not throw even though parens are regex metacharacters
+    const backlinks = await findBacklinks("some(thing)");
+    expect(backlinks).toHaveLength(0);
+  });
 });
 
 describe("searchWikiContent", () => {

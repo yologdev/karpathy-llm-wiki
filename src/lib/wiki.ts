@@ -5,6 +5,14 @@ import { callLLM, hasLLMKey } from "./llm";
 import { withFileLock } from "./lock";
 
 // ---------------------------------------------------------------------------
+// Regex escaping helper
+// ---------------------------------------------------------------------------
+
+function escapeRegExp(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+// ---------------------------------------------------------------------------
 // Configurable base directories — override via env vars for testing
 // ---------------------------------------------------------------------------
 
@@ -117,7 +125,8 @@ export function _getPageCacheSize(): number {
 export async function readWikiPage(slug: string): Promise<WikiPage | null> {
   try {
     validateSlug(slug);
-  } catch {
+  } catch (err) {
+    console.warn(`[wiki] readWikiPage slug validation failed for "${slug}":`, err);
     return null;
   }
 
@@ -140,7 +149,8 @@ export async function readWikiPage(slug: string): Promise<WikiPage | null> {
     }
 
     return result;
-  } catch {
+  } catch (err) {
+    console.warn(`[wiki] readWikiPage failed for "${slug}":`, err);
     // Store negative result in cache too (when active)
     if (pageCache !== null) {
       pageCache.set(slug, null);
@@ -206,7 +216,8 @@ export async function listWikiPages(): Promise<IndexEntry[]> {
   let raw: string;
   try {
     raw = await fs.readFile(indexPath, "utf-8");
-  } catch {
+  } catch (err) {
+    console.warn("[wiki] listWikiPages failed to read index.md:", err);
     return [];
   }
 
@@ -385,7 +396,8 @@ export async function readLog(): Promise<string | null> {
   const logPath = path.join(getWikiDir(), "log.md");
   try {
     return await fs.readFile(logPath, "utf-8");
-  } catch {
+  } catch (err) {
+    console.warn("[wiki] readLog failed to read log.md:", err);
     return null;
   }
 }
@@ -442,7 +454,8 @@ export async function findRelatedPages(
     return parsed
       .filter((s): s is string => typeof s === "string" && validSlugs.has(s))
       .slice(0, 5);
-  } catch {
+  } catch (err) {
+    console.warn("[wiki] findRelatedPages LLM call failed:", err);
     return [];
   }
 }
@@ -512,7 +525,7 @@ export async function findBacklinks(
 ): Promise<Array<{ slug: string; title: string }>> {
   const pages = await listWikiPages();
   const backlinks: Array<{ slug: string; title: string }> = [];
-  const linkPattern = new RegExp(`\\]\\(${targetSlug}\\.md\\)`);
+  const linkPattern = new RegExp(`\\]\\(${escapeRegExp(targetSlug)}\\.md\\)`);
 
   for (const page of pages) {
     if (page.slug === targetSlug || page.slug === "index" || page.slug === "log")
@@ -560,7 +573,8 @@ export async function searchWikiContent(
   let files: string[];
   try {
     files = await fs.readdir(wikiDir);
-  } catch {
+  } catch (err) {
+    console.warn("[wiki] searchWikiContent failed to read wiki directory:", err);
     return [];
   }
 
@@ -581,7 +595,8 @@ export async function searchWikiContent(
     let content: string;
     try {
       content = await fs.readFile(path.join(wikiDir, file), "utf-8");
-    } catch {
+    } catch (err) {
+      console.warn(`[wiki] searchWikiContent failed to read "${file}":`, err);
       continue;
     }
 

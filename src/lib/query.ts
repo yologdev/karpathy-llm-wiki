@@ -117,7 +117,8 @@ export async function buildCorpusStats(
         if (page) {
           text = `${entry.title} ${page.content}`;
         }
-      } catch {
+      } catch (err) {
+        console.warn(`[query] buildCorpusStats failed to read page "${entry.slug}":`, err);
         // Fall back to title + summary if page can't be read
       }
     }
@@ -289,7 +290,8 @@ export async function searchIndex(
   let vectorResults: Array<{ slug: string; score: number }> = [];
   try {
     vectorResults = await searchByVector(question, MAX_CONTEXT_PAGES * 2);
-  } catch {
+  } catch (err) {
+    console.warn("[query] searchIndex vector search failed:", err);
     // Vector search failure is non-fatal — fall back to BM25 only
   }
 
@@ -327,7 +329,8 @@ export async function searchIndex(
           }
         }
       }
-    } catch {
+    } catch (err) {
+      console.warn("[query] selectPagesForQuery LLM page selection failed:", err);
       // Fall through to fused/keyword results
     }
   }
