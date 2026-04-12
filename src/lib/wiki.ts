@@ -70,6 +70,46 @@ import { parseFrontmatter } from "./frontmatter";
 import type { Frontmatter } from "./frontmatter";
 
 // ---------------------------------------------------------------------------
+// Per-operation page cache — opt-in to avoid redundant filesystem reads
+// ---------------------------------------------------------------------------
+
+/** Module-level cache state. `null` means caching is inactive. */
+let pageCache: Map<string, WikiPage | null> | null = null;
+
+/**
+ * Enable per-operation page caching. Returns a cleanup function that
+ * deactivates the cache and discards all entries.
+ *
+ * While active, `readWikiPage()` checks the cache before reading disk and
+ * stores its result. `writeWikiPage()` invalidates the cache entry so the
+ * next read fetches fresh data.
+ */
+export function beginPageCache(): () => void {
+  pageCache = new Map();
+  return () => {
+    pageCache = null;
+  };
+}
+
+/**
+ * Convenience wrapper: run `fn` with page caching enabled, then clean up —
+ * even if `fn` throws.
+ */
+export async function withPageCache<T>(fn: () => Promise<T>): Promise<T> {
+  const cleanup = beginPageCache();
+  try {
+    return await fn();
+  } finally {
+    cleanup();
+  }
+}
+
+/** For testing: return the number of entries in the active cache, or 0 if inactive. */
+export function _getPageCacheSize(): number {
+  return pageCache?.size ?? 0;
+}
+
+// ---------------------------------------------------------------------------
 // Wiki page I/O
 // ---------------------------------------------------------------------------
 
@@ -80,14 +120,31 @@ export async function readWikiPage(slug: string): Promise<WikiPage | null> {
   } catch {
     return null;
   }
+
+  // Check cache first (when active)
+  if (pageCache !== null && pageCache.has(slug)) {
+    return pageCache.get(slug) ?? null;
+  }
+
   const filePath = path.join(getWikiDir(), `${slug}.md`);
   try {
     const content = await fs.readFile(filePath, "utf-8");
     // Derive title from the first markdown heading, falling back to the slug.
     const titleMatch = content.match(/^#\s+(.+)$/m);
     const title = titleMatch ? titleMatch[1].trim() : slug;
-    return { slug, title, content, path: filePath };
+    const result: WikiPage = { slug, title, content, path: filePath };
+
+    // Store in cache (when active)
+    if (pageCache !== null) {
+      pageCache.set(slug, result);
+    }
+
+    return result;
   } catch {
+    // Store negative result in cache too (when active)
+    if (pageCache !== null) {
+      pageCache.set(slug, null);
+    }
     return null;
   }
 }
@@ -126,6 +183,11 @@ export async function writeWikiPage(
   await ensureDirectories();
   const filePath = path.join(getWikiDir(), `${slug}.md`);
   await fs.writeFile(filePath, content, "utf-8");
+
+  // Invalidate cache entry so next read fetches fresh data
+  if (pageCache !== null) {
+    pageCache.delete(slug);
+  }
 }
 
 // ---------------------------------------------------------------------------

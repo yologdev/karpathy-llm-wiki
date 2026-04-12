@@ -21,6 +21,9 @@ import {
   readRawSource,
   findBacklinks,
   searchWikiContent,
+  beginPageCache,
+  withPageCache,
+  _getPageCacheSize,
 } from "../wiki";
 import type { IndexEntry } from "../types";
 
@@ -1609,5 +1612,131 @@ describe("searchWikiContent", () => {
     process.env.WIKI_DIR = path.join(tmpDir, "nonexistent");
     const results = await searchWikiContent("anything");
     expect(results).toHaveLength(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Page cache
+// ---------------------------------------------------------------------------
+
+describe("page cache", () => {
+  it("_getPageCacheSize returns 0 when cache is not active", () => {
+    expect(_getPageCacheSize()).toBe(0);
+  });
+
+  it("readWikiPage returns cached result when cache is active", async () => {
+    await ensureDirectories();
+    await writeWikiPage("cached-page", "# Cached\n\nOriginal content.");
+
+    const cleanup = beginPageCache();
+    try {
+      // First read — populates cache
+      const first = await readWikiPage("cached-page");
+      expect(first).not.toBeNull();
+      expect(first!.content).toBe("# Cached\n\nOriginal content.");
+      expect(_getPageCacheSize()).toBe(1);
+
+      // Modify file directly on disk (bypassing writeWikiPage)
+      const filePath = path.join(process.env.WIKI_DIR!, "cached-page.md");
+      await fs.writeFile(filePath, "# Cached\n\nModified content.", "utf-8");
+
+      // Second read — should return cached version, not disk version
+      const second = await readWikiPage("cached-page");
+      expect(second).not.toBeNull();
+      expect(second!.content).toBe("# Cached\n\nOriginal content.");
+    } finally {
+      cleanup();
+    }
+  });
+
+  it("writeWikiPage invalidates cache entry", async () => {
+    await ensureDirectories();
+
+    const cleanup = beginPageCache();
+    try {
+      // Write and read to populate cache
+      await writeWikiPage("inv-page", "# Inv\n\nVersion one.");
+      const first = await readWikiPage("inv-page");
+      expect(first!.content).toBe("# Inv\n\nVersion one.");
+      expect(_getPageCacheSize()).toBe(1);
+
+      // Write again via writeWikiPage — should invalidate cache
+      await writeWikiPage("inv-page", "# Inv\n\nVersion two.");
+      expect(_getPageCacheSize()).toBe(0);
+
+      // Read again — should get fresh data from disk
+      const second = await readWikiPage("inv-page");
+      expect(second!.content).toBe("# Inv\n\nVersion two.");
+      expect(_getPageCacheSize()).toBe(1);
+    } finally {
+      cleanup();
+    }
+  });
+
+  it("withPageCache cleans up after normal completion", async () => {
+    await ensureDirectories();
+    await writeWikiPage("wp-page", "# WP\n\nContent.");
+
+    await withPageCache(async () => {
+      await readWikiPage("wp-page");
+      expect(_getPageCacheSize()).toBe(1);
+    });
+
+    // Cache should be inactive after withPageCache completes
+    expect(_getPageCacheSize()).toBe(0);
+  });
+
+  it("withPageCache cleans up after error", async () => {
+    await ensureDirectories();
+    await writeWikiPage("err-page", "# Err\n\nContent.");
+
+    await expect(
+      withPageCache(async () => {
+        await readWikiPage("err-page");
+        expect(_getPageCacheSize()).toBe(1);
+        throw new Error("intentional test error");
+      }),
+    ).rejects.toThrow("intentional test error");
+
+    // Cache should be inactive even after error
+    expect(_getPageCacheSize()).toBe(0);
+  });
+
+  it("readWikiPage always reads disk when cache is not active", async () => {
+    await ensureDirectories();
+    await writeWikiPage("no-cache", "# NC\n\nOriginal.");
+
+    // No cache active — read from disk
+    const first = await readWikiPage("no-cache");
+    expect(first!.content).toBe("# NC\n\nOriginal.");
+
+    // Modify file directly
+    const filePath = path.join(process.env.WIKI_DIR!, "no-cache.md");
+    await fs.writeFile(filePath, "# NC\n\nModified.", "utf-8");
+
+    // Read again — should see the modified content (no caching)
+    const second = await readWikiPage("no-cache");
+    expect(second!.content).toBe("# NC\n\nModified.");
+  });
+
+  it("caches null for non-existent pages", async () => {
+    await ensureDirectories();
+
+    const cleanup = beginPageCache();
+    try {
+      const result = await readWikiPage("nonexistent");
+      expect(result).toBeNull();
+      expect(_getPageCacheSize()).toBe(1);
+
+      // Even if the file appears on disk, cache returns null
+      await writeWikiPage("nonexistent", "# Now Exists\n\nContent.");
+
+      // writeWikiPage invalidates, so next read should find it
+      const after = await readWikiPage("nonexistent");
+      expect(after).not.toBeNull();
+      expect(after!.content).toBe("# Now Exists\n\nContent.");
+    } finally {
+      cleanup();
+    }
   });
 });
