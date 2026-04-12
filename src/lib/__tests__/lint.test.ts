@@ -19,6 +19,7 @@ const mockedCallLLM = vi.mocked(callLLM);
 import { lint } from "../lint";
 import {
   extractCrossRefSlugs,
+  extractWikiLinks,
   buildClusters,
   parseContradictionResponse,
   checkContradictions,
@@ -899,5 +900,57 @@ Every page must start with a level-1 heading.
     expect(brokenLinkIssues).toHaveLength(1);
     expect(brokenLinkIssues[0].slug).toBe("linker");
     expect(brokenLinkIssues[0].message).toContain("does-not-exist.md");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// extractWikiLinks
+// ---------------------------------------------------------------------------
+
+describe("extractWikiLinks", () => {
+  it("returns empty array when no links are present", () => {
+    expect(extractWikiLinks("Just some plain text.")).toEqual([]);
+  });
+
+  it("extracts a single wiki link", () => {
+    const content = "See [My Page](my-page.md) for details.";
+    expect(extractWikiLinks(content)).toEqual([
+      { text: "My Page", targetSlug: "my-page" },
+    ]);
+  });
+
+  it("extracts multiple wiki links", () => {
+    const content = "See [Alpha](alpha.md) and [Beta](beta.md) and [Gamma](gamma.md).";
+    expect(extractWikiLinks(content)).toEqual([
+      { text: "Alpha", targetSlug: "alpha" },
+      { text: "Beta", targetSlug: "beta" },
+      { text: "Gamma", targetSlug: "gamma" },
+    ]);
+  });
+
+  it("handles link text with special characters", () => {
+    const content = 'Check [What\'s New? (2024)](whats-new-2024.md) here.';
+    expect(extractWikiLinks(content)).toEqual([
+      { text: "What's New? (2024)", targetSlug: "whats-new-2024" },
+    ]);
+  });
+
+  it("handles slugs with hyphens and numbers", () => {
+    const content = "Link to [Page 42](some-page-42.md).";
+    expect(extractWikiLinks(content)).toEqual([
+      { text: "Page 42", targetSlug: "some-page-42" },
+    ]);
+  });
+
+  it("does not match non-.md links", () => {
+    const content = "Visit [Google](https://google.com) for search.";
+    expect(extractWikiLinks(content)).toEqual([]);
+  });
+
+  it("handles empty link text", () => {
+    const content = "An empty link [](target.md) here.";
+    expect(extractWikiLinks(content)).toEqual([
+      { text: "", targetSlug: "target" },
+    ]);
   });
 });

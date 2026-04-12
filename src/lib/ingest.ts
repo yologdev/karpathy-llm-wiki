@@ -84,8 +84,8 @@ export function stripHtml(html: string): string {
     .replace(/&bull;/g, "\u2022")
     .replace(/&middot;/g, "\u00B7")
     // Numeric entities: &#123; and &#x1F;
-    .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(parseInt(n, 10)))
-    .replace(/&#x([0-9a-fA-F]+);/g, (_, h) => String.fromCharCode(parseInt(h, 16)));
+    .replace(/&#(\d+);/g, (_, n) => String.fromCodePoint(parseInt(n, 10)))
+    .replace(/&#x([0-9a-fA-F]+);/g, (_, h) => String.fromCodePoint(parseInt(h, 16)));
 
   // Collapse whitespace
   text = text.replace(/\s+/g, " ").trim();

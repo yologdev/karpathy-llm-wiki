@@ -408,6 +408,20 @@ describe("stripHtml", () => {
     </script><p>Content here</p>`;
     expect(stripHtml(html)).toBe("Content here");
   });
+
+  it("decodes astral Unicode decimal entities (emoji)", () => {
+    // &#128512; = U+1F600 = 😀 (grinning face)
+    expect(stripHtml("&#128512;")).toBe("😀");
+  });
+
+  it("decodes astral Unicode hex entities (emoji)", () => {
+    // &#x1F600; = U+1F600 = 😀 (grinning face)
+    expect(stripHtml("&#x1F600;")).toBe("😀");
+  });
+
+  it("decodes astral Unicode mixed with text", () => {
+    expect(stripHtml("Hello &#128512; World")).toBe("Hello 😀 World");
+  });
 });
 
 describe("extractTitle", () => {

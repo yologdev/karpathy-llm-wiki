@@ -90,6 +90,20 @@ async function checkEmptyPages(diskSlugs: string[]): Promise<LintIssue[]> {
 }
 
 /**
+ * Extract all wiki-style markdown links from content.
+ * Returns an array of { text, targetSlug } for each `[text](slug.md)` link found.
+ */
+function extractWikiLinks(content: string): Array<{ text: string; targetSlug: string }> {
+  const results: Array<{ text: string; targetSlug: string }> = [];
+  const re = /\[([^\]]*)\]\(([^)]+)\.md\)/g;
+  let match;
+  while ((match = re.exec(content)) !== null) {
+    results.push({ text: match[1], targetSlug: match[2] });
+  }
+  return results;
+}
+
+/**
  * Check for broken links — internal wiki links pointing to non-existent pages.
  */
 async function checkBrokenLinks(
@@ -102,10 +116,8 @@ async function checkBrokenLinks(
     const page = await readWikiPage(slug);
     if (!page) continue;
 
-    const linkRe = /\[([^\]]*)\]\(([^)]+)\.md\)/g;
-    let match;
-    while ((match = linkRe.exec(page.content)) !== null) {
-      const targetSlug = match[2];
+    const links = extractWikiLinks(page.content);
+    for (const { targetSlug } of links) {
       // Skip infrastructure files (index.md, log.md)
       if (INFRASTRUCTURE_FILES.has(`${targetSlug}.md`)) continue;
       if (!diskSlugSet.has(targetSlug)) {
@@ -142,12 +154,9 @@ async function checkMissingCrossRefs(
 
   for (const current of pageInfo) {
     // Find all existing markdown links in this page (targets as slugs)
-    const linkRe = /\[([^\]]*)\]\(([^)]+)\.md\)/g;
-    const linkedSlugs = new Set<string>();
-    let match;
-    while ((match = linkRe.exec(current.content)) !== null) {
-      linkedSlugs.add(match[2]);
-    }
+    const linkedSlugs = new Set<string>(
+      extractWikiLinks(current.content).map((l) => l.targetSlug),
+    );
 
     // Check if this page mentions other pages without linking to them
     for (const other of pageInfo) {
@@ -182,13 +191,7 @@ async function checkMissingCrossRefs(
  * Returns the set of slugs that this page links to.
  */
 function extractCrossRefSlugs(content: string): Set<string> {
-  const linkRe = /\[([^\]]*)\]\(([^)]+)\.md\)/g;
-  const slugs = new Set<string>();
-  let match;
-  while ((match = linkRe.exec(content)) !== null) {
-    slugs.add(match[2]);
-  }
-  return slugs;
+  return new Set(extractWikiLinks(content).map((l) => l.targetSlug));
 }
 
 /**
@@ -526,7 +529,7 @@ async function checkMissingConceptPages(
   }
 }
 
-export { parseLLMJsonArray, extractCrossRefSlugs, buildClusters, parseContradictionResponse, checkContradictions, parseMissingConceptResponse, checkMissingConceptPages, checkBrokenLinks };
+export { parseLLMJsonArray, extractCrossRefSlugs, extractWikiLinks, buildClusters, parseContradictionResponse, checkContradictions, parseMissingConceptResponse, checkMissingConceptPages, checkBrokenLinks };
 
 /**
  * Run all lint checks against the wiki and return the results.
