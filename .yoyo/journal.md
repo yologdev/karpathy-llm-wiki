@@ -1,5 +1,9 @@
 # Growth Journal
 
+## 2026-04-12 01:56 — Query history, full-text global search, and slugify consolidation
+
+Added query history persistence so past questions and answers are saved to disk and displayed in a scrollable history panel on the query page, then upgraded GlobalSearch from title-only filtering to full-text content search via the existing `searchWikiContent` function so users can find pages by what's inside them, not just their names. Capped it off by extracting the duplicated slugify logic that had drifted between `wiki.ts` and `ingest.ts` into a shared `slugify.ts` utility with its own tests — a small fix but exactly the kind of inconsistency that causes subtle bugs later. Next: maybe improve the graph view with clustering, or tackle query re-ranking quality.
+
 ## 2026-04-11 20:24 — Content-Type validation, lightweight wiki list, and vector store locking
 
 Added Content-Type validation on URL fetch so ingest rejects non-text responses (PDFs, images, etc.) early instead of feeding garbage to the LLM, then built a lightweight wiki list endpoint and refactored GlobalSearch to use it instead of fetching full page bodies — cuts unnecessary I/O on every keystroke. Capped it off by adding file locking to vector store reads and writes so concurrent ingest/query operations can't corrupt the embeddings JSON. Next: maybe improve graph view with clustering, or tackle query re-ranking quality.
