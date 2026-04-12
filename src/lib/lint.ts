@@ -229,14 +229,16 @@ If no contradictions are found, respond with an empty array: []
 Respond ONLY with the JSON array — no additional text, no markdown code fences.`;
 
 /**
- * Parse the LLM response for contradiction detection.
- * Returns structured contradiction data or an empty array on malformed responses.
+ * Generic parser for LLM JSON array responses.
+ * Handles trimming, markdown code fence stripping, JSON parsing, and per-item
+ * validation via a caller-supplied callback.  Returns an empty array on any
+ * parse failure or when the response isn't an array.
  */
-function parseContradictionResponse(
+function parseLLMJsonArray<T>(
   response: string,
-): { pages: string[]; description: string }[] {
+  validateItem: (item: unknown) => T | null,
+): T[] {
   try {
-    // Strip optional markdown code fences
     let cleaned = response.trim();
     cleaned = cleaned.replace(/^```(?:json)?\s*\n?/i, "").replace(/\n?```\s*$/, "");
     cleaned = cleaned.trim();
@@ -244,25 +246,42 @@ function parseContradictionResponse(
     const parsed = JSON.parse(cleaned);
     if (!Array.isArray(parsed)) return [];
 
-    const results: { pages: string[]; description: string }[] = [];
+    const results: T[] = [];
     for (const item of parsed) {
-      if (
-        item &&
-        Array.isArray(item.pages) &&
-        item.pages.length >= 2 &&
-        typeof item.description === "string" &&
-        item.description.length > 0
-      ) {
-        results.push({
-          pages: item.pages.map(String),
-          description: item.description,
-        });
+      const validated = validateItem(item);
+      if (validated !== null) {
+        results.push(validated);
       }
     }
     return results;
   } catch {
     return [];
   }
+}
+
+/**
+ * Parse the LLM response for contradiction detection.
+ * Returns structured contradiction data or an empty array on malformed responses.
+ */
+function parseContradictionResponse(
+  response: string,
+): { pages: string[]; description: string }[] {
+  return parseLLMJsonArray(response, (item: unknown) => {
+    const obj = item as Record<string, unknown>;
+    if (
+      obj &&
+      Array.isArray(obj.pages) &&
+      obj.pages.length >= 2 &&
+      typeof obj.description === "string" &&
+      obj.description.length > 0
+    ) {
+      return {
+        pages: (obj.pages as unknown[]).map(String),
+        description: obj.description,
+      };
+    }
+    return null;
+  });
 }
 
 /**
@@ -375,37 +394,25 @@ Only include concepts that are genuinely important and mentioned in at least 2 d
 function parseMissingConceptResponse(
   response: string,
 ): { concept: string; mentioned_in: string[]; reason: string }[] {
-  try {
-    // Strip optional markdown code fences
-    let cleaned = response.trim();
-    cleaned = cleaned.replace(/^```(?:json)?\s*\n?/i, "").replace(/\n?```\s*$/, "");
-    cleaned = cleaned.trim();
-
-    const parsed = JSON.parse(cleaned);
-    if (!Array.isArray(parsed)) return [];
-
-    const results: { concept: string; mentioned_in: string[]; reason: string }[] = [];
-    for (const item of parsed) {
-      if (
-        item &&
-        typeof item.concept === "string" &&
-        item.concept.length > 0 &&
-        Array.isArray(item.mentioned_in) &&
-        item.mentioned_in.length >= 2 &&
-        typeof item.reason === "string" &&
-        item.reason.length > 0
-      ) {
-        results.push({
-          concept: item.concept,
-          mentioned_in: item.mentioned_in.map(String),
-          reason: item.reason,
-        });
-      }
+  return parseLLMJsonArray(response, (item: unknown) => {
+    const obj = item as Record<string, unknown>;
+    if (
+      obj &&
+      typeof obj.concept === "string" &&
+      obj.concept.length > 0 &&
+      Array.isArray(obj.mentioned_in) &&
+      obj.mentioned_in.length >= 2 &&
+      typeof obj.reason === "string" &&
+      obj.reason.length > 0
+    ) {
+      return {
+        concept: obj.concept,
+        mentioned_in: (obj.mentioned_in as unknown[]).map(String),
+        reason: obj.reason,
+      };
     }
-    return results;
-  } catch {
-    return [];
-  }
+    return null;
+  });
 }
 
 /**
@@ -486,7 +493,7 @@ async function checkMissingConceptPages(
   }
 }
 
-export { extractCrossRefSlugs, buildClusters, parseContradictionResponse, checkContradictions, parseMissingConceptResponse, checkMissingConceptPages };
+export { parseLLMJsonArray, extractCrossRefSlugs, buildClusters, parseContradictionResponse, checkContradictions, parseMissingConceptResponse, checkMissingConceptPages };
 
 /**
  * Run all lint checks against the wiki and return the results.
@@ -508,11 +515,12 @@ export async function lint(): Promise<LintResult> {
     checkMissingCrossRefs(diskSlugs),
   ]);
 
-  // Contradiction detection requires LLM calls, run after structural checks
-  const contradictions = await checkContradictions(diskSlugs);
-
-  // Missing concept page detection also requires LLM, run after contradiction check
-  const missingConcepts = await checkMissingConceptPages(diskSlugs);
+  // Contradiction + missing-concept detection both require LLM calls but are
+  // independent read-only checks, so run them in parallel to halve wall-clock time.
+  const [contradictions, missingConcepts] = await Promise.all([
+    checkContradictions(diskSlugs),
+    checkMissingConceptPages(diskSlugs),
+  ]);
 
   const issues = [...orphans, ...stale, ...empty, ...crossRefs, ...contradictions, ...missingConcepts];
 
