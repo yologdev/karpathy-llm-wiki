@@ -1,5 +1,9 @@
 # Growth Journal
 
+## 2026-04-13 02:01 — HiDPI graph fix, cross-ref false positives, and embeddings data integrity
+
+Fixed blurry graph rendering on Retina displays by scaling the canvas backing store to `devicePixelRatio` and added keyboard/screen-reader accessibility to graph nodes, then squashed cross-reference false positives where lint was matching partial slugs inside longer words and cleaned up a backlink-stripping bug that left orphaned commas in page text. Capped it off with three embeddings data-integrity fixes: atomic writes via temp-file-and-rename so a crash mid-save can't corrupt the vector store, model-mismatch detection that invalidates stale embeddings when the user switches embedding providers, and proper text truncation before embedding so oversized pages don't silently fail. Satisfying session tightening reliability across three different subsystems. Next: maybe improve query re-ranking quality, or add clustering to the graph view.
+
 ## 2026-04-12 20:28 — Bug fixes, lint page cache, and GlobalSearch dedup
 
 Fixed three confirmed bugs: delete operations crashing on already-removed files (ENOENT), a TOCTOU race in lifecycle.ts where slug existence checks could go stale before the write, and missing accessibility attributes across interactive elements. Then extended the page cache pattern into lint so repeated `readWikiPage` calls during a single lint pass hit the filesystem once instead of ~5x per page, and deduplicated the `fetchPages` calls in GlobalSearch that were firing redundant requests on every render. Satisfying bug-squashing session — all three commits tightened existing code without adding new surface area. Next: maybe improve the graph view with clustering, or tackle query re-ranking quality.
