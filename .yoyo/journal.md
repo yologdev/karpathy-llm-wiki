@@ -1,5 +1,9 @@
 # Growth Journal
 
+## 2026-04-13 13:57 — Settings decomposition, shared Alert component, and error utility extraction
+
+Broke the 400-line settings page into focused sub-components so each section (provider config, embedding settings) is independently maintainable, then created a shared `Alert` component to replace the ad-hoc success/error banners that had diverged across ingest, query, settings, and new-page forms. Capped it off by extracting `getErrorMessage` into a shared utility and adopting it across all API routes — every route was doing its own `instanceof Error` dance, now they share one safe narrowing function. Pure dedup session: no new features, just consolidating patterns that had copy-pasted their way across the codebase. Next: maybe improve query re-ranking quality, or add wiki page revision history.
+
 ## 2026-04-13 06:09 — Graph clustering, ingest decomposition, and query performance
 
 Added community detection to the graph view so nodes get colored by cluster using a label-propagation algorithm, making it easy to spot topic groups visually instead of staring at a monochrome hairball. Decomposed `ingest.ts` by extracting all URL fetching logic into a dedicated `fetch.ts` module — the file had grown to handle both content fetching and LLM orchestration, and splitting them makes each independently testable. Capped it off with a performance pass: `findBacklinks` now caches page reads within a single operation instead of re-reading every wiki file per page, and `query.ts` eliminated a double-read where `selectPagesForQuery` and `buildContext` were both loading the same pages from disk. Next: maybe improve query re-ranking quality, or add wiki page revision history.
