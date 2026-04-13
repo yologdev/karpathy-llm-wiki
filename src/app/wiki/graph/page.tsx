@@ -2,12 +2,14 @@
 
 import { useEffect, useRef, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
+import { detectCommunities } from "@/lib/graph";
 
 interface GraphNode {
   id: string;
   label: string;
   linkCount: number;
   tags: string[];
+  cluster: number;
   x: number;
   y: number;
   vx: number;
@@ -60,6 +62,44 @@ function getColorPalette(): ColorPalette {
   return isDark ? DARK_PALETTE : LIGHT_PALETTE;
 }
 
+// Cluster colors: distinct hues for community detection coloring
+const CLUSTER_COLORS_DARK = [
+  "#60a5fa", // blue
+  "#34d399", // emerald
+  "#fbbf24", // amber
+  "#f87171", // rose
+  "#a78bfa", // violet
+  "#22d3ee", // cyan
+  "#fb923c", // orange
+  "#a3e635", // lime
+  "#f472b6", // pink
+  "#2dd4bf", // teal
+];
+
+const CLUSTER_COLORS_LIGHT = [
+  "#3b82f6", // blue
+  "#10b981", // emerald
+  "#f59e0b", // amber
+  "#ef4444", // rose
+  "#8b5cf6", // violet
+  "#06b6d4", // cyan
+  "#f97316", // orange
+  "#84cc16", // lime
+  "#ec4899", // pink
+  "#14b8a6", // teal
+];
+
+// Matching lighter stroke colors for dark mode
+const CLUSTER_STROKES_DARK = [
+  "#93c5fd", "#6ee7b7", "#fcd34d", "#fca5a5", "#c4b5fd",
+  "#67e8f9", "#fdba74", "#bef264", "#f9a8d4", "#5eead4",
+];
+
+const CLUSTER_STROKES_LIGHT = [
+  "#2563eb", "#059669", "#d97706", "#dc2626", "#7c3aed",
+  "#0891b2", "#ea580c", "#65a30d", "#db2777", "#0d9488",
+];
+
 const REPULSION = 3000;
 const ATTRACTION = 0.005;
 const CENTER_GRAVITY = 0.01;
@@ -89,6 +129,7 @@ export default function GraphPage() {
   const [empty, setEmpty] = useState(false);
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [canvasBg, setCanvasBg] = useState<string>(DARK_PALETTE.bg);
+  const clusterCountRef = useRef<number>(0);
 
   // Fetch graph data
   useEffect(() => {
@@ -118,11 +159,27 @@ export default function GraphPage() {
             label: n.label,
             linkCount: n.linkCount ?? 0,
             tags: n.tags ?? [],
+            cluster: 0,
             x: Math.random() * 400 + 100,
             y: Math.random() * 300 + 100,
             vx: 0,
             vy: 0,
           }));
+
+          // Community detection
+          const nodeIds = raw.nodes.map((n) => n.id);
+          const edgePairs: [string, string][] = (raw.edges ?? []).map(
+            (e: GraphEdge) => [e.source, e.target] as [string, string],
+          );
+          const { clusters, count } = detectCommunities({
+            nodes: nodeIds,
+            edges: edgePairs,
+          });
+          for (const node of nodes) {
+            node.cluster = clusters.get(node.id) ?? 0;
+          }
+          clusterCountRef.current = count;
+
           dataRef.current = { nodes, edges: raw.edges ?? [] };
           setLoading(false);
         },
@@ -243,13 +300,22 @@ export default function GraphPage() {
 
     // Nodes
     const hovered = hoveredRef.current;
+    const isDark =
+      typeof window !== "undefined" &&
+      window.matchMedia("(prefers-color-scheme: dark)").matches;
+    const clusterFills = isDark ? CLUSTER_COLORS_DARK : CLUSTER_COLORS_LIGHT;
+    const clusterStrokes = isDark
+      ? CLUSTER_STROKES_DARK
+      : CLUSTER_STROKES_LIGHT;
+
     for (const n of nodes) {
       const r = nodeRadius(n.linkCount);
+      const colorIdx = n.cluster % clusterFills.length;
       ctx.beginPath();
       ctx.arc(n.x, n.y, r, 0, Math.PI * 2);
-      ctx.fillStyle = palette.node;
+      ctx.fillStyle = clusterFills[colorIdx];
       ctx.fill();
-      ctx.strokeStyle = palette.nodeStroke;
+      ctx.strokeStyle = clusterStrokes[colorIdx];
       ctx.lineWidth = hovered?.id === n.id ? 2.5 : 1.5;
       ctx.stroke();
 
@@ -292,6 +358,56 @@ export default function GraphPage() {
       ctx.font = "13px sans-serif";
       ctx.textAlign = "left";
       ctx.fillText(tooltipText, tipX + 8, tipY + 18);
+    }
+
+    // Cluster legend (bottom-left corner)
+    const clusterCount = clusterCountRef.current;
+    if (clusterCount > 1) {
+      const legendX = 12;
+      const legendItemH = 18;
+      const legendPad = 8;
+      const displayCount = Math.min(clusterCount, clusterFills.length);
+      const legendH = displayCount * legendItemH + legendPad * 2;
+      const legendW = 110;
+      const legendY = H - legendH - 12;
+
+      // Count nodes per cluster
+      const clusterSizes = new Map<number, number>();
+      for (const n of nodes) {
+        clusterSizes.set(n.cluster, (clusterSizes.get(n.cluster) ?? 0) + 1);
+      }
+
+      // Background
+      ctx.fillStyle = palette.tooltipBg;
+      ctx.beginPath();
+      ctx.roundRect(legendX, legendY, legendW, legendH, 5);
+      ctx.fill();
+      ctx.strokeStyle = palette.edge;
+      ctx.lineWidth = 1;
+      ctx.stroke();
+
+      // Items
+      for (let i = 0; i < displayCount; i++) {
+        const y = legendY + legendPad + i * legendItemH + 12;
+        const colorIdx = i % clusterFills.length;
+        const size = clusterSizes.get(i) ?? 0;
+
+        // Color swatch
+        ctx.beginPath();
+        ctx.arc(legendX + 16, y - 4, 5, 0, Math.PI * 2);
+        ctx.fillStyle = clusterFills[colorIdx];
+        ctx.fill();
+
+        // Label
+        ctx.fillStyle = palette.label;
+        ctx.font = "11px sans-serif";
+        ctx.textAlign = "left";
+        ctx.fillText(
+          `Cluster ${i + 1} (${size})`,
+          legendX + 26,
+          y,
+        );
+      }
     }
 
     // Continue or stop
@@ -457,7 +573,8 @@ export default function GraphPage() {
         </canvas>
       </div>
       <p className="text-xs text-foreground/40 mt-2">
-        Node size reflects connection count.
+        Node size reflects connection count. Colors indicate detected
+        communities.
       </p>
     </main>
   );
