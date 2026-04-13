@@ -518,19 +518,21 @@ export async function updateRelatedPages(
 export async function findBacklinks(
   targetSlug: string,
 ): Promise<Array<{ slug: string; title: string }>> {
-  const pages = await listWikiPages();
-  const backlinks: Array<{ slug: string; title: string }> = [];
+  return withPageCache(async () => {
+    const pages = await listWikiPages();
+    const backlinks: Array<{ slug: string; title: string }> = [];
 
-  for (const page of pages) {
-    if (page.slug === targetSlug || page.slug === "index" || page.slug === "log")
-      continue;
-    const wikiPage = await readWikiPage(page.slug);
-    if (wikiPage && hasLinkTo(wikiPage.content, targetSlug)) {
-      backlinks.push({ slug: page.slug, title: page.title });
+    for (const page of pages) {
+      if (page.slug === targetSlug || page.slug === "index" || page.slug === "log")
+        continue;
+      const wikiPage = await readWikiPage(page.slug);
+      if (wikiPage && hasLinkTo(wikiPage.content, targetSlug)) {
+        backlinks.push({ slug: page.slug, title: page.title });
+      }
     }
-  }
 
-  return backlinks;
+    return backlinks;
+  });
 }
 
 // ---------------------------------------------------------------------------

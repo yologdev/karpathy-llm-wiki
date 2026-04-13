@@ -3,6 +3,7 @@ import {
   listWikiPages,
   readWikiPage,
   writeWikiPageWithSideEffects,
+  withPageCache,
 } from "./wiki";
 import { slugify, loadPageConventions, extractSummary } from "./ingest";
 import { extractCitedSlugs } from "./citations";
@@ -456,41 +457,43 @@ export async function selectPagesForQuery(
  * only those pages for context. For small wikis (<= 5 pages), loads all.
  */
 export async function query(question: string): Promise<QueryResult> {
-  const entries = await listWikiPages();
+  return withPageCache(async () => {
+    const entries = await listWikiPages();
 
-  // Empty wiki — nothing to query
-  if (entries.length === 0) {
-    return {
-      answer:
-        "The wiki is empty. Please [ingest some content](/ingest) first so I have something to answer from.",
-      sources: [],
-    };
-  }
+    // Empty wiki — nothing to query
+    if (entries.length === 0) {
+      return {
+        answer:
+          "The wiki is empty. Please [ingest some content](/ingest) first so I have something to answer from.",
+        sources: [],
+      };
+    }
 
-  // Determine which pages to load
-  const selectedSlugs = await selectPagesForQuery(question, entries);
+    // Determine which pages to load
+    const selectedSlugs = await selectPagesForQuery(question, entries);
 
-  const { context } = await buildContext(selectedSlugs);
+    const { context } = await buildContext(selectedSlugs);
 
-  // No API key — return a helpful fallback
-  if (!hasLLMKey()) {
+    // No API key — return a helpful fallback
+    if (!hasLLMKey()) {
+      const allSlugs = entries.map((e) => e.slug);
+      const pageList = allSlugs.map((s) => `- ${s}`).join("\n");
+      return {
+        answer: `**No API key configured.** Set an API key (\`ANTHROPIC_API_KEY\`, \`OPENAI_API_KEY\`, etc.) to enable querying.\n\nYour wiki currently contains these pages:\n${pageList}`,
+        sources: [],
+      };
+    }
+
+    const systemPrompt = await buildQuerySystemPrompt(context, entries, selectedSlugs);
+
+    const answer = await callLLM(systemPrompt, question);
+
+    // All slugs in the wiki are valid citation targets
     const allSlugs = entries.map((e) => e.slug);
-    const pageList = allSlugs.map((s) => `- ${s}`).join("\n");
-    return {
-      answer: `**No API key configured.** Set an API key (\`ANTHROPIC_API_KEY\`, \`OPENAI_API_KEY\`, etc.) to enable querying.\n\nYour wiki currently contains these pages:\n${pageList}`,
-      sources: [],
-    };
-  }
+    const sources = extractCitedSlugs(answer, allSlugs);
 
-  const systemPrompt = await buildQuerySystemPrompt(context, entries, selectedSlugs);
-
-  const answer = await callLLM(systemPrompt, question);
-
-  // All slugs in the wiki are valid citation targets
-  const allSlugs = entries.map((e) => e.slug);
-  const sources = extractCitedSlugs(answer, allSlugs);
-
-  return { answer, sources };
+    return { answer, sources };
+  });
 }
 
 // ---------------------------------------------------------------------------

@@ -1562,6 +1562,27 @@ describe("findBacklinks", () => {
     const backlinks = await findBacklinks("some(thing)");
     expect(backlinks).toHaveLength(0);
   });
+
+  it("populates page cache during scan", async () => {
+    // Create several pages with links
+    await writeWikiPage("target", "# Target\n\nSome content.");
+    await writeWikiPage("linker-a", "# Linker A\n\nSee [Target](target.md).");
+    await writeWikiPage("linker-b", "# Linker B\n\nSee [Target](target.md).");
+    await updateIndex([
+      { slug: "target", title: "Target", summary: "Target" },
+      { slug: "linker-a", title: "Linker A", summary: "A" },
+      { slug: "linker-b", title: "Linker B", summary: "B" },
+    ]);
+
+    // Before the call, no cache is active
+    expect(_getPageCacheSize()).toBe(0);
+
+    const backlinks = await findBacklinks("target");
+    expect(backlinks).toHaveLength(2);
+
+    // After the call, cache is cleaned up (withPageCache cleans up)
+    expect(_getPageCacheSize()).toBe(0);
+  });
 });
 
 describe("searchWikiContent", () => {
