@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useState, useCallback } from "react";
 import { MAX_BATCH_URLS } from "@/lib/constants";
+import { Alert } from "@/components/Alert";
 
 interface BatchItem {
   url: string;
@@ -219,9 +220,9 @@ export function BatchIngestForm() {
           </div>
 
           {validationError && (
-            <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-600 dark:text-red-400">
+            <Alert variant="error">
               {validationError}
-            </div>
+            </Alert>
           )}
 
           <button

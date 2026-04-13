@@ -3,6 +3,7 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 import Link from "next/link";
 import { MarkdownRenderer } from "@/components/MarkdownRenderer";
+import { Alert } from "@/components/Alert";
 import { extractCitedSlugs } from "@/lib/citations";
 
 interface QueryResponse {
@@ -342,9 +343,9 @@ export default function QueryPage() {
           </form>
 
           {error && (
-            <div className="mt-8 rounded-lg border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-800 dark:border-red-800 dark:bg-red-950 dark:text-red-200">
+            <Alert variant="error" className="mt-8">
               {error}
-            </div>
+            </Alert>
           )}
 
           {result && (
@@ -425,7 +426,7 @@ export default function QueryPage() {
                   )}
 
                   {saveState.status === "saved" && saveState.slug && (
-                    <div className="rounded-lg border border-green-300 bg-green-50 px-4 py-3 text-sm text-green-800 dark:border-green-800 dark:bg-green-950 dark:text-green-200">
+                    <Alert variant="success">
                       Saved!{" "}
                       <Link
                         href={`/wiki/${saveState.slug}`}
@@ -433,14 +434,14 @@ export default function QueryPage() {
                       >
                         View wiki page →
                       </Link>
-                    </div>
+                    </Alert>
                   )}
 
                   {saveState.status === "error" && (
                     <div className="space-y-2">
-                      <div className="rounded-lg border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-800 dark:border-red-800 dark:bg-red-950 dark:text-red-200">
+                      <Alert variant="error">
                         {saveState.error ?? "Failed to save"}
-                      </div>
+                      </Alert>
                       <button
                         onClick={handleSaveClick}
                         className="text-sm text-foreground/60 hover:text-foreground underline"

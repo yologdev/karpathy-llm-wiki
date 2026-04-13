@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useState } from "react";
 import { MarkdownRenderer } from "@/components/MarkdownRenderer";
+import { Alert } from "@/components/Alert";
 import { BatchIngestForm } from "@/components/BatchIngestForm";
 
 type Mode = "text" | "url" | "batch";
@@ -340,9 +341,9 @@ export default function IngestPage() {
         </div>
 
         {error && (
-          <div className="mb-4 rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-600 dark:text-red-400">
+          <Alert variant="error" className="mb-4">
             {error}
-          </div>
+          </Alert>
         )}
 
         {/* Action buttons */}
@@ -487,9 +488,9 @@ export default function IngestPage() {
         )}
 
         {error && (
-          <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-600 dark:text-red-400">
+          <Alert variant="error">
             {error}
-          </div>
+          </Alert>
         )}
 
         <div className="flex items-center gap-4">

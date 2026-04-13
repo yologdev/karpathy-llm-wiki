@@ -3,6 +3,8 @@
 import { useRouter } from "next/navigation";
 import { useState, useMemo } from "react";
 import { slugify } from "@/lib/slugify";
+import { getErrorMessage } from "@/lib/errors";
+import { Alert } from "@/components/Alert";
 
 export default function NewWikiPage() {
   const router = useRouter();
@@ -51,7 +53,7 @@ export default function NewWikiPage() {
       }
       router.push(`/wiki/${trimmedSlug}`);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Network error");
+      setError(getErrorMessage(err, "Network error"));
     } finally {
       setLoading(false);
     }
@@ -114,9 +116,9 @@ export default function NewWikiPage() {
 
         {/* Error */}
         {error && (
-          <div className="rounded-lg border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-700 dark:bg-red-950 dark:text-red-300">
+          <Alert variant="error">
             {error}
-          </div>
+          </Alert>
         )}
 
         {/* Actions */}
