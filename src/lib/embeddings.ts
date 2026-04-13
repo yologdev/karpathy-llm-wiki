@@ -9,6 +9,7 @@ import crypto from "crypto";
 import { getWikiDir, listWikiPages, readWikiPage } from "./wiki";
 import { loadConfigSync } from "./config";
 import { withFileLock } from "./lock";
+import { MAX_EMBED_CHARS } from "./constants";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -174,18 +175,25 @@ export function hasEmbeddingSupport(): boolean {
 /**
  * Embed a single text string. Returns null if no embedding provider is
  * configured.
+ *
+ * Long texts are truncated to {@link MAX_EMBED_CHARS} before being sent to
+ * the model to stay within provider token limits.
  */
 export async function embedText(text: string): Promise<number[] | null> {
   const model = getEmbeddingModel();
   if (!model) return null;
 
-  const result = await embed({ model, value: text });
+  const truncated = text.length > MAX_EMBED_CHARS ? text.slice(0, MAX_EMBED_CHARS) : text;
+  const result = await embed({ model, value: truncated });
   return result.embedding;
 }
 
 /**
  * Batch-embed multiple text strings. Returns null if no embedding provider is
  * configured.
+ *
+ * Each text is truncated to {@link MAX_EMBED_CHARS} before being sent to the
+ * model.
  */
 export async function embedTexts(
   texts: string[],
@@ -193,7 +201,10 @@ export async function embedTexts(
   const model = getEmbeddingModel();
   if (!model) return null;
 
-  const result = await embedMany({ model, values: texts });
+  const truncated = texts.map((t) =>
+    t.length > MAX_EMBED_CHARS ? t.slice(0, MAX_EMBED_CHARS) : t,
+  );
+  const result = await embedMany({ model, values: truncated });
   return result.embeddings;
 }
 
@@ -231,12 +242,17 @@ export async function loadVectorStore(): Promise<VectorStore | null> {
 }
 
 /**
- * Write the vector store to disk. Creates the wiki directory if needed.
+ * Write the vector store to disk atomically. Creates the wiki directory if
+ * needed.  Writes to a `.tmp` file first, then renames — so a crash mid-write
+ * cannot corrupt the store (rename is atomic on POSIX).
  */
 export async function saveVectorStore(store: VectorStore): Promise<void> {
   const dir = getWikiDir();
   await fs.mkdir(dir, { recursive: true });
-  await fs.writeFile(vectorStorePath(), JSON.stringify(store, null, 2), "utf-8");
+  const dest = vectorStorePath();
+  const tmp = dest + ".tmp";
+  await fs.writeFile(tmp, JSON.stringify(store, null, 2), "utf-8");
+  await fs.rename(tmp, dest);
 }
 
 // ---------------------------------------------------------------------------
@@ -349,8 +365,9 @@ export function cosineSimilarity(a: number[], b: number[]): number {
  * Embed the query text, then compute cosine similarity against all stored
  * vectors and return the top-K results sorted by score (descending).
  *
- * Returns an empty array if no embedding support is available or the store
- * is empty.
+ * Returns an empty array if no embedding support is available, the store
+ * is empty, or the store was built with a different embedding model (stale
+ * embeddings would produce meaningless similarity scores).
  */
 export async function searchByVector(
   query: string,
@@ -361,6 +378,12 @@ export async function searchByVector(
 
   const store = await loadVectorStore();
   if (!store || store.entries.length === 0) return [];
+
+  // Guard: if the store was built with a different model the embeddings are
+  // incompatible — return nothing.  The store will be rebuilt on the next
+  // upsert or manual rebuild.
+  const currentModel = getEmbeddingModelName();
+  if (currentModel && store.model !== currentModel) return [];
 
   const scored = store.entries.map((entry) => ({
     slug: entry.slug,

@@ -257,6 +257,47 @@ describe("embedText / embedTexts with mocked provider", () => {
     ]);
     expect(mockEmbedMany).toHaveBeenCalledOnce();
   });
+
+  it("embedText truncates text longer than MAX_EMBED_CHARS", async () => {
+    mockEmbed.mockResolvedValue({ embedding: [0.1, 0.2, 0.3] });
+
+    // Create a string longer than MAX_EMBED_CHARS (24_000)
+    const longText = "a".repeat(30_000);
+    await embedText(longText);
+
+    expect(mockEmbed).toHaveBeenCalledOnce();
+    // Inspect the `value` arg passed to embed()
+    const callArgs = mockEmbed.mock.calls[0][0];
+    expect(callArgs.value.length).toBe(24_000);
+  });
+
+  it("embedText does not truncate text shorter than MAX_EMBED_CHARS", async () => {
+    mockEmbed.mockResolvedValue({ embedding: [0.1, 0.2, 0.3] });
+
+    const shortText = "hello world";
+    await embedText(shortText);
+
+    const callArgs = mockEmbed.mock.calls[0][0];
+    expect(callArgs.value).toBe(shortText);
+  });
+
+  it("embedTexts truncates each text longer than MAX_EMBED_CHARS", async () => {
+    mockEmbedMany.mockResolvedValue({
+      embeddings: [
+        [0.1, 0.2],
+        [0.3, 0.4],
+      ],
+    });
+
+    const longText = "b".repeat(30_000);
+    const shortText = "short";
+    await embedTexts([longText, shortText]);
+
+    expect(mockEmbedMany).toHaveBeenCalledOnce();
+    const callArgs = mockEmbedMany.mock.calls[0][0];
+    expect(callArgs.values[0].length).toBe(24_000);
+    expect(callArgs.values[1]).toBe(shortText);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -320,6 +361,30 @@ describe("vector store persistence", () => {
     const loaded = await loadVectorStore();
     expect(loaded).not.toBeNull();
     expect(loaded!.model).toBe("test-model");
+  });
+
+  it("writes valid JSON and leaves no .tmp file behind", async () => {
+    const store: VectorStore = {
+      model: "atomic-test",
+      entries: [
+        { slug: "p1", embedding: [0.1], contentHash: "h1" },
+      ],
+    };
+
+    await saveVectorStore(store);
+
+    // The persisted file should be valid JSON
+    const raw = await fs.readFile(
+      path.join(tmpDir, ".vectors.json"),
+      "utf-8",
+    );
+    const parsed = JSON.parse(raw);
+    expect(parsed.model).toBe("atomic-test");
+    expect(parsed.entries).toHaveLength(1);
+
+    // No leftover .tmp file after a successful write
+    const files = await fs.readdir(tmpDir);
+    expect(files).not.toContain(".vectors.json.tmp");
   });
 });
 
@@ -584,6 +649,26 @@ describe("searchByVector", () => {
     mockEmbed.mockResolvedValue({ embedding: [1, 0] });
 
     const results = await searchByVector("test", 5);
+    expect(results).toEqual([]);
+  });
+
+  it("returns empty array when store model differs from current model", async () => {
+    // Store was built with a different model than the current provider uses
+    const store: VectorStore = {
+      model: "old-model-from-different-provider",
+      entries: [
+        { slug: "page-a", embedding: [1, 0, 0], contentHash: "a" },
+        { slug: "page-b", embedding: [0, 1, 0], contentHash: "b" },
+      ],
+    };
+    await saveVectorStore(store);
+
+    process.env.OPENAI_API_KEY = "sk-test";
+    mockEmbed.mockResolvedValue({ embedding: [1, 0, 0] });
+
+    const results = await searchByVector("test query", 10);
+
+    // Should return empty because store model doesn't match current model
     expect(results).toEqual([]);
   });
 });

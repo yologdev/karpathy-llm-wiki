@@ -70,3 +70,14 @@ export const LLM_RETRY_BASE_MS = 1_000;
 
 /** Maximum backoff delay cap in ms. */
 export const LLM_RETRY_MAX_MS = 10_000;
+
+// ---- Embeddings -----------------------------------------------------------
+
+/**
+ * Maximum characters sent to the embedding model per text.
+ *
+ * 24,000 chars ≈ ~6,000 tokens — safely under the 8,191-token limit of
+ * OpenAI's text-embedding-3-small and comparable limits of other providers.
+ * Text exceeding this length is truncated before being sent to the model.
+ */
+export const MAX_EMBED_CHARS = 24_000;
