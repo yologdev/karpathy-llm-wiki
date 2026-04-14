@@ -5,6 +5,7 @@ import Link from "next/link";
 import { MarkdownRenderer } from "@/components/MarkdownRenderer";
 import { Alert } from "@/components/Alert";
 import { extractCitedSlugs } from "@/lib/citations";
+import { formatRelativeTime } from "@/lib/format";
 
 interface QueryResponse {
   answer: string;
@@ -25,22 +26,6 @@ interface HistoryEntry {
   sources: string[];
   timestamp: string;
   savedAs?: string;
-}
-
-function relativeTime(iso: string): string {
-  const now = Date.now();
-  const then = new Date(iso).getTime();
-  const diffMs = now - then;
-  const diffSec = Math.floor(diffMs / 1000);
-  const diffMin = Math.floor(diffSec / 60);
-  const diffHour = Math.floor(diffMin / 60);
-  const diffDay = Math.floor(diffHour / 24);
-
-  if (diffSec < 60) return "just now";
-  if (diffMin < 60) return `${diffMin}m ago`;
-  if (diffHour < 24) return `${diffHour}h ago`;
-  if (diffDay < 30) return `${diffDay}d ago`;
-  return new Date(iso).toLocaleDateString();
 }
 
 function truncate(text: string, maxLen: number): string {
@@ -483,7 +468,7 @@ export default function QueryPage() {
                       {truncate(entry.question, 80)}
                     </span>
                     <span className="flex items-center gap-2 mt-1 text-xs text-foreground/50">
-                      <span>{relativeTime(entry.timestamp)}</span>
+                      <span>{formatRelativeTime(entry.timestamp)}</span>
                       {entry.sources.length > 0 && (
                         <span>
                           {entry.sources.length} source

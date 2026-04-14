@@ -6,13 +6,14 @@ export function extractCitedSlugs(
   answer: string,
   availableSlugs: string[],
 ): string[] {
+  const slugSet = new Set(availableSlugs);
   const pattern = /\]\(([^)]+?)\.md\)/g;
   const cited = new Set<string>();
   let match: RegExpExecArray | null;
 
   while ((match = pattern.exec(answer)) !== null) {
     const slug = match[1];
-    if (availableSlugs.includes(slug)) {
+    if (slugSet.has(slug)) {
       cited.add(slug);
     }
   }

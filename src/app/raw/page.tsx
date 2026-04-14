@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { listRawSources, type RawSource } from "@/lib/wiki";
+import { formatRelativeTime } from "@/lib/format";
 
 /** Human-readable byte size: `1.2 KB`, `45 KB`, `2.1 MB`, etc. */
 function formatSize(bytes: number): string {
@@ -10,29 +11,6 @@ function formatSize(bytes: number): string {
   }
   const mb = bytes / (1024 * 1024);
   return mb >= 10 ? `${Math.round(mb)} MB` : `${mb.toFixed(1)} MB`;
-}
-
-/** "just now" / "5 minutes ago" / "3 days ago" / `YYYY-MM-DD` fallback. */
-function formatRelativeDate(iso: string): string {
-  const then = new Date(iso).getTime();
-  if (Number.isNaN(then)) return iso.slice(0, 10);
-
-  const diffMs = Date.now() - then;
-  const diffSec = Math.round(diffMs / 1000);
-  if (diffSec < 5) return "just now";
-  if (diffSec < 60) return `${diffSec} seconds ago`;
-
-  const diffMin = Math.round(diffSec / 60);
-  if (diffMin < 60) return `${diffMin} minute${diffMin === 1 ? "" : "s"} ago`;
-
-  const diffHr = Math.round(diffMin / 60);
-  if (diffHr < 24) return `${diffHr} hour${diffHr === 1 ? "" : "s"} ago`;
-
-  const diffDay = Math.round(diffHr / 24);
-  if (diffDay < 30) return `${diffDay} day${diffDay === 1 ? "" : "s"} ago`;
-
-  // Older than a month: fall back to a stable date stamp.
-  return iso.slice(0, 10);
 }
 
 export default async function RawIndex() {
@@ -72,7 +50,7 @@ export default async function RawIndex() {
                     {source.filename}
                   </div>
                   <div className="mt-0.5 text-xs text-foreground/50">
-                    {formatRelativeDate(source.modified)}
+                    {formatRelativeTime(source.modified)}
                   </div>
                 </div>
                 <div className="shrink-0 text-xs tabular-nums text-foreground/60">

@@ -3,36 +3,7 @@
 import Link from "next/link";
 import { useCallback, useMemo, useState } from "react";
 import type { IndexEntry } from "@/lib/types";
-
-/**
- * Format an ISO-ish timestamp as a short relative string like "3d ago" or
- * "just now". Returns `null` when the input can't be parsed — callers should
- * skip rendering in that case.
- *
- * We intentionally avoid pulling in `date-fns` / `dayjs` for one formatter.
- */
-function formatRelative(iso: string): string | null {
-  const then = Date.parse(iso);
-  if (!Number.isFinite(then)) return null;
-  const now = Date.now();
-  const diffMs = now - then;
-  if (diffMs < 0) return "just now";
-
-  const seconds = Math.floor(diffMs / 1000);
-  if (seconds < 45) return "just now";
-  const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-  const days = Math.floor(hours / 24);
-  if (days < 7) return `${days}d ago`;
-  const weeks = Math.floor(days / 7);
-  if (weeks < 5) return `${weeks}w ago`;
-  const months = Math.floor(days / 30);
-  if (months < 12) return `${months}mo ago`;
-  const years = Math.floor(days / 365);
-  return `${years}y ago`;
-}
+import { formatRelativeTime } from "@/lib/format";
 
 interface WikiIndexClientProps {
   pages: IndexEntry[];
@@ -200,7 +171,7 @@ export function WikiIndexClient({ pages }: WikiIndexClientProps) {
       ) : (
         <ul className="space-y-3">
           {filtered.map((page) => {
-            const relLabel = page.updated ? formatRelative(page.updated) : null;
+            const relLabel = page.updated ? formatRelativeTime(page.updated) : null;
             const pageTags = page.tags ?? [];
             const hasMeta =
               pageTags.length > 0 ||
