@@ -367,23 +367,34 @@ describe("searchIndex", () => {
     expect(mockedCallLLM).not.toHaveBeenCalled();
   });
 
-  it("uses LLM when available and parses JSON response", async () => {
+  it("uses LLM re-ranking when available and parses JSON response", async () => {
     mockedHasLLMKey.mockReturnValue(true);
-    mockedCallLLM.mockResolvedValue('["neural-networks", "deep-learning"]');
+    mockedCallLLM.mockResolvedValue('["deep-learning", "neural-networks"]');
 
     const entries: IndexEntry[] = [
-      { slug: "neural-networks", title: "Neural Networks", summary: "NN overview" },
-      { slug: "deep-learning", title: "Deep Learning", summary: "DL overview" },
+      { slug: "neural-networks", title: "Neural Networks", summary: "NN overview neural networks" },
+      { slug: "deep-learning", title: "Deep Learning", summary: "Deep learning neural networks" },
       { slug: "cooking", title: "Cooking", summary: "Food preparation" },
     ];
+    // Write pages so BM25 full-body can index them and they appear as fusion candidates
+    await writeWikiPage("neural-networks", "# Neural Networks\n\nNeural networks overview.");
+    await writeWikiPage("deep-learning", "# Deep Learning\n\nDeep learning with neural networks.");
+    await writeWikiPage("cooking", "# Cooking\n\nFood preparation.");
+    await updateIndex(entries);
 
-    const result = await searchIndex("How do neural networks learn?", entries);
+    const result = await searchIndex("neural networks", entries);
 
-    expect(result).toEqual(["neural-networks", "deep-learning"]);
+    // LLM re-ranked the fusion candidates
+    expect(result).toEqual(["deep-learning", "neural-networks"]);
     expect(mockedCallLLM).toHaveBeenCalledOnce();
+
+    // The re-ranking prompt should contain content snippets, not full index
+    const prompt = mockedCallLLM.mock.calls[0][0];
+    expect(prompt).toContain("snippet:");
+    expect(prompt).toContain("Candidate pages:");
   });
 
-  it("falls back to keywords when LLM returns invalid JSON", async () => {
+  it("falls back to fusion order when LLM returns invalid JSON", async () => {
     mockedHasLLMKey.mockReturnValue(true);
     mockedCallLLM.mockResolvedValue("I think you should look at neural networks");
 
@@ -391,37 +402,50 @@ describe("searchIndex", () => {
       { slug: "neural-networks", title: "Neural Networks", summary: "NN architectures overview" },
       { slug: "cooking", title: "Cooking", summary: "Food preparation tips" },
     ];
+    await writeWikiPage("neural-networks", "# Neural Networks\n\nNN architectures overview.");
+    await writeWikiPage("cooking", "# Cooking\n\nFood preparation tips.");
+    await updateIndex(entries);
 
     const result = await searchIndex("neural network architectures", entries);
 
-    // Should fall back to keyword matching
+    // Should fall back to fusion/BM25 ranking
     expect(result).toContain("neural-networks");
   });
 
-  it("falls back to keywords when LLM call throws", async () => {
+  it("falls back to fusion order when LLM re-ranking throws", async () => {
     mockedHasLLMKey.mockReturnValue(true);
     mockedCallLLM.mockRejectedValue(new Error("API error"));
 
     const entries: IndexEntry[] = [
       { slug: "python", title: "Python", summary: "Python programming language" },
     ];
+    await writeWikiPage("python", "# Python\n\nPython programming language.");
+    await updateIndex(entries);
 
     const result = await searchIndex("Python programming", entries);
 
     expect(result).toContain("python");
   });
 
-  it("filters out invalid slugs from LLM response", async () => {
+  it("filters out slugs not in fusion candidates from LLM response", async () => {
     mockedHasLLMKey.mockReturnValue(true);
-    mockedCallLLM.mockResolvedValue('["valid-slug", "nonexistent-slug"]');
+    // LLM returns a slug that exists in entries but wasn't a fusion candidate
+    mockedCallLLM.mockResolvedValue('["valid-slug", "not-a-candidate"]');
 
     const entries: IndexEntry[] = [
-      { slug: "valid-slug", title: "Valid", summary: "A valid page" },
+      { slug: "valid-slug", title: "Valid", summary: "A valid test page" },
+      { slug: "not-a-candidate", title: "Not a candidate", summary: "Unrelated topic" },
     ];
+    await writeWikiPage("valid-slug", "# Valid\n\nA valid test page about testing.");
+    await writeWikiPage("not-a-candidate", "# Not a candidate\n\nUnrelated topic.");
+    await updateIndex(entries);
 
-    const result = await searchIndex("test question", entries);
+    // Search for "test" — only "valid-slug" will be a BM25 match
+    const result = await searchIndex("test page", entries);
 
-    expect(result).toEqual(["valid-slug"]);
+    // "not-a-candidate" should be filtered out since it wasn't a fusion candidate
+    expect(result).toContain("valid-slug");
+    expect(result).not.toContain("not-a-candidate");
   });
 
   it("sorts keyword results by score descending", async () => {
@@ -434,6 +458,83 @@ describe("searchIndex", () => {
 
     // "best-match" should rank higher (more keyword hits)
     expect(result[0]).toBe("best-match");
+  });
+
+  it("LLM re-ranking narrows candidates from fusion results, not full index", async () => {
+    mockedHasLLMKey.mockReturnValue(true);
+
+    const entries: IndexEntry[] = [
+      { slug: "relevant-a", title: "Relevant A", summary: "Machine learning overview" },
+      { slug: "relevant-b", title: "Relevant B", summary: "Machine learning algorithms" },
+      { slug: "irrelevant", title: "Irrelevant", summary: "Cooking recipes for dinner" },
+    ];
+    await writeWikiPage("relevant-a", "# Relevant A\n\nMachine learning overview with details.");
+    await writeWikiPage("relevant-b", "# Relevant B\n\nMachine learning algorithms in depth.");
+    await writeWikiPage("irrelevant", "# Irrelevant\n\nCooking recipes for dinner.");
+    await updateIndex(entries);
+
+    // LLM re-ranking returns both relevant pages
+    mockedCallLLM.mockResolvedValue('["relevant-b", "relevant-a"]');
+
+    const result = await searchIndex("machine learning", entries);
+
+    // LLM was called for re-ranking
+    expect(mockedCallLLM).toHaveBeenCalledOnce();
+
+    // The prompt sent to the LLM should NOT contain the irrelevant page
+    // since it wasn't a BM25/fusion candidate for "machine learning"
+    const prompt = mockedCallLLM.mock.calls[0][0];
+    expect(prompt).toContain("relevant-a");
+    expect(prompt).toContain("relevant-b");
+    expect(prompt).not.toContain("Cooking recipes");
+
+    // Result should only contain fusion candidates that LLM kept
+    expect(result).toEqual(["relevant-b", "relevant-a"]);
+  });
+
+  it("LLM re-ranking failure falls back to fusion order", async () => {
+    mockedHasLLMKey.mockReturnValue(true);
+    mockedCallLLM.mockRejectedValue(new Error("LLM service unavailable"));
+
+    const entries: IndexEntry[] = [
+      { slug: "page-a", title: "Page A", summary: "Deep learning neural networks" },
+      { slug: "page-b", title: "Page B", summary: "Neural networks architectures" },
+    ];
+    await writeWikiPage("page-a", "# Page A\n\nDeep learning neural networks content.");
+    await writeWikiPage("page-b", "# Page B\n\nNeural networks architectures content.");
+    await updateIndex(entries);
+
+    const result = await searchIndex("neural networks", entries);
+
+    // Despite LLM failure, we still get results from fusion/BM25
+    expect(result.length).toBeGreaterThan(0);
+    expect(result).toContain("page-a");
+    expect(result).toContain("page-b");
+  });
+
+  it("re-ranking prompt includes content snippets from page bodies", async () => {
+    mockedHasLLMKey.mockReturnValue(true);
+    mockedCallLLM.mockResolvedValue('["snippet-page"]');
+
+    const entries: IndexEntry[] = [
+      { slug: "snippet-page", title: "Snippet Page", summary: "A page about transformer" },
+    ];
+    const pageBody = "# Snippet Page\n\nTransformer architectures revolutionized natural language processing. " +
+      "Self-attention mechanisms allow models to weigh the importance of different parts of the input.";
+    await writeWikiPage("snippet-page", pageBody);
+    await updateIndex(entries);
+
+    // Use "transformer" (exact match for BM25 tokenization)
+    const result = await searchIndex("transformer architectures", entries);
+
+    expect(mockedCallLLM).toHaveBeenCalledOnce();
+    const prompt = mockedCallLLM.mock.calls[0][0];
+
+    // The prompt should include actual page content, not just index-level summary
+    expect(prompt).toContain("Transformer architectures revolutionized");
+    expect(prompt).toContain("snippet:");
+    expect(prompt).toContain("slug: snippet-page");
+    expect(result).toEqual(["snippet-page"]);
   });
 });
 
@@ -531,7 +632,7 @@ describe("query", () => {
   it("uses searchIndex for large wikis (> 5 pages)", async () => {
     mockedHasLLMKey.mockReturnValue(true);
 
-    // First call is searchIndex, second is the actual query
+    // First call is re-ranking in searchIndex, second is the actual query
     mockedCallLLM
       .mockResolvedValueOnce('["target-page"]')
       .mockResolvedValueOnce("Here is the answer about [Target](target-page.md)");
@@ -548,7 +649,7 @@ describe("query", () => {
 
     const result = await query("Tell me about the target topic");
 
-    // Should have called LLM twice: once for index search, once for answer
+    // Should have called LLM twice: once for re-ranking, once for answer
     expect(mockedCallLLM).toHaveBeenCalledTimes(2);
     expect(result.sources).toContain("target-page");
 

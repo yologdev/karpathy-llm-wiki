@@ -48,15 +48,21 @@ Rules:
 Wiki pages:
 {context}`;
 
-const INDEX_SELECTION_PROMPT = `You are a wiki search assistant. Given a user's question and a wiki index, return the slugs of the most relevant pages to answer the question.
+/** Maximum number of fusion candidates fed into the LLM re-ranking step. */
+const RERANK_CANDIDATE_POOL = MAX_CONTEXT_PAGES * 2;
 
-Return ONLY a JSON array of slug strings, no other text. Maximum 10 slugs, ordered by relevance.
+/** Maximum characters of page body included as a snippet for re-ranking. */
+const RERANK_SNIPPET_CHARS = 500;
+
+const RERANK_PROMPT = `You are a wiki search assistant. Given a user's question and a set of candidate wiki pages (with content snippets), re-rank them by relevance to the question.
+
+Return ONLY a JSON array of slug strings, most relevant first. You may omit pages that are clearly irrelevant. Maximum {max} slugs.
 
 Example response:
 ["machine-learning", "neural-networks", "backpropagation"]
 
-Wiki index:
-{index}`;
+Candidate pages:
+{candidates}`;
 
 // ---------------------------------------------------------------------------
 // BM25 sparse index search
@@ -249,9 +255,9 @@ export function reciprocalRankFusion(
  * Phase 1: BM25 sparse scoring (always runs)
  * Phase 1b: Vector search (when an embedding provider is configured)
  * Phase 1c: RRF fusion of BM25 + vector results (when vector results exist)
- * Phase 2: LLM-based selection (if available, overrides fusion ranking)
- *
- * Falls back to BM25 results if LLM call fails.
+ * Phase 2: LLM re-ranking of fusion candidates (if available) — sends
+ *          candidate slugs with content snippets to the LLM for re-ordering,
+ *          falls back to fusion ranking on failure.
  *
  * When `fullBody` is true (the default), BM25 indexes the full page content
  * from disk rather than just the title + summary from the index. This gives
@@ -297,22 +303,38 @@ export async function searchIndex(
   }
 
   // Phase 1c — Combine via RRF if we have vector results, otherwise pure BM25
+  // Keep a wider candidate pool for re-ranking input
   let fusedSlugs: string[];
   if (vectorResults.length > 0) {
     const fused = reciprocalRankFusion(bm25Results, vectorResults);
-    fusedSlugs = fused.slice(0, MAX_CONTEXT_PAGES).map((r) => r.slug);
+    fusedSlugs = fused.slice(0, RERANK_CANDIDATE_POOL).map((r) => r.slug);
   } else {
-    fusedSlugs = bm25Results.slice(0, MAX_CONTEXT_PAGES).map((r) => r.slug);
+    fusedSlugs = bm25Results.slice(0, RERANK_CANDIDATE_POOL).map((r) => r.slug);
   }
 
-  // Phase 2 — LLM-based selection (if available)
-  if (hasLLMKey()) {
+  // Phase 2 — LLM re-ranking of fusion candidates (if available)
+  // Instead of sending the full wiki index, we send only the fusion candidates
+  // with content snippets so the LLM can make quality relevance judgments.
+  if (hasLLMKey() && fusedSlugs.length > 0) {
     try {
-      const indexText = entries
-        .map((e) => `- [${e.title}](${e.slug}.md) — ${e.summary}`)
-        .join("\n");
+      // Load content snippets for each candidate
+      const candidateLines: string[] = [];
+      for (const slug of fusedSlugs) {
+        const page = await readWikiPage(slug);
+        const entry = entries.find((e) => e.slug === slug);
+        const title = entry?.title ?? page?.title ?? slug;
+        const summary = entry?.summary ?? "";
+        // Use the first N chars of the page body as a content snippet
+        const snippet = page
+          ? page.content.slice(0, RERANK_SNIPPET_CHARS).replace(/\n+/g, " ").trim()
+          : summary;
+        candidateLines.push(`- slug: ${slug} | title: ${title} | snippet: ${snippet}`);
+      }
 
-      const prompt = INDEX_SELECTION_PROMPT.replace("{index}", indexText);
+      const candidatesText = candidateLines.join("\n");
+      const prompt = RERANK_PROMPT
+        .replace("{candidates}", candidatesText)
+        .replace("{max}", String(MAX_CONTEXT_PAGES));
       const response = await callLLM(prompt, question);
 
       // Extract JSON array from response
@@ -320,23 +342,23 @@ export async function searchIndex(
       if (jsonMatch) {
         const parsed = JSON.parse(jsonMatch[0]) as unknown;
         if (Array.isArray(parsed)) {
-          const validSlugs = new Set(entries.map((e) => e.slug));
-          const llmSlugs = parsed
+          const validSlugs = new Set(fusedSlugs);
+          const rerankedSlugs = parsed
             .filter((s): s is string => typeof s === "string" && validSlugs.has(s))
             .slice(0, MAX_CONTEXT_PAGES);
 
-          if (llmSlugs.length > 0) {
-            return llmSlugs;
+          if (rerankedSlugs.length > 0) {
+            return rerankedSlugs;
           }
         }
       }
     } catch (err) {
-      console.warn("[query] selectPagesForQuery LLM page selection failed:", err);
-      // Fall through to fused/keyword results
+      console.warn("[query] searchIndex LLM re-ranking failed:", err);
+      // Fall through to fusion results
     }
   }
 
-  return fusedSlugs;
+  return fusedSlugs.slice(0, MAX_CONTEXT_PAGES);
 }
 
 // ---------------------------------------------------------------------------
