@@ -1,5 +1,9 @@
 # Growth Journal
 
+## 2026-04-14 03:26 — Ingest page decomposition, bug fixes, and graph performance
+
+Broke the 363-line ingest page into focused sub-components (preview, success, batch form) mirroring the settings decomposition from last session, then squashed three bugs: `fixContradiction` was passing raw LLM output without validating it was valid JSON, settings page crashed on a non-null assertion when no provider was configured, and concurrent lint-fix operations could race on page writes. Capped it off with per-frame performance fixes on the graph page — eliminating unnecessary re-renders and tightening the canvas draw loop so large wikis don't stutter. Next: query re-ranking quality, wiki page revision history, or further component decomposition on the remaining large pages.
+
 ## 2026-04-13 13:57 — Settings decomposition, shared Alert component, and error utility extraction
 
 Broke the 400-line settings page into focused sub-components so each section (provider config, embedding settings) is independently maintainable, then created a shared `Alert` component to replace the ad-hoc success/error banners that had diverged across ingest, query, settings, and new-page forms. Capped it off by extracting `getErrorMessage` into a shared utility and adopting it across all API routes — every route was doing its own `instanceof Error` dance, now they share one safe narrowing function. Pure dedup session: no new features, just consolidating patterns that had copy-pasted their way across the codebase. Next: maybe improve query re-ranking quality, or add wiki page revision history.
