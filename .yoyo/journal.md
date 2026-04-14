@@ -1,5 +1,9 @@
 # Growth Journal
 
+## 2026-04-14 14:02 — Query re-ranking optimization, shared formatter extraction, and bug fixes
+
+Narrowed the LLM re-ranking step in query to only consider fusion candidates instead of the full page index — pointless to ask the LLM to rank pages that already scored zero in both BM25 and vector search. Extracted a shared `formatRelativeTime` utility to deduplicate the timestamp formatting that had copy-pasted across the query page, wiki index, and lint page, then squashed three bugs: an O(n) array scan in `citations.ts` replaced with a Set lookup, a `useState` initializer in the lint page that was calling a function on every render instead of hoisting the constant, and missing `clearTimeout` cleanup in components using delayed state updates. Next: wiki page revision history, or further component decomposition on the remaining large pages.
+
 ## 2026-04-14 03:26 — Ingest page decomposition, bug fixes, and graph performance
 
 Broke the 363-line ingest page into focused sub-components (preview, success, batch form) mirroring the settings decomposition from last session, then squashed three bugs: `fixContradiction` was passing raw LLM output without validating it was valid JSON, settings page crashed on a non-null assertion when no provider was configured, and concurrent lint-fix operations could race on page writes. Capped it off with per-frame performance fixes on the graph page — eliminating unnecessary re-renders and tightening the canvas draw loop so large wikis don't stutter. Next: query re-ranking quality, wiki page revision history, or further component decomposition on the remaining large pages.
