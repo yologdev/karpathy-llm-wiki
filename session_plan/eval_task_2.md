@@ -1,0 +1,2 @@
+Verdict: PASS
+Reason: All three bugs are correctly fixed: `fixContradiction` now guards with `hasLLMKey()` before page reads and throws a clear `FixValidationError`, the non-null assertion `data.provider!` is replaced with `data.provider ?? "anthropic"`, and `fixMessage` is refactored from a single string to a per-issue `Map<string, string>` with inline display and 5-second auto-dismiss. Tests properly cover the new guard and existing tests are updated to mock `hasLLMKey(true)` where needed.

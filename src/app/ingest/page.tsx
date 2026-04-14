@@ -2,9 +2,11 @@
 
 import Link from "next/link";
 import { useState } from "react";
-import { MarkdownRenderer } from "@/components/MarkdownRenderer";
 import { Alert } from "@/components/Alert";
 import { BatchIngestForm } from "@/components/BatchIngestForm";
+import { IngestSuccess } from "@/components/IngestSuccess";
+import { IngestPreview } from "@/components/IngestPreview";
+import type { PreviewData } from "@/components/IngestPreview";
 
 type Mode = "text" | "url" | "batch";
 type Stage = "form" | "preview" | "success";
@@ -17,19 +19,6 @@ interface IngestResponse {
   indexUpdated: boolean;
   previewContent?: string;
   error?: string;
-}
-
-/** State captured during the preview phase, passed to commit. */
-interface PreviewData {
-  slug: string;
-  previewContent: string;
-  relatedPages: string[];
-  /** Original title used for the ingest call. */
-  title: string;
-  /** Original raw content used for the ingest call. */
-  content: string;
-  /** Original URL if using URL mode. */
-  url?: string;
 }
 
 export default function IngestPage() {
@@ -219,56 +208,12 @@ export default function IngestPage() {
   // Stage: success
   // -------------------------------------------------------------------------
   if (stage === "success" && result) {
-    const slug = result.primarySlug;
-    const relatedUpdated = result.relatedUpdated ?? [];
     return (
-      <main className="mx-auto max-w-3xl px-6 py-12">
-        <div className="rounded-lg border border-foreground/10 p-8 text-center">
-          <p className="text-2xl font-semibold">✓ Ingested as wiki page</p>
-          <div className="mt-6 flex flex-col items-center gap-3">
-            <Link
-              href={`/wiki/${slug}`}
-              className="inline-block rounded-lg bg-foreground px-6 py-3 text-sm font-medium text-background hover:opacity-90 transition-opacity"
-            >
-              View &ldquo;{slug}&rdquo; →
-            </Link>
-            {relatedUpdated.length > 0 && (
-              <div className="mt-4 w-full max-w-md text-left">
-                <p className="text-sm text-foreground/70">
-                  Also updated {relatedUpdated.length} related page
-                  {relatedUpdated.length === 1 ? "" : "s"}:
-                </p>
-                <ul className="mt-2 flex list-none flex-col gap-1 pl-0">
-                  {relatedUpdated.map((relatedSlug) => (
-                    <li key={relatedSlug}>
-                      <Link
-                        href={`/wiki/${relatedSlug}`}
-                        className="text-sm text-foreground/70 hover:text-foreground hover:underline transition-colors"
-                      >
-                        {relatedSlug}
-                      </Link>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
-            <div className="flex gap-4 mt-2">
-              <Link
-                href="/wiki"
-                className="text-sm text-foreground/60 hover:text-foreground transition-colors"
-              >
-                Back to wiki
-              </Link>
-              <button
-                onClick={reset}
-                className="text-sm text-foreground/60 hover:text-foreground transition-colors cursor-pointer"
-              >
-                Ingest another
-              </button>
-            </div>
-          </div>
-        </div>
-      </main>
+      <IngestSuccess
+        slug={result.primarySlug}
+        relatedUpdated={result.relatedUpdated ?? []}
+        onReset={reset}
+      />
     );
   }
 
@@ -277,93 +222,15 @@ export default function IngestPage() {
   // -------------------------------------------------------------------------
   if (stage === "preview" && preview) {
     return (
-      <main className="mx-auto max-w-3xl px-6 py-12">
-        <div className="mb-8 flex items-center justify-between">
-          <h1 className="text-3xl font-bold tracking-tight">Review Ingest Preview</h1>
-          <button
-            onClick={cancelPreview}
-            className="text-sm text-foreground/60 hover:text-foreground transition-colors cursor-pointer"
-          >
-            ← Back to form
-          </button>
-        </div>
-
-        {/* Metadata */}
-        <div className="mb-6 rounded-lg border border-foreground/10 p-4">
-          <p className="text-sm">
-            <span className="font-medium text-foreground/70">Slug:</span>{" "}
-            <code className="rounded bg-foreground/5 px-1.5 py-0.5 text-sm">{preview.slug}</code>
-          </p>
-          {preview.relatedPages.length > 0 && (
-            <p className="mt-2 text-sm text-foreground/70">
-              Will also update {preview.relatedPages.length} related page
-              {preview.relatedPages.length === 1 ? "" : "s"}:{" "}
-              {preview.relatedPages.join(", ")}
-            </p>
-          )}
-        </div>
-
-        {/* Toggle between rendered and raw markdown */}
-        <div className="mb-4 flex gap-2">
-          <button
-            type="button"
-            onClick={() => setShowRawMarkdown(false)}
-            className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-colors cursor-pointer ${
-              !showRawMarkdown
-                ? "bg-foreground text-background"
-                : "border border-foreground/20 text-foreground/60 hover:text-foreground"
-            }`}
-          >
-            Rendered
-          </button>
-          <button
-            type="button"
-            onClick={() => setShowRawMarkdown(true)}
-            className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-colors cursor-pointer ${
-              showRawMarkdown
-                ? "bg-foreground text-background"
-                : "border border-foreground/20 text-foreground/60 hover:text-foreground"
-            }`}
-          >
-            Raw Markdown
-          </button>
-        </div>
-
-        {/* Preview content */}
-        <div className="mb-6 rounded-lg border border-foreground/10 p-6">
-          {showRawMarkdown ? (
-            <pre className="whitespace-pre-wrap text-sm text-foreground/80 font-mono overflow-x-auto">
-              {preview.previewContent}
-            </pre>
-          ) : (
-            <MarkdownRenderer content={preview.previewContent} />
-          )}
-        </div>
-
-        {error && (
-          <Alert variant="error" className="mb-4">
-            {error}
-          </Alert>
-        )}
-
-        {/* Action buttons */}
-        <div className="flex items-center gap-4">
-          <button
-            onClick={handleApprove}
-            disabled={loading}
-            className="inline-block rounded-lg bg-foreground px-6 py-3 text-sm font-medium text-background hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
-          >
-            {loading ? "Committing..." : "Approve & Ingest"}
-          </button>
-          <button
-            onClick={cancelPreview}
-            disabled={loading}
-            className="text-sm text-foreground/60 hover:text-foreground transition-colors disabled:opacity-50 cursor-pointer"
-          >
-            Cancel
-          </button>
-        </div>
-      </main>
+      <IngestPreview
+        preview={preview}
+        loading={loading}
+        showRawMarkdown={showRawMarkdown}
+        onToggleMarkdown={() => setShowRawMarkdown((v) => !v)}
+        onApprove={handleApprove}
+        onCancel={cancelPreview}
+        error={error}
+      />
     );
   }
 
@@ -382,46 +249,25 @@ export default function IngestPage() {
         </Link>
       </div>
 
-      {/* Mode toggle */}
-      <div className="mb-6 flex gap-2" role="group" aria-label="Input mode">
-        <button
-          type="button"
-          onClick={() => switchMode("text")}
-          aria-pressed={mode === "text"}
-          className={`rounded-lg px-4 py-2 text-sm font-medium transition-colors cursor-pointer ${
-            mode === "text"
-              ? "bg-foreground text-background"
-              : "border border-foreground/20 text-foreground/60 hover:text-foreground"
-          }`}
-        >
-          Text
-        </button>
-        <button
-          type="button"
-          onClick={() => switchMode("url")}
-          aria-pressed={mode === "url"}
-          className={`rounded-lg px-4 py-2 text-sm font-medium transition-colors cursor-pointer ${
-            mode === "url"
-              ? "bg-foreground text-background"
-              : "border border-foreground/20 text-foreground/60 hover:text-foreground"
-          }`}
-        >
-          URL
-        </button>
-        <button
-          type="button"
-          onClick={() => switchMode("batch")}
-          aria-pressed={mode === "batch"}
-          className={`rounded-lg px-4 py-2 text-sm font-medium transition-colors cursor-pointer ${
-            mode === "batch"
-              ? "bg-foreground text-background"
-              : "border border-foreground/20 text-foreground/60 hover:text-foreground"
-          }`}
-        >
-          Batch URLs
-        </button>
+      {/* Mode tabs */}
+      <div className="mb-6 flex gap-2">
+        {(["text", "url", "batch"] as const).map((m) => (
+          <button
+            key={m}
+            type="button"
+            onClick={() => switchMode(m)}
+            className={`rounded-lg px-4 py-2 text-sm font-medium transition-colors cursor-pointer ${
+              mode === m
+                ? "bg-foreground text-background"
+                : "border border-foreground/20 text-foreground/60 hover:text-foreground"
+            }`}
+          >
+            {m === "text" ? "Paste Text" : m === "url" ? "From URL" : "Batch URLs"}
+          </button>
+        ))}
       </div>
 
+      {/* Batch mode */}
       {mode === "batch" ? (
         <BatchIngestForm />
       ) : (
@@ -444,7 +290,7 @@ export default function IngestPage() {
               className="w-full rounded-lg border border-foreground/20 bg-transparent px-4 py-2.5 text-sm placeholder:text-foreground/40 focus:border-foreground/50 focus:outline-none transition-colors"
             />
             <p className="mt-2 text-xs text-foreground/40">
-              The page title and content will be extracted automatically.
+              The page will be fetched and its text extracted for ingestion.
             </p>
           </div>
         ) : (
@@ -462,7 +308,7 @@ export default function IngestPage() {
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
                 required
-                placeholder="e.g. Attention Is All You Need"
+                placeholder="e.g. Transformer Architecture"
                 className="w-full rounded-lg border border-foreground/20 bg-transparent px-4 py-2.5 text-sm placeholder:text-foreground/40 focus:border-foreground/50 focus:outline-none transition-colors"
               />
             </div>
