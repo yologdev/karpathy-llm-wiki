@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import Link from "next/link";
 import type { LintIssue } from "@/lib/types";
 
@@ -71,12 +71,51 @@ function parseTargetSlugFromBrokenLink(message: string): string | null {
   return match ? match[1] : null;
 }
 
+const fixableTypes = new Set([
+  "missing-crossref",
+  "orphan-page",
+  "stale-index",
+  "empty-page",
+  "contradiction",
+  "missing-concept-page",
+  "broken-link",
+]);
+
+const fixLabel: Record<string, string> = {
+  "missing-crossref": "Fix",
+  "orphan-page": "Add to index",
+  "stale-index": "Remove from index",
+  "empty-page": "Delete page",
+  "contradiction": "Resolve",
+  "missing-concept-page": "Create page",
+  "broken-link": "Remove link",
+};
+
 export default function LintPage() {
   const [result, setResult] = useState<LintResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [fixingSet, setFixingSet] = useState<Set<string>>(new Set());
   const [fixMessages, setFixMessages] = useState<Map<string, string>>(new Map());
+  const timeoutsRef = useRef<NodeJS.Timeout[]>([]);
+
+  // Clear all pending timeouts on unmount
+  useEffect(() => {
+    return () => {
+      for (const id of timeoutsRef.current) {
+        clearTimeout(id);
+      }
+    };
+  }, []);
+
+  /** Schedule a timeout and track it for cleanup on unmount. */
+  const scheduleTimeout = useCallback((fn: () => void, ms: number) => {
+    const id = setTimeout(() => {
+      timeoutsRef.current = timeoutsRef.current.filter((t) => t !== id);
+      fn();
+    }, ms);
+    timeoutsRef.current.push(id);
+  }, []);
 
   async function runLint() {
     setLoading(true);
@@ -148,7 +187,7 @@ export default function LintPage() {
             next.set(key, `Fix failed: ${data.error ?? "Unknown error"}`);
             return next;
           });
-          setTimeout(() => {
+          scheduleTimeout(() => {
             setFixMessages((prev) => {
               const next = new Map(prev);
               next.delete(key);
@@ -177,7 +216,7 @@ export default function LintPage() {
           next.set(key, data.message ?? "Fixed!");
           return next;
         });
-        setTimeout(() => {
+        scheduleTimeout(() => {
           setFixMessages((prev) => {
             const next = new Map(prev);
             next.delete(key);
@@ -190,7 +229,7 @@ export default function LintPage() {
           next.set(key, "Fix failed: could not connect to the server");
           return next;
         });
-        setTimeout(() => {
+        scheduleTimeout(() => {
           setFixMessages((prev) => {
             const next = new Map(prev);
             next.delete(key);
@@ -205,7 +244,7 @@ export default function LintPage() {
         });
       }
     },
-    [],
+    [scheduleTimeout],
   );
 
   return (
@@ -280,15 +319,6 @@ export default function LintPage() {
                         ? parseTargetSlugFromBrokenLink(issue.message)
                         : null;
 
-                const fixableTypes = new Set([
-                  "missing-crossref",
-                  "orphan-page",
-                  "stale-index",
-                  "empty-page",
-                  "contradiction",
-                  "missing-concept-page",
-                  "broken-link",
-                ]);
                 const isFixable =
                   fixableTypes.has(issue.type) &&
                   (issue.type !== "missing-crossref" || targetSlug !== null) &&
@@ -304,16 +334,6 @@ export default function LintPage() {
                       : `${issue.type}:${issue.slug}`;
                 const isFixing = fixingSet.has(fixKey);
                 const fixMsg = fixMessages.get(fixKey);
-
-                const fixLabel: Record<string, string> = {
-                  "missing-crossref": "Fix",
-                  "orphan-page": "Add to index",
-                  "stale-index": "Remove from index",
-                  "empty-page": "Delete page",
-                  "contradiction": "Resolve",
-                  "missing-concept-page": "Create page",
-                  "broken-link": "Remove link",
-                };
 
                 return (
                   <li
