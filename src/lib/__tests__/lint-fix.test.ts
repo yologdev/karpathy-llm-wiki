@@ -365,6 +365,7 @@ describe("fixContradiction", () => {
   });
 
   it("throws FixNotFoundError when source page does not exist", async () => {
+    mockedHasLLMKey.mockReturnValue(true);
     mockedReadWikiPage.mockResolvedValue(null);
 
     await expect(
@@ -376,6 +377,7 @@ describe("fixContradiction", () => {
   });
 
   it("throws FixNotFoundError when target page does not exist", async () => {
+    mockedHasLLMKey.mockReturnValue(true);
     mockedReadWikiPage
       .mockResolvedValueOnce({
         slug: "source",
@@ -390,7 +392,21 @@ describe("fixContradiction", () => {
     ).rejects.toThrow(FixNotFoundError);
   });
 
+  it("throws FixValidationError when no LLM key is configured", async () => {
+    mockedHasLLMKey.mockReturnValue(false);
+
+    await expect(
+      fixContradiction("source", "target", "msg"),
+    ).rejects.toThrow(FixValidationError);
+    await expect(
+      fixContradiction("source", "target", "msg"),
+    ).rejects.toThrow(
+      "Cannot fix contradictions without an LLM provider configured",
+    );
+  });
+
   it("calls LLM with both pages' content and the contradiction description", async () => {
+    mockedHasLLMKey.mockReturnValue(true);
     mockedReadWikiPage
       .mockResolvedValueOnce({
         slug: "page-a",
@@ -420,6 +436,7 @@ describe("fixContradiction", () => {
   });
 
   it("writes the rewritten page via lifecycle pipeline", async () => {
+    mockedHasLLMKey.mockReturnValue(true);
     mockedReadWikiPage
       .mockResolvedValueOnce({
         slug: "page-a",
@@ -605,6 +622,7 @@ describe("fixLintIssue", () => {
   });
 
   it("dispatches contradiction to fixContradiction", async () => {
+    mockedHasLLMKey.mockReturnValue(true);
     mockedReadWikiPage
       .mockResolvedValueOnce({
         slug: "alpha",

@@ -204,7 +204,7 @@ export default function SettingsPage() {
       if (data.configured) {
         setTestResult({
           ok: true,
-          message: `Connected to ${providerLabel(data.provider!)} (${data.model})${data.embeddingSupport ? " — embeddings supported" : ""}`,
+          message: `Connected to ${providerLabel(data.provider ?? "anthropic")} (${data.model})${data.embeddingSupport ? " — embeddings supported" : ""}`,
         });
       } else {
         setTestResult({

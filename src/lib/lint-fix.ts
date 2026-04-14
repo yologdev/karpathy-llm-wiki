@@ -235,6 +235,12 @@ export async function fixContradiction(
     );
   }
 
+  if (!hasLLMKey()) {
+    throw new FixValidationError(
+      "Cannot fix contradictions without an LLM provider configured",
+    );
+  }
+
   const sourcePage = await readWikiPage(slug);
   if (!sourcePage) {
     throw new FixNotFoundError(`Source page not found: ${slug}`);

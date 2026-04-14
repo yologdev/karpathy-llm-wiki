@@ -76,13 +76,13 @@ export default function LintPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [fixingSet, setFixingSet] = useState<Set<string>>(new Set());
-  const [fixMessage, setFixMessage] = useState<string | null>(null);
+  const [fixMessages, setFixMessages] = useState<Map<string, string>>(new Map());
 
   async function runLint() {
     setLoading(true);
     setError(null);
     setResult(null);
-    setFixMessage(null);
+    setFixMessages(new Map());
 
     try {
       const res = await fetch("/api/lint", {
@@ -113,7 +113,6 @@ export default function LintPage() {
             ? `missing-concept-page:${issue.message}`
             : `${issue.type}:${issue.slug}`;
       setFixingSet((prev) => new Set(prev).add(key));
-      setFixMessage(null);
 
       try {
         // Build body depending on issue type
@@ -144,7 +143,18 @@ export default function LintPage() {
         const data = await res.json();
 
         if (!res.ok) {
-          setFixMessage(`Fix failed: ${data.error ?? "Unknown error"}`);
+          setFixMessages((prev) => {
+            const next = new Map(prev);
+            next.set(key, `Fix failed: ${data.error ?? "Unknown error"}`);
+            return next;
+          });
+          setTimeout(() => {
+            setFixMessages((prev) => {
+              const next = new Map(prev);
+              next.delete(key);
+              return next;
+            });
+          }, 5000);
           return;
         }
 
@@ -162,9 +172,31 @@ export default function LintPage() {
           return { ...prev, issues: remaining };
         });
 
-        setFixMessage(data.message ?? "Fixed!");
+        setFixMessages((prev) => {
+          const next = new Map(prev);
+          next.set(key, data.message ?? "Fixed!");
+          return next;
+        });
+        setTimeout(() => {
+          setFixMessages((prev) => {
+            const next = new Map(prev);
+            next.delete(key);
+            return next;
+          });
+        }, 5000);
       } catch {
-        setFixMessage("Fix failed: could not connect to the server");
+        setFixMessages((prev) => {
+          const next = new Map(prev);
+          next.set(key, "Fix failed: could not connect to the server");
+          return next;
+        });
+        setTimeout(() => {
+          setFixMessages((prev) => {
+            const next = new Map(prev);
+            next.delete(key);
+            return next;
+          });
+        }, 5000);
       } finally {
         setFixingSet((prev) => {
           const next = new Set(prev);
@@ -211,19 +243,6 @@ export default function LintPage() {
             className="ml-4 text-sm font-medium underline underline-offset-2 hover:opacity-80 transition-opacity"
           >
             Retry
-          </button>
-        </div>
-      )}
-
-      {fixMessage && (
-        <div className="mt-4 rounded-lg border border-green-300 bg-green-50 px-4 py-2 text-sm text-green-800 dark:border-green-800 dark:bg-green-950 dark:text-green-200 flex items-center justify-between">
-          <span>{fixMessage}</span>
-          <button
-            onClick={() => setFixMessage(null)}
-            className="ml-4 text-foreground/40 hover:text-foreground/70 transition-colors"
-            aria-label="Dismiss"
-          >
-            ✕
           </button>
         </div>
       )}
@@ -284,6 +303,7 @@ export default function LintPage() {
                       ? `missing-concept-page:${issue.message}`
                       : `${issue.type}:${issue.slug}`;
                 const isFixing = fixingSet.has(fixKey);
+                const fixMsg = fixMessages.get(fixKey);
 
                 const fixLabel: Record<string, string> = {
                   "missing-crossref": "Fix",
@@ -332,6 +352,17 @@ export default function LintPage() {
                       >
                         {isFixing ? "Fixing…" : fixLabel[issue.type] ?? "Fix"}
                       </button>
+                    )}
+                    {fixMsg && (
+                      <span
+                        className={`ml-2 text-xs ${
+                          fixMsg.startsWith("Fix failed")
+                            ? "text-red-600 dark:text-red-400"
+                            : "text-green-600 dark:text-green-400"
+                        }`}
+                      >
+                        {fixMsg}
+                      </span>
                     )}
                     <span className="basis-full text-sm text-foreground/80 mt-1">
                       {issue.message}
