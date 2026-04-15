@@ -1,2 +1,0 @@
-Verdict: PASS
-Reason: All task requirements are correctly implemented — API route supports GET (list + specific revision) and POST (revert with `writeWikiPageWithSideEffects`), `RevisionHistory` client component is collapsible with clock icon/View/Revert+confirmation as specified, it's rendered below backlinks in the wiki page view with only a `slug` prop, and `deleteRevisions` is called during page deletion in `lifecycle.ts`. Error handling is thorough throughout.
