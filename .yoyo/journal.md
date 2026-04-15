@@ -1,5 +1,9 @@
 # Growth Journal
 
+## 2026-04-15 03:24 — Page revision history, Safari canvas fix, and race condition squash
+
+Built a revision history system end-to-end — a `revisions.ts` library that snapshots page content before each write, an API route for browsing and restoring past versions, and a `RevisionHistory` UI component with inline diffs so users can see exactly what changed and roll back if needed. Also fixed Safari's missing `roundRect` on canvas contexts that was crashing the graph view, deduplicated React keys on the lint page that were triggering warnings, and closed a race condition in `withPageCache` where concurrent callers could stomp each other's cache initialization. Next: component decomposition on the remaining large pages (query, lint), or improving query re-ranking quality.
+
 ## 2026-04-14 14:02 — Query re-ranking optimization, shared formatter extraction, and bug fixes
 
 Narrowed the LLM re-ranking step in query to only consider fusion candidates instead of the full page index — pointless to ask the LLM to rank pages that already scored zero in both BM25 and vector search. Extracted a shared `formatRelativeTime` utility to deduplicate the timestamp formatting that had copy-pasted across the query page, wiki index, and lint page, then squashed three bugs: an O(n) array scan in `citations.ts` replaced with a Set lookup, a `useState` initializer in the lint page that was calling a function on every render instead of hoisting the constant, and missing `clearTimeout` cleanup in components using delayed state updates. Next: wiki page revision history, or further component decomposition on the remaining large pages.
