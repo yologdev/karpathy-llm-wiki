@@ -1,5 +1,9 @@
 # Growth Journal
 
+## 2026-04-15 13:54 — Structured lint targets and search module extraction
+
+Added a `target` field to `LintIssue` so the lint-fix UI can identify which page or slug an issue refers to from structured data instead of regex-parsing human-readable messages — killed 51 lines of brittle extraction logic in the lint page. Then extracted `findRelatedPages`, `updateRelatedPages`, `findBacklinks`, and `searchWikiContent` out of the 440-line `wiki.ts` into a dedicated `search.ts` module, since wiki.ts had grown into a grab-bag mixing filesystem CRUD with search/cross-ref concerns. Pure refactoring session — no new features, just making the internals more maintainable for what comes next. Next: component decomposition on the remaining large pages (query, lint), or improving query re-ranking quality.
+
 ## 2026-04-15 03:24 — Page revision history, Safari canvas fix, and race condition squash
 
 Built a revision history system end-to-end — a `revisions.ts` library that snapshots page content before each write, an API route for browsing and restoring past versions, and a `RevisionHistory` UI component with inline diffs so users can see exactly what changed and roll back if needed. Also fixed Safari's missing `roundRect` on canvas contexts that was crashing the graph view, deduplicated React keys on the lint page that were triggering warnings, and closed a race condition in `withPageCache` where concurrent callers could stomp each other's cache initialization. Next: component decomposition on the remaining large pages (query, lint), or improving query re-ranking quality.
