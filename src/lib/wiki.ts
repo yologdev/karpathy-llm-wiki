@@ -77,6 +77,7 @@ import type { Frontmatter } from "./frontmatter";
 
 /** Module-level cache state. `null` means caching is inactive. */
 let pageCache: Map<string, WikiPage | null> | null = null;
+let pageCacheRefCount = 0;
 
 /**
  * Enable per-operation page caching. Returns a cleanup function that
@@ -85,11 +86,21 @@ let pageCache: Map<string, WikiPage | null> | null = null;
  * While active, `readWikiPage()` checks the cache before reading disk and
  * stores its result. `writeWikiPage()` invalidates the cache entry so the
  * next read fetches fresh data.
+ *
+ * Uses reference counting so multiple concurrent operations can share the
+ * same cache — it is only cleaned up when the last user releases it.
  */
 export function beginPageCache(): () => void {
-  pageCache = new Map();
+  if (pageCacheRefCount === 0) {
+    pageCache = new Map();
+  }
+  pageCacheRefCount++;
   return () => {
-    pageCache = null;
+    pageCacheRefCount--;
+    if (pageCacheRefCount <= 0) {
+      pageCache = null;
+      pageCacheRefCount = 0;
+    }
   };
 }
 

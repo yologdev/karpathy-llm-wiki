@@ -16,6 +16,25 @@ interface GraphNode {
   vy: number;
 }
 
+function roundedRect(
+  ctx: CanvasRenderingContext2D,
+  x: number, y: number, w: number, h: number, r: number
+) {
+  if (typeof ctx.roundRect === 'function') {
+    ctx.beginPath();
+    ctx.roundRect(x, y, w, h, r);
+  } else {
+    // Manual fallback for Safari <16
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.arcTo(x + w, y, x + w, y + h, r);
+    ctx.arcTo(x + w, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r);
+    ctx.arcTo(x, y, x + w, y, r);
+    ctx.closePath();
+  }
+}
+
 interface GraphEdge {
   source: string;
   target: string;
@@ -344,8 +363,7 @@ export default function GraphPage() {
 
       // Background
       ctx.fillStyle = palette.tooltipBg;
-      ctx.beginPath();
-      ctx.roundRect(tipX, tipY, tipW, tipH, 5);
+      roundedRect(ctx, tipX, tipY, tipW, tipH, 5);
       ctx.fill();
 
       // Border
@@ -379,8 +397,7 @@ export default function GraphPage() {
 
       // Background
       ctx.fillStyle = palette.tooltipBg;
-      ctx.beginPath();
-      ctx.roundRect(legendX, legendY, legendW, legendH, 5);
+      roundedRect(ctx, legendX, legendY, legendW, legendH, 5);
       ctx.fill();
       ctx.strokeStyle = palette.edge;
       ctx.lineWidth = 1;

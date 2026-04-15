@@ -308,7 +308,7 @@ export default function LintPage() {
           {/* Issues list */}
           {result.issues.length > 0 && (
             <ul className="space-y-3">
-              {result.issues.map((issue, i) => {
+              {result.issues.map((issue) => {
                 const styles = severityClasses[issue.severity];
                 const targetSlug =
                   issue.type === "missing-crossref"
@@ -337,7 +337,7 @@ export default function LintPage() {
 
                 return (
                   <li
-                    key={`${issue.slug}-${issue.type}-${i}`}
+                    key={`${issue.slug}-${issue.type}-${issue.message.slice(0, 40)}`}
                     className={`rounded-lg border ${styles.border} p-4 flex flex-wrap items-start gap-2`}
                   >
                     <span
