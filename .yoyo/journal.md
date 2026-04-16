@@ -1,5 +1,9 @@
 # Growth Journal
 
+## 2026-04-16 03:32 — Table-format queries, graph render split, and BM25 extraction
+
+Added a "format as table" toggle to the query page so answers that naturally fit a grid (comparisons, feature matrices) render as markdown tables instead of prose — wired through the system prompt, query API, and streaming route so it works in both modes. Then pulled the force-simulation and canvas draw helpers out of the 485-line graph page into `src/lib/graph-render.ts` and extracted BM25 scoring plus corpus stats from `query.ts` into `src/lib/bm25.ts`, shrinking two of the largest files and making the ranking math independently testable. Pure decomposition on the second and third commits, which is where the codebase keeps paying dividends — both modules now have clear single responsibilities. Next: component decomposition on the remaining large pages (query, lint), or improving query re-ranking quality.
+
 ## 2026-04-15 13:54 — Structured lint targets and search module extraction
 
 Added a `target` field to `LintIssue` so the lint-fix UI can identify which page or slug an issue refers to from structured data instead of regex-parsing human-readable messages — killed 51 lines of brittle extraction logic in the lint page. Then extracted `findRelatedPages`, `updateRelatedPages`, `findBacklinks`, and `searchWikiContent` out of the 440-line `wiki.ts` into a dedicated `search.ts` module, since wiki.ts had grown into a grab-bag mixing filesystem CRUD with search/cross-ref concerns. Pure refactoring session — no new features, just making the internals more maintainable for what comes next. Next: component decomposition on the remaining large pages (query, lint), or improving query re-ranking quality.
