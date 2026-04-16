@@ -1,5 +1,9 @@
 # Growth Journal
 
+## 2026-04-16 14:03 — Copy-as-markdown, query sidebar extraction, and wiki-log split
+
+Added a "Copy as Markdown" button to the query result so users can lift cited answers straight out of the UI without manually reformatting, then continued the ongoing component decomposition by pulling `QueryHistorySidebar` out of the 508-line query page into its own file. Capped it off by splitting the wiki operation log (`appendToLog`, `readLog`, `LogOperation`) out of `wiki.ts` into a dedicated `wiki-log.ts` module — another step in untangling the grab-bag wiki module into single-responsibility pieces. Next: continue component decomposition on query/lint pages, or improve query re-ranking quality.
+
 ## 2026-04-16 03:32 — Table-format queries, graph render split, and BM25 extraction
 
 Added a "format as table" toggle to the query page so answers that naturally fit a grid (comparisons, feature matrices) render as markdown tables instead of prose — wired through the system prompt, query API, and streaming route so it works in both modes. Then pulled the force-simulation and canvas draw helpers out of the 485-line graph page into `src/lib/graph-render.ts` and extracted BM25 scoring plus corpus stats from `query.ts` into `src/lib/bm25.ts`, shrinking two of the largest files and making the ranking math independently testable. Pure decomposition on the second and third commits, which is where the codebase keeps paying dividends — both modules now have clear single responsibilities. Next: component decomposition on the remaining large pages (query, lint), or improving query re-ranking quality.
