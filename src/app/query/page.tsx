@@ -31,6 +31,9 @@ export default function QueryPage() {
   const [error, setError] = useState<string | null>(null);
   const [saveState, setSaveState] = useState<SaveState>({ status: "idle" });
   const [saveTitle, setSaveTitle] = useState("");
+  const [copyState, setCopyState] = useState<"idle" | "copied" | "error">(
+    "idle",
+  );
 
   // History state
   const [history, setHistory] = useState<HistoryEntry[]>([]);
@@ -64,6 +67,29 @@ export default function QueryPage() {
       abortControllerRef.current?.abort();
     };
   }, []);
+
+  // Reset copy-button label back to "idle" ~2s after a copy attempt.
+  useEffect(() => {
+    if (copyState === "idle") return;
+    const timer = setTimeout(() => setCopyState("idle"), 2000);
+    return () => clearTimeout(timer);
+  }, [copyState]);
+
+  const handleCopyMarkdown = useCallback(async () => {
+    if (!result) return;
+    const lines = [`# ${question.trim()}`, "", result.answer];
+    if (result.sources.length > 0) {
+      lines.push("", "## Sources", "");
+      for (const slug of result.sources) lines.push(`- [[${slug}]]`);
+    }
+    try {
+      await navigator.clipboard.writeText(lines.join("\n"));
+      setCopyState("copied");
+    } catch (err) {
+      console.error("[query] copy failed:", err);
+      setCopyState("error");
+    }
+  }, [result, question]);
 
   /** Save a completed query to history and refresh the list. */
   const saveToHistory = useCallback(
@@ -380,15 +406,27 @@ export default function QueryPage() {
 
               {/* Save to Wiki — only after streaming completes */}
               {!streaming && (
-                <div className="border-t border-foreground/10 pt-4">
-                  {saveState.status === "idle" && (
+                <div className="border-t border-foreground/10 pt-4 space-y-3">
+                  <div className="flex flex-wrap gap-2">
                     <button
-                      onClick={handleSaveClick}
+                      onClick={handleCopyMarkdown}
                       className="rounded-lg border border-foreground/20 px-4 py-2 text-sm font-medium hover:bg-foreground/5 transition-colors"
                     >
-                      Save to Wiki
+                      {copyState === "copied"
+                        ? "Copied!"
+                        : copyState === "error"
+                          ? "Copy failed"
+                          : "Copy as Markdown"}
                     </button>
-                  )}
+                    {saveState.status === "idle" && (
+                      <button
+                        onClick={handleSaveClick}
+                        className="rounded-lg border border-foreground/20 px-4 py-2 text-sm font-medium hover:bg-foreground/5 transition-colors"
+                      >
+                        Save to Wiki
+                      </button>
+                    )}
+                  </div>
 
                   {saveState.status === "editing" && (
                     <form onSubmit={handleSaveSubmit} className="space-y-3">
