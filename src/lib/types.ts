@@ -57,6 +57,14 @@ export interface LintIssue {
   severity: "error" | "warning" | "info";
 }
 
+/** Options to configure which lint checks to run and filter results. */
+export interface LintOptions {
+  /** Which check types to run. Defaults to all if omitted. */
+  checks?: LintIssue["type"][];
+  /** Minimum severity to include in results. Defaults to "info". */
+  minSeverity?: "error" | "warning" | "info";
+}
+
 /** Result returned by the lint operation. */
 export interface LintResult {
   issues: LintIssue[];

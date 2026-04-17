@@ -3,7 +3,25 @@ import { appendToLog, getWikiDir, listWikiPages, readWikiPage, withPageCache } f
 import { hasLLMKey, callLLM } from "./llm";
 import { loadPageConventions } from "./ingest";
 import { extractWikiLinks } from "./links";
-import type { LintIssue, LintResult } from "./types";
+import type { LintIssue, LintOptions, LintResult } from "./types";
+
+/** All known lint check types. */
+const ALL_CHECK_TYPES: LintIssue["type"][] = [
+  "orphan-page",
+  "stale-index",
+  "empty-page",
+  "missing-crossref",
+  "broken-link",
+  "contradiction",
+  "missing-concept-page",
+];
+
+/** Severity ordering from most to least severe. */
+const SEVERITY_RANK: Record<LintIssue["severity"], number> = {
+  error: 2,
+  warning: 1,
+  info: 0,
+};
 
 // Files that are part of the wiki infrastructure, not content pages.
 const INFRASTRUCTURE_FILES = new Set(["index.md", "log.md"]);
@@ -521,14 +539,28 @@ async function checkMissingConceptPages(
   }
 }
 
-export { parseLLMJsonArray, extractCrossRefSlugs, extractWikiLinks, buildClusters, parseContradictionResponse, checkContradictions, parseMissingConceptResponse, checkMissingConceptPages, checkBrokenLinks };
+export { parseLLMJsonArray, extractCrossRefSlugs, extractWikiLinks, buildClusters, parseContradictionResponse, checkContradictions, parseMissingConceptResponse, checkMissingConceptPages, checkBrokenLinks, ALL_CHECK_TYPES };
 
 /**
  * Run all lint checks against the wiki and return the results.
+ *
+ * @param options - Optional configuration for selective checks and severity filtering.
+ *   - `checks`: array of check types to run (defaults to all 7)
+ *   - `minSeverity`: minimum severity to include in results (defaults to "info")
  */
-export async function lint(): Promise<LintResult> {
+export async function lint(options?: LintOptions): Promise<LintResult> {
   return withPageCache(async () => {
     const wikiDir = getWikiDir();
+
+    // Resolve which checks to run
+    const enabledChecks = new Set<LintIssue["type"]>(
+      options?.checks !== undefined
+        ? options.checks
+        : ALL_CHECK_TYPES,
+    );
+
+    // Resolve minimum severity threshold
+    const minSeverityRank = SEVERITY_RANK[options?.minSeverity ?? "info"];
 
     // Gather data
     const diskSlugs = await getOnDiskSlugs(wikiDir);
@@ -536,23 +568,42 @@ export async function lint(): Promise<LintResult> {
     const indexSlugs = new Set(indexEntries.map((e) => e.slug));
     const diskSlugSet = new Set(diskSlugs);
 
-    // Run all checks (structural checks in parallel, then contradiction check)
+    // Run structural checks in parallel (only those enabled)
     const [orphans, stale, empty, crossRefs, brokenLinks] = await Promise.all([
-      checkOrphanPages(diskSlugs, indexSlugs),
-      checkStaleIndex(indexSlugs, diskSlugSet),
-      checkEmptyPages(diskSlugs),
-      checkMissingCrossRefs(diskSlugs),
-      checkBrokenLinks(diskSlugs),
+      enabledChecks.has("orphan-page")
+        ? checkOrphanPages(diskSlugs, indexSlugs)
+        : [],
+      enabledChecks.has("stale-index")
+        ? checkStaleIndex(indexSlugs, diskSlugSet)
+        : [],
+      enabledChecks.has("empty-page")
+        ? checkEmptyPages(diskSlugs)
+        : [],
+      enabledChecks.has("missing-crossref")
+        ? checkMissingCrossRefs(diskSlugs)
+        : [],
+      enabledChecks.has("broken-link")
+        ? checkBrokenLinks(diskSlugs)
+        : [],
     ]);
 
     // Contradiction + missing-concept detection both require LLM calls but are
     // independent read-only checks, so run them in parallel to halve wall-clock time.
     const [contradictions, missingConcepts] = await Promise.all([
-      checkContradictions(diskSlugs),
-      checkMissingConceptPages(diskSlugs),
+      enabledChecks.has("contradiction")
+        ? checkContradictions(diskSlugs)
+        : [],
+      enabledChecks.has("missing-concept-page")
+        ? checkMissingConceptPages(diskSlugs)
+        : [],
     ]);
 
-    const issues = [...orphans, ...stale, ...empty, ...crossRefs, ...brokenLinks, ...contradictions, ...missingConcepts];
+    let issues = [...orphans, ...stale, ...empty, ...crossRefs, ...brokenLinks, ...contradictions, ...missingConcepts];
+
+    // Filter by minimum severity
+    if (minSeverityRank > 0) {
+      issues = issues.filter((i) => SEVERITY_RANK[i.severity] >= minSeverityRank);
+    }
 
     // Append a log entry so lint passes are visible in the wiki timeline.
     // The title is a stable string ("wiki lint pass") so log readers can group

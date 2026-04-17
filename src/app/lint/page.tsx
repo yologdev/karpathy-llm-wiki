@@ -11,6 +11,34 @@ interface LintResponse {
   error?: string;
 }
 
+const ALL_CHECK_TYPES: LintIssue["type"][] = [
+  "orphan-page",
+  "stale-index",
+  "empty-page",
+  "missing-crossref",
+  "broken-link",
+  "contradiction",
+  "missing-concept-page",
+];
+
+const checkTypeLabels: Record<LintIssue["type"], string> = {
+  "orphan-page": "Orphan pages",
+  "stale-index": "Stale index",
+  "empty-page": "Empty pages",
+  "missing-crossref": "Missing cross-refs",
+  "broken-link": "Broken links",
+  "contradiction": "Contradictions",
+  "missing-concept-page": "Missing concepts",
+};
+
+type SeverityFilter = "all" | "warning" | "error";
+
+const severityFilterLabels: Record<SeverityFilter, string> = {
+  all: "All severities",
+  warning: "Error + Warning",
+  error: "Error only",
+};
+
 const severityClasses: Record<
   LintIssue["severity"],
   { badge: string; border: string }
@@ -60,6 +88,12 @@ export default function LintPage() {
   const [fixMessages, setFixMessages] = useState<Map<string, string>>(new Map());
   const timeoutsRef = useRef<NodeJS.Timeout[]>([]);
 
+  // Filter state
+  const [enabledChecks, setEnabledChecks] = useState<Set<LintIssue["type"]>>(
+    new Set(ALL_CHECK_TYPES),
+  );
+  const [severityFilter, setSeverityFilter] = useState<SeverityFilter>("all");
+
   // Clear all pending timeouts on unmount
   useEffect(() => {
     return () => {
@@ -78,6 +112,26 @@ export default function LintPage() {
     timeoutsRef.current.push(id);
   }, []);
 
+  function toggleCheck(type: LintIssue["type"]) {
+    setEnabledChecks((prev) => {
+      const next = new Set(prev);
+      if (next.has(type)) {
+        next.delete(type);
+      } else {
+        next.add(type);
+      }
+      return next;
+    });
+  }
+
+  function selectAllChecks() {
+    setEnabledChecks(new Set(ALL_CHECK_TYPES));
+  }
+
+  function clearAllChecks() {
+    setEnabledChecks(new Set());
+  }
+
   async function runLint() {
     setLoading(true);
     setError(null);
@@ -85,8 +139,29 @@ export default function LintPage() {
     setFixMessages(new Map());
 
     try {
+      // Build request body with filter options
+      const body: Record<string, unknown> = {};
+
+      // Only send checks if not all are enabled
+      const checks = Array.from(enabledChecks);
+      if (checks.length > 0 && checks.length < ALL_CHECK_TYPES.length) {
+        body.checks = checks;
+      } else if (checks.length === 0) {
+        // Nothing selected — still send empty array so server skips all checks
+        body.checks = [];
+      }
+
+      // Map severity filter to minSeverity
+      if (severityFilter === "warning") {
+        body.minSeverity = "warning";
+      } else if (severityFilter === "error") {
+        body.minSeverity = "error";
+      }
+
       const res = await fetch("/api/lint", {
         method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
       });
 
       const data = await res.json();
@@ -225,7 +300,71 @@ export default function LintPage() {
         index entries, and other issues in your wiki.
       </p>
 
-      <div className="mt-8">
+      {/* Filter controls */}
+      <div className="mt-6 space-y-4 rounded-lg border border-foreground/10 p-4">
+        {/* Check type toggles */}
+        <div>
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-sm font-medium text-foreground/70">
+              Checks
+            </span>
+            <span className="space-x-2 text-xs">
+              <button
+                onClick={selectAllChecks}
+                className="text-foreground/50 hover:text-foreground transition-colors underline underline-offset-2"
+              >
+                All
+              </button>
+              <button
+                onClick={clearAllChecks}
+                className="text-foreground/50 hover:text-foreground transition-colors underline underline-offset-2"
+              >
+                None
+              </button>
+            </span>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {ALL_CHECK_TYPES.map((type) => {
+              const active = enabledChecks.has(type);
+              return (
+                <button
+                  key={type}
+                  onClick={() => toggleCheck(type)}
+                  className={`rounded-full border px-3 py-1 text-xs font-medium transition-colors ${
+                    active
+                      ? "border-foreground/30 bg-foreground/10 text-foreground"
+                      : "border-foreground/10 bg-transparent text-foreground/40 hover:text-foreground/60"
+                  }`}
+                >
+                  {checkTypeLabels[type]}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Severity filter */}
+        <div className="flex items-center gap-3">
+          <span className="text-sm font-medium text-foreground/70">
+            Severity
+          </span>
+          <select
+            value={severityFilter}
+            onChange={(e) => setSeverityFilter(e.target.value as SeverityFilter)}
+            className="rounded border border-foreground/20 bg-background px-2 py-1 text-sm text-foreground"
+          >
+            {(Object.keys(severityFilterLabels) as SeverityFilter[]).map(
+              (key) => (
+                <option key={key} value={key}>
+                  {severityFilterLabels[key]}
+                </option>
+              ),
+            )}
+          </select>
+        </div>
+      </div>
+
+      <div className="mt-6">
         <button
           onClick={runLint}
           disabled={loading}

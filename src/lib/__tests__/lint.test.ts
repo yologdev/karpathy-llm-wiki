@@ -1020,3 +1020,157 @@ describe("extractWikiLinks", () => {
     ]);
   });
 });
+
+// ---------------------------------------------------------------------------
+// LintOptions — selective checks and severity filtering
+// ---------------------------------------------------------------------------
+
+describe("lint with LintOptions", () => {
+  it("returns only orphan-page issues when checks: ['orphan-page']", async () => {
+    // Create a page on disk that isn't in the index → orphan-page
+    await writeWikiPage(
+      "orphan-only",
+      "# Orphan Only\n\nThis page exists on disk but is not in the index.",
+    );
+    // Also create a stale-index scenario: index references a page that doesn't exist
+    const entries: IndexEntry[] = [
+      { slug: "ghost", title: "Ghost", summary: "Does not exist on disk" },
+    ];
+    await updateIndex(entries);
+
+    const result = await lint({ checks: ["orphan-page"] });
+
+    // Should only have orphan-page issues, not stale-index
+    expect(result.issues.length).toBeGreaterThan(0);
+    for (const issue of result.issues) {
+      expect(issue.type).toBe("orphan-page");
+    }
+    // Verify stale-index is NOT included (it would be if all checks ran)
+    const staleIssues = result.issues.filter((i) => i.type === "stale-index");
+    expect(staleIssues).toHaveLength(0);
+  });
+
+  it("excludes info-level issues when minSeverity is 'warning'", async () => {
+    // Set up LLM mock to be unavailable (which generates info issues)
+    mockedHasLLMKey.mockReturnValue(false);
+
+    // Create two pages that mention each other's title but don't cross-link
+    // → missing-crossref (info severity)
+    await writeWikiPage(
+      "alpha-page",
+      "# Alpha Page\n\nThis page talks about Beta Page and has enough content to pass.",
+    );
+    await writeWikiPage(
+      "beta-page",
+      "# Beta Page\n\nThis page talks about Alpha Page and has enough content to pass.",
+    );
+    // Also create an orphan (warning) to ensure it IS included
+    await writeWikiPage(
+      "orphan-warn",
+      "# Orphan Warn\n\nThis page is not in the index and should produce a warning.",
+    );
+    const entries: IndexEntry[] = [
+      { slug: "alpha-page", title: "Alpha Page", summary: "Alpha" },
+      { slug: "beta-page", title: "Beta Page", summary: "Beta" },
+    ];
+    await updateIndex(entries);
+
+    const result = await lint({ minSeverity: "warning" });
+
+    // No info-level issues should appear
+    const infoIssues = result.issues.filter((i) => i.severity === "info");
+    expect(infoIssues).toHaveLength(0);
+
+    // There should be at least the orphan warning
+    const warnings = result.issues.filter((i) => i.severity === "warning");
+    expect(warnings.length).toBeGreaterThan(0);
+  });
+
+  it("excludes warning and info issues when minSeverity is 'error'", async () => {
+    // Create orphan page (warning) and stale index entry (error)
+    await writeWikiPage(
+      "orphan-sev",
+      "# Orphan Sev\n\nThis is an orphan page producing a warning.",
+    );
+    const entries: IndexEntry[] = [
+      { slug: "nonexistent", title: "Ghost", summary: "Page does not exist on disk" },
+    ];
+    await updateIndex(entries);
+
+    const result = await lint({ minSeverity: "error" });
+
+    // Only error-level issues should remain
+    for (const issue of result.issues) {
+      expect(issue.severity).toBe("error");
+    }
+    // The stale-index error should be present
+    const staleIssues = result.issues.filter((i) => i.type === "stale-index");
+    expect(staleIssues.length).toBeGreaterThan(0);
+    // The orphan warning should NOT be present
+    const orphanIssues = result.issues.filter((i) => i.type === "orphan-page");
+    expect(orphanIssues).toHaveLength(0);
+  });
+
+  it("runs all checks when no options are provided (backwards compat)", async () => {
+    // Create a scenario with both orphan and stale-index issues
+    await writeWikiPage(
+      "page-a",
+      "# Page A\n\nThis page exists on disk with enough content to pass checks.",
+    );
+    const entries: IndexEntry[] = [
+      { slug: "page-a", title: "Page A", summary: "Exists" },
+      { slug: "page-missing", title: "Missing", summary: "Does not exist" },
+    ];
+    await updateIndex(entries);
+
+    // Call with no options
+    const result = await lint();
+
+    // Should detect the stale-index issue at minimum
+    const staleIssues = result.issues.filter((i) => i.type === "stale-index");
+    expect(staleIssues.length).toBeGreaterThan(0);
+
+    // checkedAt should be set
+    expect(result.checkedAt).toBeTruthy();
+    expect(result.summary).toBeTruthy();
+  });
+
+  it("combining checks and minSeverity filters correctly", async () => {
+    // Create orphan (warning) and stale-index (error)
+    await writeWikiPage(
+      "orphan-combo",
+      "# Orphan Combo\n\nThis orphan page should produce a warning-level issue.",
+    );
+    const entries: IndexEntry[] = [
+      { slug: "gone", title: "Gone", summary: "Does not exist on disk" },
+    ];
+    await updateIndex(entries);
+
+    // Ask for only orphan-page + stale-index, but min severity = error
+    const result = await lint({
+      checks: ["orphan-page", "stale-index"],
+      minSeverity: "error",
+    });
+
+    // orphan-page is warning → filtered out. stale-index is error → kept.
+    for (const issue of result.issues) {
+      expect(issue.type).toBe("stale-index");
+      expect(issue.severity).toBe("error");
+    }
+    expect(result.issues.length).toBeGreaterThan(0);
+  });
+
+  it("returns empty issues array when checks is empty array", async () => {
+    await writeWikiPage(
+      "some-page",
+      "# Some Page\n\nEnough content here.",
+    );
+    await updateIndex([
+      { slug: "some-page", title: "Some Page", summary: "A page" },
+    ]);
+
+    const result = await lint({ checks: [] });
+    // No checks enabled → no issues
+    expect(result.issues).toHaveLength(0);
+  });
+});
