@@ -3,7 +3,9 @@
 import Link from "next/link";
 import { useCallback, useMemo, useState } from "react";
 import type { IndexEntry } from "@/lib/types";
-import { formatRelativeTime } from "@/lib/format";
+import { formatRelativeTime, parseISODate } from "@/lib/format";
+
+type SortOption = "recent" | "title-asc" | "title-desc" | "most-sources";
 
 interface WikiIndexClientProps {
   pages: IndexEntry[];
@@ -13,6 +15,10 @@ export function WikiIndexClient({ pages }: WikiIndexClientProps) {
   const [searchTerm, setSearchTerm] = useState("");
   const [activeTags, setActiveTags] = useState<string[]>([]);
   const [exporting, setExporting] = useState(false);
+  const [sortBy, setSortBy] = useState<SortOption>("recent");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
+  const [showAdvanced, setShowAdvanced] = useState(false);
 
   const handleExport = useCallback(async () => {
     setExporting(true);
@@ -48,25 +54,67 @@ export function WikiIndexClient({ pages }: WikiIndexClientProps) {
     return [...set].sort((a, b) => a.localeCompare(b));
   }, [pages]);
 
-  // Filter by search term (title + summary) and active tags (AND semantics).
+  // Filter by search term, active tags, and date range — then sort.
   const filtered = useMemo(() => {
     const q = searchTerm.trim().toLowerCase();
-    return pages.filter((page) => {
+    const fromDate = dateFrom || null;
+    const toDate = dateTo || null;
+
+    const result = pages.filter((page) => {
+      // Text search
       if (q.length > 0) {
         const hay = `${page.title} ${page.summary}`.toLowerCase();
         if (!hay.includes(q)) return false;
       }
+      // Tag filter (AND semantics)
       if (activeTags.length > 0) {
         const pageTags = page.tags ?? [];
         for (const tag of activeTags) {
           if (!pageTags.includes(tag)) return false;
         }
       }
+      // Date range filter
+      if (fromDate || toDate) {
+        const pageDate = parseISODate(page.updated);
+        if (!pageDate) return false; // no date → exclude when date filter is active
+        if (fromDate && pageDate < fromDate) return false;
+        if (toDate && pageDate > toDate) return false;
+      }
       return true;
     });
-  }, [pages, searchTerm, activeTags]);
 
-  const hasActiveFilters = searchTerm.length > 0 || activeTags.length > 0;
+    // Sort
+    result.sort((a, b) => {
+      switch (sortBy) {
+        case "recent": {
+          const da = a.updated ?? "";
+          const db = b.updated ?? "";
+          // nulls last: pages without dates go to the end
+          if (!da && !db) return 0;
+          if (!da) return 1;
+          if (!db) return -1;
+          return db.localeCompare(da);
+        }
+        case "title-asc":
+          return a.title.localeCompare(b.title);
+        case "title-desc":
+          return b.title.localeCompare(a.title);
+        case "most-sources":
+          return (b.sourceCount ?? 0) - (a.sourceCount ?? 0);
+        default:
+          return 0;
+      }
+    });
+
+    return result;
+  }, [pages, searchTerm, activeTags, sortBy, dateFrom, dateTo]);
+
+  const hasActiveFilters =
+    searchTerm.length > 0 ||
+    activeTags.length > 0 ||
+    sortBy !== "recent" ||
+    dateFrom.length > 0 ||
+    dateTo.length > 0;
 
   const toggleTag = (tag: string) => {
     setActiveTags((prev) =>
@@ -77,6 +125,9 @@ export function WikiIndexClient({ pages }: WikiIndexClientProps) {
   const clearFilters = () => {
     setSearchTerm("");
     setActiveTags([]);
+    setSortBy("recent");
+    setDateFrom("");
+    setDateTo("");
   };
 
   if (pages.length === 0) {
@@ -97,7 +148,7 @@ export function WikiIndexClient({ pages }: WikiIndexClientProps) {
 
   return (
     <div>
-      {/* Search input + Export button */}
+      {/* Search input + Sort dropdown + Export button */}
       <div className="mb-4 flex items-center gap-2">
         <input
           type="search"
@@ -107,6 +158,17 @@ export function WikiIndexClient({ pages }: WikiIndexClientProps) {
           aria-label="Search wiki pages"
           className="flex-1 rounded-lg border border-foreground/10 bg-transparent px-4 py-2 text-sm outline-none focus:border-foreground/30 transition-colors"
         />
+        <select
+          value={sortBy}
+          onChange={(e) => setSortBy(e.target.value as SortOption)}
+          aria-label="Sort pages"
+          className="shrink-0 rounded-lg border border-foreground/10 bg-transparent px-3 py-2 text-sm outline-none focus:border-foreground/30 transition-colors"
+        >
+          <option value="recent">Recently updated</option>
+          <option value="title-asc">Title A–Z</option>
+          <option value="title-desc">Title Z–A</option>
+          <option value="most-sources">Most sources</option>
+        </select>
         <Link
           href="/wiki/new"
           className="shrink-0 inline-flex items-center gap-1.5 rounded-lg bg-foreground px-3 py-2 text-sm font-medium text-background hover:opacity-90 transition-opacity"
@@ -155,6 +217,65 @@ export function WikiIndexClient({ pages }: WikiIndexClientProps) {
               Clear filters
             </button>
           )}
+        </div>
+      )}
+
+      {/* Advanced filters (date range) — collapsible */}
+      <div className="mb-4">
+        <button
+          type="button"
+          onClick={() => setShowAdvanced((v) => !v)}
+          className="text-xs text-foreground/50 hover:text-foreground/80 transition-colors"
+          aria-expanded={showAdvanced}
+        >
+          {showAdvanced ? "▾ Advanced filters" : "▸ Advanced filters"}
+        </button>
+        {showAdvanced && (
+          <div className="mt-2 flex items-center gap-3">
+            <label className="flex items-center gap-1.5 text-xs text-foreground/60">
+              From
+              <input
+                type="date"
+                value={dateFrom}
+                onChange={(e) => setDateFrom(e.target.value)}
+                className="rounded-md border border-foreground/10 bg-transparent px-2 py-1 text-sm outline-none focus:border-foreground/30 transition-colors"
+              />
+            </label>
+            <label className="flex items-center gap-1.5 text-xs text-foreground/60">
+              To
+              <input
+                type="date"
+                value={dateTo}
+                onChange={(e) => setDateTo(e.target.value)}
+                className="rounded-md border border-foreground/10 bg-transparent px-2 py-1 text-sm outline-none focus:border-foreground/30 transition-colors"
+              />
+            </label>
+            {(dateFrom || dateTo) && (
+              <button
+                type="button"
+                onClick={() => {
+                  setDateFrom("");
+                  setDateTo("");
+                }}
+                className="text-xs text-foreground/50 hover:text-foreground/80 transition-colors"
+              >
+                Clear dates
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Clear filters button when no tags row but filters are active */}
+      {allTags.length === 0 && hasActiveFilters && (
+        <div className="mb-4">
+          <button
+            type="button"
+            onClick={clearFilters}
+            className="rounded-md border border-foreground/10 px-2.5 py-1 text-xs text-foreground/70 hover:border-foreground/30 hover:text-foreground transition-colors"
+          >
+            Clear filters
+          </button>
         </div>
       )}
 

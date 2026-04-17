@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { formatRelativeTime } from "../format";
+import { formatRelativeTime, parseISODate } from "../format";
 
 describe("formatRelativeTime", () => {
   afterEach(() => {
@@ -60,5 +60,39 @@ describe("formatRelativeTime", () => {
 
   it("returns first 10 chars for garbage strings", () => {
     expect(formatRelativeTime("hello world foo")).toBe("hello worl");
+  });
+});
+
+describe("parseISODate", () => {
+  it("extracts YYYY-MM-DD from a full ISO timestamp", () => {
+    expect(parseISODate("2024-06-15T10:30:00.000Z")).toBe("2024-06-15");
+  });
+
+  it("returns YYYY-MM-DD strings as-is", () => {
+    expect(parseISODate("2024-01-01")).toBe("2024-01-01");
+  });
+
+  it("handles ISO timestamps without milliseconds", () => {
+    expect(parseISODate("2023-12-25T08:00:00Z")).toBe("2023-12-25");
+  });
+
+  it("returns null for null input", () => {
+    expect(parseISODate(null)).toBeNull();
+  });
+
+  it("returns null for undefined input", () => {
+    expect(parseISODate(undefined)).toBeNull();
+  });
+
+  it("returns null for empty string", () => {
+    expect(parseISODate("")).toBeNull();
+  });
+
+  it("returns null for unparseable string", () => {
+    expect(parseISODate("not-a-date")).toBeNull();
+  });
+
+  it("handles date with timezone offset", () => {
+    expect(parseISODate("2024-03-10T12:00:00+05:00")).toBe("2024-03-10");
   });
 });
