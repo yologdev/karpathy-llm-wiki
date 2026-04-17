@@ -1,2 +1,0 @@
-Verdict: PASS
-Reason: All five files modified exactly as specified — `LintOptions` type added, `lint()` accepts optional options with check selection and severity filtering (backwards compatible), API route validates inputs, UI has toggle buttons and severity dropdown, and 6 comprehensive tests cover selective checks, severity filtering, combination, empty checks, and backwards compatibility. No bugs found.

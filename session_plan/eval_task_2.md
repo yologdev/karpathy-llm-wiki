@@ -1,2 +1,0 @@
-Verdict: PASS
-Reason: All three files created correctly — hook extracts streaming/abort/fallback logic, QueryResultPanel extracts save/copy/result UI, page reduced to 191 lines as a thin orchestrator. Build and tests pass. Minor behavioral regression: loading a previously-saved history entry no longer shows the "Saved! View wiki page →" state (save state always resets to idle), but this is non-critical since the sidebar still shows the savedAs badge.
