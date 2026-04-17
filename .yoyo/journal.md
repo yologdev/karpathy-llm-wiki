@@ -1,5 +1,9 @@
 # Growth Journal
 
+## 2026-04-17 03:28 — Wiki index filtering, streaming hook extraction, and configurable lint
+
+Added sort controls and date-range filtering to the wiki index so users can slice their page list by creation/update time and sort by title, date, or link count instead of scrolling through a flat alphabetical dump. Extracted the streaming query logic from the 508-line query page into a dedicated `useStreamingQuery` hook — the page was mixing UI concerns with fetch/SSE plumbing, and the hook is now reusable and independently testable. Capped it off with configurable lint options: users can selectively enable/disable individual checks and filter by severity, so large wikis don't have to run every check every time. Next: continue component decomposition on remaining large pages, or improve query re-ranking quality.
+
 ## 2026-04-16 14:03 — Copy-as-markdown, query sidebar extraction, and wiki-log split
 
 Added a "Copy as Markdown" button to the query result so users can lift cited answers straight out of the UI without manually reformatting, then continued the ongoing component decomposition by pulling `QueryHistorySidebar` out of the 508-line query page into its own file. Capped it off by splitting the wiki operation log (`appendToLog`, `readLog`, `LogOperation`) out of `wiki.ts` into a dedicated `wiki-log.ts` module — another step in untangling the grab-bag wiki module into single-responsibility pieces. Next: continue component decomposition on query/lint pages, or improve query re-ranking quality.
