@@ -3,6 +3,12 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 import Link from "next/link";
 import type { LintIssue } from "@/lib/types";
+import {
+  LintFilterControls,
+  ALL_CHECK_TYPES,
+  type SeverityFilter,
+} from "@/components/LintFilterControls";
+import { LintIssueCard } from "@/components/LintIssueCard";
 
 interface LintResponse {
   issues: LintIssue[];
@@ -10,75 +16,6 @@ interface LintResponse {
   checkedAt: string;
   error?: string;
 }
-
-const ALL_CHECK_TYPES: LintIssue["type"][] = [
-  "orphan-page",
-  "stale-index",
-  "empty-page",
-  "missing-crossref",
-  "broken-link",
-  "contradiction",
-  "missing-concept-page",
-];
-
-const checkTypeLabels: Record<LintIssue["type"], string> = {
-  "orphan-page": "Orphan pages",
-  "stale-index": "Stale index",
-  "empty-page": "Empty pages",
-  "missing-crossref": "Missing cross-refs",
-  "broken-link": "Broken links",
-  "contradiction": "Contradictions",
-  "missing-concept-page": "Missing concepts",
-};
-
-type SeverityFilter = "all" | "warning" | "error";
-
-const severityFilterLabels: Record<SeverityFilter, string> = {
-  all: "All severities",
-  warning: "Error + Warning",
-  error: "Error only",
-};
-
-const severityClasses: Record<
-  LintIssue["severity"],
-  { badge: string; border: string }
-> = {
-  error: {
-    badge:
-      "bg-red-500/20 text-red-600 dark:text-red-400 border-red-500/30",
-    border: "border-red-500/20",
-  },
-  warning: {
-    badge:
-      "bg-yellow-500/20 text-yellow-600 dark:text-yellow-400 border-yellow-500/30",
-    border: "border-yellow-500/20",
-  },
-  info: {
-    badge:
-      "bg-blue-500/20 text-blue-600 dark:text-blue-400 border-blue-500/30",
-    border: "border-blue-500/20",
-  },
-};
-
-const fixableTypes = new Set([
-  "missing-crossref",
-  "orphan-page",
-  "stale-index",
-  "empty-page",
-  "contradiction",
-  "missing-concept-page",
-  "broken-link",
-]);
-
-const fixLabel: Record<string, string> = {
-  "missing-crossref": "Fix",
-  "orphan-page": "Add to index",
-  "stale-index": "Remove from index",
-  "empty-page": "Delete page",
-  "contradiction": "Resolve",
-  "missing-concept-page": "Create page",
-  "broken-link": "Remove link",
-};
 
 export default function LintPage() {
   const [result, setResult] = useState<LintResponse | null>(null);
@@ -283,6 +220,23 @@ export default function LintPage() {
     [scheduleTimeout],
   );
 
+  /** Compute fix key for a given issue — mirrors logic in handleFix. */
+  function fixKey(issue: LintIssue): string {
+    const targetSlug = issue.target ?? null;
+    if (
+      (issue.type === "missing-crossref" ||
+        issue.type === "contradiction" ||
+        issue.type === "broken-link") &&
+      targetSlug
+    ) {
+      return `${issue.type}:${issue.slug}:${targetSlug}`;
+    }
+    if (issue.type === "missing-concept-page") {
+      return `missing-concept-page:${issue.message}`;
+    }
+    return `${issue.type}:${issue.slug}`;
+  }
+
   return (
     <main className="mx-auto max-w-3xl px-6 py-16">
       <div className="mb-8">
@@ -300,79 +254,16 @@ export default function LintPage() {
         index entries, and other issues in your wiki.
       </p>
 
-      {/* Filter controls */}
-      <div className="mt-6 space-y-4 rounded-lg border border-foreground/10 p-4">
-        {/* Check type toggles */}
-        <div>
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-sm font-medium text-foreground/70">
-              Checks
-            </span>
-            <span className="space-x-2 text-xs">
-              <button
-                onClick={selectAllChecks}
-                className="text-foreground/50 hover:text-foreground transition-colors underline underline-offset-2"
-              >
-                All
-              </button>
-              <button
-                onClick={clearAllChecks}
-                className="text-foreground/50 hover:text-foreground transition-colors underline underline-offset-2"
-              >
-                None
-              </button>
-            </span>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            {ALL_CHECK_TYPES.map((type) => {
-              const active = enabledChecks.has(type);
-              return (
-                <button
-                  key={type}
-                  onClick={() => toggleCheck(type)}
-                  className={`rounded-full border px-3 py-1 text-xs font-medium transition-colors ${
-                    active
-                      ? "border-foreground/30 bg-foreground/10 text-foreground"
-                      : "border-foreground/10 bg-transparent text-foreground/40 hover:text-foreground/60"
-                  }`}
-                >
-                  {checkTypeLabels[type]}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-
-        {/* Severity filter */}
-        <div className="flex items-center gap-3">
-          <span className="text-sm font-medium text-foreground/70">
-            Severity
-          </span>
-          <select
-            value={severityFilter}
-            onChange={(e) => setSeverityFilter(e.target.value as SeverityFilter)}
-            className="rounded border border-foreground/20 bg-background px-2 py-1 text-sm text-foreground"
-          >
-            {(Object.keys(severityFilterLabels) as SeverityFilter[]).map(
-              (key) => (
-                <option key={key} value={key}>
-                  {severityFilterLabels[key]}
-                </option>
-              ),
-            )}
-          </select>
-        </div>
-      </div>
-
-      <div className="mt-6">
-        <button
-          onClick={runLint}
-          disabled={loading}
-          className="rounded-lg bg-foreground px-6 py-3 text-sm font-medium text-background hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          {loading ? "Checking..." : "Run Lint"}
-        </button>
-      </div>
+      <LintFilterControls
+        enabledChecks={enabledChecks}
+        onToggleCheck={toggleCheck}
+        onSelectAll={selectAllChecks}
+        onClearAll={clearAllChecks}
+        severityFilter={severityFilter}
+        onSeverityChange={setSeverityFilter}
+        onRunLint={runLint}
+        loading={loading}
+      />
 
       {error && (
         <div className="mt-8 rounded-lg border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-800 dark:border-red-800 dark:bg-red-950 dark:text-red-200 flex items-center justify-between">
@@ -409,78 +300,15 @@ export default function LintPage() {
           {result.issues.length > 0 && (
             <ul className="space-y-3">
               {result.issues.map((issue, i) => {
-                const styles = severityClasses[issue.severity];
-                const targetSlug = issue.target ?? null;
-
-                const isFixable =
-                  fixableTypes.has(issue.type) &&
-                  (issue.type !== "missing-crossref" || targetSlug !== null) &&
-                  (issue.type !== "contradiction" || targetSlug !== null) &&
-                  (issue.type !== "missing-concept-page" || issue.message.startsWith('Concept "')) &&
-                  (issue.type !== "broken-link" || targetSlug !== null);
-
-                const fixKey =
-                  (issue.type === "missing-crossref" || issue.type === "contradiction" || issue.type === "broken-link") && targetSlug
-                    ? `${issue.type}:${issue.slug}:${targetSlug}`
-                    : issue.type === "missing-concept-page"
-                      ? `missing-concept-page:${issue.message}`
-                      : `${issue.type}:${issue.slug}`;
-                const isFixing = fixingSet.has(fixKey);
-                const fixMsg = fixMessages.get(fixKey);
-
+                const key = fixKey(issue);
                 return (
-                  <li
-                    key={`${issue.type}-${issue.slug}-${issue.target ?? ''}-${i}`}
-                    className={`rounded-lg border ${styles.border} p-4 flex flex-wrap items-start gap-2`}
-                  >
-                    <span
-                      className={`inline-block rounded-full border px-2.5 py-0.5 text-xs font-medium ${styles.badge}`}
-                    >
-                      {issue.severity}
-                    </span>
-                    <span className="inline-block rounded-full border border-foreground/20 bg-foreground/5 px-2.5 py-0.5 text-xs font-medium text-foreground/70">
-                      {issue.type}
-                    </span>
-                    {issue.slug ? (
-                      <Link
-                        href={`/wiki/${issue.slug}`}
-                        className="inline-block rounded-full border border-foreground/20 bg-foreground/5 px-2.5 py-0.5 text-xs font-medium text-foreground hover:bg-foreground/10 transition-colors"
-                      >
-                        {issue.slug}
-                      </Link>
-                    ) : (
-                      <span className="inline-block rounded-full border border-foreground/20 bg-foreground/5 px-2.5 py-0.5 text-xs font-medium text-foreground/60">
-                        system
-                      </span>
-                    )}
-                    {isFixable && (
-                      <button
-                        onClick={() => handleFix(issue, targetSlug ?? undefined)}
-                        disabled={isFixing}
-                        className={`ml-auto inline-flex items-center gap-1 rounded border px-2 py-0.5 text-xs font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
-                          issue.type === "empty-page"
-                            ? "border-red-500/30 bg-red-500/10 text-red-600 hover:bg-red-500/20 dark:text-red-400"
-                            : "border-foreground/20 bg-transparent text-foreground/60 hover:bg-foreground/5 hover:text-foreground"
-                        }`}
-                      >
-                        {isFixing ? "Fixing…" : fixLabel[issue.type] ?? "Fix"}
-                      </button>
-                    )}
-                    {fixMsg && (
-                      <span
-                        className={`ml-2 text-xs ${
-                          fixMsg.startsWith("Fix failed")
-                            ? "text-red-600 dark:text-red-400"
-                            : "text-green-600 dark:text-green-400"
-                        }`}
-                      >
-                        {fixMsg}
-                      </span>
-                    )}
-                    <span className="basis-full text-sm text-foreground/80 mt-1">
-                      {issue.message}
-                    </span>
-                  </li>
+                  <LintIssueCard
+                    key={`${issue.type}-${issue.slug}-${issue.target ?? ""}-${i}`}
+                    issue={issue}
+                    isFixing={fixingSet.has(key)}
+                    fixMessage={fixMessages.get(key) ?? null}
+                    onFix={handleFix}
+                  />
                 );
               })}
             </ul>
