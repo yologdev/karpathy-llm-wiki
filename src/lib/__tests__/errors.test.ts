@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { getErrorMessage } from "../errors";
+import { getErrorMessage, isEnoent } from "../errors";
 
 describe("getErrorMessage", () => {
   it("returns .message from an Error instance", () => {
@@ -44,5 +44,28 @@ describe("getErrorMessage", () => {
 
   it("handles Error with empty message", () => {
     expect(getErrorMessage(new Error(""))).toBe("");
+  });
+});
+
+describe("isEnoent", () => {
+  it("returns true for an ENOENT error", () => {
+    const err = Object.assign(new Error("not found"), { code: "ENOENT" });
+    expect(isEnoent(err)).toBe(true);
+  });
+
+  it("returns false for a different error code", () => {
+    const err = Object.assign(new Error("permission denied"), { code: "EACCES" });
+    expect(isEnoent(err)).toBe(false);
+  });
+
+  it("returns false for a plain Error without code", () => {
+    expect(isEnoent(new Error("boom"))).toBe(false);
+  });
+
+  it("returns false for non-Error values", () => {
+    expect(isEnoent(null)).toBe(false);
+    expect(isEnoent(undefined)).toBe(false);
+    expect(isEnoent("ENOENT")).toBe(false);
+    expect(isEnoent({ code: "ENOENT" })).toBe(false);
   });
 });

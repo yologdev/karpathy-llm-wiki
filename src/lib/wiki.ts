@@ -3,6 +3,7 @@ import path from "path";
 import type { WikiPage, IndexEntry } from "./types";
 import { withFileLock } from "./lock";
 import { saveRevision } from "./revisions";
+import { isEnoent } from "./errors";
 
 // ---------------------------------------------------------------------------
 // Configurable base directories — override via env vars for testing
@@ -230,8 +231,10 @@ export async function listWikiPages(): Promise<IndexEntry[]> {
   let raw: string;
   try {
     raw = await fs.readFile(indexPath, "utf-8");
-  } catch (err) {
-    console.warn("[wiki] listWikiPages failed to read index.md:", err);
+  } catch (err: unknown) {
+    if (!isEnoent(err)) {
+      console.warn("[wiki] listWikiPages failed to read index.md:", err);
+    }
     return [];
   }
 

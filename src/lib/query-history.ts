@@ -2,6 +2,7 @@ import fs from "fs/promises";
 import path from "path";
 import { getWikiDir, ensureDirectories } from "./wiki";
 import { withFileLock } from "./lock";
+import { isEnoent } from "./errors";
 
 // ---------------------------------------------------------------------------
 // Query history — persist past queries as JSON in the wiki directory
@@ -49,8 +50,10 @@ async function readHistory(): Promise<QueryHistoryEntry[]> {
     const parsed = JSON.parse(raw);
     if (!Array.isArray(parsed)) return [];
     return parsed as QueryHistoryEntry[];
-  } catch (err) {
-    console.warn("[query-history] load history failed:", err);
+  } catch (err: unknown) {
+    if (!isEnoent(err)) {
+      console.warn("[query-history] load history failed:", err);
+    }
     return [];
   }
 }

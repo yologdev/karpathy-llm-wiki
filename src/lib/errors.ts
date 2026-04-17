@@ -12,3 +12,12 @@ export function getErrorMessage(
   if (typeof error === "string") return error;
   return fallback;
 }
+
+/** Check whether an unknown caught value is a Node.js ENOENT (file-not-found) error. */
+export function isEnoent(err: unknown): boolean {
+  return (
+    err instanceof Error &&
+    "code" in err &&
+    (err as NodeJS.ErrnoException).code === "ENOENT"
+  );
+}
