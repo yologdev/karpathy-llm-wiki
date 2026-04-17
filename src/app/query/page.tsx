@@ -1,95 +1,20 @@
 "use client";
 
-import { useState, useCallback, useRef, useEffect } from "react";
+import { useState, useCallback, useEffect } from "react";
 import Link from "next/link";
-import { MarkdownRenderer } from "@/components/MarkdownRenderer";
 import { Alert } from "@/components/Alert";
 import {
   QueryHistorySidebar,
   type HistoryEntry,
 } from "@/components/QueryHistorySidebar";
-import { extractCitedSlugs } from "@/lib/citations";
-
-interface QueryResponse {
-  answer: string;
-  sources: string[];
-  error?: string;
-}
-
-interface SaveState {
-  status: "idle" | "editing" | "saving" | "saved" | "error";
-  slug?: string;
-  error?: string;
-}
+import { QueryResultPanel } from "@/components/QueryResultPanel";
+import { useStreamingQuery } from "@/hooks/useStreamingQuery";
 
 export default function QueryPage() {
-  const [question, setQuestion] = useState("");
-  const [format, setFormat] = useState<"prose" | "table">("prose");
-  const [result, setResult] = useState<QueryResponse | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [streaming, setStreaming] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [saveState, setSaveState] = useState<SaveState>({ status: "idle" });
-  const [saveTitle, setSaveTitle] = useState("");
-  const [copyState, setCopyState] = useState<"idle" | "copied" | "error">(
-    "idle",
-  );
-
   // History state
   const [history, setHistory] = useState<HistoryEntry[]>([]);
   const [historyLoading, setHistoryLoading] = useState(true);
   const [currentHistoryId, setCurrentHistoryId] = useState<string | null>(null);
-
-  // Ref to hold the current AbortController for streaming requests
-  const abortControllerRef = useRef<AbortController | null>(null);
-
-  // Fetch history on mount
-  useEffect(() => {
-    async function fetchHistory() {
-      try {
-        const res = await fetch("/api/query/history?limit=20");
-        if (res.ok) {
-          const data = await res.json();
-          setHistory(data.entries ?? []);
-        }
-      } catch {
-        // Silently fail — history is non-critical
-      } finally {
-        setHistoryLoading(false);
-      }
-    }
-    fetchHistory();
-  }, []);
-
-  // Abort any in-flight streaming request on unmount
-  useEffect(() => {
-    return () => {
-      abortControllerRef.current?.abort();
-    };
-  }, []);
-
-  // Reset copy-button label back to "idle" ~2s after a copy attempt.
-  useEffect(() => {
-    if (copyState === "idle") return;
-    const timer = setTimeout(() => setCopyState("idle"), 2000);
-    return () => clearTimeout(timer);
-  }, [copyState]);
-
-  const handleCopyMarkdown = useCallback(async () => {
-    if (!result) return;
-    const lines = [`# ${question.trim()}`, "", result.answer];
-    if (result.sources.length > 0) {
-      lines.push("", "## Sources", "");
-      for (const slug of result.sources) lines.push(`- [[${slug}]]`);
-    }
-    try {
-      await navigator.clipboard.writeText(lines.join("\n"));
-      setCopyState("copied");
-    } catch (err) {
-      console.error("[query] copy failed:", err);
-      setCopyState("error");
-    }
-  }, [result, question]);
 
   /** Save a completed query to history and refresh the list. */
   const saveToHistory = useCallback(
@@ -114,119 +39,43 @@ export default function QueryPage() {
     [],
   );
 
-  const handleSubmit = useCallback(
-    async (e: React.FormEvent) => {
-      e.preventDefault();
-      if (!question.trim()) return;
+  const {
+    question,
+    setQuestion,
+    format,
+    setFormat,
+    result,
+    setResult,
+    loading,
+    setLoading,
+    streaming,
+    setStreaming,
+    error,
+    setError,
+    submit,
+    isProcessing,
+  } = useStreamingQuery({
+    onComplete: saveToHistory,
+    onSubmitStart: () => setCurrentHistoryId(null),
+  });
 
-      // Abort any previous in-flight request
-      abortControllerRef.current?.abort();
-      const controller = new AbortController();
-      abortControllerRef.current = controller;
-
-      setLoading(true);
-      setStreaming(false);
-      setError(null);
-      setResult(null);
-      setSaveState({ status: "idle" });
-      setCurrentHistoryId(null);
-
-      const trimmed = question.trim();
-
+  // Fetch history on mount
+  useEffect(() => {
+    async function fetchHistory() {
       try {
-        // Try the streaming endpoint first
-        const res = await fetch("/api/query/stream", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ question: trimmed, format }),
-          signal: controller.signal,
-        });
-
-        if (!res.ok) {
-          // Streaming endpoint failed — try non-streaming fallback
-          const data = await res.json().catch(() => null);
-          const errMsg = data?.error ?? `Request failed (${res.status})`;
-
-          // Fall back to non-streaming endpoint
-          const fallbackRes = await fetch("/api/query", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ question: trimmed, format }),
-            signal: controller.signal,
-          });
-
-          const fallbackData = await fallbackRes.json();
-          if (!fallbackRes.ok) {
-            setError(fallbackData.error ?? errMsg);
-            return;
-          }
-          setResult(fallbackData);
-          // Save to history
-          await saveToHistory(
-            trimmed,
-            fallbackData.answer,
-            fallbackData.sources,
-          );
-          return;
+        const res = await fetch("/api/query/history?limit=20");
+        if (res.ok) {
+          const data = await res.json();
+          setHistory(data.entries ?? []);
         }
-
-        // Parse sources from the custom header
-        const sourcesHeader = res.headers.get("X-Wiki-Sources");
-        let sources: string[] = [];
-        if (sourcesHeader) {
-          try {
-            sources = JSON.parse(sourcesHeader) as string[];
-          } catch {
-            // Malformed header — fall back to empty array
-            sources = [];
-          }
-        }
-
-        // Stream the response body
-        const reader = res.body?.getReader();
-        if (!reader) {
-          setError("Streaming not supported by the browser");
-          return;
-        }
-
-        setStreaming(true);
-        setLoading(false);
-
-        const decoder = new TextDecoder();
-        let answer = "";
-
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-
-          const chunk = decoder.decode(value, { stream: true });
-          answer += chunk;
-          setResult({ answer, sources });
-        }
-
-        // Refine sources to only those actually cited in the answer
-        const citedSources = extractCitedSlugs(answer, sources);
-        // Fall back to loaded sources if no citations detected (defensive)
-        const finalSources =
-          citedSources.length > 0 ? citedSources : sources;
-        setResult({ answer, sources: finalSources });
-        setStreaming(false);
-
-        // Save to history after streaming completes
-        await saveToHistory(trimmed, answer, finalSources);
-      } catch (err) {
-        // Don't report abort errors as failures
-        if (err instanceof DOMException && err.name === "AbortError") {
-          return;
-        }
-        setError("Failed to connect to the server");
+      } catch {
+        // Silently fail — history is non-critical
       } finally {
-        setLoading(false);
-        setStreaming(false);
+        setHistoryLoading(false);
       }
-    },
-    [question, format, saveToHistory],
-  );
+    }
+    fetchHistory();
+  }, []);
 
   /** Load a history entry into the UI without re-querying. */
   function loadHistoryEntry(entry: HistoryEntry) {
@@ -236,71 +85,14 @@ export default function QueryPage() {
     setLoading(false);
     setStreaming(false);
     setCurrentHistoryId(entry.id);
-    setSaveState(
-      entry.savedAs
-        ? { status: "saved", slug: entry.savedAs }
-        : { status: "idle" },
+  }
+
+  /** Called when a save-to-wiki completes inside QueryResultPanel. */
+  function handleHistorySaved(id: string, slug: string) {
+    setHistory((prev) =>
+      prev.map((h) => (h.id === id ? { ...h, savedAs: slug } : h)),
     );
   }
-
-  function handleSaveClick() {
-    setSaveTitle(question.trim());
-    setSaveState({ status: "editing" });
-  }
-
-  async function handleSaveSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    if (!saveTitle.trim() || !result) return;
-
-    setSaveState({ status: "saving" });
-
-    try {
-      const res = await fetch("/api/query/save", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          title: saveTitle.trim(),
-          content: result.answer,
-        }),
-      });
-
-      const data = await res.json();
-
-      if (!res.ok) {
-        setSaveState({ status: "error", error: data.error ?? "Save failed" });
-        return;
-      }
-
-      setSaveState({ status: "saved", slug: data.slug });
-
-      // Mark the history entry as saved
-      if (currentHistoryId) {
-        try {
-          await fetch("/api/query/history", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              action: "markSaved",
-              id: currentHistoryId,
-              slug: data.slug,
-            }),
-          });
-          // Update local history state
-          setHistory((prev) =>
-            prev.map((h) =>
-              h.id === currentHistoryId ? { ...h, savedAs: data.slug } : h,
-            ),
-          );
-        } catch {
-          // Non-critical
-        }
-      }
-    } catch {
-      setSaveState({ status: "error", error: "Failed to connect to the server" });
-    }
-  }
-
-  const isProcessing = loading || streaming;
 
   return (
     <main className="mx-auto max-w-4xl px-6 py-16">
@@ -321,7 +113,7 @@ export default function QueryPage() {
       <div className="mt-8 flex flex-col lg:flex-row gap-8">
         {/* Main query area */}
         <div className="flex-1 min-w-0">
-          <form onSubmit={handleSubmit} className="space-y-4">
+          <form onSubmit={submit} className="space-y-4">
             <textarea
               value={question}
               onChange={(e) => setQuestion(e.target.value)}
@@ -376,122 +168,13 @@ export default function QueryPage() {
           )}
 
           {result && (
-            <div className="mt-8 space-y-6">
-              <div className="rounded-lg border border-foreground/10 p-6">
-                <MarkdownRenderer content={result.answer} />
-                {streaming && (
-                  <span className="inline-block w-2 h-4 bg-foreground/60 animate-pulse ml-0.5 align-text-bottom" />
-                )}
-              </div>
-
-              {result.sources.length > 0 && (
-                <div>
-                  <h2 className="text-sm font-semibold text-foreground/60 uppercase tracking-wide">
-                    Sources
-                  </h2>
-                  <ul className="mt-2 flex flex-wrap gap-2">
-                    {result.sources.map((slug) => (
-                      <li key={slug}>
-                        <Link
-                          href={`/wiki/${slug}`}
-                          className="inline-block rounded-md border border-foreground/20 px-3 py-1 text-sm hover:bg-foreground/5 transition-colors"
-                        >
-                          {slug}
-                        </Link>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-
-              {/* Save to Wiki — only after streaming completes */}
-              {!streaming && (
-                <div className="border-t border-foreground/10 pt-4 space-y-3">
-                  <div className="flex flex-wrap gap-2">
-                    <button
-                      onClick={handleCopyMarkdown}
-                      className="rounded-lg border border-foreground/20 px-4 py-2 text-sm font-medium hover:bg-foreground/5 transition-colors"
-                    >
-                      {copyState === "copied"
-                        ? "Copied!"
-                        : copyState === "error"
-                          ? "Copy failed"
-                          : "Copy as Markdown"}
-                    </button>
-                    {saveState.status === "idle" && (
-                      <button
-                        onClick={handleSaveClick}
-                        className="rounded-lg border border-foreground/20 px-4 py-2 text-sm font-medium hover:bg-foreground/5 transition-colors"
-                      >
-                        Save to Wiki
-                      </button>
-                    )}
-                  </div>
-
-                  {saveState.status === "editing" && (
-                    <form onSubmit={handleSaveSubmit} className="space-y-3">
-                      <label htmlFor="save-title" className="block text-sm font-medium text-foreground/70">
-                        Page title
-                      </label>
-                      <input
-                        id="save-title"
-                        type="text"
-                        value={saveTitle}
-                        onChange={(e) => setSaveTitle(e.target.value)}
-                        placeholder="Enter a title for this wiki page"
-                        className="w-full rounded-lg border border-foreground/20 bg-transparent px-4 py-2 text-sm placeholder:text-foreground/40 focus:outline-none focus:ring-2 focus:ring-foreground/30"
-                      />
-                      <div className="flex gap-2">
-                        <button
-                          type="submit"
-                          disabled={!saveTitle.trim()}
-                          className="rounded-lg bg-foreground px-4 py-2 text-sm font-medium text-background hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed"
-                        >
-                          Save
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setSaveState({ status: "idle" })}
-                          className="rounded-lg border border-foreground/20 px-4 py-2 text-sm font-medium hover:bg-foreground/5 transition-colors"
-                        >
-                          Cancel
-                        </button>
-                      </div>
-                    </form>
-                  )}
-
-                  {saveState.status === "saving" && (
-                    <p className="text-sm text-foreground/60">Saving to wiki...</p>
-                  )}
-
-                  {saveState.status === "saved" && saveState.slug && (
-                    <Alert variant="success">
-                      Saved!{" "}
-                      <Link
-                        href={`/wiki/${saveState.slug}`}
-                        className="underline font-medium hover:opacity-80"
-                      >
-                        View wiki page →
-                      </Link>
-                    </Alert>
-                  )}
-
-                  {saveState.status === "error" && (
-                    <div className="space-y-2">
-                      <Alert variant="error">
-                        {saveState.error ?? "Failed to save"}
-                      </Alert>
-                      <button
-                        onClick={handleSaveClick}
-                        className="text-sm text-foreground/60 hover:text-foreground underline"
-                      >
-                        Try again
-                      </button>
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
+            <QueryResultPanel
+              result={result}
+              streaming={streaming}
+              question={question}
+              currentHistoryId={currentHistoryId}
+              onHistorySaved={handleHistorySaved}
+            />
           )}
         </div>
 
