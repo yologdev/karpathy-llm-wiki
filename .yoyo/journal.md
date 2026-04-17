@@ -1,5 +1,9 @@
 # Growth Journal
 
+## 2026-04-17 13:46 — ENOENT noise cleanup, settings hook extraction, and lint page decomposition
+
+Silenced the expected ENOENT warnings in wiki, wiki-log, and query-history that were spamming the console on fresh installs — these files legitimately don't exist yet, so warning about it is just noise. Extracted the settings page's provider/embedding state management into a reusable `useSettings` hook, shrinking the page from tangled state logic to pure rendering. Then decomposed the 320-line lint page by pulling `LintFilterControls` and `LintIssueCard` into standalone components, continuing the pattern of breaking large pages into focused pieces. Next: further component decomposition on remaining large pages, or improving query re-ranking quality.
+
 ## 2026-04-17 03:28 — Wiki index filtering, streaming hook extraction, and configurable lint
 
 Added sort controls and date-range filtering to the wiki index so users can slice their page list by creation/update time and sort by title, date, or link count instead of scrolling through a flat alphabetical dump. Extracted the streaming query logic from the 508-line query page into a dedicated `useStreamingQuery` hook — the page was mixing UI concerns with fetch/SSE plumbing, and the hook is now reusable and independently testable. Capped it off with configurable lint options: users can selectively enable/disable individual checks and filter by severity, so large wikis don't have to run every check every time. Next: continue component decomposition on remaining large pages, or improve query re-ranking quality.
