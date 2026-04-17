@@ -1,262 +1,42 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState, useCallback } from "react";
 import { providerLabel } from "@/lib/providers";
 import { ProviderForm } from "@/components/ProviderForm";
 import { EmbeddingSettings } from "@/components/EmbeddingSettings";
-
-// ---------------------------------------------------------------------------
-// Types matching the API responses
-// ---------------------------------------------------------------------------
-
-type SettingSource = "env" | "config" | "default" | "none";
-
-interface EffectiveSettings {
-  provider: string | null;
-  providerSource: SettingSource;
-  model: string | null;
-  modelSource: SettingSource;
-  configured: boolean;
-  embeddingSupport: boolean;
-  embeddingModel: string | null;
-  embeddingModelSource: SettingSource;
-  maskedApiKey: string | null;
-  apiKeySource: SettingSource;
-  ollamaBaseUrl: string | null;
-  ollamaBaseUrlSource: SettingSource;
-}
-
-interface ProviderStatus {
-  configured: boolean;
-  provider: string | null;
-  model: string | null;
-  embeddingSupport: boolean;
-}
+import { useSettings } from "@/hooks/useSettings";
 
 // ---------------------------------------------------------------------------
 // Page component
 // ---------------------------------------------------------------------------
 
 export default function SettingsPage() {
-  // Fetched state
-  const [settings, setSettings] = useState<EffectiveSettings | null>(null);
-  const [status, setStatus] = useState<ProviderStatus | null>(null);
-  const [loadError, setLoadError] = useState<string | null>(null);
-
-  // Form state
-  const [provider, setProvider] = useState("");
-  const [apiKey, setApiKey] = useState("");
-  const [model, setModel] = useState("");
-  const [ollamaBaseUrl, setOllamaBaseUrl] = useState("");
-  const [embeddingModel, setEmbeddingModel] = useState("");
-
-  // UI state
-  const [saving, setSaving] = useState(false);
-  const [saveResult, setSaveResult] = useState<{
-    ok: boolean;
-    message: string;
-  } | null>(null);
-  const [testing, setTesting] = useState(false);
-  const [testResult, setTestResult] = useState<{
-    ok: boolean;
-    message: string;
-  } | null>(null);
-  const [rebuilding, setRebuilding] = useState(false);
-  const [rebuildResult, setRebuildResult] = useState<{
-    ok: boolean;
-    message: string;
-  } | null>(null);
-
-  // ------------------------------------------
-  // Fetch settings & status
-  // ------------------------------------------
-
-  const fetchSettings = useCallback(async () => {
-    try {
-      const res = await fetch("/api/settings");
-      if (!res.ok) throw new Error("Failed to load settings");
-      const data: EffectiveSettings = await res.json();
-      setSettings(data);
-
-      // Pre-fill form only with config-sourced values (not env)
-      if (data.providerSource === "config" && data.provider) {
-        setProvider(data.provider);
-      } else if (data.providerSource !== "env") {
-        setProvider("");
-      }
-      // API key: never pre-fill (security), keep empty
-      setApiKey("");
-      if (data.modelSource === "config" && data.model) {
-        setModel(data.model);
-      } else {
-        setModel("");
-      }
-      if (data.ollamaBaseUrlSource === "config" && data.ollamaBaseUrl) {
-        setOllamaBaseUrl(data.ollamaBaseUrl);
-      } else {
-        setOllamaBaseUrl("");
-      }
-      if (data.embeddingModelSource === "config" && data.embeddingModel) {
-        setEmbeddingModel(data.embeddingModel);
-      } else {
-        setEmbeddingModel("");
-      }
-    } catch (err) {
-      setLoadError(err instanceof Error ? err.message : "Unknown error");
-    }
-  }, []);
-
-  const fetchStatus = useCallback(async () => {
-    try {
-      const res = await fetch("/api/status");
-      if (!res.ok) throw new Error("Status check failed");
-      const data: ProviderStatus = await res.json();
-      setStatus(data);
-    } catch {
-      setStatus(null);
-    }
-  }, []);
-
-  useEffect(() => {
-    fetchSettings();
-    fetchStatus();
-  }, [fetchSettings, fetchStatus]);
-
-  // ------------------------------------------
-  // Save
-  // ------------------------------------------
-
-  async function handleSave(e: React.FormEvent) {
-    e.preventDefault();
-    setSaving(true);
-    setSaveResult(null);
-    setTestResult(null);
-
-    try {
-      const body: Record<string, string | null> = {};
-
-      // Only send provider if user selected one
-      if (provider) {
-        body.provider = provider;
-      }
-
-      // Send API key only if user typed something new
-      if (apiKey) {
-        body.apiKey = apiKey;
-      }
-
-      // Model: send if filled, null to clear
-      if (model.trim()) {
-        body.model = model.trim();
-      }
-
-      // Ollama base URL
-      if (provider === "ollama" && ollamaBaseUrl.trim()) {
-        body.ollamaBaseUrl = ollamaBaseUrl.trim();
-      }
-
-      // Embedding model
-      if (embeddingModel.trim()) {
-        body.embeddingModel = embeddingModel.trim();
-      }
-
-      const res = await fetch("/api/settings", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-
-      if (!res.ok) {
-        const data = await res.json().catch(() => null);
-        throw new Error(data?.error ?? `Save failed (${res.status})`);
-      }
-
-      setSaveResult({ ok: true, message: "Settings saved." });
-
-      // Refresh to pick up new effective values
-      await fetchSettings();
-      await fetchStatus();
-    } catch (err) {
-      setSaveResult({
-        ok: false,
-        message: err instanceof Error ? err.message : "Save failed",
-      });
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  // ------------------------------------------
-  // Test connection
-  // ------------------------------------------
-
-  async function handleTest() {
-    setTesting(true);
-    setTestResult(null);
-
-    try {
-      const res = await fetch("/api/status");
-      if (!res.ok) throw new Error("Status endpoint returned an error");
-      const data: ProviderStatus = await res.json();
-      setStatus(data);
-
-      if (data.configured) {
-        setTestResult({
-          ok: true,
-          message: `Connected to ${providerLabel(data.provider ?? "anthropic")} (${data.model})${data.embeddingSupport ? " — embeddings supported" : ""}`,
-        });
-      } else {
-        setTestResult({
-          ok: false,
-          message: "No provider configured. Save your settings first.",
-        });
-      }
-    } catch (err) {
-      setTestResult({
-        ok: false,
-        message: err instanceof Error ? err.message : "Connection test failed",
-      });
-    } finally {
-      setTesting(false);
-    }
-  }
-
-  // ------------------------------------------
-  // Rebuild vector index
-  // ------------------------------------------
-
-  async function handleRebuildEmbeddings() {
-    setRebuilding(true);
-    setRebuildResult(null);
-
-    try {
-      const res = await fetch("/api/settings/rebuild-embeddings", {
-        method: "POST",
-      });
-      const data = await res.json();
-
-      if (!res.ok) {
-        setRebuildResult({
-          ok: false,
-          message: data.error ?? "Rebuild failed",
-        });
-      } else {
-        setRebuildResult({
-          ok: true,
-          message: `Rebuilt: ${data.embedded} page${data.embedded !== 1 ? "s" : ""} embedded using ${data.model}${data.skipped > 0 ? ` (${data.skipped} skipped)` : ""}`,
-        });
-      }
-    } catch (err) {
-      setRebuildResult({
-        ok: false,
-        message:
-          err instanceof Error ? err.message : "Failed to rebuild vector index",
-      });
-    } finally {
-      setRebuilding(false);
-    }
-  }
+  const {
+    settings,
+    status,
+    loadError,
+    provider,
+    apiKey,
+    model,
+    ollamaBaseUrl,
+    embeddingModel,
+    setProvider,
+    setApiKey,
+    setModel,
+    setOllamaBaseUrl,
+    setEmbeddingModel,
+    handleSave,
+    handleTest,
+    handleRebuildEmbeddings,
+    saving,
+    saveResult,
+    setSaveResult,
+    testing,
+    testResult,
+    setTestResult,
+    rebuilding,
+    rebuildResult,
+  } = useSettings();
 
   // ------------------------------------------
   // Render
