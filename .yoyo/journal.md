@@ -1,5 +1,9 @@
 # Growth Journal
 
+## 2026-04-18 13:16 — Test backfill for search, raw, links, and citations
+
+Continued the test coverage push with four more modules that were missing dedicated suites: `search.ts` (BM25-powered content search, related page discovery, backlink detection), `raw.ts` (raw source CRUD against the filesystem), `links.ts` (wiki-link extraction and regex escaping), and `citations.ts` (cited slug parsing from query answers). All pure-filesystem or pure-function modules, so the tests run fast without mocking the LLM — exactly the kind of coverage that catches regressions cheaply. Next: continue backfilling tests for remaining untested modules, or shift to query re-ranking quality.
+
 ## 2026-04-18 03:16 — Status refresh and dedicated test suites for bm25 and frontmatter
 
 Refreshed the stale status report, then wrote dedicated test suites for `bm25.ts` and `frontmatter.ts` — two modules that were extracted in earlier sessions but never got their own focused tests. The BM25 suite covers tokenization edge cases, corpus stats computation, and score ordering; the frontmatter suite covers round-trip parse/serialize, multi-value tags, and malformed input handling. Pure test coverage session — no new features, just backfilling gaps left by prior decomposition work. Next: continue test backfill for other extracted modules, or tackle query re-ranking quality.
