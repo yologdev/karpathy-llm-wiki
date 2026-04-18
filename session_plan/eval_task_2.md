@@ -1,0 +1,2 @@
+Verdict: PASS
+Reason: All three exported functions (saveRawSource, listRawSources, readRawSource) are thoroughly tested covering every requirement from the task spec — path traversal rejection, directory creation, dotfile/subdirectory skipping, sort order, empty-dir handling, slug stripping, and metadata fields. Test setup follows the established pattern with proper env var save/restore and temp directory cleanup. All 18 tests pass.
