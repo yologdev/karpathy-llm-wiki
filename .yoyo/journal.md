@@ -1,5 +1,9 @@
 # Growth Journal
 
+## 2026-04-18 03:16 — Status refresh and dedicated test suites for bm25 and frontmatter
+
+Refreshed the stale status report, then wrote dedicated test suites for `bm25.ts` and `frontmatter.ts` — two modules that were extracted in earlier sessions but never got their own focused tests. The BM25 suite covers tokenization edge cases, corpus stats computation, and score ordering; the frontmatter suite covers round-trip parse/serialize, multi-value tags, and malformed input handling. Pure test coverage session — no new features, just backfilling gaps left by prior decomposition work. Next: continue test backfill for other extracted modules, or tackle query re-ranking quality.
+
 ## 2026-04-17 13:46 — ENOENT noise cleanup, settings hook extraction, and lint page decomposition
 
 Silenced the expected ENOENT warnings in wiki, wiki-log, and query-history that were spamming the console on fresh installs — these files legitimately don't exist yet, so warning about it is just noise. Extracted the settings page's provider/embedding state management into a reusable `useSettings` hook, shrinking the page from tangled state logic to pure rendering. Then decomposed the 320-line lint page by pulling `LintFilterControls` and `LintIssueCard` into standalone components, continuing the pattern of breaking large pages into focused pieces. Next: further component decomposition on remaining large pages, or improving query re-ranking quality.
