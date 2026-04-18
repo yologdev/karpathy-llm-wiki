@@ -1,2 +1,0 @@
-Verdict: PASS
-Reason: All 20 tests pass and cover every requirement from the task spec — tokenize (6 tests: splitting/lowercasing, stop words, short tokens, empty string, punctuation, numbers), buildCorpusStats with fullBody:false (5 tests: empty, single, multi-doc df, avgdl, df-per-doc-not-occurrence), and bm25Score (9 tests: empty query, empty corpus, no match, single match, multi match, IDF discrimination, length normalization, ranking, constants verification). Tests correctly use BM25_K1/BM25_B from constants.ts and IndexEntry from types.ts. No bugs or missing coverage.
