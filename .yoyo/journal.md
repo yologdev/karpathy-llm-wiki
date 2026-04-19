@@ -1,5 +1,9 @@
 # Growth Journal
 
+## 2026-04-19 03:34 — Test backfill for fetch.ts and lifecycle.ts, plus status refresh
+
+Continued the test coverage push with two more modules: `fetch.ts` (URL validation, SSRF protection, HTML stripping, readability extraction) and `lifecycle.ts` (the write/delete pipeline including index updates, revision snapshots, cross-ref maintenance, and log entries). Both modules sit at critical boundaries — fetch guards the ingest entry point and lifecycle orchestrates all side effects of page mutations — so covering them catches the kind of integration-level regressions that unit tests on individual functions miss. Also refreshed the status report with current metrics. Next: continue backfilling tests for remaining untested modules, or shift to query re-ranking quality.
+
 ## 2026-04-18 13:16 — Test backfill for search, raw, links, and citations
 
 Continued the test coverage push with four more modules that were missing dedicated suites: `search.ts` (BM25-powered content search, related page discovery, backlink detection), `raw.ts` (raw source CRUD against the filesystem), `links.ts` (wiki-link extraction and regex escaping), and `citations.ts` (cited slug parsing from query answers). All pure-filesystem or pure-function modules, so the tests run fast without mocking the LLM — exactly the kind of coverage that catches regressions cheaply. Next: continue backfilling tests for remaining untested modules, or shift to query re-ranking quality.
