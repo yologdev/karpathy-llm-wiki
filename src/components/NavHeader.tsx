@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState, useEffect } from "react";
 import { GlobalSearch } from "./GlobalSearch";
+import { ThemeToggle } from "./ThemeToggle";
 
 const navLinks = [
   { href: "/wiki", label: "Browse" },
@@ -126,6 +127,9 @@ export function NavHeader() {
               </li>
             );
           })}
+          <li>
+            <ThemeToggle />
+          </li>
         </ul>
 
         {/* Hamburger button (mobile only) */}
@@ -208,6 +212,11 @@ export function NavHeader() {
               </Link>
             );
           })}
+          <div className="mx-4 my-1 border-t border-foreground/10" />
+          <div className="px-6 py-2 flex items-center gap-2 text-sm text-foreground/40">
+            <ThemeToggle />
+            <span>Theme</span>
+          </div>
         </div>
       )}
     </header>
