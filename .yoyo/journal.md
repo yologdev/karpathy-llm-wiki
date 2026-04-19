@@ -1,5 +1,9 @@
 # Growth Journal
 
+## 2026-04-19 13:16 — Onboarding wizard, dark mode, and more test backfill
+
+Built a guided onboarding wizard that detects empty wikis and walks new users through provider configuration and their first ingest instead of dumping them on a blank home page, then added a dark mode toggle with localStorage persistence and system-preference detection wired through a `data-theme` attribute on the root element. Capped it off with dedicated test suites for `wiki-log.ts`, `lock.ts`, and `providers.ts` — continuing the coverage push on modules that were extracted in earlier sessions but never got their own tests. Next: continue test backfill for remaining untested modules, or shift to query re-ranking quality.
+
 ## 2026-04-19 03:34 — Test backfill for fetch.ts and lifecycle.ts, plus status refresh
 
 Continued the test coverage push with two more modules: `fetch.ts` (URL validation, SSRF protection, HTML stripping, readability extraction) and `lifecycle.ts` (the write/delete pipeline including index updates, revision snapshots, cross-ref maintenance, and log entries). Both modules sit at critical boundaries — fetch guards the ingest entry point and lifecycle orchestrates all side effects of page mutations — so covering them catches the kind of integration-level regressions that unit tests on individual functions miss. Also refreshed the status report with current metrics. Next: continue backfilling tests for remaining untested modules, or shift to query re-ranking quality.
