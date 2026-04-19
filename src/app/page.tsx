@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { StatusBadge } from "@/components/StatusBadge";
+import { OnboardingWizard } from "@/components/OnboardingWizard";
 import { listWikiPages } from "@/lib/wiki";
 
 const features = [
@@ -46,25 +47,7 @@ export default async function Home() {
       </div>
 
       {pageCount === 0 ? (
-        <div className="mt-10 w-full max-w-2xl rounded-lg border-2 border-dashed border-blue-300 bg-blue-50/50 p-6 text-center dark:border-blue-700 dark:bg-blue-950/30">
-          <h2 className="text-xl font-semibold">Getting Started</h2>
-          <p className="mt-3 text-foreground/70 leading-relaxed">
-            Your wiki is empty. Start by ingesting your first source — paste a
-            URL or some text and the LLM will create your first wiki page.
-          </p>
-          <Link
-            href="/ingest"
-            className="mt-4 inline-block rounded-md bg-blue-600 px-5 py-2.5 text-sm font-medium text-white transition-colors hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600"
-          >
-            Ingest your first source &rarr;
-          </Link>
-          <p className="mt-3 text-sm text-foreground/50">
-            No LLM key yet?{" "}
-            <Link href="/settings" className="underline hover:text-foreground/70">
-              Configure one in Settings &rarr;
-            </Link>
-          </p>
-        </div>
+        <OnboardingWizard pageCount={pageCount} />
       ) : (
         <p className="mt-6 text-sm text-foreground/60">
           Your wiki has{" "}
