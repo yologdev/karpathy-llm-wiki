@@ -130,6 +130,9 @@ Current checks performed by `lint()` in `src/lib/lint.ts`:
   `.md` file on disk. Auto-fix: remove from index.
 - **`empty-page`** (warning) — page has fewer than 50 characters of content
   after stripping the H1 heading. Auto-fix: delete the page.
+- **`broken-link`** (warning) — wiki links (`[text](slug.md)`) point to pages
+  that don't exist on disk. Infrastructure files (`index.md`, `log.md`) are
+  excluded. Auto-fix: remove the broken link(s) from the page.
 - **`missing-crossref`** (info) — page mentions another page's title (3+ chars,
   word-boundary match) without linking to it. Auto-fix: append a cross-reference
   link to a `## Related` section.
@@ -137,6 +140,11 @@ Current checks performed by `lint()` in `src/lib/lint.ts`:
   in a cross-reference cluster (max 5 pages per cluster). Requires an LLM key.
   Auto-fix: call the LLM to rewrite the first page, resolving the conflicting
   claims while preserving content and structure.
+- **`missing-concept-page`** (info) — LLM identifies important concepts
+  mentioned across multiple wiki pages that don't have their own dedicated page.
+  Requires an LLM key; skipped with an info message when no key is configured.
+  Auto-fix: generate a stub concept page via the LLM (or a deterministic
+  fallback).
 
 ## Provider configuration
 
@@ -170,9 +178,12 @@ sessions should pick from this list:
   via RRF. Batch rebuild of the full vector index is available via the Settings
   page (`/api/settings/rebuild-embeddings`).
   Anthropic-only users see no regression (pure BM25 fallback).
-- Lint auto-fix handles all five checks (`orphan-page`, `stale-index`,
-  `empty-page`, `missing-crossref`, `contradiction`) via `POST /api/lint/fix`.
+- Lint auto-fix handles all seven checks (`orphan-page`, `stale-index`,
+  `empty-page`, `broken-link`, `missing-crossref`, `contradiction`,
+  `missing-concept-page`) via `POST /api/lint/fix`.
   The `contradiction` fix uses the LLM to rewrite the affected page.
+  The `missing-concept-page` fix generates a stub page via the LLM.
+  The `broken-link` fix removes broken links from the source page.
 - Long documents are chunked at ingest time (12K chars per chunk ≈ 3K
   tokens) so they fit within provider context windows. Token counting is
   character-based (not tokenizer-exact), which is conservative but not
