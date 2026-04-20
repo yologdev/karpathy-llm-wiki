@@ -7,7 +7,7 @@ export default async function WikiIndex() {
 
   return (
     <main className="mx-auto max-w-3xl px-6 py-12">
-      <div className="mb-6 flex items-center justify-between">
+      <div className="mb-6 flex flex-wrap items-center justify-between gap-2">
         <h1 className="text-3xl font-bold tracking-tight">Wiki</h1>
         <Link
           href="/wiki/log"

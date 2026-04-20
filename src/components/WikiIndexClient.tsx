@@ -149,41 +149,43 @@ export function WikiIndexClient({ pages }: WikiIndexClientProps) {
   return (
     <div>
       {/* Search input + Sort dropdown + Export button */}
-      <div className="mb-4 flex items-center gap-2">
+      <div className="mb-4 flex flex-wrap items-center gap-2">
         <input
           type="search"
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
           placeholder="Search pages…"
           aria-label="Search wiki pages"
-          className="flex-1 rounded-lg border border-foreground/10 bg-transparent px-4 py-2 text-sm outline-none focus:border-foreground/30 transition-colors"
+          className="w-full sm:w-auto sm:flex-1 rounded-lg border border-foreground/10 bg-transparent px-4 py-2 text-sm outline-none focus:border-foreground/30 transition-colors"
         />
-        <select
-          value={sortBy}
-          onChange={(e) => setSortBy(e.target.value as SortOption)}
-          aria-label="Sort pages"
-          className="shrink-0 rounded-lg border border-foreground/10 bg-transparent px-3 py-2 text-sm outline-none focus:border-foreground/30 transition-colors"
-        >
-          <option value="recent">Recently updated</option>
-          <option value="title-asc">Title A–Z</option>
-          <option value="title-desc">Title Z–A</option>
-          <option value="most-sources">Most sources</option>
-        </select>
-        <Link
-          href="/wiki/new"
-          className="shrink-0 inline-flex items-center gap-1.5 rounded-lg bg-foreground px-3 py-2 text-sm font-medium text-background hover:opacity-90 transition-opacity"
-        >
-          + New page
-        </Link>
-        <button
-          type="button"
-          onClick={handleExport}
-          disabled={exporting}
-          className="shrink-0 inline-flex items-center gap-1.5 rounded-lg border border-foreground/10 px-3 py-2 text-sm text-foreground/70 hover:border-foreground/30 hover:text-foreground disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-          title="Download wiki as Obsidian vault (.zip)"
-        >
-          {exporting ? "Exporting…" : "↓ Export"}
-        </button>
+        <div className="flex gap-2">
+          <select
+            value={sortBy}
+            onChange={(e) => setSortBy(e.target.value as SortOption)}
+            aria-label="Sort pages"
+            className="shrink-0 rounded-lg border border-foreground/10 bg-transparent px-3 py-2 text-sm outline-none focus:border-foreground/30 transition-colors"
+          >
+            <option value="recent">Recently updated</option>
+            <option value="title-asc">Title A–Z</option>
+            <option value="title-desc">Title Z–A</option>
+            <option value="most-sources">Most sources</option>
+          </select>
+          <Link
+            href="/wiki/new"
+            className="shrink-0 inline-flex items-center gap-1.5 rounded-lg bg-foreground px-3 py-2 text-sm font-medium text-background hover:opacity-90 transition-opacity"
+          >
+            + New page
+          </Link>
+          <button
+            type="button"
+            onClick={handleExport}
+            disabled={exporting}
+            className="shrink-0 inline-flex items-center gap-1.5 rounded-lg border border-foreground/10 px-3 py-2 text-sm text-foreground/70 hover:border-foreground/30 hover:text-foreground disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            title="Download wiki as Obsidian vault (.zip)"
+          >
+            {exporting ? "Exporting…" : "↓ Export"}
+          </button>
+        </div>
       </div>
 
       {/* Tag filter row */}
@@ -231,7 +233,7 @@ export function WikiIndexClient({ pages }: WikiIndexClientProps) {
           {showAdvanced ? "▾ Advanced filters" : "▸ Advanced filters"}
         </button>
         {showAdvanced && (
-          <div className="mt-2 flex items-center gap-3">
+          <div className="mt-2 flex flex-col sm:flex-row items-start sm:items-center gap-2 sm:gap-3">
             <label className="flex items-center gap-1.5 text-xs text-foreground/60">
               From
               <input

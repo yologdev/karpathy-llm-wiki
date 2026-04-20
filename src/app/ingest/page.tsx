@@ -250,7 +250,7 @@ export default function IngestPage() {
       </div>
 
       {/* Mode tabs */}
-      <div className="mb-6 flex gap-2">
+      <div className="mb-6 flex gap-2 overflow-x-auto">
         {(["text", "url", "batch"] as const).map((m) => (
           <button
             key={m}
@@ -339,7 +339,7 @@ export default function IngestPage() {
           </Alert>
         )}
 
-        <div className="flex items-center gap-4">
+        <div className="flex flex-wrap items-center gap-3 sm:gap-4">
           <button
             type="submit"
             disabled={loading}
