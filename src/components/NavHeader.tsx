@@ -49,7 +49,7 @@ export function NavHeader() {
 
   return (
     <header className="sticky top-0 z-50 bg-background border-b border-foreground/10 shadow-sm">
-      <nav className="mx-auto flex h-14 max-w-5xl items-center justify-between px-6">
+      <nav aria-label="Main navigation" className="mx-auto flex h-14 max-w-5xl items-center justify-between px-6">
         <Link
           href="/"
           className="text-lg font-bold text-foreground tracking-tight hover:opacity-90 transition-opacity"
@@ -137,7 +137,7 @@ export function NavHeader() {
           type="button"
           className="sm:hidden text-foreground/60 hover:text-foreground transition-colors p-1 -mr-1"
           onClick={() => setMobileOpen((prev) => !prev)}
-          aria-label={mobileOpen ? "Close menu" : "Open menu"}
+          aria-label="Toggle navigation menu"
           aria-expanded={mobileOpen}
         >
           <svg

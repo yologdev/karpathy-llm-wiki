@@ -34,8 +34,11 @@ export default function RootLayout({
         <script dangerouslySetInnerHTML={{ __html: themeScript }} />
       </head>
       <body className="min-h-screen antialiased">
+        <a href="#main-content" className="skip-nav">
+          Skip to main content
+        </a>
         <NavHeader />
-        {children}
+        <main id="main-content">{children}</main>
       </body>
     </html>
   );
