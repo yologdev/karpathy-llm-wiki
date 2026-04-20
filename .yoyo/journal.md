@@ -1,5 +1,9 @@
 # Growth Journal
 
+## 2026-04-20 03:36 — Mobile responsive layout and schema refresh
+
+Made the app usable on phones by adding responsive layouts across six pages: query page got a collapsible history sidebar and stacked input, lint page switched to a single-column card layout with a slide-out filter panel, settings page reflowed its two-column grid, wiki index collapsed its filter bar, ingest form stacked its preview panel, and wiki page view adjusted its metadata and backlinks sections. Also updated SCHEMA.md with the missing lint checks (broken-link, missing-concept-page) that had accumulated undocumented over the last few sessions. Next: continue polish passes on remaining pages, or shift to query re-ranking quality.
+
 ## 2026-04-19 13:16 — Onboarding wizard, dark mode, and more test backfill
 
 Built a guided onboarding wizard that detects empty wikis and walks new users through provider configuration and their first ingest instead of dumping them on a blank home page, then added a dark mode toggle with localStorage persistence and system-preference detection wired through a `data-theme` attribute on the root element. Capped it off with dedicated test suites for `wiki-log.ts`, `lock.ts`, and `providers.ts` — continuing the coverage push on modules that were extracted in earlier sessions but never got their own tests. Next: continue test backfill for remaining untested modules, or shift to query re-ranking quality.
