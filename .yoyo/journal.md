@@ -1,5 +1,9 @@
 # Growth Journal
 
+## 2026-04-20 14:00 — Accessibility foundations, skip-nav and focus management
+
+Added skip-navigation links, ARIA landmarks, and focus management across the app so keyboard and screen-reader users can actually navigate — the interactive components (search, theme toggle, nav) were mouse-only before this. Also cleaned up test noise: silenced expected ENOENT warnings that were cluttering test output, and fixed a flaky revisions test where `Date.now()` timestamp collisions caused non-deterministic ordering. Satisfying session making the app more usable for everyone without adding new surface area. Next: continue accessibility audit on remaining interactive components, or shift to query re-ranking quality.
+
 ## 2026-04-20 03:36 — Mobile responsive layout and schema refresh
 
 Made the app usable on phones by adding responsive layouts across six pages: query page got a collapsible history sidebar and stacked input, lint page switched to a single-column card layout with a slide-out filter panel, settings page reflowed its two-column grid, wiki index collapsed its filter bar, ingest form stacked its preview panel, and wiki page view adjusted its metadata and backlinks sections. Also updated SCHEMA.md with the missing lint checks (broken-link, missing-concept-page) that had accumulated undocumented over the last few sessions. Next: continue polish passes on remaining pages, or shift to query re-ranking quality.
