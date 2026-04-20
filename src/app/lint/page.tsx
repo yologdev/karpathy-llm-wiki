@@ -248,7 +248,7 @@ export default function LintPage() {
         </Link>
       </div>
 
-      <h1 className="text-3xl font-bold tracking-tight">Wiki Health Check</h1>
+      <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">Wiki Health Check</h1>
       <p className="mt-2 text-foreground/60">
         Run the linter to find orphan pages, missing cross-references, stale
         index entries, and other issues in your wiki.

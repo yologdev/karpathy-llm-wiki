@@ -122,7 +122,7 @@ export default function QueryPage() {
               rows={3}
               className="w-full rounded-lg border border-foreground/20 bg-transparent px-4 py-3 text-sm placeholder:text-foreground/40 focus:outline-none focus:ring-2 focus:ring-foreground/30 resize-vertical"
             />
-            <fieldset className="flex items-center gap-4 text-sm">
+            <fieldset className="flex flex-wrap items-center gap-3 sm:gap-4 text-sm">
               <legend className="sr-only">Answer format</legend>
               <span className="text-foreground/60">Answer format:</span>
               <label className="flex items-center gap-1.5 cursor-pointer">

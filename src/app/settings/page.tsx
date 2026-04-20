@@ -69,7 +69,7 @@ export default function SettingsPage() {
       >
         ← Home
       </Link>
-      <h1 className="mt-4 text-3xl font-bold tracking-tight text-foreground">
+      <h1 className="mt-4 text-2xl sm:text-3xl font-bold tracking-tight text-foreground">
         Settings
       </h1>
       <p className="mt-2 text-foreground/60">

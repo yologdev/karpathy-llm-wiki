@@ -95,7 +95,7 @@ export function LintFilterControls({
         </div>
 
         {/* Severity filter */}
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
           <span className="text-sm font-medium text-foreground/70">
             Severity
           </span>
