@@ -38,6 +38,19 @@ export function getRevisionsDir(slug: string): string {
 }
 
 // ---------------------------------------------------------------------------
+// Monotonic timestamp — ensures unique filenames even when multiple
+// revisions are saved within the same millisecond.
+// ---------------------------------------------------------------------------
+
+let lastTimestamp = 0;
+
+function uniqueTimestamp(): number {
+  const now = Date.now();
+  lastTimestamp = now > lastTimestamp ? now : lastTimestamp + 1;
+  return lastTimestamp;
+}
+
+// ---------------------------------------------------------------------------
 // Core API
 // ---------------------------------------------------------------------------
 
@@ -55,7 +68,7 @@ export async function saveRevision(
   validateSlug(slug);
   const dir = getRevisionsDir(slug);
   await fs.mkdir(dir, { recursive: true });
-  const timestamp = Date.now();
+  const timestamp = uniqueTimestamp();
   const filePath = path.join(dir, `${timestamp}.md`);
   await fs.writeFile(filePath, content, "utf-8");
 }
