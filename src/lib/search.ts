@@ -12,6 +12,7 @@ import {
   listWikiPages,
   withPageCache,
 } from "./wiki";
+import { isEnoent } from "./errors";
 
 // ---------------------------------------------------------------------------
 // Cross-referencing helpers
@@ -188,7 +189,9 @@ export async function searchWikiContent(
   try {
     files = await fs.readdir(wikiDir);
   } catch (err) {
-    console.warn("[wiki] searchWikiContent failed to read wiki directory:", err);
+    if (!isEnoent(err)) {
+      console.warn("[wiki] searchWikiContent failed to read wiki directory:", err);
+    }
     return [];
   }
 

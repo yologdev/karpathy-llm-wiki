@@ -9,6 +9,7 @@ import crypto from "crypto";
 import { getWikiDir, listWikiPages, readWikiPage } from "./wiki";
 import { loadConfigSync } from "./config";
 import { withFileLock } from "./lock";
+import { isEnoent } from "./errors";
 import { MAX_EMBED_CHARS } from "./constants";
 
 // ---------------------------------------------------------------------------
@@ -236,7 +237,9 @@ export async function loadVectorStore(): Promise<VectorStore | null> {
     const raw = await fs.readFile(vectorStorePath(), "utf-8");
     return JSON.parse(raw) as VectorStore;
   } catch (err) {
-    console.warn("[embeddings] load vector store failed:", err);
+    if (!isEnoent(err)) {
+      console.warn("[embeddings] load vector store failed:", err);
+    }
     return null;
   }
 }

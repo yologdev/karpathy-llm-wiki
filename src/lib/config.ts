@@ -3,6 +3,7 @@ import fsSync from "fs";
 import path from "path";
 import type { ProviderInfo } from "./types";
 import { hasEmbeddingSupport } from "./embeddings";
+import { isEnoent } from "./errors";
 import { VALID_PROVIDERS, DEFAULT_MODELS } from "./providers";
 
 // Re-export provider constants so existing consumers can import from config
@@ -68,7 +69,9 @@ export async function loadConfig(): Promise<AppConfig> {
     const raw = await fs.readFile(getConfigPath(), "utf-8");
     return JSON.parse(raw) as AppConfig;
   } catch (err) {
-    console.warn("[config] load config failed:", err);
+    if (!isEnoent(err)) {
+      console.warn("[config] load config failed:", err);
+    }
     return {};
   }
 }
@@ -108,7 +111,9 @@ export function loadConfigSync(): AppConfig {
     _configCache = { data, ts: now };
     return data;
   } catch (err) {
-    console.warn("[config] load config (sync) failed:", err);
+    if (!isEnoent(err)) {
+      console.warn("[config] load config (sync) failed:", err);
+    }
     _configCache = { data: {}, ts: now };
     return {};
   }

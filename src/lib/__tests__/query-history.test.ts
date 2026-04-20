@@ -182,8 +182,29 @@ describe("markSaved", () => {
 
 describe("max history cap", () => {
   it("trims oldest entries when exceeding 200", async () => {
-    // Append 205 entries
-    for (let i = 0; i < 205; i++) {
+    // Seed 200 entries directly into the history file to avoid 200+
+    // sequential appendQuery calls (each does lock + read + write).
+    const wikiDir = path.join(tmpDir, "wiki");
+    await fs.mkdir(wikiDir, { recursive: true });
+
+    const seed: Array<{ id: string; question: string; answer: string; sources: string[]; timestamp: string }> = [];
+    for (let i = 0; i < 200; i++) {
+      seed.push({
+        id: `seed-${i}`,
+        question: `Q${i}`,
+        answer: `A${i}`,
+        sources: [],
+        timestamp: new Date(2025, 0, 1, 0, 0, i).toISOString(),
+      });
+    }
+    await fs.writeFile(
+      path.join(wikiDir, "query-history.json"),
+      JSON.stringify(seed, null, 2),
+      "utf-8",
+    );
+
+    // Append 5 more entries (bringing total to 205, should trim to 200)
+    for (let i = 200; i < 205; i++) {
       await appendQuery({
         question: `Q${i}`,
         answer: `A${i}`,

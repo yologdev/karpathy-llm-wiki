@@ -16,6 +16,7 @@ import {
   MAX_LLM_INPUT_CHARS,
 } from "./constants";
 import { slugify } from "./slugify";
+import { isEnoent } from "./errors";
 
 // Re-exported so existing imports (and the test suite) keep working after we
 // moved the cross-ref helpers into wiki.ts to avoid a circular dependency
@@ -276,7 +277,9 @@ export async function loadPageConventions(
       : afterStart;
     return section.trim();
   } catch (err) {
-    console.warn("[ingest] load page conventions failed:", err);
+    if (!isEnoent(err)) {
+      console.warn("[ingest] load page conventions failed:", err);
+    }
     return "";
   }
 }

@@ -154,7 +154,9 @@ export async function readWikiPage(slug: string): Promise<WikiPage | null> {
 
     return result;
   } catch (err) {
-    console.warn(`[wiki] readWikiPage failed for "${slug}":`, err);
+    if (!isEnoent(err)) {
+      console.warn(`[wiki] readWikiPage failed for "${slug}":`, err);
+    }
     // Store negative result in cache too (when active)
     if (pageCache !== null) {
       pageCache.set(slug, null);
