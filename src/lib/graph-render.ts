@@ -63,6 +63,14 @@ export const LIGHT_PALETTE: ColorPalette = {
 
 export function getColorPalette(): ColorPalette {
   if (typeof window === "undefined") return DARK_PALETTE;
+  // Prefer the .dark class on <html> (managed by ThemeToggle) over the OS
+  // media query so manual theme overrides are respected in the graph view.
+  if (typeof document !== "undefined") {
+    const html = document.documentElement;
+    if (html.classList.contains("dark")) return DARK_PALETTE;
+    if (html.classList.contains("light")) return LIGHT_PALETTE;
+  }
+  // Fallback: OS-level preference (or dark by default)
   const isDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
   return isDark ? DARK_PALETTE : LIGHT_PALETTE;
 }

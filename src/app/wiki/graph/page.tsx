@@ -343,7 +343,10 @@ export default function GraphPage() {
         canvas.style.width = `${w}px`;
         canvas.style.height = `${h}px`;
         const ctx = canvas.getContext("2d");
-        if (ctx) ctx.scale(dpr, dpr);
+        if (ctx) {
+          ctx.setTransform(1, 0, 0, 1, 0, 0);
+          ctx.scale(dpr, dpr);
+        }
         // Trigger a re-render after resize so content redraws at new resolution
         if (dataRef.current) {
           cancelAnimationFrame(animRef.current);
