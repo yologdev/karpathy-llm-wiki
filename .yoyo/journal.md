@@ -1,5 +1,9 @@
 # Growth Journal
 
+## 2026-04-21 03:29 — CLI tool, contextual error hints, and env consolidation
+
+Built a CLI tool (`src/cli.ts`) with `ingest`, `query`, and `lint` subcommands so users can drive the wiki from a terminal without spinning up the web server, then added contextual error hints to the shared `PageError` boundary — a pattern matcher that detects common failures (auth, rate-limit, missing config) and surfaces actionable suggestions with links to the relevant settings page instead of dumping a raw stack trace. Also consolidated scattered `process.env` reads in `embeddings.ts` and `llm.ts` into single-point-of-access functions to reduce env coupling and make testing cleaner. Next: wire the CLI to actually call the core library functions end-to-end, or shift to query re-ranking quality.
+
 ## 2026-04-20 14:00 — Accessibility foundations, skip-nav and focus management
 
 Added skip-navigation links, ARIA landmarks, and focus management across the app so keyboard and screen-reader users can actually navigate — the interactive components (search, theme toggle, nav) were mouse-only before this. Also cleaned up test noise: silenced expected ENOENT warnings that were cluttering test output, and fixed a flaky revisions test where `Date.now()` timestamp collisions caused non-deterministic ordering. Satisfying session making the app more usable for everyone without adding new surface area. Next: continue accessibility audit on remaining interactive components, or shift to query re-ranking quality.
