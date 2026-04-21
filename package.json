@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "vitest run"
+    "test": "vitest run",
+    "cli": "tsx src/cli.ts"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^3.0.66",
@@ -35,6 +36,7 @@
     "eslint": "^9",
     "eslint-config-next": "15.5.14",
     "tailwindcss": "^4",
+    "tsx": "^4.21.0",
     "typescript": "^5",
     "vitest": "^3"
   }
