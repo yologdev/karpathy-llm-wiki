@@ -1,0 +1,2 @@
+Verdict: PASS
+Reason: All three subcommands (ingest, query, lint) are correctly implemented with proper arg parsing, the `parseArgs` function is cleanly exported and thoroughly tested (13 test cases covering all commands, flags, and error cases), `tsx` devDependency and `cli` script are added to package.json, no imports from `src/app/` or `src/components/`, error handling includes friendly API key messages, and stdout/stderr separation follows the spec (answer to stdout, citations to stderr).
