@@ -874,6 +874,25 @@ describe("config file fallback for embeddings", () => {
       expect(model).not.toBeNull();
     });
   });
+
+  describe("config-file-only embedding (no env vars)", () => {
+    it("embedText returns embedding when only config has openai provider + apiKey", async () => {
+      mockLoadConfigSync.mockReturnValue({ provider: "openai", apiKey: "sk-cfg-only" });
+      mockEmbed.mockResolvedValue({ embedding: [0.1, 0.2, 0.3] });
+
+      const result = await embedText("hello world");
+      expect(result).toEqual([0.1, 0.2, 0.3]);
+      expect(mockEmbed).toHaveBeenCalledTimes(1);
+    });
+
+    it("embedText returns null when config only has anthropic (no embedding support)", async () => {
+      mockLoadConfigSync.mockReturnValue({ provider: "anthropic", apiKey: "sk-ant-cfg" });
+
+      const result = await embedText("hello world");
+      expect(result).toBeNull();
+      expect(mockEmbed).not.toHaveBeenCalled();
+    });
+  });
 });
 
 // ---------------------------------------------------------------------------

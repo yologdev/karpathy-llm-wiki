@@ -7,7 +7,7 @@ import fs from "fs/promises";
 import path from "path";
 import crypto from "crypto";
 import { getWikiDir, listWikiPages, readWikiPage } from "./wiki";
-import { loadConfigSync } from "./config";
+import { detectEnvProvider, loadConfigSync } from "./config";
 import { withFileLock } from "./lock";
 import { isEnoent } from "./errors";
 import { MAX_EMBED_CHARS } from "./constants";
@@ -56,21 +56,16 @@ const EMBEDDING_CAPABLE_PROVIDERS = new Set(["openai", "google", "ollama"]);
  *   3. Provider-specific default
  *
  * Resolution order for provider:
- *   1. Env var API keys (highest priority)
+ *   1. Env var API keys (highest priority — via `detectEnvProvider`)
  *   2. Config file provider + apiKey
  */
 export function getEmbeddingModelName(): string | null {
   const override = process.env.EMBEDDING_MODEL;
+  const env = detectEnvProvider();
 
-  // --- Env var provider detection (existing, highest priority) ---
-  if (process.env.OPENAI_API_KEY) {
-    return override ?? DEFAULT_EMBEDDING_MODELS.openai;
-  }
-  if (process.env.GOOGLE_GENERATIVE_AI_API_KEY) {
-    return override ?? DEFAULT_EMBEDDING_MODELS.google;
-  }
-  if (process.env.OLLAMA_BASE_URL || process.env.OLLAMA_MODEL) {
-    return override ?? DEFAULT_EMBEDDING_MODELS.ollama;
+  // --- Env var path: embedding-capable provider detected via env ---
+  if (env.provider && EMBEDDING_CAPABLE_PROVIDERS.has(env.provider)) {
+    return override ?? DEFAULT_EMBEDDING_MODELS[env.provider];
   }
 
   // --- Config file fallback ---
@@ -92,12 +87,8 @@ export function getEmbeddingModelName(): string | null {
  * Returns an AI SDK embedding model based on the configured provider, or
  * `null` if the provider doesn't support embeddings.
  *
- * Provider detection order:
- *   1. OpenAI    (OPENAI_API_KEY env var)
- *   2. Google    (GOOGLE_GENERATIVE_AI_API_KEY env var)
- *   3. Ollama    (OLLAMA_BASE_URL / OLLAMA_MODEL env var)
- *   4. Config file (provider + apiKey, if provider is openai/google/ollama)
- *   5. No key    → null
+ * Provider detection is delegated to {@link detectEnvProvider} from
+ * `config.ts` with config file fallback via {@link loadConfigSync}.
  *
  * Model name resolution:
  *   1. `EMBEDDING_MODEL` env var (highest)
@@ -106,26 +97,12 @@ export function getEmbeddingModelName(): string | null {
  */
 export function getEmbeddingModel(): EmbeddingModel | null {
   const override = process.env.EMBEDDING_MODEL;
+  const env = detectEnvProvider();
 
-  // --- Env var provider detection (existing, highest priority) ---
-
-  if (process.env.OPENAI_API_KEY) {
-    const openai = createOpenAI({ apiKey: process.env.OPENAI_API_KEY });
-    return openai.embedding(override ?? DEFAULT_EMBEDDING_MODELS.openai);
-  }
-
-  if (process.env.GOOGLE_GENERATIVE_AI_API_KEY) {
-    const google = createGoogleGenerativeAI({
-      apiKey: process.env.GOOGLE_GENERATIVE_AI_API_KEY,
-    });
-    return google.embedding(override ?? DEFAULT_EMBEDDING_MODELS.google);
-  }
-
-  if (process.env.OLLAMA_BASE_URL || process.env.OLLAMA_MODEL) {
-    const ollama = process.env.OLLAMA_BASE_URL
-      ? createOllama({ baseURL: process.env.OLLAMA_BASE_URL })
-      : createOllama();
-    return ollama.embedding(override ?? DEFAULT_EMBEDDING_MODELS.ollama);
+  // --- Env var path: embedding-capable provider detected via env ---
+  if (env.provider && EMBEDDING_CAPABLE_PROVIDERS.has(env.provider)) {
+    const modelName = override ?? DEFAULT_EMBEDDING_MODELS[env.provider];
+    return _createEmbeddingModel(env.provider, env.apiKey, modelName);
   }
 
   // --- Config file fallback ---
@@ -133,33 +110,46 @@ export function getEmbeddingModel(): EmbeddingModel | null {
   const cfgProvider = cfg.provider;
 
   if (cfgProvider && EMBEDDING_CAPABLE_PROVIDERS.has(cfgProvider)) {
-    if (cfgProvider === "openai" && cfg.apiKey) {
-      const openai = createOpenAI({ apiKey: cfg.apiKey });
-      return openai.embedding(
-        override ?? cfg.embeddingModel ?? DEFAULT_EMBEDDING_MODELS.openai,
-      );
-    }
-
-    if (cfgProvider === "google" && cfg.apiKey) {
-      const google = createGoogleGenerativeAI({ apiKey: cfg.apiKey });
-      return google.embedding(
-        override ?? cfg.embeddingModel ?? DEFAULT_EMBEDDING_MODELS.google,
-      );
-    }
-
-    if (cfgProvider === "ollama") {
-      const ollama = cfg.ollamaBaseUrl
-        ? createOllama({ baseURL: cfg.ollamaBaseUrl })
-        : createOllama();
-      return ollama.embedding(
-        override ?? cfg.embeddingModel ?? DEFAULT_EMBEDDING_MODELS.ollama,
-      );
+    if (cfgProvider === "ollama" || cfg.apiKey) {
+      const modelName =
+        override ?? cfg.embeddingModel ?? DEFAULT_EMBEDDING_MODELS[cfgProvider] ?? cfgProvider;
+      return _createEmbeddingModel(cfgProvider, cfg.apiKey ?? null, modelName, cfg.ollamaBaseUrl);
     }
   }
 
   // Anthropic has no embedding models.
   // No embedding-capable provider configured.
   return null;
+}
+
+/**
+ * Internal helper to construct an AI SDK embedding model instance.
+ */
+function _createEmbeddingModel(
+  provider: string,
+  apiKey: string | null,
+  modelName: string,
+  ollamaBaseUrl?: string | null,
+): EmbeddingModel | null {
+  switch (provider) {
+    case "openai": {
+      const openai = createOpenAI({ apiKey: apiKey! });
+      return openai.embedding(modelName);
+    }
+    case "google": {
+      const google = createGoogleGenerativeAI({ apiKey: apiKey! });
+      return google.embedding(modelName);
+    }
+    case "ollama": {
+      // For env-based Ollama, check OLLAMA_BASE_URL env var; for config-based,
+      // use the provided ollamaBaseUrl.
+      const baseURL = ollamaBaseUrl ?? process.env.OLLAMA_BASE_URL ?? undefined;
+      const ollama = baseURL ? createOllama({ baseURL }) : createOllama();
+      return ollama.embedding(modelName);
+    }
+    default:
+      return null;
+  }
 }
 
 /**

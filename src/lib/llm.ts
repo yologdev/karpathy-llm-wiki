@@ -6,6 +6,7 @@ import { createOllama } from "ollama-ai-provider-v2";
 import {
   getEffectiveProvider,
   getResolvedCredentials,
+  detectEnvProvider,
   loadConfigSync,
 } from "./config";
 import { getErrorMessage } from "./errors";
@@ -175,16 +176,10 @@ export async function retryWithBackoff<T>(
  *     See `src/lib/embeddings.ts` for the full embedding API.
  */
 export function hasLLMKey(): boolean {
-  // Fast path: check env vars first
-  if (
-    process.env.ANTHROPIC_API_KEY ||
-    process.env.OPENAI_API_KEY ||
-    process.env.GOOGLE_GENERATIVE_AI_API_KEY ||
-    process.env.OLLAMA_BASE_URL ||
-    process.env.OLLAMA_MODEL
-  ) {
-    return true;
-  }
+  // Fast path: check env vars via shared helper
+  const env = detectEnvProvider();
+  if (env.provider) return true;
+
   // Fallback: check config file (cached sync read)
   const cfg = loadConfigSync();
   return !!(cfg.provider || cfg.apiKey);

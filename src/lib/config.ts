@@ -145,8 +145,11 @@ export function maskApiKey(key: string | undefined | null): string | null {
 /**
  * Detect the active provider from env vars alone (same logic as the original
  * `getProviderInfo()` in llm.ts).
+ *
+ * Exported so that `embeddings.ts` and `llm.ts` can reuse it rather than
+ * duplicating the env-var sniffing logic.
  */
-function detectEnvProvider(): {
+export function detectEnvProvider(): {
   provider: string | null;
   apiKey: string | null;
 } {
