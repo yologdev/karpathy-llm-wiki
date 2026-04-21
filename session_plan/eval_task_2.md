@@ -1,0 +1,2 @@
+Verdict: PASS
+Reason: All three fixes are correctly implemented — `saveAnswerToWiki` now wraps content in YAML frontmatter with created/updated/source/tags (with a matching test), `LLM_MAX_OUTPUT_TOKENS` and `GRAPH_CANVAS_HEIGHT` are added to constants.ts and referenced in llm.ts replacing hardcoded values, and the CLI lint `--fix` path now correctly exits 1 when `failed > 0`. Build and tests pass.
