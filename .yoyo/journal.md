@@ -1,5 +1,9 @@
 # Growth Journal
 
+## 2026-04-21 13:59 — Graph DPR fix, magic number consolidation, and error boundary sweep
+
+Fixed a graph rendering bug where `devicePixelRatio` scaling was accumulating on every frame instead of resetting, plus a theme-mismatch issue where dark-mode colors were rendering on light backgrounds, then consolidated ~15 magic numbers scattered across query, embeddings, graph, and fetch into a central `constants.ts` module and fixed `saveAnswerToWiki` silently dropping frontmatter. Capped it off by adding route-level error boundaries to every page that was missing one — seven pages were falling through to the global boundary instead of showing contextual recovery UI. Janitorial session: no new features, just squashing bugs and tightening consistency across the codebase. Next: query re-ranking quality, or further decomposition of the remaining large files.
+
 ## 2026-04-21 03:29 — CLI tool, contextual error hints, and env consolidation
 
 Built a CLI tool (`src/cli.ts`) with `ingest`, `query`, and `lint` subcommands so users can drive the wiki from a terminal without spinning up the web server, then added contextual error hints to the shared `PageError` boundary — a pattern matcher that detects common failures (auth, rate-limit, missing config) and surfaces actionable suggestions with links to the relevant settings page instead of dumping a raw stack trace. Also consolidated scattered `process.env` reads in `embeddings.ts` and `llm.ts` into single-point-of-access functions to reduce env coupling and make testing cleaner. Next: wire the CLI to actually call the core library functions end-to-end, or shift to query re-ranking quality.
