@@ -8,6 +8,7 @@ import {
 import { slugify, loadPageConventions, extractSummary } from "./ingest";
 import { extractCitedSlugs } from "./citations";
 import { searchByVector } from "./embeddings";
+import { serializeFrontmatter } from "./frontmatter";
 import {
   tokenize,
   buildCorpusStats,
@@ -444,13 +445,26 @@ export async function saveAnswerToWiki(
   const plainContent = content.replace(/^#.*$/gm, "").trim();
   const summary = extractSummary(plainContent) || title;
 
+  // Wrap in YAML frontmatter so saved answers have the same metadata as
+  // ingested pages (created/updated dates, source type, tags).
+  const now = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+  const contentWithFm = serializeFrontmatter(
+    {
+      created: now,
+      updated: now,
+      source: "query",
+      tags: ["query-answer"],
+    },
+    pageContent,
+  );
+
   // Hand off to the unified write pipeline. We pass the original answer
   // `content` (rather than `pageContent`) as the cross-ref source so the
   // related-pages prompt sees the same text the user actually saw.
   const { slug: writtenSlug } = await writeWikiPageWithSideEffects({
     slug,
     title,
-    content: pageContent,
+    content: contentWithFm,
     summary,
     logOp: "save",
     crossRefSource: content,

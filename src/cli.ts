@@ -178,10 +178,11 @@ async function runLint(fix: boolean): Promise<void> {
       }
     }
     console.log(`\nFixed: ${fixed}, Failed: ${failed}`);
-  }
-
-  // Exit 1 if unfixed issues remain (standard lint convention)
-  if (!fix) {
+    if (failed > 0) {
+      process.exit(1);
+    }
+  } else {
+    // No --fix: exit 1 if any issues were found (standard lint convention)
     process.exit(1);
   }
 }

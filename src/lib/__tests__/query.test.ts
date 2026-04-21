@@ -3,7 +3,7 @@ import fs from "fs/promises";
 import os from "os";
 import path from "path";
 import { searchIndex, buildContext, query, saveAnswerToWiki, buildCorpusStats, bm25Score, extractCitedSlugs, reciprocalRankFusion, buildQuerySystemPrompt, TABLE_FORMAT_INSTRUCTION } from "../query";
-import { writeWikiPage, updateIndex, ensureDirectories, readWikiPage, listWikiPages } from "../wiki";
+import { writeWikiPage, updateIndex, ensureDirectories, readWikiPage, readWikiPageWithFrontmatter, listWikiPages } from "../wiki";
 import type { IndexEntry } from "../types";
 
 // ---------------------------------------------------------------------------
@@ -710,6 +710,22 @@ describe("saveAnswerToWiki", () => {
     expect(entry).toBeDefined();
     expect(entry!.title).toBe("Neural Networks Explained");
     expect(entry!.summary).toContain("Neural networks are computational models");
+  });
+
+  it("wraps saved answer in YAML frontmatter with source and tags", async () => {
+    await ensureDirectories();
+
+    await saveAnswerToWiki(
+      "Frontmatter Test",
+      "This answer should get frontmatter metadata.",
+    );
+
+    const parsed = await readWikiPageWithFrontmatter("frontmatter-test");
+    expect(parsed).not.toBeNull();
+    expect(parsed!.frontmatter.source).toBe("query");
+    expect(parsed!.frontmatter.tags).toEqual(["query-answer"]);
+    expect(parsed!.frontmatter.created).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    expect(parsed!.frontmatter.updated).toMatch(/^\d{4}-\d{2}-\d{2}$/);
   });
 
   it("does not duplicate heading if content already starts with one", async () => {

@@ -71,6 +71,16 @@ export const LLM_RETRY_BASE_MS = 1_000;
 /** Maximum backoff delay cap in ms. */
 export const LLM_RETRY_MAX_MS = 10_000;
 
+// ---- LLM Output -----------------------------------------------------------
+
+/** Default maximum output tokens for LLM generation calls. */
+export const LLM_MAX_OUTPUT_TOKENS = 4096;
+
+// ---- Graph ----------------------------------------------------------------
+
+/** Default canvas height (px) for the wiki graph visualisation. */
+export const GRAPH_CANVAS_HEIGHT = 560;
+
 // ---- Embeddings -----------------------------------------------------------
 
 /**

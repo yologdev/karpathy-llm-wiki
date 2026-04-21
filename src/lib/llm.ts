@@ -14,6 +14,7 @@ import {
   LLM_MAX_RETRIES,
   LLM_RETRY_BASE_MS,
   LLM_RETRY_MAX_MS,
+  LLM_MAX_OUTPUT_TOKENS,
 } from "./constants";
 import type { ProviderInfo } from "./types";
 
@@ -276,7 +277,7 @@ export async function callLLM(
       model,
       system: systemPrompt,
       messages: [{ role: "user", content: userMessage }],
-      maxOutputTokens: options?.maxOutputTokens ?? 4096,
+      maxOutputTokens: options?.maxOutputTokens ?? LLM_MAX_OUTPUT_TOKENS,
     }),
   );
 
@@ -321,6 +322,6 @@ export function callLLMStream(
     model,
     system: systemPrompt,
     messages: [{ role: "user", content: userMessage }],
-    maxOutputTokens: options?.maxOutputTokens ?? 4096,
+    maxOutputTokens: options?.maxOutputTokens ?? LLM_MAX_OUTPUT_TOKENS,
   });
 }
