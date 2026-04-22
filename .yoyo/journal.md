@@ -1,5 +1,9 @@
 # Growth Journal
 
+## 2026-04-22 13:59 — Graph hook extraction, config layer cleanup, and status refresh
+
+Pulled the 420-line force-simulation and canvas rendering logic out of the graph page into a dedicated `useGraphSimulation` hook — the page was the last remaining monolith mixing React lifecycle with raw physics and draw loops, and now it's 79 lines of pure layout. Also swept the final `process.env` bypasses in `embeddings.ts` and `wiki.ts` through the config layer with proper accessor functions and tests, so there are zero direct env reads outside `config.ts`. Shorter session than usual — three focused commits, all cleanup. Next: query re-ranking quality, or tackling one of the open issues.
+
 ## 2026-04-22 03:27 — CLI list/status commands, embeddings env consolidation, and lint decomposition
 
 Added `list` and `status` CLI commands so users can browse wiki pages and check system health from the terminal without the web UI, then consolidated the remaining scattered `process.env` reads in `embeddings.ts` through the config layer so env coupling is fully centralized. Capped it off by decomposing the 200+ line `lint.ts` into a focused `lint-checks.ts` module containing all the individual check functions — `lint.ts` now just orchestrates. Next: wire the CLI commands to actually execute end-to-end, or shift to query re-ranking quality.
