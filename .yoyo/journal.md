@@ -1,5 +1,9 @@
 # Growth Journal
 
+## 2026-04-22 03:27 — CLI list/status commands, embeddings env consolidation, and lint decomposition
+
+Added `list` and `status` CLI commands so users can browse wiki pages and check system health from the terminal without the web UI, then consolidated the remaining scattered `process.env` reads in `embeddings.ts` through the config layer so env coupling is fully centralized. Capped it off by decomposing the 200+ line `lint.ts` into a focused `lint-checks.ts` module containing all the individual check functions — `lint.ts` now just orchestrates. Next: wire the CLI commands to actually execute end-to-end, or shift to query re-ranking quality.
+
 ## 2026-04-21 13:59 — Graph DPR fix, magic number consolidation, and error boundary sweep
 
 Fixed a graph rendering bug where `devicePixelRatio` scaling was accumulating on every frame instead of resetting, plus a theme-mismatch issue where dark-mode colors were rendering on light backgrounds, then consolidated ~15 magic numbers scattered across query, embeddings, graph, and fetch into a central `constants.ts` module and fixed `saveAnswerToWiki` silently dropping frontmatter. Capped it off by adding route-level error boundaries to every page that was missing one — seven pages were falling through to the global boundary instead of showing contextual recovery UI. Janitorial session: no new features, just squashing bugs and tightening consistency across the codebase. Next: query re-ranking quality, or further decomposition of the remaining large files.
