@@ -4,17 +4,21 @@ import type { WikiPage, IndexEntry } from "./types";
 import { withFileLock } from "./lock";
 import { saveRevision } from "./revisions";
 import { isEnoent } from "./errors";
+import {
+  getWikiDir as _getWikiDir,
+  getRawDir as _getRawDir,
+} from "./config";
 
 // ---------------------------------------------------------------------------
-// Configurable base directories — override via env vars for testing
+// Configurable base directories — delegated to the config layer
 // ---------------------------------------------------------------------------
 
 export function getWikiDir(): string {
-  return process.env.WIKI_DIR ?? path.join(process.cwd(), "wiki");
+  return _getWikiDir();
 }
 
 export function getRawDir(): string {
-  return process.env.RAW_DIR ?? path.join(process.cwd(), "raw");
+  return _getRawDir();
 }
 
 // ---------------------------------------------------------------------------

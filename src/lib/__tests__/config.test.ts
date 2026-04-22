@@ -11,6 +11,10 @@ import {
   getEffectiveProvider,
   getEffectiveSettings,
   getResolvedCredentials,
+  getWikiDir,
+  getRawDir,
+  getEmbeddingModelOverride,
+  getOllamaBaseUrl,
   _resetConfigCache,
   type AppConfig,
 } from "../config";
@@ -25,12 +29,15 @@ let tmpDir: string;
 let savedEnv: Record<string, string | undefined>;
 const ENV_KEYS = [
   "DATA_DIR",
+  "WIKI_DIR",
+  "RAW_DIR",
   "ANTHROPIC_API_KEY",
   "OPENAI_API_KEY",
   "GOOGLE_GENERATIVE_AI_API_KEY",
   "OLLAMA_BASE_URL",
   "OLLAMA_MODEL",
   "LLM_MODEL",
+  "EMBEDDING_MODEL",
 ];
 
 beforeEach(async () => {
@@ -330,5 +337,81 @@ describe("getResolvedCredentials", () => {
     expect(creds.provider).toBe("ollama");
     expect(creds.ollamaBaseUrl).toBe("http://myhost:11434/api");
     expect(creds.apiKey).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// getWikiDir / getRawDir — centralised directory resolution
+// ---------------------------------------------------------------------------
+
+describe("getWikiDir", () => {
+  it("returns default path when no WIKI_DIR env var set", () => {
+    delete process.env.WIKI_DIR;
+    const dir = getWikiDir();
+    expect(dir).toBe(path.join(tmpDir, "wiki"));
+  });
+
+  it("respects WIKI_DIR env override", () => {
+    process.env.WIKI_DIR = "/custom/wiki-path";
+    const dir = getWikiDir();
+    expect(dir).toBe("/custom/wiki-path");
+  });
+});
+
+describe("getRawDir", () => {
+  it("returns default path when no RAW_DIR env var set", () => {
+    delete process.env.RAW_DIR;
+    const dir = getRawDir();
+    expect(dir).toBe(path.join(tmpDir, "raw"));
+  });
+
+  it("respects RAW_DIR env override", () => {
+    process.env.RAW_DIR = "/custom/raw-path";
+    const dir = getRawDir();
+    expect(dir).toBe("/custom/raw-path");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// getEmbeddingModelOverride
+// ---------------------------------------------------------------------------
+
+describe("getEmbeddingModelOverride", () => {
+  it("returns undefined when EMBEDDING_MODEL is not set", () => {
+    delete process.env.EMBEDDING_MODEL;
+    expect(getEmbeddingModelOverride()).toBeUndefined();
+  });
+
+  it("returns the env value when EMBEDDING_MODEL is set", () => {
+    process.env.EMBEDDING_MODEL = "text-embedding-ada-002";
+    expect(getEmbeddingModelOverride()).toBe("text-embedding-ada-002");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// getOllamaBaseUrl
+// ---------------------------------------------------------------------------
+
+describe("getOllamaBaseUrl", () => {
+  it("returns undefined when neither env nor config set", () => {
+    expect(getOllamaBaseUrl()).toBeUndefined();
+  });
+
+  it("returns env var value when OLLAMA_BASE_URL is set", () => {
+    process.env.OLLAMA_BASE_URL = "http://env-host:11434";
+    expect(getOllamaBaseUrl()).toBe("http://env-host:11434");
+  });
+
+  it("returns config file value when env var is not set", async () => {
+    await saveConfig({ ollamaBaseUrl: "http://config-host:11434" });
+    _resetConfigCache();
+    expect(getOllamaBaseUrl()).toBe("http://config-host:11434");
+  });
+
+  it("env var wins over config file value", async () => {
+    await saveConfig({ ollamaBaseUrl: "http://config-host:11434" });
+    _resetConfigCache();
+    process.env.OLLAMA_BASE_URL = "http://env-host:11434";
+    expect(getOllamaBaseUrl()).toBe("http://env-host:11434");
   });
 });

@@ -49,12 +49,48 @@ export function isValidProvider(p: string): p is AppConfig["provider"] & string 
 }
 
 // ---------------------------------------------------------------------------
+// Data / directory helpers — centralise all process.env reads for paths
+// ---------------------------------------------------------------------------
+
+/** Base data directory: `DATA_DIR` env var or `process.cwd()`. */
+export function getDataDir(): string {
+  return process.env.DATA_DIR ?? process.cwd();
+}
+
+/** Wiki pages directory: `WIKI_DIR` env var or `<dataDir>/wiki`. */
+export function getWikiDir(): string {
+  return process.env.WIKI_DIR ?? path.join(getDataDir(), "wiki");
+}
+
+/** Raw sources directory: `RAW_DIR` env var or `<dataDir>/raw`. */
+export function getRawDir(): string {
+  return process.env.RAW_DIR ?? path.join(getDataDir(), "raw");
+}
+
+// ---------------------------------------------------------------------------
 // Config file path
 // ---------------------------------------------------------------------------
 
 export function getConfigPath(): string {
-  const base = process.env.DATA_DIR ?? process.cwd();
-  return path.join(base, ".llm-wiki-config.json");
+  return path.join(getDataDir(), ".llm-wiki-config.json");
+}
+
+// ---------------------------------------------------------------------------
+// Centralised env-var accessors for embedding / Ollama settings
+// ---------------------------------------------------------------------------
+
+/** Returns the `EMBEDDING_MODEL` env override, or `undefined` if not set. */
+export function getEmbeddingModelOverride(): string | undefined {
+  return process.env.EMBEDDING_MODEL;
+}
+
+/**
+ * Returns the effective Ollama base URL.
+ * Priority: `OLLAMA_BASE_URL` env var → config file `ollamaBaseUrl` → `undefined`.
+ */
+export function getOllamaBaseUrl(): string | undefined {
+  const cfg = loadConfigSync();
+  return process.env.OLLAMA_BASE_URL ?? cfg.ollamaBaseUrl ?? undefined;
 }
 
 // ---------------------------------------------------------------------------

@@ -7,7 +7,7 @@ import fs from "fs/promises";
 import path from "path";
 import crypto from "crypto";
 import { getWikiDir, listWikiPages, readWikiPage } from "./wiki";
-import { detectEnvProvider, loadConfigSync } from "./config";
+import { detectEnvProvider, loadConfigSync, getEmbeddingModelOverride, getOllamaBaseUrl } from "./config";
 import { withFileLock } from "./lock";
 import { isEnoent } from "./errors";
 import { MAX_EMBED_CHARS } from "./constants";
@@ -56,7 +56,7 @@ function resolveEmbeddingModelName(
   provider: string,
   cfg: ReturnType<typeof loadConfigSync>,
 ): string {
-  const envOverride = process.env.EMBEDDING_MODEL;
+  const envOverride = getEmbeddingModelOverride();
   return (
     envOverride ?? cfg.embeddingModel ?? DEFAULT_EMBEDDING_MODELS[provider] ?? provider
   );
@@ -117,7 +117,7 @@ export function getEmbeddingModel(): EmbeddingModel | null {
   // --- Env var path: embedding-capable provider detected via env ---
   if (env.provider && EMBEDDING_CAPABLE_PROVIDERS.has(env.provider)) {
     const modelName = resolveEmbeddingModelName(env.provider, cfg);
-    return _createEmbeddingModel(env.provider, env.apiKey, modelName, cfg);
+    return _createEmbeddingModel(env.provider, env.apiKey, modelName);
   }
 
   // --- Config file fallback ---
@@ -126,7 +126,7 @@ export function getEmbeddingModel(): EmbeddingModel | null {
   if (cfgProvider && EMBEDDING_CAPABLE_PROVIDERS.has(cfgProvider)) {
     if (cfgProvider === "ollama" || cfg.apiKey) {
       const modelName = resolveEmbeddingModelName(cfgProvider, cfg);
-      return _createEmbeddingModel(cfgProvider, cfg.apiKey ?? null, modelName, cfg);
+      return _createEmbeddingModel(cfgProvider, cfg.apiKey ?? null, modelName);
     }
   }
 
@@ -138,14 +138,12 @@ export function getEmbeddingModel(): EmbeddingModel | null {
 /**
  * Internal helper to construct an AI SDK embedding model instance.
  *
- * Accepts the full config object so it can resolve `ollamaBaseUrl` via the
- * config layer (env var → config file) without reading `process.env` directly.
+ * Ollama base URL is resolved via `getOllamaBaseUrl()` from the config layer.
  */
 function _createEmbeddingModel(
   provider: string,
   apiKey: string | null,
   modelName: string,
-  cfg: ReturnType<typeof loadConfigSync>,
 ): EmbeddingModel | null {
   switch (provider) {
     case "openai": {
@@ -157,8 +155,8 @@ function _createEmbeddingModel(
       return google.embedding(modelName);
     }
     case "ollama": {
-      // Resolve Ollama base URL: env var wins, then config file.
-      const baseURL = process.env.OLLAMA_BASE_URL ?? cfg.ollamaBaseUrl ?? undefined;
+      // Resolve Ollama base URL via centralized config layer.
+      const baseURL = getOllamaBaseUrl();
       const ollama = baseURL ? createOllama({ baseURL }) : createOllama();
       return ollama.embedding(modelName);
     }
