@@ -48,6 +48,25 @@ describe("CLI argument parsing", () => {
     });
   });
 
+  describe("list command", () => {
+    it("parses list without flags", () => {
+      const result = parseArgs(["list"]);
+      expect(result).toEqual({ command: "list", raw: false });
+    });
+
+    it("parses list with --raw flag", () => {
+      const result = parseArgs(["list", "--raw"]);
+      expect(result).toEqual({ command: "list", raw: true });
+    });
+  });
+
+  describe("status command", () => {
+    it("parses status", () => {
+      const result = parseArgs(["status"]);
+      expect(result).toEqual({ command: "status" });
+    });
+  });
+
   describe("help command", () => {
     it("parses help", () => {
       const result = parseArgs(["help"]);

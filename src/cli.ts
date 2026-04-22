@@ -8,6 +8,9 @@
  *   pnpm cli query <question>     Query the wiki
  *   pnpm cli lint                 Run wiki lint checks
  *   pnpm cli lint --fix           Run lint and auto-fix issues
+ *   pnpm cli list                 List all wiki pages
+ *   pnpm cli list --raw           List raw sources
+ *   pnpm cli status               Show wiki health summary
  *   pnpm cli help                 Show this help
  */
 
@@ -20,6 +23,8 @@ export type ParsedCommand =
   | { command: "ingest-text" }
   | { command: "query"; question: string }
   | { command: "lint"; fix: boolean }
+  | { command: "list"; raw: boolean }
+  | { command: "status" }
   | { command: "help" }
   | { command: "error"; message: string };
 
@@ -52,6 +57,12 @@ export function parseArgs(argv: string[]): ParsedCommand {
       const fix = rest.includes("--fix");
       return { command: "lint", fix };
     }
+    case "list": {
+      const raw = rest.includes("--raw");
+      return { command: "list", raw };
+    }
+    case "status":
+      return { command: "status" };
     default:
       return { command: "error", message: `Unknown command: ${sub}\nRun "pnpm cli help" for usage.` };
   }
@@ -72,6 +83,9 @@ Commands:
   query <question>     Query the wiki
   lint                 Run wiki lint checks
   lint --fix           Run lint and auto-fix issues
+  list                 List all wiki pages (slug + title)
+  list --raw           List raw sources instead of wiki pages
+  status               Show wiki health summary
   help                 Show this help
 
 Examples:
@@ -80,6 +94,9 @@ Examples:
   pnpm cli query "What is attention in transformers?"
   pnpm cli lint
   pnpm cli lint --fix
+  pnpm cli list
+  pnpm cli list --raw
+  pnpm cli status
 `.trim();
 
 // ---------------------------------------------------------------------------
@@ -187,6 +204,39 @@ async function runLint(fix: boolean): Promise<void> {
   }
 }
 
+async function runList(raw: boolean): Promise<void> {
+  if (raw) {
+    const { listRawSources } = await import("./lib/raw");
+    const sources = await listRawSources();
+    const sorted = sources.sort((a, b) => a.slug.localeCompare(b.slug));
+    for (const s of sorted) {
+      console.log(`${s.slug}\t${s.filename}`);
+    }
+  } else {
+    const { listWikiPages } = await import("./lib/wiki");
+    const pages = await listWikiPages();
+    const sorted = pages.sort((a, b) => a.title.localeCompare(b.title));
+    for (const p of sorted) {
+      console.log(`${p.slug}\t${p.title}`);
+    }
+  }
+}
+
+async function runStatus(): Promise<void> {
+  const { listWikiPages } = await import("./lib/wiki");
+  const { listRawSources } = await import("./lib/raw");
+  const { getEffectiveSettings } = await import("./lib/config");
+
+  const pages = await listWikiPages();
+  const sources = await listRawSources();
+  const settings = getEffectiveSettings();
+
+  console.log(`Wiki pages:\t${pages.length}`);
+  console.log(`Raw sources:\t${sources.length}`);
+  console.log(`LLM provider:\t${settings.provider ?? "not configured"}`);
+  console.log(`Embeddings:\t${settings.embeddingSupport ? "available" : "not available"}`);
+}
+
 // ---------------------------------------------------------------------------
 // Main
 // ---------------------------------------------------------------------------
@@ -215,6 +265,12 @@ async function main(): Promise<void> {
       return;
     case "lint":
       await runLint(parsed.fix);
+      return;
+    case "list":
+      await runList(parsed.raw);
+      return;
+    case "status":
+      await runStatus();
       return;
   }
 }
