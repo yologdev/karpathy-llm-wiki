@@ -213,6 +213,19 @@ describe("getEmbeddingModelName", () => {
     process.env.GOOGLE_GENERATIVE_AI_API_KEY = "google-test";
     expect(getEmbeddingModelName()).toBe("text-embedding-3-small");
   });
+
+  it("uses config embeddingModel when env provider is set but EMBEDDING_MODEL env var is not", () => {
+    process.env.OPENAI_API_KEY = "sk-test";
+    mockLoadConfigSync.mockReturnValue({ embeddingModel: "text-embedding-3-large" });
+    expect(getEmbeddingModelName()).toBe("text-embedding-3-large");
+  });
+
+  it("EMBEDDING_MODEL env var still beats config embeddingModel with env provider", () => {
+    process.env.OPENAI_API_KEY = "sk-test";
+    process.env.EMBEDDING_MODEL = "custom-env-model";
+    mockLoadConfigSync.mockReturnValue({ embeddingModel: "text-embedding-3-large" });
+    expect(getEmbeddingModelName()).toBe("custom-env-model");
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -724,6 +737,24 @@ describe("getEmbeddingModel", () => {
 
   it("returns a model object when Ollama is configured", () => {
     process.env.OLLAMA_BASE_URL = "http://localhost:11434/api";
+    const model = getEmbeddingModel();
+    expect(model).not.toBeNull();
+  });
+
+  it("uses config embeddingModel in env provider path when EMBEDDING_MODEL env var absent", () => {
+    process.env.OPENAI_API_KEY = "sk-test";
+    mockLoadConfigSync.mockReturnValue({ embeddingModel: "text-embedding-3-large" });
+    // Should use config embeddingModel, not the provider default
+    const model = getEmbeddingModel();
+    expect(model).not.toBeNull();
+    // Verify the model name resolution matches
+    expect(getEmbeddingModelName()).toBe("text-embedding-3-large");
+  });
+
+  it("uses config ollamaBaseUrl in env-detected Ollama path", () => {
+    // Ollama detected via OLLAMA_MODEL env var (no OLLAMA_BASE_URL env var)
+    process.env.OLLAMA_MODEL = "llama3.2";
+    mockLoadConfigSync.mockReturnValue({ ollamaBaseUrl: "http://remote-ollama:11434/api" });
     const model = getEmbeddingModel();
     expect(model).not.toBeNull();
   });

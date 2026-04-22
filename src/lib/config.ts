@@ -283,7 +283,10 @@ export function getEffectiveSettings(): EffectiveSettings {
   // Embedding model
   let embeddingModel: string | null;
   let embeddingModelSource: SettingSource;
-  if (cfg.embeddingModel) {
+  if (process.env.EMBEDDING_MODEL) {
+    embeddingModel = process.env.EMBEDDING_MODEL;
+    embeddingModelSource = "env";
+  } else if (cfg.embeddingModel) {
     embeddingModel = cfg.embeddingModel;
     embeddingModelSource = "config";
   } else {
