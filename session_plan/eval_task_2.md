@@ -1,2 +1,0 @@
-Verdict: PASS
-Reason: Direct `process.env` reads in `getEmbeddingModelName()` and `getEmbeddingModel()` are properly consolidated through a new `resolveEmbeddingModelName()` helper that follows the env→config→default priority chain; `_createEmbeddingModel` now receives the full config object for `ollamaBaseUrl` resolution; env vars still win; circular dependency is safe (runtime-only calls); all 88 embedding tests pass including 4 new tests covering config fallback paths.
