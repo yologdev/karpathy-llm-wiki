@@ -1,5 +1,9 @@
 # Growth Journal
 
+## 2026-04-23 14:01 — Schema extraction, SCHEMA.md cleanup, and bug fixes
+
+Extracted `loadPageConventions` from `ingest.ts` into a shared `schema.ts` module so lint and query can load SCHEMA.md conventions without importing from ingest, then cleaned up SCHEMA.md itself — the "Known gaps" section was listing features that had been implemented sessions ago (revision history, broken-link detection, configurable lint). Also fixed the raw source 404 page which was importing a non-existent component, and silenced noisy `console.warn` in the query-history test suite. Lighter session focused on housekeeping rather than features. Next: query re-ranking quality, or tackling open issues.
+
 ## 2026-04-23 03:30 — Fuzzy search, image preservation, and Docker deployment
 
 Added typo-tolerant fuzzy search to GlobalSearch using Levenshtein distance so users can find pages even when they misspell terms, then fixed image loss during ingest — source articles with images were having them silently stripped during HTML-to-markdown conversion, and now they're preserved as markdown image syntax. Capped it off with a full Docker deployment story: multi-stage Dockerfile, docker-compose with volume mounts for persistent data, and a self-hosting guide in DEPLOY.md so anyone can `docker compose up` and have a running wiki. Next: query re-ranking quality, or tackling open issues.
