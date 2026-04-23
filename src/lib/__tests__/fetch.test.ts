@@ -4,6 +4,7 @@ import {
   stripHtml,
   extractTitle,
   extractWithReadability,
+  htmlToMarkdown,
   validateUrlSafety,
   fetchUrlContent,
 } from "../fetch";
@@ -811,5 +812,174 @@ describe("fetchUrlContent", () => {
     const result = await fetchUrlContent("https://example.com/page");
     expect(result.title).toBeTruthy();
     expect(result.content).toBeTruthy();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// htmlToMarkdown
+// ---------------------------------------------------------------------------
+
+describe("htmlToMarkdown", () => {
+  it("converts <img> tags to markdown image syntax", () => {
+    const html = '<img src="https://example.com/photo.jpg" alt="A photo">';
+    const md = htmlToMarkdown(html);
+    expect(md).toBe("![A photo](https://example.com/photo.jpg)");
+  });
+
+  it("handles <img> with alt before src", () => {
+    const html = '<img alt="Logo" src="https://example.com/logo.png">';
+    const md = htmlToMarkdown(html);
+    expect(md).toBe("![Logo](https://example.com/logo.png)");
+  });
+
+  it("handles empty alt text", () => {
+    const html = '<img src="https://example.com/img.png" alt="">';
+    const md = htmlToMarkdown(html);
+    expect(md).toBe("![](https://example.com/img.png)");
+  });
+
+  it("handles missing alt attribute", () => {
+    const html = '<img src="https://example.com/img.png">';
+    const md = htmlToMarkdown(html);
+    expect(md).toBe("![](https://example.com/img.png)");
+  });
+
+  it("handles relative image URLs (pass through as-is)", () => {
+    const html = '<img src="/images/cat.jpg" alt="cat">';
+    const md = htmlToMarkdown(html);
+    expect(md).toBe("![cat](/images/cat.jpg)");
+  });
+
+  it("converts <a> tags to markdown links", () => {
+    const html = '<a href="https://example.com">Example</a>';
+    const md = htmlToMarkdown(html);
+    expect(md).toBe("[Example](https://example.com)");
+  });
+
+  it("preserves heading hierarchy", () => {
+    const html = "<h1>Title</h1><h2>Subtitle</h2><h3>Section</h3>";
+    const md = htmlToMarkdown(html);
+    expect(md).toContain("# Title");
+    expect(md).toContain("## Subtitle");
+    expect(md).toContain("### Section");
+  });
+
+  it("converts <strong>/<b> to bold", () => {
+    const html = "<p>This is <strong>bold</strong> and <b>also bold</b>.</p>";
+    const md = htmlToMarkdown(html);
+    expect(md).toContain("**bold**");
+    expect(md).toContain("**also bold**");
+  });
+
+  it("converts <em>/<i> to italic", () => {
+    const html = "<p>This is <em>italic</em> and <i>also italic</i>.</p>";
+    const md = htmlToMarkdown(html);
+    expect(md).toContain("*italic*");
+    expect(md).toContain("*also italic*");
+  });
+
+  it("converts <ul>/<li> to list items", () => {
+    const html = "<ul><li>First</li><li>Second</li></ul>";
+    const md = htmlToMarkdown(html);
+    expect(md).toContain("- First");
+    expect(md).toContain("- Second");
+  });
+
+  it("converts <p> tags to paragraph breaks", () => {
+    const html = "<p>First paragraph.</p><p>Second paragraph.</p>";
+    const md = htmlToMarkdown(html);
+    expect(md).toContain("First paragraph.");
+    expect(md).toContain("Second paragraph.");
+    // Should have blank lines between paragraphs
+    expect(md).toMatch(/First paragraph\.\n\n.*Second paragraph\./s);
+  });
+
+  it("converts <br> to newlines", () => {
+    const html = "Line one<br>Line two<br/>Line three";
+    const md = htmlToMarkdown(html);
+    expect(md).toContain("Line one\nLine two\nLine three");
+  });
+
+  it("strips unknown/dangerous tags while preserving text", () => {
+    const html =
+      '<div class="wrapper"><span>Hello</span> <iframe>bad</iframe></div>';
+    const md = htmlToMarkdown(html);
+    expect(md).toContain("Hello");
+    expect(md).not.toContain("<div");
+    expect(md).not.toContain("<span");
+    expect(md).not.toContain("<iframe");
+  });
+
+  it("strips <script> and <style> tags entirely", () => {
+    const html =
+      '<p>Text</p><script>alert("xss")</script><style>.x{}</style><p>More</p>';
+    const md = htmlToMarkdown(html);
+    expect(md).toContain("Text");
+    expect(md).toContain("More");
+    expect(md).not.toContain("alert");
+    expect(md).not.toContain(".x{");
+  });
+
+  it("decodes HTML entities", () => {
+    const html = "<p>Tom &amp; Jerry &mdash; a classic</p>";
+    const md = htmlToMarkdown(html);
+    expect(md).toContain("Tom & Jerry \u2014 a classic");
+  });
+
+  it("handles self-closing img tags", () => {
+    const html = '<img src="https://example.com/photo.jpg" alt="Photo" />';
+    const md = htmlToMarkdown(html);
+    expect(md).toBe("![Photo](https://example.com/photo.jpg)");
+  });
+
+  it("handles complex document with mixed elements", () => {
+    const html = `
+      <h1>Article Title</h1>
+      <p>Some text with <strong>bold</strong> and an
+      <img src="https://example.com/fig1.png" alt="Figure 1">.</p>
+      <p>See <a href="https://example.com">this link</a> for more.</p>
+    `;
+    const md = htmlToMarkdown(html);
+    expect(md).toContain("# Article Title");
+    expect(md).toContain("**bold**");
+    expect(md).toContain("![Figure 1](https://example.com/fig1.png)");
+    expect(md).toContain("[this link](https://example.com)");
+  });
+
+  it("returns empty string for empty input", () => {
+    expect(htmlToMarkdown("")).toBe("");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// extractWithReadability — image preservation integration
+// ---------------------------------------------------------------------------
+
+describe("extractWithReadability — images", () => {
+  it("returns htmlContent containing <img> tags from source HTML", () => {
+    // Build a full article HTML with an embedded image
+    const html = `<!DOCTYPE html>
+<html>
+<head><title>Photo Article</title></head>
+<body>
+  <article>
+    <h1>Photo Article</h1>
+    <p>Here is a photo:</p>
+    <img src="https://example.com/photo.jpg" alt="A nice photo">
+    ${'<p>Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor.</p>\n'.repeat(5)}
+  </article>
+</body>
+</html>`;
+
+    const result = extractWithReadability(html);
+    expect(result).not.toBeNull();
+    // The htmlContent should preserve the image tag
+    expect(result!.htmlContent).toContain("img");
+    expect(result!.htmlContent).toContain("https://example.com/photo.jpg");
+
+    // Converting to markdown should produce image reference
+    const md = htmlToMarkdown(result!.htmlContent);
+    expect(md).toContain("![");
+    expect(md).toContain("https://example.com/photo.jpg");
   });
 });

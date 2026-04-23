@@ -34,6 +34,7 @@ export {
   stripHtml,
   extractTitle,
   extractWithReadability,
+  htmlToMarkdown,
   validateUrlSafety,
   fetchUrlContent,
 } from "./fetch";
@@ -211,9 +212,24 @@ export function chunkText(text: string, maxChars: number = MAX_LLM_INPUT_CHARS):
  * to the sentence.
  */
 function splitSentences(text: string): string[] {
+  // Temporarily replace markdown image/link references so their internal
+  // dots (e.g. "image.jpg") don't trigger sentence-boundary splits.
+  const placeholders: string[] = [];
+  const shielded = text.replace(/!?\[[^\]]*\]\([^)]*\)/g, (match) => {
+    const idx = placeholders.length;
+    placeholders.push(match);
+    return `\x00MDREF${idx}\x00`;
+  });
+
   // Split after sentence-ending punctuation followed by whitespace
-  const parts = text.split(/(?<=[.!?])\s+/);
-  return parts.filter((s) => s.length > 0);
+  const parts = shielded.split(/(?<=[.!?])\s+/);
+
+  // Restore placeholders
+  return parts
+    .map((s) =>
+      s.replace(/\x00MDREF(\d+)\x00/g, (_, idx) => placeholders[Number(idx)]),
+    )
+    .filter((s) => s.length > 0);
 }
 
 // ---------------------------------------------------------------------------
