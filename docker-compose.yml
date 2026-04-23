@@ -1,0 +1,14 @@
+services:
+  wiki:
+    build: .
+    ports:
+      - "3000:3000"
+    volumes:
+      - wiki-data:/app/wiki
+      - raw-data:/app/raw
+    env_file: .env
+    restart: unless-stopped
+
+volumes:
+  wiki-data:
+  raw-data:

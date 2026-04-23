@@ -1,0 +1,15 @@
+node_modules/
+.next/
+.git/
+raw/
+wiki/
+.yoyo/
+session_plan/
+.env
+.env.local
+.llm-wiki-config.json
+tsconfig.tsbuildinfo
+timelapse.mp4
+generate_video.py
+*.md
+!SCHEMA.md
