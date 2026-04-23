@@ -361,6 +361,9 @@ export {
   updateRelatedPages,
   findBacklinks,
   searchWikiContent,
+  fuzzySearchWikiContent,
+  fuzzyMatch,
+  levenshteinDistance,
 } from "./search";
 export type { ContentSearchResult } from "./search";
 

@@ -20,6 +20,9 @@ import {
   searchWikiContent,
   findBacklinks,
   updateRelatedPages,
+  fuzzyMatch,
+  levenshteinDistance,
+  fuzzySearchWikiContent,
 } from "../search";
 
 let tmpDir: string;
@@ -385,5 +388,155 @@ describe("updateRelatedPages", () => {
 
     const p2 = await readWikiPage("page-without");
     expect(p2!.content).toContain("**See also:** [New Topic](new-topic.md)");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// levenshteinDistance
+// ---------------------------------------------------------------------------
+
+describe("levenshteinDistance", () => {
+  it("returns 0 for identical strings", () => {
+    expect(levenshteinDistance("hello", "hello")).toBe(0);
+  });
+
+  it("returns length of other string when one is empty", () => {
+    expect(levenshteinDistance("", "abc")).toBe(3);
+    expect(levenshteinDistance("abc", "")).toBe(3);
+  });
+
+  it("handles single character difference", () => {
+    expect(levenshteinDistance("cat", "bat")).toBe(1);
+  });
+
+  it("handles transposition (two edits for simple swap)", () => {
+    expect(levenshteinDistance("ab", "ba")).toBe(2);
+  });
+
+  it("computes correct distance for real typos", () => {
+    // "attnetion" vs "attention" — swap of n and t → distance 2
+    expect(levenshteinDistance("attnetion", "attention")).toBe(2);
+    // "transformer" vs "transformers" — extra s → distance 1
+    expect(levenshteinDistance("transformer", "transformers")).toBe(1);
+    // "neural" vs "neurla" — transposition → distance 2
+    expect(levenshteinDistance("neural", "neurla")).toBe(2);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// fuzzyMatch
+// ---------------------------------------------------------------------------
+
+describe("fuzzyMatch", () => {
+  it("matches 'attention' against 'attnetion' (edit distance 2, word ≥5 chars)", () => {
+    expect(fuzzyMatch("attention", "attnetion")).toBe(true);
+  });
+
+  it("matches 'transformer' against 'transformers' (edit distance 1)", () => {
+    expect(fuzzyMatch("transformer", "transformers")).toBe(true);
+  });
+
+  it("rejects 'AI' vs 'XY' (words ≤2 chars require exact match)", () => {
+    expect(fuzzyMatch("AI", "XY")).toBe(false);
+  });
+
+  it("matches 'neural' against 'neurla' (transposition)", () => {
+    expect(fuzzyMatch("neural", "neurla")).toBe(true);
+  });
+
+  it("rejects 'cat' vs 'dog' (distance 3, too high for 3-char word)", () => {
+    expect(fuzzyMatch("cat", "dog")).toBe(false);
+  });
+
+  it("matches exact strings", () => {
+    expect(fuzzyMatch("hello", "hello world")).toBe(true);
+  });
+
+  it("returns false for empty query", () => {
+    expect(fuzzyMatch("", "some text")).toBe(false);
+  });
+
+  it("returns false for empty text", () => {
+    expect(fuzzyMatch("query", "")).toBe(false);
+  });
+
+  it("requires all query words to match (multi-word)", () => {
+    expect(fuzzyMatch("neural network", "neurla networks are great")).toBe(true);
+    expect(fuzzyMatch("neural quantum", "neurla networks are great")).toBe(false);
+  });
+
+  it("respects maxDistance override", () => {
+    // "cat" vs "bat" is distance 1, but with maxDistance 0 it should fail
+    expect(fuzzyMatch("cat", "bat", 0)).toBe(false);
+    // With maxDistance 1 it should pass
+    expect(fuzzyMatch("cat", "bat", 1)).toBe(true);
+  });
+
+  it("handles short words (3-4 chars) with distance 1", () => {
+    // "map" (3 chars) → max distance 1
+    expect(fuzzyMatch("map", "mpa")).toBe(false);  // distance 2 → exceeds limit
+    expect(fuzzyMatch("map", "nap")).toBe(true);   // distance 1 → true
+    expect(fuzzyMatch("map", "xyz")).toBe(false);  // distance 3 → false
+  });
+});
+
+// ---------------------------------------------------------------------------
+// fuzzySearchWikiContent
+// ---------------------------------------------------------------------------
+
+describe("fuzzySearchWikiContent", () => {
+  it("returns exact results when enough exist", async () => {
+    await ensureDirectories();
+    await writeWikiPage("page-a", "# Alpha\n\nAttention mechanisms work well.");
+    await writeWikiPage("page-b", "# Beta\n\nAttention is key to transformers.");
+    await writeWikiPage("page-c", "# Gamma\n\nAttention layers are stacked.");
+
+    const results = await fuzzySearchWikiContent("attention");
+    expect(results.length).toBe(3);
+    // None should be flagged as fuzzy
+    expect(results.every((r) => !r.fuzzy)).toBe(true);
+  });
+
+  it("falls back to fuzzy when exact results are sparse", async () => {
+    await ensureDirectories();
+    await writeWikiPage("exact-match", "# Exact\n\nAttention is important.");
+    await writeWikiPage("typo-match", "# Typo\n\nAttnetion mechanisms are useful.");
+    await writeWikiPage("no-match", "# Unrelated\n\nSomething completely different.");
+
+    const results = await fuzzySearchWikiContent("attention");
+    // Should have 1 exact + 1 fuzzy
+    expect(results.length).toBe(2);
+    expect(results[0].slug).toBe("exact-match");
+    expect(results[0].fuzzy).toBeFalsy();
+    expect(results[1].slug).toBe("typo-match");
+    expect(results[1].fuzzy).toBe(true);
+  });
+
+  it("returns empty array for empty query", async () => {
+    await ensureDirectories();
+    const results = await fuzzySearchWikiContent("");
+    expect(results).toEqual([]);
+  });
+
+  it("does not duplicate pages in exact and fuzzy results", async () => {
+    await ensureDirectories();
+    await writeWikiPage("transformers", "# Transformers\n\nTransformer architecture details.");
+
+    const results = await fuzzySearchWikiContent("transformer");
+    const slugs = results.map((r) => r.slug);
+    // Should appear only once
+    expect(slugs.filter((s) => s === "transformers").length).toBe(1);
+  });
+
+  it("skips fuzzy for very short query terms", async () => {
+    await ensureDirectories();
+    await writeWikiPage("ai-page", "# AI\n\nArtificial intelligence overview.");
+    await writeWikiPage("xy-page", "# XY\n\nSome XY content.");
+
+    // "AI" is ≤2 chars, so fuzzy won't match "XY"
+    const results = await fuzzySearchWikiContent("AI");
+    const slugs = results.map((r) => r.slug);
+    expect(slugs).toContain("ai-page");
+    expect(slugs).not.toContain("xy-page");
   });
 });

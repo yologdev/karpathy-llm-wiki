@@ -165,6 +165,99 @@ export interface ContentSearchResult {
   summary: string;
   /** Short snippet showing the match context */
   snippet: string;
+  /** True when this result came from fuzzy (typo-tolerant) matching */
+  fuzzy?: boolean;
+}
+
+// ---------------------------------------------------------------------------
+// Fuzzy matching — Levenshtein-based typo tolerance
+// ---------------------------------------------------------------------------
+
+/**
+ * Compute the Levenshtein edit distance between two strings.
+ * Uses a simple iterative two-row approach — no dependencies.
+ */
+export function levenshteinDistance(a: string, b: string): number {
+  const m = a.length;
+  const n = b.length;
+  if (m === 0) return n;
+  if (n === 0) return m;
+
+  // Use two rows instead of full matrix for O(n) space
+  let prev = new Array<number>(n + 1);
+  let curr = new Array<number>(n + 1);
+
+  for (let j = 0; j <= n; j++) prev[j] = j;
+
+  for (let i = 1; i <= m; i++) {
+    curr[0] = i;
+    for (let j = 1; j <= n; j++) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      curr[j] = Math.min(
+        prev[j] + 1,       // deletion
+        curr[j - 1] + 1,   // insertion
+        prev[j - 1] + cost, // substitution
+      );
+    }
+    // Swap rows
+    [prev, curr] = [curr, prev];
+  }
+
+  return prev[n];
+}
+
+/**
+ * Get the maximum allowed edit distance for a word based on its length.
+ * - Words ≤ 2 chars: 0 (exact only)
+ * - Words 3–4 chars: 1
+ * - Words ≥ 5 chars: 2
+ */
+function maxDistanceForWord(word: string): number {
+  if (word.length <= 2) return 0;
+  if (word.length <= 4) return 1;
+  return 2;
+}
+
+/**
+ * Check if a query fuzzy-matches the given text.
+ *
+ * For each word in the query, checks if any word in the text is within
+ * the allowed edit distance. All query words must match for the overall
+ * result to be true.
+ *
+ * @param query - The search query (may contain multiple words)
+ * @param text - The text to search in
+ * @param maxDistance - Override the per-word distance threshold (optional)
+ * @returns true if every query word fuzzy-matches at least one text word
+ */
+export function fuzzyMatch(
+  query: string,
+  text: string,
+  maxDistance?: number,
+): boolean {
+  const queryWords = query
+    .toLowerCase()
+    .split(/\s+/)
+    .filter((w) => w.length > 0);
+  const textWords = text
+    .toLowerCase()
+    .split(/\s+/)
+    .filter((w) => w.length > 0);
+
+  if (queryWords.length === 0) return false;
+  if (textWords.length === 0) return false;
+
+  for (const qw of queryWords) {
+    const threshold = maxDistance ?? maxDistanceForWord(qw);
+    // If threshold is 0, we need exact match
+    if (threshold === 0) {
+      if (!textWords.some((tw) => tw === qw)) return false;
+    } else {
+      if (!textWords.some((tw) => levenshteinDistance(qw, tw) <= threshold)) return false;
+    }
+  }
+
+  return true;
 }
 
 /**
@@ -265,4 +358,108 @@ export async function searchWikiContent(
   scored.sort((a, b) => b.score - a.score || a.title.localeCompare(b.title));
 
   return scored.slice(0, maxResults);
+}
+
+// ---------------------------------------------------------------------------
+// Fuzzy content search — falls back to fuzzy when exact returns few results
+// ---------------------------------------------------------------------------
+
+/** Minimum exact results before fuzzy fallback kicks in */
+const FUZZY_FALLBACK_THRESHOLD = 3;
+
+/**
+ * Search wiki page content, falling back to fuzzy matching when exact
+ * matching returns fewer than 3 results.
+ *
+ * Exact matches are returned first (without the fuzzy flag). Fuzzy matches
+ * are appended after with `fuzzy: true`. Duplicates are removed.
+ */
+export async function fuzzySearchWikiContent(
+  query: string,
+  maxResults = 10,
+): Promise<ContentSearchResult[]> {
+  // Start with exact search
+  const exactResults = await searchWikiContent(query, maxResults);
+
+  // If we have enough exact results, just return them
+  if (exactResults.length >= FUZZY_FALLBACK_THRESHOLD) {
+    return exactResults;
+  }
+
+  // Fall back to fuzzy matching for additional results
+  const terms = query
+    .toLowerCase()
+    .split(/\s+/)
+    .filter((t) => t.length > 0);
+  if (terms.length === 0) return exactResults;
+
+  // Don't bother with fuzzy if all terms are too short
+  if (terms.every((t) => t.length <= 2)) return exactResults;
+
+  const wikiDir = getWikiDir();
+  let files: string[];
+  try {
+    files = await fs.readdir(wikiDir);
+  } catch (err) {
+    if (!isEnoent(err)) {
+      console.warn("[wiki] fuzzySearchWikiContent failed to read wiki directory:", err);
+    }
+    return exactResults;
+  }
+
+  const SKIP = new Set(["index.md", "log.md"]);
+  const exactSlugs = new Set(exactResults.map((r) => r.slug));
+
+  const fuzzyResults: ContentSearchResult[] = [];
+
+  for (const file of files) {
+    if (!file.endsWith(".md") || SKIP.has(file)) continue;
+    const slug = file.replace(/\.md$/, "");
+
+    // Skip pages already in exact results
+    if (exactSlugs.has(slug)) continue;
+
+    let content: string;
+    try {
+      content = await fs.readFile(path.join(wikiDir, file), "utf-8");
+    } catch {
+      continue;
+    }
+
+    if (!fuzzyMatch(query, content)) continue;
+
+    // Extract title from first heading or slug
+    const titleMatch = content.match(/^#\s+(.+)$/m);
+    const title = titleMatch ? titleMatch[1].trim() : slug;
+
+    // Extract summary
+    const parsed = parseFrontmatter(content);
+    const body = parsed.body;
+    const summaryLine = body
+      .replace(/^#\s+.+$/m, "")
+      .trim()
+      .split("\n")
+      .find((l) => l.trim().length > 0);
+    const summary = summaryLine
+      ? summaryLine.trim().slice(0, 120) + (summaryLine.length > 120 ? "…" : "")
+      : "";
+
+    // For fuzzy results, use the beginning of the page as snippet
+    const snippetText = body
+      .replace(/^#\s+.+$/m, "")
+      .trim()
+      .slice(0, 120)
+      .replace(/\n/g, " ")
+      .trim();
+    const snippet = snippetText + (snippetText.length >= 120 ? "…" : "");
+
+    fuzzyResults.push({ slug, title, summary, snippet, fuzzy: true });
+  }
+
+  // Sort fuzzy results alphabetically by title
+  fuzzyResults.sort((a, b) => a.title.localeCompare(b.title));
+
+  // Combine: exact first, then fuzzy to fill up to maxResults
+  const remaining = maxResults - exactResults.length;
+  return [...exactResults, ...fuzzyResults.slice(0, remaining)];
 }

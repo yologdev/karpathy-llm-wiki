@@ -8,6 +8,8 @@ interface SearchNode {
   label: string;
   /** If present, this is a content match with a snippet */
   snippet?: string;
+  /** True when this result came from fuzzy matching */
+  fuzzy?: boolean;
 }
 
 const MAX_RESULTS = 8;
@@ -72,10 +74,11 @@ export function GlobalSearch() {
         if (Array.isArray(data.results)) {
           setContentResults(
             data.results.map(
-              (r: { slug: string; title: string; snippet: string }) => ({
+              (r: { slug: string; title: string; snippet: string; fuzzy?: boolean }) => ({
                 id: r.slug,
                 label: r.title,
                 snippet: r.snippet,
+                fuzzy: r.fuzzy,
               }),
             ),
           );
@@ -293,7 +296,14 @@ export function GlobalSearch() {
                     navigate(page.id);
                   }}
                 >
-                  <div>{page.label}</div>
+                  <div className="flex items-center gap-1.5">
+                    <span>{page.label}</span>
+                    {page.fuzzy && (
+                      <span className="text-[10px] text-foreground/30 italic whitespace-nowrap">
+                        (fuzzy match)
+                      </span>
+                    )}
+                  </div>
                   {page.snippet && (
                     <div className="text-xs text-foreground/40 mt-0.5 truncate">
                       {page.snippet}

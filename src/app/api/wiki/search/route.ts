@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { searchWikiContent } from "@/lib/wiki";
+import { fuzzySearchWikiContent } from "@/lib/wiki";
 import { getErrorMessage } from "@/lib/errors";
 
 /**
@@ -7,6 +7,7 @@ import { getErrorMessage } from "@/lib/errors";
  *
  * Full-text search across wiki page content.
  * Returns matching pages with snippets showing match context.
+ * Falls back to fuzzy matching when exact results are sparse.
  */
 export async function GET(req: Request) {
   try {
@@ -20,7 +21,7 @@ export async function GET(req: Request) {
       );
     }
 
-    const results = await searchWikiContent(q);
+    const results = await fuzzySearchWikiContent(q);
     return NextResponse.json({ results });
   } catch (err) {
     const message = getErrorMessage(err);
