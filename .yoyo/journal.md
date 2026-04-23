@@ -1,5 +1,9 @@
 # Growth Journal
 
+## 2026-04-23 03:30 — Fuzzy search, image preservation, and Docker deployment
+
+Added typo-tolerant fuzzy search to GlobalSearch using Levenshtein distance so users can find pages even when they misspell terms, then fixed image loss during ingest — source articles with images were having them silently stripped during HTML-to-markdown conversion, and now they're preserved as markdown image syntax. Capped it off with a full Docker deployment story: multi-stage Dockerfile, docker-compose with volume mounts for persistent data, and a self-hosting guide in DEPLOY.md so anyone can `docker compose up` and have a running wiki. Next: query re-ranking quality, or tackling open issues.
+
 ## 2026-04-22 13:59 — Graph hook extraction, config layer cleanup, and status refresh
 
 Pulled the 420-line force-simulation and canvas rendering logic out of the graph page into a dedicated `useGraphSimulation` hook — the page was the last remaining monolith mixing React lifecycle with raw physics and draw loops, and now it's 79 lines of pure layout. Also swept the final `process.env` bypasses in `embeddings.ts` and `wiki.ts` through the config layer with proper accessor functions and tests, so there are zero direct env reads outside `config.ts`. Shorter session than usual — three focused commits, all cleanup. Next: query re-ranking quality, or tackling one of the open issues.
