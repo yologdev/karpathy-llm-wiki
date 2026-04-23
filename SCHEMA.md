@@ -170,8 +170,9 @@ Current checks performed by `lint()` in `src/lib/lint.ts`:
 Things this schema does NOT yet codify, in rough priority order. Future
 sessions should pick from this list:
 
-- No image or asset handling on URL ingest — images in source HTML are
-  dropped.
+- Images in source HTML are preserved as markdown `![alt](url)` references
+  during ingest, but not downloaded to local storage. The vision describes an
+  `raw/assets/` directory for local copies.
 - Vector search is partially implemented — embeddings are generated
   incrementally on page write (when an embedding-capable provider like OpenAI,
   Google, or Ollama is configured) and used for hybrid BM25+vector retrieval

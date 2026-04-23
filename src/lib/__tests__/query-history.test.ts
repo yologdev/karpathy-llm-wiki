@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import fs from "fs/promises";
 import os from "os";
 import path from "path";
@@ -129,12 +129,14 @@ describe("listQueries", () => {
   });
 
   it("handles malformed JSON file gracefully", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     const wikiDir = path.join(tmpDir, "wiki");
     await fs.mkdir(wikiDir, { recursive: true });
     await fs.writeFile(path.join(wikiDir, "query-history.json"), "not json!", "utf-8");
 
     const entries = await listQueries();
     expect(entries).toEqual([]);
+    warnSpy.mockRestore();
   });
 });
 
