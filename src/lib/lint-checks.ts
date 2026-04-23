@@ -1,7 +1,7 @@
 import fs from "fs/promises";
 import { readWikiPage } from "./wiki";
 import { hasLLMKey, callLLM } from "./llm";
-import { loadPageConventions } from "./ingest";
+import { loadPageConventions } from "./schema";
 import { extractWikiLinks } from "./links";
 import type { LintIssue } from "./types";
 

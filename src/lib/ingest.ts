@@ -1,5 +1,3 @@
-import { readFile } from "fs/promises";
-import path from "path";
 import {
   saveRawSource,
   writeWikiPageWithSideEffects,
@@ -16,7 +14,7 @@ import {
   MAX_LLM_INPUT_CHARS,
 } from "./constants";
 import { slugify } from "./slugify";
-import { isEnoent } from "./errors";
+import { loadPageConventions } from "./schema";
 
 // Re-exported so existing imports (and the test suite) keep working after we
 // moved the cross-ref helpers into wiki.ts to avoid a circular dependency
@@ -26,6 +24,10 @@ export { findRelatedPages, updateRelatedPages } from "./wiki";
 
 // Re-export slugify so existing `import { slugify } from "./ingest"` keeps working.
 export { slugify } from "./slugify";
+
+// Re-export loadPageConventions so existing `import { loadPageConventions } from "./ingest"` keeps working
+// after the extraction into schema.ts.
+export { loadPageConventions } from "./schema";
 
 // Re-export URL-fetching helpers so existing `import { … } from "./ingest"` keeps working
 // after the extraction into fetch.ts.
@@ -258,47 +260,6 @@ const CONTINUATION_SYSTEM_PROMPT = `You are a wiki editor. You have already star
 Add new key points, concepts, and details from the additional source material. Do NOT repeat the title, summary, or any content already in the article. Only output the new sections or bullet points to append.
 
 Output pure markdown and nothing else. Do not wrap in code fences.`;
-
-/**
- * Read the "Page conventions" section out of SCHEMA.md at repo root so the
- * ingest prompt can include it verbatim. This makes SCHEMA.md the source of
- * truth — change the doc, change ingest behavior on the next call.
- *
- * Extracts from the `## Page conventions` heading up to (but not including)
- * the next `## ` heading. Returns empty string if SCHEMA.md is missing or
- * the section can't be found, so ingest degrades gracefully rather than
- * crashing on a fresh clone.
- *
- * Accepts an optional `schemaPath` override for tests; defaults to
- * `<cwd>/SCHEMA.md`.
- */
-export async function loadPageConventions(
-  schemaPath?: string,
-): Promise<string> {
-  try {
-    const resolved = schemaPath ?? path.join(process.cwd(), "SCHEMA.md");
-    const schema = await readFile(resolved, "utf-8");
-    const startIdx = schema.indexOf("## Page conventions");
-    if (startIdx === -1) return "";
-    const afterStart = schema.slice(startIdx);
-    // Find the next top-level section heading after the Page conventions one
-    const nextHeadingMatch = afterStart
-      .slice("## Page conventions".length)
-      .match(/\n## /);
-    const section = nextHeadingMatch
-      ? afterStart.slice(
-          0,
-          "## Page conventions".length + nextHeadingMatch.index!,
-        )
-      : afterStart;
-    return section.trim();
-  } catch (err) {
-    if (!isEnoent(err)) {
-      console.warn("[ingest] load page conventions failed:", err);
-    }
-    return "";
-  }
-}
 
 /**
  * Build the ingest system prompt by composing the base prompt with the

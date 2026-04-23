@@ -5,7 +5,8 @@ import {
   writeWikiPageWithSideEffects,
   withPageCache,
 } from "./wiki";
-import { slugify, loadPageConventions, extractSummary } from "./ingest";
+import { slugify, extractSummary } from "./ingest";
+import { loadPageConventions } from "./schema";
 import { extractCitedSlugs } from "./citations";
 import { searchByVector } from "./embeddings";
 import { serializeFrontmatter } from "./frontmatter";
