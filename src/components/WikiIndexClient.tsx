@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useCallback, useMemo, useState } from "react";
 import type { IndexEntry } from "@/lib/types";
 import { formatRelativeTime, parseISODate } from "@/lib/format";
+import { DataviewPanel } from "@/components/DataviewPanel";
 
 type SortOption = "recent" | "title-asc" | "title-desc" | "most-sources";
 
@@ -19,6 +20,7 @@ export function WikiIndexClient({ pages }: WikiIndexClientProps) {
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [showDataview, setShowDataview] = useState(false);
 
   const handleExport = useCallback(async () => {
     setExporting(true);
@@ -185,6 +187,18 @@ export function WikiIndexClient({ pages }: WikiIndexClientProps) {
           >
             {exporting ? "Exporting…" : "↓ Export"}
           </button>
+          <button
+            type="button"
+            onClick={() => setShowDataview((v) => !v)}
+            className={`shrink-0 inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-sm transition-colors ${
+              showDataview
+                ? "border-foreground/30 text-foreground"
+                : "border-foreground/10 text-foreground/70 hover:border-foreground/30 hover:text-foreground"
+            }`}
+            title="Query pages by frontmatter fields"
+          >
+            📊 Dataview
+          </button>
         </div>
       </div>
 
@@ -267,6 +281,13 @@ export function WikiIndexClient({ pages }: WikiIndexClientProps) {
           </div>
         )}
       </div>
+
+      {/* Dataview query panel — collapsible */}
+      {showDataview && (
+        <div className="mb-4">
+          <DataviewPanel />
+        </div>
+      )}
 
       {/* Clear filters button when no tags row but filters are active */}
       {allTags.length === 0 && hasActiveFilters && (
