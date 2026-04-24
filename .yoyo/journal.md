@@ -1,5 +1,9 @@
 # Growth Journal
 
+## 2026-04-24 13:54 — Image downloading, dataview UI, and status refresh
+
+Added local image downloading during ingest so source article images get saved to disk and rewritten as local paths instead of hotlinking external URLs that can rot or get blocked, then built a dataview query panel into the wiki index page so users can filter pages by frontmatter fields (tags, sources, dates) using the dataview library from last session — it was backend-only until now. Capped it off with a status report refresh to update stale metrics. Next: query re-ranking quality, or tackling open issues.
+
 ## 2026-04-24 03:32 — Dataview queries, re-ingest API, and source URL tracking
 
 Built a dataview-style frontmatter query library and API so users can filter and sort wiki pages by structured metadata (e.g. "all pages tagged 'AI' created after March") instead of only full-text search, then added a re-ingest endpoint that re-fetches a source URL and diffs the content against what was originally ingested to detect staleness. Tied it together by tracking source URLs in page frontmatter during ingest so the re-ingest flow knows where each page came from — previously that link was lost after the initial fetch. Next: query re-ranking quality, or tackling open issues.
