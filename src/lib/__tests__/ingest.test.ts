@@ -308,8 +308,114 @@ describe("ingest — YAML frontmatter", () => {
 });
 
 // ---------------------------------------------------------------------------
-// isUrl
+// ingest — source URL tracking in frontmatter
 // ---------------------------------------------------------------------------
+
+describe("ingest — source URL tracking", () => {
+  it("stores source_url in frontmatter when sourceUrl option is provided", async () => {
+    const result = await ingest("Url Source Test", "Content from a URL. Some text.", {
+      sourceUrl: "https://example.com/article",
+    });
+
+    expect(result.sourceUrl).toBe("https://example.com/article");
+
+    const { readWikiPageWithFrontmatter } = await import("../wiki");
+    const page = await readWikiPageWithFrontmatter("url-source-test");
+    expect(page).not.toBeNull();
+    expect(page!.frontmatter.source_url).toBe("https://example.com/article");
+  });
+
+  it("does NOT add source_url when no sourceUrl option is provided (text paste)", async () => {
+    await ingest("Plain Text Paste", "Just some pasted text. Nothing special.");
+
+    const { readWikiPageWithFrontmatter } = await import("../wiki");
+    const page = await readWikiPageWithFrontmatter("plain-text-paste");
+    expect(page).not.toBeNull();
+    // source_url should be absent from the frontmatter
+    expect(page!.frontmatter.source_url).toBeUndefined();
+  });
+
+  it("preserves existing source_url on re-ingest without a new URL", async () => {
+    // First ingest with a URL
+    await ingest("Reingest Url", "First version content. Details here.", {
+      sourceUrl: "https://example.com/original",
+    });
+
+    const { readWikiPageWithFrontmatter } = await import("../wiki");
+    const first = await readWikiPageWithFrontmatter("reingest-url");
+    expect(first).not.toBeNull();
+    expect(first!.frontmatter.source_url).toBe("https://example.com/original");
+
+    // Re-ingest the same slug WITHOUT providing a sourceUrl (e.g. text paste update)
+    await ingest("Reingest Url", "Second version content. Updated details.");
+
+    const second = await readWikiPageWithFrontmatter("reingest-url");
+    expect(second).not.toBeNull();
+    // The original source_url should be preserved
+    expect(second!.frontmatter.source_url).toBe("https://example.com/original");
+  });
+
+  it("overwrites source_url on re-ingest with a new URL", async () => {
+    // First ingest with a URL
+    await ingest("Reingest New Url", "First content. Has details.", {
+      sourceUrl: "https://example.com/v1",
+    });
+
+    // Re-ingest with a different URL
+    await ingest("Reingest New Url", "Updated content. More details.", {
+      sourceUrl: "https://example.com/v2",
+    });
+
+    const { readWikiPageWithFrontmatter } = await import("../wiki");
+    const page = await readWikiPageWithFrontmatter("reingest-new-url");
+    expect(page).not.toBeNull();
+    expect(page!.frontmatter.source_url).toBe("https://example.com/v2");
+  });
+
+  it("ingestUrl passes the URL through to frontmatter", async () => {
+    // Mock fetch so ingestUrl doesn't make a real HTTP request
+    const originalFetch = global.fetch;
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      headers: new Map([
+        ["content-type", "text/html"],
+      ]) as unknown as Headers,
+      body: {
+        getReader: () => {
+          let called = false;
+          return {
+            read: () => {
+              if (!called) {
+                called = true;
+                return Promise.resolve({
+                  done: false,
+                  value: new TextEncoder().encode(
+                    "<html><head><title>Fetched Article</title></head><body><p>Article body content. A full sentence.</p></body></html>",
+                  ),
+                });
+              }
+              return Promise.resolve({ done: true, value: undefined });
+            },
+            cancel: vi.fn(),
+          };
+        },
+      },
+    });
+
+    try {
+      const result = await ingestUrl("https://example.com/fetched-article");
+      expect(result.sourceUrl).toBe("https://example.com/fetched-article");
+
+      const { readWikiPageWithFrontmatter } = await import("../wiki");
+      const page = await readWikiPageWithFrontmatter(result.primarySlug);
+      expect(page).not.toBeNull();
+      expect(page!.frontmatter.source_url).toBe("https://example.com/fetched-article");
+    } finally {
+      global.fetch = originalFetch;
+    }
+  });
+});
 
 describe("isUrl", () => {
   it("recognizes http URLs", () => {

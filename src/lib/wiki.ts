@@ -285,11 +285,17 @@ export async function listWikiPages(): Promise<IndexEntry[]> {
           ? sourceCountNum
           : undefined;
 
+        const sourceUrl =
+          typeof fm.source_url === "string" && fm.source_url.length > 0
+            ? fm.source_url
+            : undefined;
+
         return {
           ...entry,
           ...(tags && tags.length > 0 ? { tags } : {}),
           ...(updated ? { updated } : {}),
           ...(sourceCount !== undefined ? { sourceCount } : {}),
+          ...(sourceUrl ? { sourceUrl } : {}),
         };
       } catch (err) {
         console.warn(

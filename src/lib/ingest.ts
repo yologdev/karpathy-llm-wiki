@@ -52,7 +52,7 @@ export async function ingestUrl(
   options?: IngestOptions,
 ): Promise<IngestResult> {
   const { title, content } = await fetchUrlContent(url);
-  return ingest(title, content, options);
+  return ingest(title, content, { ...options, sourceUrl: url });
 }
 
 // ---------------------------------------------------------------------------
@@ -297,6 +297,11 @@ export interface IngestOptions {
    * avoids paying for the LLM call twice (once for preview, once for commit).
    */
   generatedContent?: string;
+  /**
+   * Original source URL. Set automatically by `ingestUrl()` so the URL is
+   * persisted in the wiki page's frontmatter as `source_url`.
+   */
+  sourceUrl?: string;
 }
 
 /**
@@ -378,6 +383,7 @@ export async function ingest(
       wikiPages: [slug, ...relatedSlugs],
       indexUpdated: false,
       previewContent: wikiContent,
+      ...(options?.sourceUrl ? { sourceUrl: options.sourceUrl } : {}),
     };
   }
 
@@ -398,6 +404,11 @@ export async function ingest(
     tags: [],
   };
 
+  // Persist the original source URL when provided (URL-based ingest).
+  if (options?.sourceUrl) {
+    frontmatter.source_url = options.sourceUrl;
+  }
+
   const existing = await readWikiPageWithFrontmatter(slug);
   if (existing) {
     const existingCreated = existing.frontmatter.created;
@@ -412,6 +423,14 @@ export async function ingest(
     );
     if (Array.isArray(existing.frontmatter.tags)) {
       frontmatter.tags = existing.frontmatter.tags;
+    }
+    // Preserve existing source_url if the new ingest doesn't provide one.
+    if (
+      !frontmatter.source_url &&
+      typeof existing.frontmatter.source_url === "string" &&
+      existing.frontmatter.source_url !== ""
+    ) {
+      frontmatter.source_url = existing.frontmatter.source_url;
     }
   }
 
@@ -437,5 +456,6 @@ export async function ingest(
     relatedUpdated: updatedSlugs,
     wikiPages: [slug, ...updatedSlugs],
     indexUpdated: true,
+    ...(options?.sourceUrl ? { sourceUrl: options.sourceUrl } : {}),
   };
 }

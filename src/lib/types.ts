@@ -18,6 +18,8 @@ export interface IndexEntry {
   updated?: string;
   /** Number of raw sources this page was built from. */
   sourceCount?: number;
+  /** Original source URL (from URL-based ingest). */
+  sourceUrl?: string;
 }
 
 /** Result returned after ingesting a source document. */
@@ -38,6 +40,8 @@ export interface IngestResult {
    * written to disk. Absent during a normal (non-preview) ingest.
    */
   previewContent?: string;
+  /** The original source URL, if the ingest was URL-based. */
+  sourceUrl?: string;
 }
 
 /** Result from a query against the wiki. */
