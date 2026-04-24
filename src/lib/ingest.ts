@@ -8,13 +8,14 @@ import {
   type Frontmatter,
 } from "./wiki";
 import { callLLM, hasLLMKey } from "./llm";
-import { fetchUrlContent } from "./fetch";
+import { fetchUrlContent, downloadImages } from "./fetch";
 import type { IngestResult } from "./types";
 import {
   MAX_LLM_INPUT_CHARS,
 } from "./constants";
 import { slugify } from "./slugify";
 import { loadPageConventions } from "./schema";
+import { getRawDir } from "./config";
 
 // Re-exported so existing imports (and the test suite) keep working after we
 // moved the cross-ref helpers into wiki.ts to avoid a circular dependency
@@ -39,6 +40,7 @@ export {
   htmlToMarkdown,
   validateUrlSafety,
   fetchUrlContent,
+  downloadImages,
 } from "./fetch";
 
 /**
@@ -51,7 +53,10 @@ export async function ingestUrl(
   url: string,
   options?: IngestOptions,
 ): Promise<IngestResult> {
-  const { title, content } = await fetchUrlContent(url);
+  const { title, content: rawContent } = await fetchUrlContent(url);
+  // Download images referenced in the fetched content to local storage
+  const slug = slugify(title);
+  const content = await downloadImages(rawContent, slug, getRawDir());
   return ingest(title, content, { ...options, sourceUrl: url });
 }
 
@@ -74,7 +79,8 @@ export async function reingest(slug: string): Promise<IngestResult> {
     throw new Error("Cannot re-ingest: no source URL recorded");
   }
 
-  const { title, content } = await fetchUrlContent(sourceUrl);
+  const { title, content: rawContent } = await fetchUrlContent(sourceUrl);
+  const content = await downloadImages(rawContent, slug, getRawDir());
   return ingest(title, content, { sourceUrl });
 }
 

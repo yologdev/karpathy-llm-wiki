@@ -1,0 +1,2 @@
+Verdict: PASS
+Reason: All task requirements are met — DataviewPanel has filter builder (field/op/value rows with add/remove), sort controls, limit input, run button calling the correct API, results table with linked slugs and dynamic frontmatter columns, and inline error display. Integration in WikiIndexClient uses a `showDataview` toggle button placed alongside existing controls, rendering the panel between filters and the page list. Types match the server-side API contract, and build/lint/tests pass.

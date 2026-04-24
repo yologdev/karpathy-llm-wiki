@@ -983,3 +983,220 @@ describe("extractWithReadability — images", () => {
     expect(md).toContain("https://example.com/photo.jpg");
   });
 });
+
+// ---------------------------------------------------------------------------
+// downloadImages
+// ---------------------------------------------------------------------------
+
+import { downloadImages } from "../fetch";
+import fs from "fs/promises";
+import path from "path";
+import os from "os";
+
+describe("downloadImages", () => {
+  let tmpDir: string;
+
+  async function setup(): Promise<string> {
+    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "fetch-test-"));
+    return tmpDir;
+  }
+
+  afterEach(async () => {
+    if (tmpDir) {
+      await fs.rm(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it("rewrites absolute image URLs to local paths", async () => {
+    const rawDir = await setup();
+    const pngBytes = new Uint8Array([0x89, 0x50, 0x4e, 0x47]); // PNG magic
+
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response(pngBytes, {
+        status: 200,
+        headers: { "content-type": "image/png" },
+      }),
+    );
+
+    const md = "Some text\n![Photo](https://example.com/photo.png)\nMore text";
+    const result = await downloadImages(md, "test-page", rawDir);
+
+    expect(result).toContain("![Photo](assets/test-page/photo.png)");
+    expect(result).not.toContain("https://example.com/photo.png");
+
+    // Verify file was written
+    const filePath = path.join(rawDir, "assets", "test-page", "photo.png");
+    const stat = await fs.stat(filePath);
+    expect(stat.size).toBe(pngBytes.length);
+  });
+
+  it("skips data URIs", async () => {
+    const rawDir = await setup();
+
+    const md = "![Icon](data:image/png;base64,iVBOR...)";
+    const result = await downloadImages(md, "test-page", rawDir);
+
+    expect(result).toBe(md); // unchanged
+  });
+
+  it("skips relative paths", async () => {
+    const rawDir = await setup();
+
+    const md = "![Local](images/photo.png)\n![Root](/assets/img.jpg)";
+    const result = await downloadImages(md, "test-page", rawDir);
+
+    expect(result).toBe(md); // unchanged
+  });
+
+  it("handles download failures gracefully (keeps original URL)", async () => {
+    const rawDir = await setup();
+
+    vi.spyOn(globalThis, "fetch").mockRejectedValueOnce(
+      new Error("Network error"),
+    );
+
+    const md = "![Broken](https://example.com/broken.png)";
+    const result = await downloadImages(md, "test-page", rawDir);
+
+    expect(result).toBe(md); // original URL preserved
+  });
+
+  it("keeps original URL on non-200 status", async () => {
+    const rawDir = await setup();
+
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response("Not Found", {
+        status: 404,
+        headers: { "content-type": "text/html" },
+      }),
+    );
+
+    const md = "![Missing](https://example.com/missing.png)";
+    const result = await downloadImages(md, "test-page", rawDir);
+
+    expect(result).toBe(md);
+  });
+
+  it("keeps original URL for non-image content-type", async () => {
+    const rawDir = await setup();
+
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response("<html>page</html>", {
+        status: 200,
+        headers: { "content-type": "text/html" },
+      }),
+    );
+
+    const md = "![Page](https://example.com/page.png)";
+    const result = await downloadImages(md, "test-page", rawDir);
+
+    expect(result).toBe(md);
+  });
+
+  it("limits to 20 images max", async () => {
+    const rawDir = await setup();
+    const pngBytes = new Uint8Array([0x89, 0x50, 0x4e, 0x47]);
+
+    // Create markdown with 25 images
+    const lines: string[] = [];
+    for (let i = 0; i < 25; i++) {
+      lines.push(`![img${i}](https://example.com/img${i}.png)`);
+    }
+    const md = lines.join("\n");
+
+    const mockFetch = vi.spyOn(globalThis, "fetch");
+    // Each call returns a valid image
+    for (let i = 0; i < 20; i++) {
+      mockFetch.mockResolvedValueOnce(
+        new Response(pngBytes, {
+          status: 200,
+          headers: { "content-type": "image/png" },
+        }),
+      );
+    }
+
+    const result = await downloadImages(md, "test-page", rawDir);
+
+    // Only 20 fetch calls should have been made
+    expect(mockFetch).toHaveBeenCalledTimes(20);
+
+    // First 20 should be rewritten, last 5 should still be original URLs
+    for (let i = 0; i < 20; i++) {
+      expect(result).toContain(`assets/test-page/img${i}.png`);
+    }
+    for (let i = 20; i < 25; i++) {
+      expect(result).toContain(`https://example.com/img${i}.png`);
+    }
+  });
+
+  it("sanitizes filenames — strips query params", async () => {
+    const rawDir = await setup();
+    const pngBytes = new Uint8Array([0x89, 0x50, 0x4e, 0x47]);
+
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response(pngBytes, {
+        status: 200,
+        headers: { "content-type": "image/png" },
+      }),
+    );
+
+    const md = "![Q](https://example.com/photo.png?width=200&format=webp)";
+    const result = await downloadImages(md, "test-page", rawDir);
+
+    expect(result).toContain("assets/test-page/photo.png");
+    expect(result).not.toContain("?");
+  });
+
+  it("sanitizes filenames — prevents path traversal", async () => {
+    const rawDir = await setup();
+    const pngBytes = new Uint8Array([0x89, 0x50, 0x4e, 0x47]);
+
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response(pngBytes, {
+        status: 200,
+        headers: { "content-type": "image/png" },
+      }),
+    );
+
+    const md = "![Evil](https://example.com/../../etc/passwd.png)";
+    const result = await downloadImages(md, "test-page", rawDir);
+
+    // Should not contain path traversal
+    expect(result).not.toContain("..");
+    expect(result).toContain("assets/test-page/");
+  });
+
+  it("deduplicates filenames with counter suffix", async () => {
+    const rawDir = await setup();
+    const pngBytes = new Uint8Array([0x89, 0x50, 0x4e, 0x47]);
+
+    const mockFetch = vi.spyOn(globalThis, "fetch");
+    mockFetch.mockResolvedValueOnce(
+      new Response(pngBytes, {
+        status: 200,
+        headers: { "content-type": "image/png" },
+      }),
+    );
+    mockFetch.mockResolvedValueOnce(
+      new Response(pngBytes, {
+        status: 200,
+        headers: { "content-type": "image/png" },
+      }),
+    );
+
+    const md = "![A](https://example.com/photo.png)\n![B](https://cdn.example.com/photo.png)";
+    const result = await downloadImages(md, "test-page", rawDir);
+
+    expect(result).toContain("assets/test-page/photo.png");
+    expect(result).toContain("assets/test-page/photo-1.png");
+  });
+
+  it("returns markdown unchanged when no images present", async () => {
+    const rawDir = await setup();
+
+    const md = "Just some text with [a link](https://example.com) but no images.";
+    const result = await downloadImages(md, "test-page", rawDir);
+
+    expect(result).toBe(md);
+  });
+});

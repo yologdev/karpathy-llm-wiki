@@ -59,17 +59,23 @@ ordered sequence of steps, a set of file outputs, and a log entry shape.
 - **Steps:**
   1. If input is a URL, fetch and clean it (Readability + linkedom; see
      `fetchUrlContent()` in `src/lib/ingest.ts`).
-  2. Save the cleaned content to `raw/<slug>.md` via `saveRawSource()`.
-  3. Generate a wiki page (LLM if a key is configured, otherwise a deterministic
+  2. For URL ingests, download images referenced in the markdown content to
+     `raw/assets/<slug>/` via `downloadImages()` in `src/lib/fetch.ts`. Image
+     URLs are rewritten to local relative paths. At most 20 images per source;
+     failures are logged but do not block the ingest. Text-paste ingests skip
+     this step.
+  3. Save the cleaned content to `raw/<slug>.md` via `saveRawSource()`.
+  4. Generate a wiki page (LLM if a key is configured, otherwise a deterministic
      fallback) and write it to `wiki/<slug>.md` via `writeWikiPage()`.
-  4. Update `wiki/index.md` via `updateIndex()` — insert or refresh the entry
+  5. Update `wiki/index.md` via `updateIndex()` — insert or refresh the entry
      for this slug.
-  5. Find related pages by entity/keyword overlap with `findRelatedPages()`
+  6. Find related pages by entity/keyword overlap with `findRelatedPages()`
      and append a cross-reference back to the new page on each one via
      `updateRelatedPages()`.
-  6. Append a log entry via `appendToLog("ingest", title, …)`.
-- **Outputs:** `raw/<slug>.md`, `wiki/<slug>.md`, `wiki/index.md`, possibly
-  several `wiki/<other>.md` files (one per related page), and `wiki/log.md`.
+  7. Append a log entry via `appendToLog("ingest", title, …)`.
+- **Outputs:** `raw/<slug>.md`, `raw/assets/<slug>/*` (downloaded images),
+  `wiki/<slug>.md`, `wiki/index.md`, possibly several `wiki/<other>.md` files
+  (one per related page), and `wiki/log.md`.
 - **Log entry:** `## [YYYY-MM-DD] ingest | <Title>`
 
 ### Query
@@ -170,9 +176,6 @@ Current checks performed by `lint()` in `src/lib/lint.ts`:
 Things this schema does NOT yet codify, in rough priority order. Future
 sessions should pick from this list:
 
-- Images in source HTML are preserved as markdown `![alt](url)` references
-  during ingest, but not downloaded to local storage. The vision describes an
-  `raw/assets/` directory for local copies.
 - Vector search is partially implemented — embeddings are generated
   incrementally on page write (when an embedding-capable provider like OpenAI,
   Google, or Ollama is configured) and used for hybrid BM25+vector retrieval

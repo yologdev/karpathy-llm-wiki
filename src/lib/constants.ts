@@ -25,6 +25,9 @@ export const FETCH_TIMEOUT_MS = 15_000;
  */
 export const MAX_LLM_INPUT_CHARS = 12_000;
 
+/** Maximum number of images to download per source during ingest. */
+export const MAX_IMAGES_PER_SOURCE = 20;
+
 // ---- Batch ingest ---------------------------------------------------------
 
 /** Maximum number of URLs accepted in a single batch-ingest request. */

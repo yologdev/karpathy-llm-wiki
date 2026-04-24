@@ -1,10 +1,13 @@
 import net from "net";
+import fs from "fs/promises";
+import path from "path";
 import { Readability } from "@mozilla/readability";
 import { parseHTML } from "linkedom";
 import {
   MAX_RESPONSE_SIZE,
   MAX_CONTENT_LENGTH,
   FETCH_TIMEOUT_MS,
+  MAX_IMAGES_PER_SOURCE,
 } from "./constants";
 
 // ---------------------------------------------------------------------------
@@ -556,4 +559,152 @@ export async function fetchUrlContent(
   }
 
   return { title, content };
+}
+
+// ---------------------------------------------------------------------------
+// Image downloading
+// ---------------------------------------------------------------------------
+
+/** Regex matching markdown image references: ![alt](url) */
+const MD_IMAGE_RE = /!\[([^\]]*)\]\(([^)]+)\)/g;
+
+/**
+ * Sanitise a URL-derived filename: strip query/hash, prevent path traversal,
+ * and ensure it has a reasonable extension.
+ */
+function sanitizeImageFilename(rawUrl: string): string {
+  let urlPath: string;
+  try {
+    urlPath = new URL(rawUrl).pathname;
+  } catch {
+    // Not a valid URL — fallback to the raw string
+    urlPath = rawUrl;
+  }
+
+  // Take only the last path segment
+  let name = urlPath.split("/").pop() || "image";
+
+  // Remove any query params or hash that slipped through
+  name = name.split("?")[0].split("#")[0];
+
+  // Replace path-traversal sequences and dangerous chars
+  name = name.replace(/\.\./g, "_").replace(/[/\\:*?"<>|]/g, "_");
+
+  // If the name is empty or only whitespace after sanitisation, use a default
+  if (!name.trim()) {
+    name = "image";
+  }
+
+  // Ensure a reasonable extension if missing
+  const VALID_IMAGE_EXTS = new Set([
+    ".jpg", ".jpeg", ".png", ".gif", ".webp", ".svg", ".bmp", ".ico", ".avif",
+  ]);
+  const ext = path.extname(name).toLowerCase();
+  if (!VALID_IMAGE_EXTS.has(ext)) {
+    name += ".jpg"; // default extension
+  }
+
+  return name;
+}
+
+/**
+ * Download images referenced in markdown content to the local filesystem.
+ * Rewrites image URLs in the markdown to point to local paths.
+ *
+ * @param markdown - Markdown content with `![alt](url)` image references
+ * @param slug - The source slug (used to namespace image files)
+ * @param rawDir - The raw directory path
+ * @returns The markdown with rewritten image URLs
+ */
+export async function downloadImages(
+  markdown: string,
+  slug: string,
+  rawDir: string,
+): Promise<string> {
+  // Collect all absolute-URL image references
+  const matches: Array<{ full: string; alt: string; url: string }> = [];
+  let m: RegExpExecArray | null;
+  const re = new RegExp(MD_IMAGE_RE.source, MD_IMAGE_RE.flags);
+  while ((m = re.exec(markdown)) !== null) {
+    const url = m[2];
+    // Skip data URIs and relative paths
+    if (url.startsWith("data:")) continue;
+    if (!url.startsWith("http://") && !url.startsWith("https://")) continue;
+    matches.push({ full: m[0], alt: m[1], url });
+  }
+
+  if (matches.length === 0) return markdown;
+
+  // Limit to MAX_IMAGES_PER_SOURCE to avoid abuse
+  const toDownload = matches.slice(0, MAX_IMAGES_PER_SOURCE);
+
+  // Ensure the asset directory exists
+  const assetDir = path.join(rawDir, "assets", slug);
+  await fs.mkdir(assetDir, { recursive: true });
+
+  // Track used filenames for deduplication
+  const usedNames = new Map<string, number>();
+
+  // Build a replacement map: original markdown → rewritten markdown
+  const replacements = new Map<string, string>();
+
+  for (const { full, alt, url } of toDownload) {
+    try {
+      const resp = await fetch(url, {
+        signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+      });
+
+      if (!resp.ok) {
+        console.warn(`[downloadImages] HTTP ${resp.status} for ${url}, keeping original`);
+        continue;
+      }
+
+      // Check content-type is an image
+      const contentType = resp.headers.get("content-type") || "";
+      if (!contentType.startsWith("image/")) {
+        console.warn(`[downloadImages] Non-image content-type "${contentType}" for ${url}, keeping original`);
+        continue;
+      }
+
+      const arrayBuf = await resp.arrayBuffer();
+      // Respect MAX_RESPONSE_SIZE
+      if (arrayBuf.byteLength > MAX_RESPONSE_SIZE) {
+        console.warn(`[downloadImages] Image too large (${arrayBuf.byteLength} bytes) for ${url}, keeping original`);
+        continue;
+      }
+
+      // Determine local filename (deduplicate if needed)
+      let filename = sanitizeImageFilename(url);
+      const baseName = path.basename(filename, path.extname(filename));
+      const ext = path.extname(filename);
+      const count = usedNames.get(filename) ?? 0;
+      if (count > 0) {
+        filename = `${baseName}-${count}${ext}`;
+      }
+      usedNames.set(
+        `${baseName}${ext}`,
+        count + 1,
+      );
+
+      const filePath = path.join(assetDir, filename);
+      await fs.writeFile(filePath, Buffer.from(arrayBuf));
+
+      // Rewrite the markdown reference to the local path
+      const localPath = `assets/${slug}/${filename}`;
+      replacements.set(full, `![${alt}](${localPath})`);
+    } catch (err) {
+      console.warn(
+        `[downloadImages] Failed to download ${url}: ${err instanceof Error ? err.message : String(err)}`,
+      );
+      // Keep the original URL on failure
+    }
+  }
+
+  // Apply replacements
+  let result = markdown;
+  for (const [original, replacement] of replacements) {
+    result = result.replace(original, replacement);
+  }
+
+  return result;
 }
