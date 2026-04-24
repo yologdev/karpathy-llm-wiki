@@ -2,6 +2,7 @@ import Link from "next/link";
 import { readWikiPageWithFrontmatter, findBacklinks, type Frontmatter } from "@/lib/wiki";
 import { MarkdownRenderer } from "@/components/MarkdownRenderer";
 import { DeletePageButton } from "@/components/DeletePageButton";
+import { ReingestButton } from "@/components/ReingestButton";
 import { RevisionHistory } from "@/components/RevisionHistory";
 
 interface WikiPageProps {
@@ -94,6 +95,9 @@ export default async function WikiPageView({ params }: WikiPageProps) {
   }
 
   const backlinks = await findBacklinks(slug);
+  const hasSourceUrl =
+    typeof page.frontmatter.source_url === "string" &&
+    page.frontmatter.source_url.trim().length > 0;
 
   return (
     <main className="mx-auto max-w-3xl px-6 py-12">
@@ -134,6 +138,7 @@ export default async function WikiPageView({ params }: WikiPageProps) {
         >
           Edit page
         </Link>
+        {hasSourceUrl && <ReingestButton slug={slug} />}
         <DeletePageButton slug={slug} />
       </div>
     </main>

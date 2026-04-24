@@ -12,6 +12,7 @@ import {
   extractWithReadability,
   fetchUrlContent,
   ingestUrl,
+  reingest,
   findRelatedPages,
   updateRelatedPages,
   loadPageConventions,
@@ -1712,5 +1713,64 @@ describe("fetchUrlContent — redirect handling", () => {
     } finally {
       global.fetch = originalFetch;
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// reingest
+// ---------------------------------------------------------------------------
+
+describe("reingest", () => {
+  it("succeeds when page has source_url — re-fetches and updates", async () => {
+    const originalFetch = global.fetch;
+
+    // 1. Ingest a page with a source URL first
+    await ingest("Reingest Test", "Original content about reingest. More details.", {
+      sourceUrl: "https://example.com/reingest-test",
+    });
+
+    // Verify the page was created with source_url
+    const { readWikiPageWithFrontmatter } = await import("../wiki");
+    const before = await readWikiPageWithFrontmatter("reingest-test");
+    expect(before).not.toBeNull();
+    expect(before!.frontmatter.source_url).toBe("https://example.com/reingest-test");
+
+    // 2. Mock global.fetch to simulate re-fetching the URL
+    const mockHdrs = () =>
+      new Map([["content-type", "text/html"]]) as unknown as Headers;
+
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      headers: mockHdrs(),
+      body: null,
+      text: () =>
+        Promise.resolve(
+          "<html><head><title>Reingest Test Updated</title></head><body><p>Updated content about reingest. Fresh data here.</p></body></html>",
+        ),
+    });
+
+    try {
+      const result = await reingest("reingest-test");
+      expect(result.indexUpdated).toBe(true);
+      expect(result.sourceUrl).toBe("https://example.com/reingest-test");
+    } finally {
+      global.fetch = originalFetch;
+    }
+  });
+
+  it("throws when page has no source_url", async () => {
+    // Ingest a page without a source URL (text-based ingest)
+    await ingest("No Source Url", "Some content without a URL. Details here.");
+
+    await expect(reingest("no-source-url")).rejects.toThrow(
+      /no source URL recorded/,
+    );
+  });
+
+  it("throws when page does not exist", async () => {
+    await expect(reingest("nonexistent-page")).rejects.toThrow(
+      /not found/,
+    );
   });
 });

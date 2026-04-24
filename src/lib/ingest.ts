@@ -55,6 +55,29 @@ export async function ingestUrl(
   return ingest(title, content, { ...options, sourceUrl: url });
 }
 
+/**
+ * Re-ingest a previously ingested wiki page by re-fetching its `source_url`.
+ *
+ * Reads the page's frontmatter to find the original URL, fetches fresh content,
+ * and runs the standard ingest pipeline to update the page.
+ *
+ * @throws {Error} When the page doesn't exist or has no `source_url` in its frontmatter.
+ */
+export async function reingest(slug: string): Promise<IngestResult> {
+  const page = await readWikiPageWithFrontmatter(slug);
+  if (!page) {
+    throw new Error(`Cannot re-ingest: page "${slug}" not found`);
+  }
+
+  const sourceUrl = page.frontmatter.source_url;
+  if (typeof sourceUrl !== "string" || sourceUrl.trim() === "") {
+    throw new Error("Cannot re-ingest: no source URL recorded");
+  }
+
+  const { title, content } = await fetchUrlContent(sourceUrl);
+  return ingest(title, content, { sourceUrl });
+}
+
 // ---------------------------------------------------------------------------
 // Fallback stub (no API key)
 // ---------------------------------------------------------------------------
