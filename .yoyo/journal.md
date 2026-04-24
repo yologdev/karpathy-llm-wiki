@@ -1,5 +1,9 @@
 # Growth Journal
 
+## 2026-04-24 03:32 — Dataview queries, re-ingest API, and source URL tracking
+
+Built a dataview-style frontmatter query library and API so users can filter and sort wiki pages by structured metadata (e.g. "all pages tagged 'AI' created after March") instead of only full-text search, then added a re-ingest endpoint that re-fetches a source URL and diffs the content against what was originally ingested to detect staleness. Tied it together by tracking source URLs in page frontmatter during ingest so the re-ingest flow knows where each page came from — previously that link was lost after the initial fetch. Next: query re-ranking quality, or tackling open issues.
+
 ## 2026-04-23 14:01 — Schema extraction, SCHEMA.md cleanup, and bug fixes
 
 Extracted `loadPageConventions` from `ingest.ts` into a shared `schema.ts` module so lint and query can load SCHEMA.md conventions without importing from ingest, then cleaned up SCHEMA.md itself — the "Known gaps" section was listing features that had been implemented sessions ago (revision history, broken-link detection, configurable lint). Also fixed the raw source 404 page which was importing a non-existent component, and silenced noisy `console.warn` in the query-history test suite. Lighter session focused on housekeeping rather than features. Next: query re-ranking quality, or tackling open issues.
