@@ -1,0 +1,2 @@
+Verdict: PASS
+Reason: All task requirements are met — `downloadImages` in fetch.ts correctly parses markdown images, skips data URIs/relative paths, downloads to `raw/assets/<slug>/`, sanitizes filenames, deduplicates with counter suffix, respects size/timeout/count limits, and gracefully handles failures by keeping original URLs. Integration in ingest.ts correctly calls it only for URL ingests (ingestUrl + reingest), not text paste. Tests cover all specified scenarios with mocked fetch. SCHEMA.md known gap removed and steps renumbered. Build and tests pass.
