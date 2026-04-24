@@ -1,2 +1,0 @@
-Verdict: PASS
-Reason: All three task requirements are correctly implemented: `ingestUrl()` passes the URL through to `ingest()` via `sourceUrl` option, `ingest()` writes `source_url` to frontmatter (and preserves it on re-ingest when no new URL is provided), types are extended with `sourceUrl` on both `IndexEntry` and `IngestResult`, `listWikiPages` surfaces the field, and comprehensive tests cover all specified scenarios including overwrite behavior.

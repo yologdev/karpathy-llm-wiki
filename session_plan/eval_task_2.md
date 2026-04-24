@@ -1,2 +1,0 @@
-Verdict: PASS
-Reason: All four required changes are correctly implemented: `reingest()` function reads frontmatter, validates `source_url`, re-fetches and re-ingests; the API route returns proper 400/404/422/500 status codes; the wiki page conditionally renders a `ReingestButton` client component with loading/success/error states; and tests cover all three specified scenarios (success, no source_url, nonexistent page).
