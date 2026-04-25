@@ -132,6 +132,8 @@ export function RevisionHistory({ slug }: RevisionHistoryProps) {
       <button
         type="button"
         onClick={handleToggle}
+        aria-expanded={open}
+        aria-controls="revision-history-panel"
         className="flex items-center gap-2 text-sm font-medium text-foreground/50 uppercase tracking-wide hover:text-foreground/70 transition-colors"
       >
         {/* Clock icon */}
@@ -153,7 +155,7 @@ export function RevisionHistory({ slug }: RevisionHistoryProps) {
       </button>
 
       {open && (
-        <div className="mt-4">
+        <div id="revision-history-panel" className="mt-4">
           {loading && (
             <p className="text-sm text-foreground/50">Loading revisions…</p>
           )}
@@ -189,6 +191,7 @@ export function RevisionHistory({ slug }: RevisionHistoryProps) {
                         type="button"
                         onClick={() => handleView(rev.timestamp)}
                         disabled={viewLoading && viewingTimestamp === rev.timestamp}
+                        aria-label={`View revision from ${new Date(rev.timestamp).toLocaleString()}`}
                         className="rounded border border-foreground/20 px-2.5 py-1 text-xs font-medium text-foreground hover:bg-foreground/5 disabled:opacity-50 transition-colors"
                       >
                         {viewingTimestamp === rev.timestamp && viewContent !== null
@@ -201,6 +204,7 @@ export function RevisionHistory({ slug }: RevisionHistoryProps) {
                         type="button"
                         onClick={() => handleRevert(rev.timestamp)}
                         disabled={reverting}
+                        aria-label={`Restore revision from ${new Date(rev.timestamp).toLocaleString()}`}
                         className="rounded border border-amber-500/30 bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-700 hover:bg-amber-100 disabled:opacity-50 dark:border-amber-500/20 dark:bg-amber-900/20 dark:text-amber-300 dark:hover:bg-amber-900/30 transition-colors"
                       >
                         {reverting ? "Reverting…" : "Revert"}

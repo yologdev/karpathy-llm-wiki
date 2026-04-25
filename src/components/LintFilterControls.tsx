@@ -62,12 +62,14 @@ export function LintFilterControls({
             <span className="space-x-2 text-xs">
               <button
                 onClick={onSelectAll}
+                aria-label="Select all lint checks"
                 className="text-foreground/50 hover:text-foreground transition-colors underline underline-offset-2"
               >
                 All
               </button>
               <button
                 onClick={onClearAll}
+                aria-label="Clear all lint checks"
                 className="text-foreground/50 hover:text-foreground transition-colors underline underline-offset-2"
               >
                 None
@@ -81,6 +83,8 @@ export function LintFilterControls({
                 <button
                   key={type}
                   onClick={() => onToggleCheck(type)}
+                  aria-pressed={active}
+                  aria-label={`Toggle ${checkTypeLabels[type]} check`}
                   className={`rounded-full border px-3 py-1 text-xs font-medium transition-colors ${
                     active
                       ? "border-foreground/30 bg-foreground/10 text-foreground"

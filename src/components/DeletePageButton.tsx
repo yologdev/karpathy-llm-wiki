@@ -43,6 +43,7 @@ export function DeletePageButton({ slug }: DeletePageButtonProps) {
         type="button"
         onClick={handleDelete}
         disabled={busy}
+        aria-label="Delete this wiki page"
         className="rounded-md bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
       >
         {busy ? "Deleting…" : "Delete page"}

@@ -38,6 +38,7 @@ export function IngestPreview({
         <h1 className="text-3xl font-bold tracking-tight">Review Ingest Preview</h1>
         <button
           onClick={onCancel}
+          aria-label="Cancel ingest and return to form"
           className="text-sm text-foreground/60 hover:text-foreground transition-colors cursor-pointer"
         >
           ← Back to form
@@ -64,6 +65,7 @@ export function IngestPreview({
         <button
           type="button"
           onClick={() => { if (showRawMarkdown) onToggleMarkdown(); }}
+          aria-pressed={!showRawMarkdown}
           className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-colors cursor-pointer ${
             !showRawMarkdown
               ? "bg-foreground text-background"
@@ -75,6 +77,7 @@ export function IngestPreview({
         <button
           type="button"
           onClick={() => { if (!showRawMarkdown) onToggleMarkdown(); }}
+          aria-pressed={showRawMarkdown}
           className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-colors cursor-pointer ${
             showRawMarkdown
               ? "bg-foreground text-background"
@@ -114,6 +117,7 @@ export function IngestPreview({
         <button
           onClick={onCancel}
           disabled={loading}
+          aria-label="Cancel ingest"
           className="text-sm text-foreground/60 hover:text-foreground transition-colors disabled:opacity-50 cursor-pointer"
         >
           Cancel
