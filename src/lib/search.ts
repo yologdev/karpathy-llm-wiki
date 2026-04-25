@@ -422,7 +422,10 @@ export async function fuzzySearchWikiContent(
     let content: string;
     try {
       content = await fs.readFile(path.join(wikiDir, file), "utf-8");
-    } catch {
+    } catch (err) {
+      if (!isEnoent(err)) {
+        console.warn(`[search] unexpected error reading wiki file "${file}":`, err);
+      }
       continue;
     }
 

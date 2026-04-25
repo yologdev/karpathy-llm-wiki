@@ -209,8 +209,11 @@ export async function writeWikiPage(
   try {
     const existing = await fs.readFile(filePath, "utf-8");
     await saveRevision(slug, existing);
-  } catch {
+  } catch (err) {
     // File doesn't exist yet — first write, no revision needed.
+    if (!isEnoent(err)) {
+      console.warn(`[wiki] unexpected error reading existing page "${slug}" before revision:`, err);
+    }
   }
 
   await fs.writeFile(filePath, content, "utf-8");

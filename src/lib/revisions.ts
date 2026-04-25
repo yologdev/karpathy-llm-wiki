@@ -1,6 +1,7 @@
 import fs from "fs/promises";
 import path from "path";
 import { getWikiDir, validateSlug } from "./wiki";
+import { isEnoent } from "./errors";
 
 // ---------------------------------------------------------------------------
 // Revision history — store full-page snapshots before every overwrite
@@ -85,8 +86,11 @@ export async function listRevisions(slug: string): Promise<Revision[]> {
   let entries: string[];
   try {
     entries = await fs.readdir(dir);
-  } catch {
+  } catch (err) {
     // Directory doesn't exist → no revisions.
+    if (!isEnoent(err)) {
+      console.warn(`[revisions] unexpected error reading revision dir for "${slug}":`, err);
+    }
     return [];
   }
 
@@ -108,8 +112,11 @@ export async function listRevisions(slug: string): Promise<Revision[]> {
         slug,
         sizeBytes: stat.size,
       });
-    } catch {
+    } catch (err) {
       // File disappeared between readdir and stat — skip.
+      if (!isEnoent(err)) {
+        console.warn(`[revisions] unexpected error stating revision file "${filePath}":`, err);
+      }
     }
   }
 
@@ -131,7 +138,10 @@ export async function readRevision(
   const filePath = path.join(getRevisionsDir(slug), `${timestamp}.md`);
   try {
     return await fs.readFile(filePath, "utf-8");
-  } catch {
+  } catch (err) {
+    if (!isEnoent(err)) {
+      console.warn(`[revisions] unexpected error reading revision "${slug}@${timestamp}":`, err);
+    }
     return null;
   }
 }
@@ -147,7 +157,10 @@ export async function deleteRevisions(slug: string): Promise<void> {
   const dir = getRevisionsDir(slug);
   try {
     await fs.rm(dir, { recursive: true, force: true });
-  } catch {
+  } catch (err) {
     // Already gone — nothing to do.
+    if (!isEnoent(err)) {
+      console.warn(`[revisions] unexpected error deleting revisions for "${slug}":`, err);
+    }
   }
 }

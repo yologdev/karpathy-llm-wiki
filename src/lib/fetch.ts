@@ -576,8 +576,11 @@ function sanitizeImageFilename(rawUrl: string): string {
   let urlPath: string;
   try {
     urlPath = new URL(rawUrl).pathname;
-  } catch {
+  } catch (err) {
     // Not a valid URL — fallback to the raw string
+    if (!(err instanceof TypeError)) {
+      console.warn("[fetch] unexpected error parsing URL:", err);
+    }
     urlPath = rawUrl;
   }
 
