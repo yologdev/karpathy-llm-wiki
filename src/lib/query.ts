@@ -6,6 +6,7 @@ import {
   withPageCache,
 } from "./wiki";
 import { slugify, extractSummary } from "./ingest";
+import { logger } from "./logger";
 import { loadPageConventions } from "./schema";
 import { extractCitedSlugs } from "./citations";
 import { searchByVector } from "./embeddings";
@@ -226,7 +227,7 @@ export async function searchIndex(
   try {
     vectorResults = await searchByVector(question, MAX_CONTEXT_PAGES * 2);
   } catch (err) {
-    console.warn("[query] searchIndex vector search failed:", err);
+    logger.warn("query", "searchIndex vector search failed:", err);
     // Vector search failure is non-fatal — fall back to BM25 only
   }
 
@@ -280,7 +281,7 @@ export async function searchIndex(
         }
       }
     } catch (err) {
-      console.warn("[query] searchIndex LLM re-ranking failed:", err);
+      logger.warn("query", "searchIndex LLM re-ranking failed:", err);
       // Fall through to fusion results
     }
   }

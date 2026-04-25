@@ -5,6 +5,7 @@ import type { ProviderInfo } from "./types";
 import { hasEmbeddingSupport } from "./embeddings";
 import { isEnoent } from "./errors";
 import { VALID_PROVIDERS, DEFAULT_MODELS } from "./providers";
+import { logger } from "./logger";
 
 // Re-export provider constants so existing consumers can import from config
 export { PROVIDER_INFO, VALID_PROVIDERS, DEFAULT_MODELS, providerLabel } from "./providers";
@@ -106,7 +107,7 @@ export async function loadConfig(): Promise<AppConfig> {
     return JSON.parse(raw) as AppConfig;
   } catch (err) {
     if (!isEnoent(err)) {
-      console.warn("[config] load config failed:", err);
+      logger.warn("config", "load config failed:", err);
     }
     return {};
   }
@@ -148,7 +149,7 @@ export function loadConfigSync(): AppConfig {
     return data;
   } catch (err) {
     if (!isEnoent(err)) {
-      console.warn("[config] load config (sync) failed:", err);
+      logger.warn("config", "load config (sync) failed:", err);
     }
     _configCache = { data: {}, ts: now };
     return {};

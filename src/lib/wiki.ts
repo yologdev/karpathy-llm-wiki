@@ -2,6 +2,7 @@ import fs from "fs/promises";
 import path from "path";
 import type { WikiPage, IndexEntry } from "./types";
 import { withFileLock } from "./lock";
+import { logger } from "./logger";
 import { saveRevision } from "./revisions";
 import { isEnoent } from "./errors";
 import {
@@ -134,7 +135,7 @@ export async function readWikiPage(slug: string): Promise<WikiPage | null> {
   try {
     validateSlug(slug);
   } catch (err) {
-    console.warn(`[wiki] readWikiPage slug validation failed for "${slug}":`, err);
+    logger.warn("wiki", `readWikiPage slug validation failed for "${slug}":`, err);
     return null;
   }
 
@@ -159,7 +160,7 @@ export async function readWikiPage(slug: string): Promise<WikiPage | null> {
     return result;
   } catch (err) {
     if (!isEnoent(err)) {
-      console.warn(`[wiki] readWikiPage failed for "${slug}":`, err);
+      logger.warn("wiki", `readWikiPage failed for "${slug}":`, err);
     }
     // Store negative result in cache too (when active)
     if (pageCache !== null) {
@@ -212,7 +213,7 @@ export async function writeWikiPage(
   } catch (err) {
     // File doesn't exist yet — first write, no revision needed.
     if (!isEnoent(err)) {
-      console.warn(`[wiki] unexpected error reading existing page "${slug}" before revision:`, err);
+      logger.warn("wiki", `unexpected error reading existing page "${slug}" before revision:`, err);
     }
   }
 
@@ -242,7 +243,7 @@ export async function listWikiPages(): Promise<IndexEntry[]> {
     raw = await fs.readFile(indexPath, "utf-8");
   } catch (err: unknown) {
     if (!isEnoent(err)) {
-      console.warn("[wiki] listWikiPages failed to read index.md:", err);
+      logger.warn("wiki", "listWikiPages failed to read index.md:", err);
     }
     return [];
   }
@@ -301,7 +302,8 @@ export async function listWikiPages(): Promise<IndexEntry[]> {
           ...(sourceUrl ? { sourceUrl } : {}),
         };
       } catch (err) {
-        console.warn(
+        logger.warn(
+          "wiki",
           `listWikiPages: failed to read frontmatter for "${entry.slug}" — falling back to plain entry`,
           err,
         );

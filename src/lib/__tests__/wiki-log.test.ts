@@ -6,6 +6,7 @@ import { appendToLog, readLog } from "../wiki-log";
 import type { LogOperation } from "../wiki-log";
 import { ensureDirectories, getWikiDir } from "../wiki";
 import { _resetLocks } from "../lock";
+import { logger } from "../logger";
 
 // ---------------------------------------------------------------------------
 // Temp directory setup
@@ -249,11 +250,12 @@ describe("readLog", () => {
     const logPath = path.join(getWikiDir(), "log.md");
     await fs.mkdir(logPath, { recursive: true });
 
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const warnSpy = vi.spyOn(logger, "warn").mockImplementation(() => {});
     const result = await readLog();
     expect(result).toBeNull();
     // Should have logged a warning
     expect(warnSpy).toHaveBeenCalledWith(
+      "wiki",
       expect.stringContaining("readLog"),
       expect.anything(),
     );

@@ -1,6 +1,7 @@
 import { readWikiPage } from "./wiki";
 import type { IndexEntry } from "./types";
 import { BM25_K1, BM25_B } from "./constants";
+import { logger } from "./logger";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -85,7 +86,7 @@ export async function buildCorpusStats(
           text = `${entry.title} ${page.content}`;
         }
       } catch (err) {
-        console.warn(`[query] buildCorpusStats failed to read page "${entry.slug}":`, err);
+        logger.warn("query", `buildCorpusStats failed to read page "${entry.slug}":`, err);
         // Fall back to title + summary if page can't be read
       }
     }

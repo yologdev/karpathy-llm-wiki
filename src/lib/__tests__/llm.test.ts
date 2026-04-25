@@ -7,6 +7,7 @@ import {
   isRetryableError,
 } from "../llm";
 import { _resetConfigCache } from "../config";
+import { logger } from "../logger";
 
 // Save and restore env vars around each test so we don't leak state.
 let savedAnthropic: string | undefined;
@@ -329,8 +330,8 @@ describe("retryWithBackoff", () => {
       .mockRejectedValueOnce(new Error("fetch failed"))
       .mockResolvedValue("success");
 
-    // Suppress console.warn during retry
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    // Suppress logger.warn during retry
+    const warnSpy = vi.spyOn(logger, "warn").mockImplementation(() => {});
 
     const promise = retryWithBackoff(fn, 3, 10, 10_000);
 

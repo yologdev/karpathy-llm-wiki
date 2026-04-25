@@ -4,6 +4,7 @@ import { hasLLMKey, callLLM } from "./llm";
 import { loadPageConventions } from "./schema";
 import { extractWikiLinks } from "./links";
 import type { LintIssue } from "./types";
+import { logger } from "./logger";
 
 /** All known lint check types. */
 export const ALL_CHECK_TYPES: LintIssue["type"][] = [
@@ -27,7 +28,7 @@ export async function getOnDiskSlugs(wikiDir: string): Promise<string[]> {
   try {
     files = await fs.readdir(wikiDir);
   } catch (err) {
-    console.warn("[lint] readdir wiki directory failed:", err);
+    logger.warn("lint", "readdir wiki directory failed:", err);
     return [];
   }
 
@@ -293,7 +294,7 @@ export function parseLLMJsonArray<T>(
     }
     return results;
   } catch (err) {
-    console.warn("[lint] parse LLM JSON array failed:", err);
+    logger.warn("lint", "parse LLM JSON array failed:", err);
     return [];
   }
 }
@@ -393,7 +394,7 @@ export async function checkContradictions(
         });
       }
     } catch (err) {
-      console.warn("[lint] LLM contradiction check failed:", err);
+      logger.warn("lint", "LLM contradiction check failed:", err);
     }
   }
 
@@ -528,7 +529,7 @@ export async function checkMissingConceptPages(
     }
     return issues;
   } catch (err) {
-    console.warn("[lint] LLM coverage gap check failed:", err);
+    logger.warn("lint", "LLM coverage gap check failed:", err);
     return [];
   }
 }

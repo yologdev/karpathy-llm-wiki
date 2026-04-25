@@ -18,6 +18,7 @@ import { withFileLock } from "./lock";
 import { escapeRegex } from "./links";
 import { getErrorMessage } from "./errors";
 import type { LogOperation } from "./wiki";
+import { logger } from "./logger";
 
 // ---------------------------------------------------------------------------
 // writeWikiPageWithSideEffects — the unified write pipeline
@@ -197,8 +198,9 @@ async function runPageLifecycleOp(
       await removeEmbedding(slug);
     }
   } catch (err) {
-    console.warn(
-      `[wiki] embedding ${op.kind === "write" ? "upsert" : "remove"} failed for "${slug}":`,
+    logger.warn(
+      "wiki",
+      `embedding ${op.kind === "write" ? "upsert" : "remove"} failed for "${slug}":`,
       getErrorMessage(err, String(err)),
     );
   }
@@ -208,8 +210,9 @@ async function runPageLifecycleOp(
     try {
       await deleteRevisions(slug);
     } catch (err) {
-      console.warn(
-        `[wiki] deleteRevisions failed for "${slug}":`,
+      logger.warn(
+        "wiki",
+        `deleteRevisions failed for "${slug}":`,
         getErrorMessage(err, String(err)),
       );
     }

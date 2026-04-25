@@ -11,6 +11,7 @@ import { detectEnvProvider, loadConfigSync, getEmbeddingModelOverride, getOllama
 import { withFileLock } from "./lock";
 import { isEnoent } from "./errors";
 import { MAX_EMBED_CHARS } from "./constants";
+import { logger } from "./logger";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -241,7 +242,7 @@ export async function loadVectorStore(): Promise<VectorStore | null> {
     return JSON.parse(raw) as VectorStore;
   } catch (err) {
     if (!isEnoent(err)) {
-      console.warn("[embeddings] load vector store failed:", err);
+      logger.warn("embeddings", "load vector store failed:", err);
     }
     return null;
   }
@@ -463,7 +464,7 @@ export async function rebuildVectorStore(
       });
       embedded++;
     } catch (err) {
-      console.warn(`[embeddings] embed page "${entry.slug}" failed:`, err);
+      logger.warn("embeddings", `embed page "${entry.slug}" failed:`, err);
       skipped++;
     }
 

@@ -3,6 +3,7 @@ import path from "path";
 import { withFileLock } from "./lock";
 import { getWikiDir, ensureDirectories } from "./wiki";
 import { isEnoent } from "./errors";
+import { logger } from "./logger";
 
 // ---------------------------------------------------------------------------
 // Append-only log
@@ -80,7 +81,7 @@ export async function readLog(): Promise<string | null> {
     return await fs.readFile(logPath, "utf-8");
   } catch (err: unknown) {
     if (!isEnoent(err)) {
-      console.warn("[wiki] readLog failed to read log.md:", err);
+      logger.warn("wiki", "readLog failed to read log.md:", err);
     }
     return null;
   }

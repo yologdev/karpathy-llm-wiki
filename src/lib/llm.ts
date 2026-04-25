@@ -10,6 +10,7 @@ import {
   loadConfigSync,
 } from "./config";
 import { getErrorMessage } from "./errors";
+import { logger } from "./logger";
 import {
   LLM_MAX_RETRIES,
   LLM_RETRY_BASE_MS,
@@ -136,8 +137,9 @@ export async function retryWithBackoff<T>(
       const rawDelay = Math.min(baseMs * 2 ** attempt, maxMs);
       const delay = addJitter(rawDelay);
 
-      console.warn(
-        `[llm] Retryable error on attempt ${attempt + 1}/${maxRetries + 1}, ` +
+      logger.warn(
+        "llm",
+        `Retryable error on attempt ${attempt + 1}/${maxRetries + 1}, ` +
           `retrying in ${delay}ms: ${getErrorMessage(err, String(err))}`,
       );
 

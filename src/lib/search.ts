@@ -5,6 +5,7 @@ import { callLLM, hasLLMKey } from "./llm";
 import { withFileLock } from "./lock";
 import { hasLinkTo } from "./links";
 import { parseFrontmatter } from "./frontmatter";
+import { logger } from "./logger";
 import {
   getWikiDir,
   readWikiPage,
@@ -67,7 +68,7 @@ export async function findRelatedPages(
       .filter((s): s is string => typeof s === "string" && validSlugs.has(s))
       .slice(0, 5);
   } catch (err) {
-    console.warn("[wiki] findRelatedPages LLM call failed:", err);
+    logger.warn("wiki", "findRelatedPages LLM call failed:", err);
     return [];
   }
 }
@@ -283,7 +284,7 @@ export async function searchWikiContent(
     files = await fs.readdir(wikiDir);
   } catch (err) {
     if (!isEnoent(err)) {
-      console.warn("[wiki] searchWikiContent failed to read wiki directory:", err);
+      logger.warn("wiki", "searchWikiContent failed to read wiki directory:", err);
     }
     return [];
   }
@@ -306,7 +307,7 @@ export async function searchWikiContent(
     try {
       content = await fs.readFile(path.join(wikiDir, file), "utf-8");
     } catch (err) {
-      console.warn(`[wiki] searchWikiContent failed to read "${file}":`, err);
+      logger.warn("wiki", `searchWikiContent failed to read "${file}":`, err);
       continue;
     }
 
@@ -402,7 +403,7 @@ export async function fuzzySearchWikiContent(
     files = await fs.readdir(wikiDir);
   } catch (err) {
     if (!isEnoent(err)) {
-      console.warn("[wiki] fuzzySearchWikiContent failed to read wiki directory:", err);
+      logger.warn("wiki", "fuzzySearchWikiContent failed to read wiki directory:", err);
     }
     return exactResults;
   }
@@ -424,7 +425,7 @@ export async function fuzzySearchWikiContent(
       content = await fs.readFile(path.join(wikiDir, file), "utf-8");
     } catch (err) {
       if (!isEnoent(err)) {
-        console.warn(`[search] unexpected error reading wiki file "${file}":`, err);
+        logger.warn("search", `unexpected error reading wiki file "${file}":`, err);
       }
       continue;
     }

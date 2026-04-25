@@ -48,6 +48,136 @@ yoyo updates this document so future sessions inherit the convention. See
 - Pages should not be edited by humans. The LLM owns the wiki layer; humans
   curate sources and ask questions.
 
+## Page templates
+
+The wiki produces several distinct page types. Each type has a recommended
+structure that the LLM should follow when generating pages. These templates
+are available at runtime via `loadPageTemplates()` in `src/lib/schema.ts`.
+
+### Source summary
+
+Created by the **ingest** operation when a URL or text is added.
+
+```yaml
+---
+type: summary
+source_url: <original URL or "text-paste">
+tags: [<topic1>, <topic2>]
+---
+```
+
+```markdown
+# <Title>
+
+<One-paragraph summary of the source.>
+
+## Key Points
+
+- <Bullet 1>
+- <Bullet 2>
+- <Bullet 3>
+
+## Details
+
+<Longer prose expanding on the source content.>
+
+## Sources
+
+- [<raw source title>](../raw/<slug>.md)
+```
+
+### Entity page
+
+About a specific person, organization, or tool.
+
+```yaml
+---
+type: entity
+tags: [<topic1>, <topic2>]
+---
+```
+
+```markdown
+# <Entity Name>
+
+<One-paragraph summary of what this entity is and why it matters.>
+
+## Overview
+
+<Prose description — history, context, significance.>
+
+## Key Facts
+
+- **Founded:** <date or N/A>
+- **Type:** <person | organization | tool | …>
+- <other structured facts>
+
+## Connections
+
+- [<Related Entity>](related-entity.md)
+- [<Related Concept>](related-concept.md)
+```
+
+### Concept page
+
+About an idea, pattern, technique, or abstract topic.
+
+```yaml
+---
+type: concept
+tags: [<topic1>, <topic2>]
+---
+```
+
+```markdown
+# <Concept Name>
+
+<One-paragraph summary defining the concept.>
+
+## Definition
+
+<Precise definition and context for when/where this concept applies.>
+
+## Examples
+
+- <Example 1 with brief explanation>
+- <Example 2 with brief explanation>
+
+## Related Concepts
+
+- [<Related Concept>](related-concept.md)
+- [<Related Entity>](related-entity.md)
+```
+
+### Comparison page
+
+Created when a query answer that compares multiple items is saved to the wiki.
+
+```yaml
+---
+type: comparison
+tags: [<topic1>, <topic2>]
+---
+```
+
+```markdown
+# <Comparison Title>
+
+<One-paragraph summary of what is being compared and the key takeaway.>
+
+| Aspect   | <Item A> | <Item B> |
+| -------- | -------- | -------- |
+| <aspect> | <value>  | <value>  |
+
+## Analysis
+
+<Prose discussing the comparison in depth.>
+
+## Sources
+
+- [<wiki page cited>](cited-page.md)
+```
+
 ## Operations
 
 The wiki supports three core operations. Each has a defined trigger, an

@@ -9,6 +9,7 @@ import {
   FETCH_TIMEOUT_MS,
   MAX_IMAGES_PER_SOURCE,
 } from "./constants";
+import { logger } from "./logger";
 
 // ---------------------------------------------------------------------------
 // URL detection & fetching
@@ -257,7 +258,7 @@ export function extractWithReadability(
     }
     return null;
   } catch (err) {
-    console.warn("[ingest] Readability extraction failed:", err);
+    logger.warn("ingest", "Readability extraction failed:", err);
     return null;
   }
 }
@@ -349,7 +350,7 @@ export function validateUrlSafety(url: string): void {
   try {
     parsed = new URL(url);
   } catch (err) {
-    console.warn("[ingest] URL parse failed:", err);
+    logger.warn("ingest", "URL parse failed:", err);
     throw new Error("URL blocked: invalid URL");
   }
 
@@ -579,7 +580,7 @@ function sanitizeImageFilename(rawUrl: string): string {
   } catch (err) {
     // Not a valid URL — fallback to the raw string
     if (!(err instanceof TypeError)) {
-      console.warn("[fetch] unexpected error parsing URL:", err);
+      logger.warn("fetch", "unexpected error parsing URL:", err);
     }
     urlPath = rawUrl;
   }
@@ -658,21 +659,21 @@ export async function downloadImages(
       });
 
       if (!resp.ok) {
-        console.warn(`[downloadImages] HTTP ${resp.status} for ${url}, keeping original`);
+        logger.warn("downloadImages", `HTTP ${resp.status} for ${url}, keeping original`);
         continue;
       }
 
       // Check content-type is an image
       const contentType = resp.headers.get("content-type") || "";
       if (!contentType.startsWith("image/")) {
-        console.warn(`[downloadImages] Non-image content-type "${contentType}" for ${url}, keeping original`);
+        logger.warn("downloadImages", `Non-image content-type "${contentType}" for ${url}, keeping original`);
         continue;
       }
 
       const arrayBuf = await resp.arrayBuffer();
       // Respect MAX_RESPONSE_SIZE
       if (arrayBuf.byteLength > MAX_RESPONSE_SIZE) {
-        console.warn(`[downloadImages] Image too large (${arrayBuf.byteLength} bytes) for ${url}, keeping original`);
+        logger.warn("downloadImages", `Image too large (${arrayBuf.byteLength} bytes) for ${url}, keeping original`);
         continue;
       }
 
@@ -696,8 +697,9 @@ export async function downloadImages(
       const localPath = `assets/${slug}/${filename}`;
       replacements.set(full, `![${alt}](${localPath})`);
     } catch (err) {
-      console.warn(
-        `[downloadImages] Failed to download ${url}: ${err instanceof Error ? err.message : String(err)}`,
+      logger.warn(
+        "downloadImages",
+        `Failed to download ${url}: ${err instanceof Error ? err.message : String(err)}`,
       );
       // Keep the original URL on failure
     }
