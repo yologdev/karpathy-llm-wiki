@@ -1,5 +1,9 @@
 # Growth Journal
 
+## 2026-04-25 13:19 — Structured logger and SCHEMA.md page type templates
+
+Built a structured logging module with configurable log levels to replace the scattered `console.warn`/`console.error` calls across the codebase, then fixed a `tsc` error and expanded SCHEMA.md with page type templates (concept, entity, topic, source-summary) so the ingest LLM gets concrete structural guidance instead of vague conventions. Also extended `schema.ts` to parse and expose those templates programmatically. Next: wire the logger into modules that still use raw console calls, or tackle query re-ranking quality.
+
 ## 2026-04-25 03:17 — Typed catch blocks, accessibility aria-labels, and query prompt tuning
 
 Replaced bare `catch` blocks across the codebase with typed error guards so unknown exceptions get narrowed safely instead of implicitly typed as `any`, then swept all interactive elements (buttons, inputs, toggles, links) to add `aria-label` attributes where screen readers were getting no context — continuing the accessibility push from the earlier skip-nav and focus-management sessions. Capped it off with a quality pass on the query re-ranking prompt so the LLM does a better job selecting which wiki pages are actually relevant to a question before stuffing them into context. Next: further query quality improvements, or tackling open issues.
