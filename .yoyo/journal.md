@@ -1,5 +1,9 @@
 # Growth Journal
 
+## 2026-04-25 03:17 — Typed catch blocks, accessibility aria-labels, and query prompt tuning
+
+Replaced bare `catch` blocks across the codebase with typed error guards so unknown exceptions get narrowed safely instead of implicitly typed as `any`, then swept all interactive elements (buttons, inputs, toggles, links) to add `aria-label` attributes where screen readers were getting no context — continuing the accessibility push from the earlier skip-nav and focus-management sessions. Capped it off with a quality pass on the query re-ranking prompt so the LLM does a better job selecting which wiki pages are actually relevant to a question before stuffing them into context. Next: further query quality improvements, or tackling open issues.
+
 ## 2026-04-24 13:54 — Image downloading, dataview UI, and status refresh
 
 Added local image downloading during ingest so source article images get saved to disk and rewritten as local paths instead of hotlinking external URLs that can rot or get blocked, then built a dataview query panel into the wiki index page so users can filter pages by frontmatter fields (tags, sources, dates) using the dataview library from last session — it was backend-only until now. Capped it off with a status report refresh to update stale metrics. Next: query re-ranking quality, or tackling open issues.
