@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import fs from "fs/promises";
 import os from "os";
 import path from "path";
-import { searchIndex, buildContext, query, saveAnswerToWiki, buildCorpusStats, bm25Score, extractCitedSlugs, reciprocalRankFusion, buildQuerySystemPrompt, TABLE_FORMAT_INSTRUCTION } from "../query";
+import { searchIndex, buildContext, query, saveAnswerToWiki, buildCorpusStats, bm25Score, extractCitedSlugs, reciprocalRankFusion, buildQuerySystemPrompt, TABLE_FORMAT_INSTRUCTION, extractBestSnippet } from "../query";
 import { writeWikiPage, updateIndex, ensureDirectories, readWikiPage, readWikiPageWithFrontmatter, listWikiPages } from "../wiki";
 import type { IndexEntry } from "../types";
 
@@ -388,10 +388,12 @@ describe("searchIndex", () => {
     expect(result).toEqual(["deep-learning", "neural-networks"]);
     expect(mockedCallLLM).toHaveBeenCalledOnce();
 
-    // The re-ranking prompt should contain content snippets, not full index
+    // The re-ranking prompt should contain content snippets and relevance criteria
     const prompt = mockedCallLLM.mock.calls[0][0];
     expect(prompt).toContain("snippet:");
     expect(prompt).toContain("Candidate pages:");
+    expect(prompt).toContain("Direct topic match");
+    expect(prompt).toContain("Citation potential");
   });
 
   it("falls back to fusion order when LLM returns invalid JSON", async () => {
@@ -535,6 +537,77 @@ describe("searchIndex", () => {
     expect(prompt).toContain("snippet:");
     expect(prompt).toContain("slug: snippet-page");
     expect(result).toEqual(["snippet-page"]);
+  });
+
+  it("re-ranking prompt includes relevance criteria and chain-of-thought instructions", async () => {
+    mockedHasLLMKey.mockReturnValue(true);
+    mockedCallLLM.mockResolvedValue(
+      'The page directly addresses transformers.\n["criteria-page"]'
+    );
+
+    const entries: IndexEntry[] = [
+      { slug: "criteria-page", title: "Criteria Page", summary: "Transformers overview" },
+    ];
+    await writeWikiPage("criteria-page", "# Criteria Page\n\nTransformers overview content.");
+    await updateIndex(entries);
+
+    await searchIndex("transformers", entries);
+
+    expect(mockedCallLLM).toHaveBeenCalledOnce();
+    const prompt = mockedCallLLM.mock.calls[0][0];
+
+    // Verify all three relevance criteria are present
+    expect(prompt).toContain("Direct topic match");
+    expect(prompt).toContain("Conceptual relevance");
+    expect(prompt).toContain("Citation potential");
+
+    // Verify chain-of-thought instruction
+    expect(prompt).toContain("Think briefly");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// extractBestSnippet tests
+// ---------------------------------------------------------------------------
+describe("extractBestSnippet", () => {
+  it("returns full content when shorter than maxChars", () => {
+    const content = "Short page about machine learning.";
+    const result = extractBestSnippet(content, ["machine", "learning"], 800);
+    expect(result).toBe(content);
+  });
+
+  it("falls back to first N chars when queryTokens is empty", () => {
+    const content = "A".repeat(200) + "B".repeat(200);
+    const result = extractBestSnippet(content, [], 200);
+    expect(result).toBe("A".repeat(200));
+  });
+
+  it("selects the most relevant window from a long document", () => {
+    // Build a document where the query-relevant content is in the middle
+    const intro = "This is a general introduction about cooking and recipes. ".repeat(20);
+    const relevant = "Transformers and attention mechanisms are key to modern neural network architectures. ".repeat(10);
+    const outro = "This section discusses gardening and plant care techniques. ".repeat(20);
+    const content = intro + relevant + outro;
+
+    const result = extractBestSnippet(content, ["transformers", "attention", "neural", "architectures"], 400);
+
+    // The snippet should contain the relevant section, not the intro or outro
+    expect(result).toContain("Transformers");
+    expect(result).toContain("attention");
+    expect(result).not.toContain("gardening");
+  });
+
+  it("returns first N chars when no tokens match anywhere", () => {
+    const content = "Alpha beta gamma delta epsilon. ".repeat(50);
+    const result = extractBestSnippet(content, ["zzz", "yyy"], 100);
+    // Falls back to first 100 chars (all windows score 0, bestStart stays 0)
+    expect(result).toBe(content.slice(0, 100));
+  });
+
+  it("respects maxChars limit", () => {
+    const content = "word ".repeat(500);
+    const result = extractBestSnippet(content, ["word"], 200);
+    expect(result.length).toBeLessThanOrEqual(200);
   });
 });
 

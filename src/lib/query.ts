@@ -49,7 +49,7 @@ Wiki pages:
 const RERANK_CANDIDATE_POOL = MAX_CONTEXT_PAGES * 2;
 
 /** Maximum characters of page body included as a snippet for re-ranking. */
-const RERANK_SNIPPET_CHARS = 500;
+const RERANK_SNIPPET_CHARS = 800;
 
 /**
  * Extra system-prompt instruction appended when the caller requests a
@@ -64,13 +64,66 @@ export type QueryFormat = "prose" | "table";
 
 const RERANK_PROMPT = `You are a wiki search assistant. Given a user's question and a set of candidate wiki pages (with content snippets), re-rank them by relevance to the question.
 
-Return ONLY a JSON array of slug strings, most relevant first. You may omit pages that are clearly irrelevant. Maximum {max} slugs.
+Judge each page on these criteria:
+1. **Direct topic match** — Does the page directly address the question's topic?
+2. **Conceptual relevance** — Does it contain background or context needed to answer the question?
+3. **Citation potential** — Does it contain specific facts, data, or examples the answer should cite?
 
-Example response:
-["machine-learning", "neural-networks", "backpropagation"]
+Think briefly about which pages best match these criteria, then return a JSON array of slug strings, most relevant first. You may omit pages that are clearly irrelevant. Maximum {max} slugs.
+
+Format your response as a brief reasoning section followed by the JSON array on its own line. Example:
+
+The question asks about backpropagation, which is directly covered by the backpropagation page. Neural networks and machine learning provide relevant context.
+["backpropagation", "neural-networks", "machine-learning"]
 
 Candidate pages:
 {candidates}`;
+
+// ---------------------------------------------------------------------------
+// Best-snippet extraction
+// ---------------------------------------------------------------------------
+
+/**
+ * Extract the window of `maxChars` from `content` that has the highest token
+ * overlap with `queryTokens`.  Falls back to the first `maxChars` characters
+ * when the content is shorter than the window or when no query tokens match.
+ *
+ * The function slides a character window across the content, stepping by
+ * ~100-char increments, and picks the window whose tokenised text shares the
+ * most tokens with the query.  This gives the re-ranker the most
+ * query-relevant portion of each page rather than always the intro.
+ */
+export function extractBestSnippet(
+  content: string,
+  queryTokens: string[],
+  maxChars: number,
+): string {
+  if (content.length <= maxChars || queryTokens.length === 0) {
+    return content.slice(0, maxChars);
+  }
+
+  const querySet = new Set(queryTokens);
+  const step = 100;
+  let bestStart = 0;
+  let bestScore = -1;
+
+  for (let start = 0; start <= content.length - maxChars; start += step) {
+    const window = content.slice(start, start + maxChars);
+    const windowTokens = tokenize(window);
+    let score = 0;
+    for (const tok of windowTokens) {
+      if (querySet.has(tok)) {
+        score += 1;
+      }
+    }
+    if (score > bestScore) {
+      bestScore = score;
+      bestStart = start;
+    }
+  }
+
+  return content.slice(bestStart, bestStart + maxChars);
+}
 
 // ---------------------------------------------------------------------------
 // BM25 sparse index search
@@ -199,9 +252,8 @@ export async function searchIndex(
         const entry = entries.find((e) => e.slug === slug);
         const title = entry?.title ?? page?.title ?? slug;
         const summary = entry?.summary ?? "";
-        // Use the first N chars of the page body as a content snippet
         const snippet = page
-          ? page.content.slice(0, RERANK_SNIPPET_CHARS).replace(/\n+/g, " ").trim()
+          ? extractBestSnippet(page.content, questionTokens, RERANK_SNIPPET_CHARS).replace(/\n+/g, " ").trim()
           : summary;
         candidateLines.push(`- slug: ${slug} | title: ${title} | snippet: ${snippet}`);
       }
