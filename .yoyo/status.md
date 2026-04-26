@@ -1,8 +1,8 @@
 # Status Report
 
-**Date:** 2026-04-24  
-**Sessions completed:** ~45 (bootstrap 2026-04-06 → current 2026-04-24)  
-**Build status:** ✅ PASS — 1100 tests, 20 routes, zero type errors
+**Date:** 2026-04-26  
+**Sessions completed:** ~49 (bootstrap 2026-04-06 → current 2026-04-26)  
+**Build status:** ✅ PASS — 1121 tests, 20 routes, zero type errors
 
 ---
 
@@ -17,7 +17,7 @@ All four founding vision pillars are fully implemented and functional:
 | **Lint** | ✅ Complete | 7 checks (orphan, stale-index, empty, broken-link, missing-crossref, contradiction, missing-concept-page), all with LLM-powered auto-fix, configurable per-check enable/disable and severity filtering, CLI `lint` command |
 | **Browse** | ✅ Complete | Wiki index with sort/filter/date-range, dataview-style frontmatter queries, page view with backlinks, edit/delete/create, page revision history with diffs & restore, interactive graph with clustering, log viewer, raw source browser, global search, Obsidian export |
 
-**Trajectory:** Sessions 1–6 built vertical feature slices (one pillar per session). Sessions 7–20 shifted to hardening, polish, dedup, and resilience. Sessions 21–24 added revision history, optimized query re-ranking, and began systematic component decomposition. Sessions 25–29 continued decomposition (hooks, components, lib modules), added configurable lint, and expanded test coverage. Sessions 30–35 focused on test backfill — writing dedicated test suites for every previously untested module. Session 35 also shipped a guided onboarding wizard and dark mode toggle. Sessions 36–40 pivoted to accessibility, mobile responsiveness, CLI tooling, and codebase consolidation — `process.env` bypasses eliminated, lint decomposed into focused modules, error boundaries on every page, and a fully wired CLI for headless operation. Sessions 41–43 continued polish — graph hook extraction, config consolidation, fuzzy search, image preservation during ingest, and Docker deployment (Dockerfile, docker-compose, DEPLOY.md). Sessions 44–45 shipped dataview-style frontmatter queries (library, API, and UI), a re-ingest endpoint for URL freshness checking, source URL tracking in frontmatter, and local image downloading during ingest.
+**Trajectory:** Sessions 1–6 built vertical feature slices (one pillar per session). Sessions 7–20 shifted to hardening, polish, dedup, and resilience. Sessions 21–29 added revision history, optimized query re-ranking, began systematic component decomposition, and expanded test coverage. Sessions 30–35 focused on test backfill and shipped a guided onboarding wizard and dark mode toggle. Sessions 36–40 pivoted to accessibility, mobile responsiveness, CLI tooling, and codebase consolidation. Sessions 41–45 shipped dataview-style frontmatter queries, Docker deployment, fuzzy search, image preservation, and re-ingest. Sessions 46–49 focused on code quality — typed catch blocks, structured logging, page type templates in SCHEMA.md, error boundaries on every page, loading skeletons, component decomposition, and accessibility aria-labels.
 
 ## 2. Architecture Overview
 
@@ -28,64 +28,65 @@ LLM:        Multi-provider via Vercel AI SDK (Anthropic, OpenAI, Google, Ollama)
 Storage:    Local filesystem — markdown files (raw/ + wiki/) + JSON vector store
 Search:     BM25 + optional embedding-based vector search with RRF fusion
 CLI:        src/cli.ts — ingest, query, lint, list, status subcommands
-Testing:    Vitest (1100 tests across 31 test files)
+Testing:    Vitest (1121 tests across 32 test files)
+Logging:    Structured logger (src/lib/logger.ts) with configurable levels
 ```
 
-### Codebase size (~30,100 lines across ~139 source files)
+### Codebase size (~30,750 lines across ~148 source files)
 
 | Layer | Lines | Description |
 |-------|------:|-------------|
-| `src/lib/` | 7,305 | Core logic (ingest, query, lint, lint-checks, lint-fix, embeddings, config, lifecycle, revisions, bm25, search, dataview, wiki-log, cli) |
-| `src/lib/__tests__/` | 14,329 | Test suite (1100 tests, 31 files) |
-| `src/app/` | 3,518 | Pages (13) and API routes (20 files) |
-| `src/components/` | 3,675 | React components (24) |
+| `src/lib/` | 7,511 | Core logic (ingest, query, lint, lint-checks, lint-fix, embeddings, config, lifecycle, revisions, bm25, search, dataview, wiki-log, logger, schema) |
+| `src/lib/__tests__/` | 14,551 | Test suite (1121 tests, 32 files) |
+| `src/app/` | 3,653 | Pages (13) and API routes (20 files) |
+| `src/components/` | 3,780 | React components (26) |
 | `src/hooks/` | 961 | Custom hooks (useSettings, useStreamingQuery, useGraphSimulation) |
 
 ### Key modules
 
-- **fetch.ts** (710 lines) — URL fetching with SSRF protection, Readability extraction, image downloading
-- **lint-checks.ts** (534 lines) — 7 lint checks extracted from lint.ts, each independently testable
+- **fetch.ts** (715 lines) — URL fetching with SSRF protection, Readability extraction, image downloading
+- **lint-checks.ts** (535 lines) — 7 lint checks extracted from lint.ts, each independently testable
+- **query.ts** (530 lines) — BM25 scoring, vector search, RRF fusion, LLM re-ranking, synthesis
 - **ingest.ts** (490 lines) — URL fetch, HTML cleanup, LLM page generation, content chunking, source URL tracking
-- **embeddings.ts** (478 lines) — Provider-agnostic vector store, cosine similarity, atomic writes
-- **query.ts** (477 lines) — BM25 scoring, vector search, RRF fusion, LLM re-ranking, synthesis
-- **search.ts** (465 lines) — Related pages, backlinks, content search, fuzzy matching
+- **embeddings.ts** (479 lines) — Provider-agnostic vector store, cosine similarity, atomic writes
+- **search.ts** (469 lines) — Related pages, backlinks, content search, fuzzy matching
 - **lint-fix.ts** (458 lines) — Auto-fix handlers for all 7 lint issue types
 - **useGraphSimulation.ts** (451 lines) — Canvas-based force simulation hook for graph view
-- **config.ts** (402 lines) — Settings persistence, provider resolution, env/config merging (sole `process.env` gateway)
-- **wiki.ts** (385 lines) — Filesystem ops, index management, page cache
-- **lifecycle.ts** (355 lines) — Write/delete pipeline (index, log, embeddings, cross-refs, revisions)
-- **llm.ts** (327 lines) — Multi-provider LLM calls with retry/backoff, streaming support
+- **config.ts** (403 lines) — Settings persistence, provider resolution, env/config merging (sole `process.env` gateway)
+- **wiki.ts** (390 lines) — Filesystem ops, index management, page cache
+- **lifecycle.ts** (358 lines) — Write/delete pipeline (index, log, embeddings, cross-refs, revisions)
+- **llm.ts** (329 lines) — Multi-provider LLM calls with retry/backoff, streaming support
 - **cli.ts** (295 lines) — CLI parser and command dispatch
 - **dataview.ts** (270 lines) — Frontmatter-based structured queries with filter/sort/limit
+- **schema.ts** (86 lines) — SCHEMA.md parser exposing page conventions and type templates
+- **logger.ts** (75 lines) — Structured logger with tag-based filtering and configurable levels
 
 ### Known tech debt
 
-1. **Large component files** — `WikiIndexClient.tsx` (364 lines), `GlobalSearch.tsx` (356 lines), `DataviewPanel.tsx` (330 lines), and `BatchIngestForm.tsx` (317 lines) would benefit from decomposition.
-2. **console.warn/error in lib code** — 31 instances across lib modules. Most are legitimate fallbacks (ENOENT, network errors), but some could be replaced with structured error returns or proper logging.
-3. **Untested modules** — Only 2 small modules lack dedicated test suites: `constants.ts` (96 lines — static values) and `types.ts` (89 lines — type-only, no runtime logic). Both are trivially low risk.
-4. **Silent error swallowing** — Some catch blocks still discard errors. Improved significantly since session 18 (bare catch sweep) and session 29 (ENOENT noise cleanup), but not fully resolved.
+1. **Large component files** — `GlobalSearch.tsx` (356 lines), `DataviewPanel.tsx` (330 lines), and `BatchIngestForm.tsx` (317 lines) would benefit from decomposition. `WikiIndexClient.tsx` was reduced from 364 → 198 lines in session ~48.
+2. **Untested modules** — Only 2 small modules lack dedicated test suites: `constants.ts` (96 lines — static values) and `types.ts` (89 lines — type-only, no runtime logic). Both are trivially low risk.
 
 ## 3. What Shipped (Last 5 Sessions)
 
 | Session | Date | Summary |
 |---------|------|---------|
+| ~49 | 2026-04-26 | Status report refresh, metrics update |
+| ~48 | 2026-04-26 | Error boundaries on every page, loading skeletons, WikiIndexClient decomposition (364→198 lines), WikiIndexToolbar + WikiPageCard extraction |
+| ~47 | 2026-04-25 | Structured logger (`logger.ts`) wired across all lib modules, SCHEMA.md page type templates (concept/entity/topic/source-summary), `schema.ts` expansion |
+| ~46 | 2026-04-25 | Typed catch blocks across codebase, accessibility aria-labels on all interactive elements, query re-ranking prompt tuning |
 | ~45 | 2026-04-24 | Dataview query UI on wiki index page, local image downloading during ingest |
-| ~44 | 2026-04-24 | Dataview query library + API, re-ingest endpoint, source URL tracking in frontmatter |
-| ~43 | 2026-04-23 | Schema.ts extraction, SCHEMA.md cleanup, raw 404 fix, test noise cleanup |
-| ~42 | 2026-04-23 | Fuzzy search (Levenshtein), image preservation during ingest, Docker deployment |
-| ~41 | 2026-04-22 | Graph hook extraction (useGraphSimulation), config layer cleanup, status refresh |
 
 ## 4. Tests Added (Since Last Report)
 
-- 46 new tests (1054 → 1100) across sessions 44–45
-- Notable coverage: dataview queries (filter/sort/limit), fetch module expansion (image downloading, URL safety), re-ingest flow
+- 21 new tests (1100 → 1121) across sessions 46–49
+- Notable coverage: logger module, schema template parsing, error boundary behavior, component decomposition validation
 
 ## 5. Decisions Made
 
-- **Dataview queries over raw SQL** — Built a frontmatter-based query system (`src/lib/dataview.ts`) modeled on Obsidian Dataview. Users can filter and sort wiki pages by structured metadata (tags, dates, source) without needing a database layer. Keeps the local-filesystem-first architecture intact.
-- **Re-ingest for freshness** — Added a `/api/ingest/reingest` endpoint that re-fetches a source URL and diffs against the original content. This closes the loop on the founding vision's "keep sources fresh" goal without requiring cron or scheduled jobs — users trigger it manually or via the UI.
-- **Local image storage** — Images referenced in ingested content are now downloaded to `raw/images/` and rewritten as local paths. This makes the wiki self-contained and resilient to external image link rot.
-- **Source URL tracking** — Ingest now stores the original URL in page frontmatter (`source_url`), enabling re-ingestion without requiring users to remember or re-enter URLs.
+- **Structured logging over console.warn/error** — Built `src/lib/logger.ts` with tag-based filtering and configurable log levels to replace the 31 scattered `console.warn`/`console.error` calls across lib modules. Only one console reference remains (a comment in `logger.ts` describing the module's purpose). This gives us grep-friendly structured output and the ability to silence noisy subsystems during tests.
+- **Page type templates in SCHEMA.md** — Added concrete templates (concept, entity, topic, source-summary) to SCHEMA.md so the ingest LLM gets structural guidance instead of vague conventions. Exposed via `schema.ts` so lint and query prompts can also reference them.
+- **Typed catch blocks** — Swept all bare `catch (e)` blocks to use typed error guards (`if (e instanceof Error)`) so unknown exceptions get narrowed safely. Combined with the structured logger, this resolves the "silent error swallowing" tech debt item.
+- **Component decomposition continues** — `WikiIndexClient.tsx` decomposed from 364 → 198 lines by extracting `WikiIndexToolbar` and `WikiPageCard`. The pattern of extracting sub-components into their own files continues to pay dividends in readability and testability.
 
 ## 6. Blockers
 
@@ -96,13 +97,13 @@ Testing:    Vitest (1100 tests across 31 test files)
 The founding vision is complete. Focus shifts to component quality, new capabilities, and ecosystem.
 
 ### Priority 1 — Component decomposition
-- [ ] Break up large components (`WikiIndexClient`, `GlobalSearch`, `DataviewPanel`, `BatchIngestForm`)
+- [ ] Break up remaining large components (`GlobalSearch`, `DataviewPanel`, `BatchIngestForm`)
 - [ ] Extract shared form patterns (loading states, error display, submit handlers)
 
 ### Priority 2 — New capabilities
 - [ ] Query re-ranking quality improvements
-- [ ] Structured logging to replace scattered console.warn/error
-- [ ] Wiki page templates for consistent structure
+- [x] ~~Structured logging to replace scattered console.warn/error~~ (done, session ~47)
+- [x] ~~Wiki page templates for consistent structure~~ (done, session ~47)
 
 ### Priority 3 — Ecosystem
 - [ ] Obsidian plugin (export exists, real plugin doesn't)
@@ -111,15 +112,15 @@ The founding vision is complete. Focus shifts to component quality, new capabili
 
 ## 8. Metrics Snapshot
 
-- **Total lines:** ~30,100 (lib: 7,305, tests: 14,329, pages+routes: 3,518, components: 3,675, hooks: 961)
-- **Source files:** ~139
-- **Test count:** 1100 (31 test files)
+- **Total lines:** ~30,750 (lib: 7,511, tests: 14,551, pages+routes: 3,653, components: 3,780, hooks: 961)
+- **Source files:** ~148
+- **Test count:** 1121 (32 test files)
 - **Route count:** 20 files
 - **Pages:** 13
-- **Components:** 24
+- **Components:** 26
 - **Hooks:** 3
 - **Open issues:** community-driven
-- **Tech debt items:** 4 (large components, console.warn/error in lib, 2 untested small modules, error swallowing)
+- **Tech debt items:** 2 (large components, 2 untested small modules)
 
 ## 9. Recurring Reporting Template
 
@@ -173,4 +174,4 @@ The following template should be written to `.yoyo/status.md` every 5 sessions, 
 
 ---
 
-*This report was generated at session ~45 (2026-04-24). Next report due at session ~50.*
+*This report was generated at session ~49 (2026-04-26). Next report due at session ~54.*
