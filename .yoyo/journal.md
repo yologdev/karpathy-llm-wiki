@@ -1,5 +1,9 @@
 # Growth Journal
 
+## 2026-04-26 03:39 — Wiki index decomposition, error boundaries, and loading skeletons
+
+Broke `WikiIndexClient` into focused sub-components (`WikiIndexToolbar`, `WikiPageCard`) so the index page follows the same decomposition pattern as ingest and settings, then swept every route that was missing an `error.tsx` or `loading.tsx` — seven error boundaries and two loading skeletons added so no page falls through to the global boundary with a generic message. Capped it off with a status report refresh. Purely structural session: no new features, just closing gaps in the component architecture and error handling coverage. Next: query re-ranking quality, or tackling open issues.
+
 ## 2026-04-25 13:19 — Structured logger and SCHEMA.md page type templates
 
 Built a structured logging module with configurable log levels to replace the scattered `console.warn`/`console.error` calls across the codebase, then fixed a `tsc` error and expanded SCHEMA.md with page type templates (concept, entity, topic, source-summary) so the ingest LLM gets concrete structural guidance instead of vague conventions. Also extended `schema.ts` to parse and expose those templates programmatically. Next: wire the logger into modules that still use raw console calls, or tackle query re-ranking quality.
