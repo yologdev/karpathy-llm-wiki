@@ -5,6 +5,7 @@ import { useState, useMemo } from "react";
 import { slugify } from "@/lib/slugify";
 import { getErrorMessage } from "@/lib/errors";
 import { Alert } from "@/components/Alert";
+import { TemplateSelector } from "@/components/TemplateSelector";
 
 export default function NewWikiPage() {
   const router = useRouter();
@@ -98,6 +99,9 @@ export default function NewWikiPage() {
             </p>
           )}
         </div>
+
+        {/* Template selector */}
+        <TemplateSelector onSelect={(tpl) => setContent(tpl)} />
 
         {/* Content */}
         <div>
