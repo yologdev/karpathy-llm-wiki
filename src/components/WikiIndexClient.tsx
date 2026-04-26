@@ -3,10 +3,12 @@
 import Link from "next/link";
 import { useCallback, useMemo, useState } from "react";
 import type { IndexEntry } from "@/lib/types";
-import { formatRelativeTime, parseISODate } from "@/lib/format";
+import { parseISODate } from "@/lib/format";
 import { DataviewPanel } from "@/components/DataviewPanel";
+import { WikiIndexToolbar } from "@/components/WikiIndexToolbar";
+import { WikiPageCard } from "@/components/WikiPageCard";
 
-type SortOption = "recent" | "title-asc" | "title-desc" | "most-sources";
+export type SortOption = "recent" | "title-asc" | "title-desc" | "most-sources";
 
 interface WikiIndexClientProps {
   pages: IndexEntry[];
@@ -150,137 +152,29 @@ export function WikiIndexClient({ pages }: WikiIndexClientProps) {
 
   return (
     <div>
-      {/* Search input + Sort dropdown + Export button */}
-      <div className="mb-4 flex flex-wrap items-center gap-2">
-        <input
-          type="search"
-          value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
-          placeholder="Search pages…"
-          aria-label="Search wiki pages"
-          className="w-full sm:w-auto sm:flex-1 rounded-lg border border-foreground/10 bg-transparent px-4 py-2 text-sm outline-none focus:border-foreground/30 transition-colors"
-        />
-        <div className="flex gap-2">
-          <select
-            value={sortBy}
-            onChange={(e) => setSortBy(e.target.value as SortOption)}
-            aria-label="Sort pages"
-            className="shrink-0 rounded-lg border border-foreground/10 bg-transparent px-3 py-2 text-sm outline-none focus:border-foreground/30 transition-colors"
-          >
-            <option value="recent">Recently updated</option>
-            <option value="title-asc">Title A–Z</option>
-            <option value="title-desc">Title Z–A</option>
-            <option value="most-sources">Most sources</option>
-          </select>
-          <Link
-            href="/wiki/new"
-            className="shrink-0 inline-flex items-center gap-1.5 rounded-lg bg-foreground px-3 py-2 text-sm font-medium text-background hover:opacity-90 transition-opacity"
-          >
-            + New page
-          </Link>
-          <button
-            type="button"
-            onClick={handleExport}
-            disabled={exporting}
-            className="shrink-0 inline-flex items-center gap-1.5 rounded-lg border border-foreground/10 px-3 py-2 text-sm text-foreground/70 hover:border-foreground/30 hover:text-foreground disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-            title="Download wiki as Obsidian vault (.zip)"
-          >
-            {exporting ? "Exporting…" : "↓ Export"}
-          </button>
-          <button
-            type="button"
-            onClick={() => setShowDataview((v) => !v)}
-            className={`shrink-0 inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-sm transition-colors ${
-              showDataview
-                ? "border-foreground/30 text-foreground"
-                : "border-foreground/10 text-foreground/70 hover:border-foreground/30 hover:text-foreground"
-            }`}
-            title="Query pages by frontmatter fields"
-          >
-            📊 Dataview
-          </button>
-        </div>
-      </div>
-
-      {/* Tag filter row */}
-      {allTags.length > 0 && (
-        <div className="mb-4 flex items-center gap-2">
-          <div className="flex flex-1 gap-1.5 overflow-x-auto pb-1">
-            {allTags.map((tag) => {
-              const isActive = activeTags.includes(tag);
-              return (
-                <button
-                  key={tag}
-                  type="button"
-                  onClick={() => toggleTag(tag)}
-                  className={
-                    isActive
-                      ? "shrink-0 rounded-full bg-foreground px-2.5 py-0.5 text-xs text-background transition-colors"
-                      : "shrink-0 rounded-full bg-gray-100 px-2.5 py-0.5 text-xs text-gray-700 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700 transition-colors"
-                  }
-                >
-                  {tag}
-                </button>
-              );
-            })}
-          </div>
-          {hasActiveFilters && (
-            <button
-              type="button"
-              onClick={clearFilters}
-              className="shrink-0 rounded-md border border-foreground/10 px-2.5 py-1 text-xs text-foreground/70 hover:border-foreground/30 hover:text-foreground transition-colors"
-            >
-              Clear filters
-            </button>
-          )}
-        </div>
-      )}
-
-      {/* Advanced filters (date range) — collapsible */}
-      <div className="mb-4">
-        <button
-          type="button"
-          onClick={() => setShowAdvanced((v) => !v)}
-          className="text-xs text-foreground/50 hover:text-foreground/80 transition-colors"
-          aria-expanded={showAdvanced}
-        >
-          {showAdvanced ? "▾ Advanced filters" : "▸ Advanced filters"}
-        </button>
-        {showAdvanced && (
-          <div className="mt-2 flex flex-col sm:flex-row items-start sm:items-center gap-2 sm:gap-3">
-            <label className="flex items-center gap-1.5 text-xs text-foreground/60">
-              From
-              <input
-                type="date"
-                value={dateFrom}
-                onChange={(e) => setDateFrom(e.target.value)}
-                className="rounded-md border border-foreground/10 bg-transparent px-2 py-1 text-sm outline-none focus:border-foreground/30 transition-colors"
-              />
-            </label>
-            <label className="flex items-center gap-1.5 text-xs text-foreground/60">
-              To
-              <input
-                type="date"
-                value={dateTo}
-                onChange={(e) => setDateTo(e.target.value)}
-                className="rounded-md border border-foreground/10 bg-transparent px-2 py-1 text-sm outline-none focus:border-foreground/30 transition-colors"
-              />
-            </label>
-            {(dateFrom || dateTo) && (
-              <button
-                type="button"
-                onClick={() => {
-                  setDateFrom("");
-                  setDateTo("");
-                }}
-                className="text-xs text-foreground/50 hover:text-foreground/80 transition-colors"
-              >
-                Clear dates
-              </button>
-            )}
-          </div>
-        )}
-      </div>
+      <WikiIndexToolbar
+        searchTerm={searchTerm}
+        onSearchChange={setSearchTerm}
+        sortBy={sortBy}
+        onSortChange={setSortBy}
+        allTags={allTags}
+        activeTags={activeTags}
+        onToggleTag={toggleTag}
+        dateFrom={dateFrom}
+        dateTo={dateTo}
+        onDateFromChange={setDateFrom}
+        onDateToChange={setDateTo}
+        showAdvanced={showAdvanced}
+        onToggleAdvanced={() => setShowAdvanced((v) => !v)}
+        showDataview={showDataview}
+        onToggleDataview={() => setShowDataview((v) => !v)}
+        hasActiveFilters={hasActiveFilters}
+        onClearFilters={clearFilters}
+        exporting={exporting}
+        onExport={handleExport}
+        filteredCount={filtered.length}
+        totalCount={pages.length}
+      />
 
       {/* Dataview query panel — collapsible */}
       {showDataview && (
@@ -289,74 +183,14 @@ export function WikiIndexClient({ pages }: WikiIndexClientProps) {
         </div>
       )}
 
-      {/* Clear filters button when no tags row but filters are active */}
-      {allTags.length === 0 && hasActiveFilters && (
-        <div className="mb-4">
-          <button
-            type="button"
-            onClick={clearFilters}
-            className="rounded-md border border-foreground/10 px-2.5 py-1 text-xs text-foreground/70 hover:border-foreground/30 hover:text-foreground transition-colors"
-          >
-            Clear filters
-          </button>
-        </div>
-      )}
-
-      {/* Results count when filtering */}
-      {hasActiveFilters && (
-        <p className="mb-3 text-xs text-foreground/50">
-          {filtered.length} of {pages.length} pages
-        </p>
-      )}
-
       {/* Filtered list */}
       {filtered.length === 0 ? (
         <p className="text-foreground/60">No pages match your filters.</p>
       ) : (
         <ul className="space-y-3">
-          {filtered.map((page) => {
-            const relLabel = page.updated ? formatRelativeTime(page.updated) : null;
-            const pageTags = page.tags ?? [];
-            const hasMeta =
-              pageTags.length > 0 ||
-              relLabel !== null ||
-              (page.sourceCount ?? 0) > 0;
-
-            return (
-              <li key={page.slug}>
-                <Link
-                  href={`/wiki/${page.slug}`}
-                  className="group block rounded-lg border border-foreground/10 p-4 hover:border-foreground/30 transition-colors"
-                >
-                  <span className="font-medium group-hover:underline">
-                    {page.title}
-                  </span>
-                  <span className="mt-1 block text-sm text-foreground/60">
-                    {page.summary}
-                  </span>
-                  {hasMeta && (
-                    <div className="mt-2 flex flex-wrap items-center gap-1.5 text-xs text-foreground/50">
-                      {pageTags.map((tag) => (
-                        <span
-                          key={tag}
-                          className="inline-block rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-700 dark:bg-gray-800 dark:text-gray-300"
-                        >
-                          {tag}
-                        </span>
-                      ))}
-                      {relLabel && <span>updated {relLabel}</span>}
-                      {(page.sourceCount ?? 0) > 0 && (
-                        <span>
-                          {page.sourceCount}{" "}
-                          {page.sourceCount === 1 ? "source" : "sources"}
-                        </span>
-                      )}
-                    </div>
-                  )}
-                </Link>
-              </li>
-            );
-          })}
+          {filtered.map((page) => (
+            <WikiPageCard key={page.slug} page={page} />
+          ))}
         </ul>
       )}
     </div>
