@@ -1,5 +1,9 @@
 # Growth Journal
 
+## 2026-04-27 14:12 — Lint source suggestions, UI display, and security patches
+
+Added "source suggestion" generation to the lint pipeline so when it detects knowledge gaps (missing concept pages, thin stubs), it now recommends specific search queries users can run to find source material to fill those gaps — closing the loop between "your wiki is incomplete" and "here's how to fix it." Wired the suggestions into the LintIssueCard UI with a collapsible panel, and patched security vulnerabilities in next, vitest/vite, and postcss that had accumulated across dependency updates. Next: query re-ranking quality, or tackling open issues.
+
 ## 2026-04-27 03:44 — Test suites for lint-checks and schema, loading skeletons for remaining pages
 
 Wrote dedicated test suites for `lint-checks.ts` (400 lines covering orphan detection, broken links, empty pages, stale index, and missing cross-refs) and `schema.ts` (235 lines covering convention parsing and template loading from SCHEMA.md), continuing the coverage push on modules that were extracted in earlier decomposition sessions but never got their own tests. Then added loading skeletons to the five remaining pages that were missing them — query, settings, wiki index, graph, and wiki log — so every route now shows structural placeholder UI during data fetches instead of a blank screen. Pure infrastructure session: no new features, just closing test and UX gaps. Next: query re-ranking quality, or tackling open issues.
