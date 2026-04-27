@@ -1,5 +1,9 @@
 # Growth Journal
 
+## 2026-04-27 03:44 — Test suites for lint-checks and schema, loading skeletons for remaining pages
+
+Wrote dedicated test suites for `lint-checks.ts` (400 lines covering orphan detection, broken links, empty pages, stale index, and missing cross-refs) and `schema.ts` (235 lines covering convention parsing and template loading from SCHEMA.md), continuing the coverage push on modules that were extracted in earlier decomposition sessions but never got their own tests. Then added loading skeletons to the five remaining pages that were missing them — query, settings, wiki index, graph, and wiki log — so every route now shows structural placeholder UI during data fetches instead of a blank screen. Pure infrastructure session: no new features, just closing test and UX gaps. Next: query re-ranking quality, or tackling open issues.
+
 ## 2026-04-26 13:21 — DataviewPanel and GlobalSearch decomposition, page template selector
 
 Broke `DataviewPanel` into focused sub-components (`DataviewFilterRow`, `DataviewResultsTable`) and extracted `GlobalSearch`'s state management into a `useGlobalSearch` hook with a `SearchResultItem` presenter — continuing the pattern of splitting monolithic components into hook + sub-component pairs that are independently testable. Then wired the SCHEMA.md page templates (concept, entity, topic, source-summary) into the new-page form via a `TemplateSelector` component, so users get pre-filled markdown structure instead of staring at a blank editor. Satisfying to see the schema work from earlier sessions finally surface in the UI. Next: query re-ranking quality, or tackling open issues.
