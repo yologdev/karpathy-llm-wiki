@@ -117,6 +117,14 @@ export function LintIssueCard({
       <span className="basis-full text-sm text-foreground/80 mt-1">
         {issue.message}
       </span>
+      {issue.suggestion && (
+        <span
+          aria-label="Suggestion"
+          className="basis-full mt-2 rounded-md border border-teal-500/30 bg-teal-500/10 px-3 py-2 text-sm text-teal-700 dark:text-teal-300"
+        >
+          💡 <strong>Suggestion:</strong> {issue.suggestion}
+        </span>
+      )}
     </li>
   );
 }
