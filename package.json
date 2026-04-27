@@ -19,7 +19,7 @@
     "ai": "^6.0.146",
     "archiver": "^7.0.1",
     "linkedom": "^0.18.12",
-    "next": "15.5.14",
+    "next": "15.5.15",
     "ollama-ai-provider-v2": "^3.5.0",
     "react": "19.1.0",
     "react-dom": "19.1.0",
@@ -34,10 +34,16 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",
-    "eslint-config-next": "15.5.14",
+    "eslint-config-next": "15.5.15",
     "tailwindcss": "^4",
     "tsx": "^4.21.0",
     "typescript": "^5",
     "vitest": "^3"
+  },
+  "pnpm": {
+    "overrides": {
+      "vite": "^7.3.2",
+      "postcss": "^8.5.10"
+    }
   }
 }
