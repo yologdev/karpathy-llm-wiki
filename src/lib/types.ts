@@ -59,6 +59,9 @@ export interface LintIssue {
   target?: string;
   message: string;
   severity: "error" | "warning" | "info";
+  /** Actionable hint for resolving the issue — e.g. a search query to find
+   * authoritative sources, or a suggestion to ingest new material. */
+  suggestion?: string;
 }
 
 /** Options to configure which lint checks to run and filter results. */

@@ -52,6 +52,7 @@ export async function checkOrphanPages(
         slug,
         message: `Page "${slug}.md" exists on disk but is not listed in index.md`,
         severity: "warning",
+        suggestion: `Add "${slug}" to the wiki index, or link it from a related topic page so it becomes discoverable.`,
       });
     }
   }
@@ -73,6 +74,7 @@ export async function checkStaleIndex(
         slug,
         message: `Index references "${slug}.md" but the file does not exist`,
         severity: "error",
+        suggestion: `Remove "${slug}" from the index, or re-create the page by ingesting a source about "${slug.replace(/-/g, " ")}".`,
       });
     }
   }
@@ -93,11 +95,13 @@ export async function checkEmptyPages(diskSlugs: string[]): Promise<LintIssue[]>
     const stripped = page.content.replace(/^#\s+.+$/m, "").trim();
 
     if (stripped.length < 50) {
+      const title = page.title || slug.replace(/-/g, " ");
       issues.push({
         type: "empty-page",
         slug,
         message: `Page "${slug}.md" has little or no content (${stripped.length} chars after heading)`,
         severity: "warning",
+        suggestion: `Try ingesting a source about "${title}" to populate this page.`,
       });
     }
   }
@@ -122,12 +126,14 @@ export async function checkBrokenLinks(
       // Skip infrastructure files (index.md, log.md)
       if (INFRASTRUCTURE_FILES.has(`${targetSlug}.md`)) continue;
       if (!diskSlugSet.has(targetSlug)) {
+        const targetTitle = targetSlug.replace(/-/g, " ");
         issues.push({
           type: "broken-link",
           slug,
           target: targetSlug,
           message: `Page "${slug}.md" links to "${targetSlug}.md" which does not exist`,
           severity: "warning",
+          suggestion: `Create a page for "${targetTitle}" by ingesting a source, or remove the broken link from "${slug}.md".`,
         });
       }
     }
@@ -181,6 +187,7 @@ export async function checkMissingCrossRefs(
           target: other.slug,
           message: `Page "${current.slug}.md" mentions "${other.title}" but doesn't link to ${other.slug}.md`,
           severity: "info",
+          suggestion: `Add a link to [${other.title}](${other.slug}.md) in "${current.slug}.md" to improve cross-referencing.`,
         });
       }
     }
@@ -385,12 +392,14 @@ export async function checkContradictions(
 
       for (const c of contradictions) {
         const affectedSlug = c.pages[0] ?? cluster[0];
+        const topicHint = c.pages.map((p) => p.replace(/-/g, " ")).join(" vs ");
         issues.push({
           type: "contradiction",
           slug: affectedSlug,
           target: c.pages[1] ?? c.pages[0],
           message: `Contradiction between ${c.pages.join(", ")}: ${c.description}`,
           severity: "warning",
+          suggestion: `Search for: "${topicHint} latest research" to find an authoritative source that resolves this conflict.`,
         });
       }
     } catch (err) {
@@ -525,6 +534,7 @@ export async function checkMissingConceptPages(
         slug: firstSlug,
         message: `Concept "${c.concept}" is mentioned in ${c.mentioned_in.join(", ")} but has no dedicated page. ${c.reason}`,
         severity: "info",
+        suggestion: `Search for: "${c.concept} overview" — consider ingesting a Wikipedia or textbook source about "${c.concept}".`,
       });
     }
     return issues;

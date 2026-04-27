@@ -98,6 +98,13 @@ describe("checkOrphanPages", () => {
     expect(issues.map((i) => i.slug).sort()).toEqual(["beta", "gamma"]);
   });
 
+  it("populates suggestion field for orphan pages", async () => {
+    const issues = await checkOrphanPages(["orphaned"], new Set());
+    expect(issues).toHaveLength(1);
+    expect(issues[0].suggestion).toBeDefined();
+    expect(issues[0].suggestion).toContain("orphaned");
+  });
+
   it("returns empty array when all slugs are in index", async () => {
     const diskSlugs = ["alpha", "beta"];
     const indexSlugs = new Set(["alpha", "beta"]);
@@ -130,6 +137,13 @@ describe("checkStaleIndex", () => {
     expect(issues.every((i) => i.type === "stale-index")).toBe(true);
     expect(issues.every((i) => i.severity === "error")).toBe(true);
     expect(issues.map((i) => i.slug).sort()).toEqual(["beta", "gamma"]);
+  });
+
+  it("populates suggestion field for stale index entries", async () => {
+    const issues = await checkStaleIndex(new Set(["my-topic"]), new Set());
+    expect(issues).toHaveLength(1);
+    expect(issues[0].suggestion).toBeDefined();
+    expect(issues[0].suggestion).toContain("my topic");
   });
 
   it("returns empty array when all index slugs exist on disk", async () => {
@@ -167,6 +181,16 @@ describe("checkEmptyPages", () => {
     expect(issues[0].type).toBe("empty-page");
     expect(issues[0].slug).toBe("empty-page");
     expect(issues[0].severity).toBe("warning");
+  });
+
+  it("populates suggestion field for empty pages", async () => {
+    await writeWikiPage("sparse-topic", "# Sparse Topic\n\n");
+
+    const issues = await checkEmptyPages(["sparse-topic"]);
+    expect(issues).toHaveLength(1);
+    expect(issues[0].suggestion).toBeDefined();
+    expect(issues[0].suggestion).toContain("Sparse Topic");
+    expect(issues[0].suggestion).toContain("ingest");
   });
 
   it("passes pages with substantial content", async () => {
@@ -215,6 +239,19 @@ describe("checkBrokenLinks", () => {
     expect(issues[0].slug).toBe("source");
     expect(issues[0].target).toBe("missing");
     expect(issues[0].severity).toBe("warning");
+  });
+
+  it("populates suggestion field for broken links", async () => {
+    await writeWikiPage(
+      "linker",
+      "# Linker\n\nSee [Deep Learning](deep-learning.md) for more details on the topic.",
+    );
+
+    const issues = await checkBrokenLinks(["linker"]);
+    expect(issues).toHaveLength(1);
+    expect(issues[0].suggestion).toBeDefined();
+    expect(issues[0].suggestion).toContain("deep learning");
+    expect(issues[0].suggestion).toContain("Create");
   });
 
   it("does not flag links to existing pages", async () => {
@@ -274,6 +311,26 @@ describe("checkMissingCrossRefs", () => {
     expect(crossRefIssues).toHaveLength(1);
     expect(crossRefIssues[0].type).toBe("missing-crossref");
     expect(crossRefIssues[0].severity).toBe("info");
+  });
+
+  it("populates suggestion field for missing cross-refs", async () => {
+    await writeWikiPage(
+      "overview",
+      "# Overview\n\nThis page covers transformers and how they relate to modern language models.",
+    );
+    await writeWikiPage(
+      "transformers",
+      "# Transformers\n\nTransformers are a neural network architecture using self-attention mechanisms.",
+    );
+
+    const issues = await checkMissingCrossRefs(["overview", "transformers"]);
+    const crossRefIssues = issues.filter(
+      (i) => i.slug === "overview" && i.target === "transformers",
+    );
+    expect(crossRefIssues).toHaveLength(1);
+    expect(crossRefIssues[0].suggestion).toBeDefined();
+    expect(crossRefIssues[0].suggestion).toContain("Transformers");
+    expect(crossRefIssues[0].suggestion).toContain("transformers.md");
   });
 
   it("does NOT flag partial matches inside larger words", async () => {
