@@ -4,13 +4,9 @@ import Link from "next/link";
 import { useState, useCallback } from "react";
 import { MAX_BATCH_URLS } from "@/lib/constants";
 import { Alert } from "@/components/Alert";
-
-interface BatchItem {
-  url: string;
-  status: "pending" | "processing" | "success" | "error";
-  slug?: string;
-  error?: string;
-}
+import { BatchItemRow } from "@/components/BatchItemRow";
+import { BatchProgressBar } from "@/components/BatchProgressBar";
+import type { BatchItem } from "@/components/BatchItemRow";
 
 export function BatchIngestForm() {
   const [input, setInput] = useState("");
@@ -179,20 +175,8 @@ export function BatchIngestForm() {
 
   const successCount = items.filter((i) => i.status === "success").length;
   const errorCount = items.filter((i) => i.status === "error").length;
-  const isDone = !running && items.length > 0 && successCount + errorCount === items.length;
-
-  const statusIcon = (status: BatchItem["status"]) => {
-    switch (status) {
-      case "pending":
-        return "⏳";
-      case "processing":
-        return "🔄";
-      case "success":
-        return "✅";
-      case "error":
-        return "❌";
-    }
-  };
+  const completed = successCount + errorCount;
+  const isDone = !running && items.length > 0 && completed === items.length;
 
   return (
     <div className="space-y-6">
@@ -236,60 +220,17 @@ export function BatchIngestForm() {
 
       {items.length > 0 && (
         <div className="space-y-4">
-          {/* Progress summary */}
-          <div className="flex items-center justify-between">
-            <p className="text-sm text-foreground/70">
-              {running
-                ? `Processing... ${successCount + errorCount} of ${items.length} complete`
-                : `${successCount} of ${items.length} URL${items.length === 1 ? "" : "s"} ingested successfully`}
-            </p>
-            {running && (
-              <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-foreground/30 border-t-foreground" />
-            )}
-          </div>
-
-          {/* Progress bar */}
-          <div className="h-2 w-full rounded-full bg-foreground/10 overflow-hidden">
-            <div
-              className="h-full rounded-full bg-foreground transition-all duration-300"
-              style={{
-                width: `${items.length > 0 ? ((successCount + errorCount) / items.length) * 100 : 0}%`,
-              }}
-            />
-          </div>
+          <BatchProgressBar
+            total={items.length}
+            completed={completed}
+            successCount={successCount}
+            running={running}
+          />
 
           {/* Item list */}
           <ul className="space-y-2">
             {items.map((item, i) => (
-              <li
-                key={i}
-                className="flex items-start gap-3 rounded-lg border border-foreground/10 px-4 py-3 text-sm"
-              >
-                <span className="shrink-0 text-base leading-5">
-                  {statusIcon(item.status)}
-                </span>
-                <div className="min-w-0 flex-1">
-                  <p className="truncate font-mono text-xs text-foreground/60">
-                    {item.url}
-                  </p>
-                  {item.status === "success" && item.slug && (
-                    <p className="mt-1">
-                      Created{" "}
-                      <Link
-                        href={`/wiki/${item.slug}`}
-                        className="font-medium text-foreground hover:underline"
-                      >
-                        {item.slug}
-                      </Link>
-                    </p>
-                  )}
-                  {item.status === "error" && item.error && (
-                    <p className="mt-1 text-red-600 dark:text-red-400">
-                      {item.error}
-                    </p>
-                  )}
-                </div>
-              </li>
+              <BatchItemRow key={i} item={item} />
             ))}
           </ul>
 
