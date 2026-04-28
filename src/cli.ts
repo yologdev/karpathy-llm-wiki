@@ -116,7 +116,7 @@ function readStdin(): Promise<string> {
 // Command runners
 // ---------------------------------------------------------------------------
 
-async function runIngestUrl(url: string): Promise<void> {
+export async function runIngestUrl(url: string): Promise<void> {
   const { ingestUrl } = await import("./lib/ingest");
   const result = await ingestUrl(url);
   console.log(result.primarySlug);
@@ -127,7 +127,7 @@ async function runIngestUrl(url: string): Promise<void> {
   }
 }
 
-async function runIngestText(): Promise<void> {
+export async function runIngestText(): Promise<void> {
   const text = await readStdin();
   if (!text.trim()) {
     console.error("Error: no text received on stdin");
@@ -146,7 +146,7 @@ async function runIngestText(): Promise<void> {
   }
 }
 
-async function runQuery(question: string): Promise<void> {
+export async function runQuery(question: string): Promise<void> {
   const { query } = await import("./lib/query");
   const result = await query(question);
   // Answer to stdout (pipeable)
@@ -157,7 +157,7 @@ async function runQuery(question: string): Promise<void> {
   }
 }
 
-async function runLint(fix: boolean): Promise<void> {
+export async function runLint(fix: boolean): Promise<void> {
   const { lint } = await import("./lib/lint");
   const result = await lint();
 
@@ -204,7 +204,7 @@ async function runLint(fix: boolean): Promise<void> {
   }
 }
 
-async function runList(raw: boolean): Promise<void> {
+export async function runList(raw: boolean): Promise<void> {
   if (raw) {
     const { listRawSources } = await import("./lib/raw");
     const sources = await listRawSources();
@@ -222,7 +222,7 @@ async function runList(raw: boolean): Promise<void> {
   }
 }
 
-async function runStatus(): Promise<void> {
+export async function runStatus(): Promise<void> {
   const { listWikiPages } = await import("./lib/wiki");
   const { listRawSources } = await import("./lib/raw");
   const { getEffectiveSettings } = await import("./lib/config");
