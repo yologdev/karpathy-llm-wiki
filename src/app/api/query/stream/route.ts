@@ -8,6 +8,7 @@ import {
   type QueryFormat,
 } from "@/lib/query";
 import { getErrorMessage } from "@/lib/errors";
+import { logger } from "@/lib/logger";
 
 export async function POST(request: NextRequest) {
   try {
@@ -84,7 +85,7 @@ export async function POST(request: NextRequest) {
       },
     });
   } catch (error) {
-    console.error("Query stream error:", error);
+    logger.error("query", "Query stream error", error);
     return NextResponse.json(
       {
         error: getErrorMessage(error),

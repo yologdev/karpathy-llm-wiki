@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { query, type QueryFormat } from "@/lib/query";
 import { getErrorMessage } from "@/lib/errors";
+import { logger } from "@/lib/logger";
 
 function parseFormat(value: unknown): QueryFormat {
   return value === "table" ? "table" : "prose";
@@ -39,7 +40,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json(result);
   } catch (error) {
-    console.error("Query error:", error);
+    logger.error("query", "Query error", error);
     return NextResponse.json(
       {
         error: getErrorMessage(error),

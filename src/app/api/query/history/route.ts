@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { appendQuery, listQueries, markSaved } from "@/lib/query-history";
 import { getErrorMessage } from "@/lib/errors";
+import { logger } from "@/lib/logger";
 
 /**
  * GET /api/query/history?limit=20
@@ -23,7 +24,7 @@ export async function GET(request: NextRequest) {
     const entries = await listQueries(limit);
     return NextResponse.json({ entries });
   } catch (error) {
-    console.error("Query history GET error:", error);
+    logger.error("query", "Query history GET error", error);
     return NextResponse.json(
       { error: getErrorMessage(error) },
       { status: 500 },
@@ -90,7 +91,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ entry, success: true });
   } catch (error) {
-    console.error("Query history POST error:", error);
+    logger.error("query", "Query history POST error", error);
     return NextResponse.json(
       { error: getErrorMessage(error) },
       { status: 500 },

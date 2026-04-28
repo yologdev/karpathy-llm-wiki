@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { saveAnswerToWiki } from "@/lib/query";
 import { getErrorMessage } from "@/lib/errors";
+import { logger } from "@/lib/logger";
 
 export async function POST(request: NextRequest) {
   try {
@@ -30,7 +31,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ slug: result.slug, success: true });
   } catch (error) {
-    console.error("Save answer error:", error);
+    logger.error("query", "Save answer error", error);
     return NextResponse.json(
       {
         error: getErrorMessage(error),
