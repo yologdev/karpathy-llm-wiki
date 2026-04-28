@@ -17,31 +17,6 @@ import { slugify } from "./slugify";
 import { loadPageConventions } from "./schema";
 import { getRawDir } from "./config";
 
-// Re-exported so existing imports (and the test suite) keep working after we
-// moved the cross-ref helpers into wiki.ts to avoid a circular dependency
-// between wiki.ts and ingest.ts. See `.yoyo/learnings.md` — "Parallel
-// write-paths drift".
-export { findRelatedPages, updateRelatedPages } from "./wiki";
-
-// Re-export slugify so existing `import { slugify } from "./ingest"` keeps working.
-export { slugify } from "./slugify";
-
-// Re-export loadPageConventions so existing `import { loadPageConventions } from "./ingest"` keeps working
-// after the extraction into schema.ts.
-export { loadPageConventions } from "./schema";
-
-// Re-export URL-fetching helpers so existing `import { … } from "./ingest"` keeps working
-// after the extraction into fetch.ts.
-export {
-  isUrl,
-  stripHtml,
-  extractTitle,
-  extractWithReadability,
-  htmlToMarkdown,
-  validateUrlSafety,
-  fetchUrlContent,
-  downloadImages,
-} from "./fetch";
 
 /**
  * Ingest a URL into the wiki.
@@ -141,20 +116,8 @@ export function extractSummary(content: string, maxLen = 200): string {
 }
 
 // ---------------------------------------------------------------------------
-// Cross-referencing
-// ---------------------------------------------------------------------------
-//
-// `findRelatedPages` and `updateRelatedPages` used to live here but were
-// moved into `wiki.ts` so that `writeWikiPageWithSideEffects` could call them
-// without creating a circular import. They are re-exported at the top of
-// this file for backwards compatibility with existing tests and callers.
-
-// ---------------------------------------------------------------------------
 // Content chunking
 // ---------------------------------------------------------------------------
-
-// Re-export so existing consumers (tests, etc.) can keep importing from here.
-export { MAX_LLM_INPUT_CHARS } from "./constants";
 
 /**
  * Split text into chunks of at most `maxChars` characters.

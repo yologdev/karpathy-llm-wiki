@@ -3,24 +3,25 @@ import fs from "fs/promises";
 import os from "os";
 import path from "path";
 import {
-  slugify,
   extractSummary,
   ingest,
+  ingestUrl,
+  reingest,
+  buildIngestSystemPrompt,
+  chunkText,
+} from "../ingest";
+import { slugify } from "../slugify";
+import { loadPageConventions } from "../schema";
+import {
   isUrl,
   stripHtml,
   extractTitle,
   extractWithReadability,
   fetchUrlContent,
-  ingestUrl,
-  reingest,
-  findRelatedPages,
-  updateRelatedPages,
-  loadPageConventions,
-  buildIngestSystemPrompt,
-  chunkText,
   validateUrlSafety,
-  MAX_LLM_INPUT_CHARS,
-} from "../ingest";
+} from "../fetch";
+import { findRelatedPages, updateRelatedPages } from "../search";
+import { MAX_LLM_INPUT_CHARS } from "../constants";
 import { listWikiPages, readWikiPage, writeWikiPage } from "../wiki";
 import type { IndexEntry } from "../types";
 

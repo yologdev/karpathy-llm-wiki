@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { ingestUrl, isUrl } from "@/lib/ingest";
+import { ingestUrl } from "@/lib/ingest";
+import { isUrl } from "@/lib/fetch";
 import { MAX_BATCH_URLS } from "@/lib/constants";
 import { getErrorMessage } from "@/lib/errors";
 

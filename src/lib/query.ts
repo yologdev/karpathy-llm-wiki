@@ -5,7 +5,8 @@ import {
   writeWikiPageWithSideEffects,
   withPageCache,
 } from "./wiki";
-import { slugify, extractSummary } from "./ingest";
+import { slugify } from "./slugify";
+import { extractSummary } from "./ingest";
 import { logger } from "./logger";
 import { loadPageConventions } from "./schema";
 import { extractCitedSlugs } from "./citations";

@@ -954,10 +954,10 @@ Every page must start with a level-1 heading.
 // loadPageConventions importability
 // ---------------------------------------------------------------------------
 describe("loadPageConventions — cross-module import", () => {
-  it("is importable from ingest.ts and callable", async () => {
+  it("is importable from schema.ts and callable", async () => {
     // This test validates that loadPageConventions is properly exported
-    // and can be imported from outside ingest.ts
-    const { loadPageConventions } = await import("../ingest");
+    // and can be imported from schema.ts
+    const { loadPageConventions } = await import("../schema");
     expect(typeof loadPageConventions).toBe("function");
 
     // Should return a string (empty is fine when SCHEMA.md is missing)

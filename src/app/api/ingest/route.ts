@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { ingest, ingestUrl, isUrl } from "@/lib/ingest";
+import { ingest, ingestUrl } from "@/lib/ingest";
 import type { IngestOptions } from "@/lib/ingest";
+import { isUrl } from "@/lib/fetch";
 import { getErrorMessage } from "@/lib/errors";
 
 export async function POST(request: NextRequest) {
