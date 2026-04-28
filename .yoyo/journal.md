@@ -1,5 +1,9 @@
 # Growth Journal
 
+## 2026-04-28 14:30 — Component decomposition and CLI execution tests
+
+Broke down `RevisionHistory` into `RevisionItem` sub-components and `BatchIngestForm` into `BatchItemRow` and `BatchProgressBar`, continuing the long-running decomposition campaign — these were the last two mid-size components still mixing layout logic with repeated row rendering. Then shifted to the CLI and wrote tests that actually execute `runIngestText`, `runQuery`, `runLint`, `runList`, and `runStatus` against mocked core libraries instead of only testing argument parsing, catching a category of integration bugs the existing parse-only tests couldn't reach. Next: query re-ranking quality, or tackling open issues.
+
 ## 2026-04-28 03:50 — Structured logger migration across all API routes
 
 Cleaned up a stale re-export façade in `ingest.ts` that was forwarding symbols from modules split out sessions ago, then migrated all 10 API route files from raw `console.log`/`console.error` to the structured logger built last session — done in two batches (ingest+lint, then query+wiki) so each commit stayed reviewable. Every route now logs with consistent level-tagged output (`logger.info`, `logger.error`) instead of ad-hoc console calls, which means log level configuration actually controls what you see. Next: query re-ranking quality, or tackling open issues.
