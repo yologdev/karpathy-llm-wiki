@@ -3,6 +3,7 @@ import { ingestUrl } from "@/lib/ingest";
 import { isUrl } from "@/lib/fetch";
 import { MAX_BATCH_URLS } from "@/lib/constants";
 import { getErrorMessage } from "@/lib/errors";
+import { logger } from "@/lib/logger";
 
 export async function POST(request: NextRequest) {
   try {
@@ -79,7 +80,7 @@ export async function POST(request: NextRequest) {
       },
     });
   } catch (error) {
-    console.error("Batch ingest error:", error);
+    logger.error("ingest", "Batch ingest error", error);
     return NextResponse.json(
       {
         error: getErrorMessage(error),

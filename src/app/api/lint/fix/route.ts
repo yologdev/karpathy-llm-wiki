@@ -5,6 +5,7 @@ import {
   FixNotFoundError,
 } from "@/lib/lint-fix";
 import { getErrorMessage } from "@/lib/errors";
+import { logger } from "@/lib/logger";
 
 /**
  * POST /api/lint/fix — auto-fix a lint issue.
@@ -39,7 +40,7 @@ export async function POST(req: NextRequest) {
     if (error instanceof FixNotFoundError) {
       return NextResponse.json({ error: error.message }, { status: 404 });
     }
-    console.error("Lint fix error:", error);
+    logger.error("lint", "Lint fix error", error);
     return NextResponse.json(
       {
         error: getErrorMessage(error),

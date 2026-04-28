@@ -3,6 +3,7 @@ import { ingest, ingestUrl } from "@/lib/ingest";
 import type { IngestOptions } from "@/lib/ingest";
 import { isUrl } from "@/lib/fetch";
 import { getErrorMessage } from "@/lib/errors";
+import { logger } from "@/lib/logger";
 
 export async function POST(request: NextRequest) {
   try {
@@ -48,7 +49,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json(result);
   } catch (error) {
-    console.error("Ingest error:", error);
+    logger.error("ingest", "Ingest error", error);
     return NextResponse.json(
       {
         error: getErrorMessage(error),

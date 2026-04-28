@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { reingest } from "@/lib/ingest";
 import { readWikiPageWithFrontmatter } from "@/lib/wiki";
 import { getErrorMessage } from "@/lib/errors";
+import { logger } from "@/lib/logger";
 
 export async function POST(request: NextRequest) {
   try {
@@ -38,7 +39,7 @@ export async function POST(request: NextRequest) {
     const result = await reingest(trimmedSlug);
     return NextResponse.json(result);
   } catch (error) {
-    console.error("Re-ingest error:", error);
+    logger.error("ingest", "Re-ingest error", error);
     return NextResponse.json(
       { error: getErrorMessage(error) },
       { status: 500 },

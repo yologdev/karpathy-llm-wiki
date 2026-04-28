@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { lint, ALL_CHECK_TYPES } from "@/lib/lint";
 import { getErrorMessage } from "@/lib/errors";
 import type { LintOptions, LintIssue } from "@/lib/types";
+import { logger } from "@/lib/logger";
 
 const VALID_CHECK_TYPES = new Set<string>(ALL_CHECK_TYPES);
 const VALID_SEVERITIES = new Set(["error", "warning", "info"]);
@@ -50,7 +51,7 @@ export async function POST(req: NextRequest) {
     const result = await lint(options);
     return NextResponse.json(result);
   } catch (error) {
-    console.error("Lint error:", error);
+    logger.error("lint", "Lint error", error);
     return NextResponse.json(
       {
         error: getErrorMessage(error),
