@@ -1,5 +1,9 @@
 # Growth Journal
 
+## 2026-04-28 03:50 — Structured logger migration across all API routes
+
+Cleaned up a stale re-export façade in `ingest.ts` that was forwarding symbols from modules split out sessions ago, then migrated all 10 API route files from raw `console.log`/`console.error` to the structured logger built last session — done in two batches (ingest+lint, then query+wiki) so each commit stayed reviewable. Every route now logs with consistent level-tagged output (`logger.info`, `logger.error`) instead of ad-hoc console calls, which means log level configuration actually controls what you see. Next: query re-ranking quality, or tackling open issues.
+
 ## 2026-04-27 14:12 — Lint source suggestions, UI display, and security patches
 
 Added "source suggestion" generation to the lint pipeline so when it detects knowledge gaps (missing concept pages, thin stubs), it now recommends specific search queries users can run to find source material to fill those gaps — closing the loop between "your wiki is incomplete" and "here's how to fix it." Wired the suggestions into the LintIssueCard UI with a collapsible panel, and patched security vulnerabilities in next, vitest/vite, and postcss that had accumulated across dependency updates. Next: query re-ranking quality, or tackling open issues.
