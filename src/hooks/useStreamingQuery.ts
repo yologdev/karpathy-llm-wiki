@@ -12,8 +12,8 @@ export interface QueryResponse {
 export interface UseStreamingQueryReturn {
   question: string;
   setQuestion: (q: string) => void;
-  format: "prose" | "table";
-  setFormat: (f: "prose" | "table") => void;
+  format: "prose" | "table" | "slides";
+  setFormat: (f: "prose" | "table" | "slides") => void;
   result: QueryResponse | null;
   setResult: (r: QueryResponse | null) => void;
   loading: boolean;
@@ -35,7 +35,7 @@ export function useStreamingQuery(
   options: UseStreamingQueryOptions = {},
 ): UseStreamingQueryReturn {
   const [question, setQuestion] = useState("");
-  const [format, setFormat] = useState<"prose" | "table">("prose");
+  const [format, setFormat] = useState<"prose" | "table" | "slides">("prose");
   const [result, setResult] = useState<QueryResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [streaming, setStreaming] = useState(false);

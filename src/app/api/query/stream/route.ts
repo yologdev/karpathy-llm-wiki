@@ -30,14 +30,15 @@ export async function POST(request: NextRequest) {
     if (
       format !== undefined &&
       format !== "prose" &&
-      format !== "table"
+      format !== "table" &&
+      format !== "slides"
     ) {
       return NextResponse.json(
-        { error: "format must be 'prose' or 'table'" },
+        { error: "format must be 'prose', 'table', or 'slides'" },
         { status: 400 },
       );
     }
-    const queryFormat: QueryFormat = format === "table" ? "table" : "prose";
+    const queryFormat: QueryFormat = format === "table" ? "table" : format === "slides" ? "slides" : "prose";
 
     const trimmedQuestion = question.trim();
     const entries = await listWikiPages();

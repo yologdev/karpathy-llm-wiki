@@ -4,7 +4,9 @@ import { getErrorMessage } from "@/lib/errors";
 import { logger } from "@/lib/logger";
 
 function parseFormat(value: unknown): QueryFormat {
-  return value === "table" ? "table" : "prose";
+  if (value === "table") return "table";
+  if (value === "slides") return "slides";
+  return "prose";
 }
 
 export async function POST(request: NextRequest) {
@@ -28,10 +30,11 @@ export async function POST(request: NextRequest) {
     if (
       format !== undefined &&
       format !== "prose" &&
-      format !== "table"
+      format !== "table" &&
+      format !== "slides"
     ) {
       return NextResponse.json(
-        { error: "format must be 'prose' or 'table'" },
+        { error: "format must be 'prose', 'table', or 'slides'" },
         { status: 400 },
       );
     }

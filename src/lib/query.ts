@@ -61,8 +61,23 @@ const RERANK_SNIPPET_CHARS = 800;
 export const TABLE_FORMAT_INSTRUCTION =
   "Format your answer as a markdown comparison table where possible. Include a short prose lead-in (1-2 sentences) before the table. Every column header should be meaningful. Cite sources as [[slug]] in a final 'Sources' row or paragraph.";
 
+/**
+ * Extra system-prompt instruction appended when the caller requests a
+ * Marp slide deck answer format.
+ */
+export const SLIDES_FORMAT_INSTRUCTION = `Format your answer as a Marp slide deck. Use \`---\` to separate slides.
+The first slide should be a title slide with \`# {question}\`.
+Each subsequent slide should cover one key point with a heading and 2-4 bullet points.
+Keep slides concise — aim for 5-8 slides total.
+Include a final "Sources" slide citing wiki pages as [[slug]].
+Use standard Marp markdown (no custom directives needed).
+Start the response with the Marp front matter:
+---
+marp: true
+---`;
+
 /** Answer format hint supported by `query()` / `buildQuerySystemPrompt()`. */
-export type QueryFormat = "prose" | "table";
+export type QueryFormat = "prose" | "table" | "slides";
 
 const RERANK_PROMPT = `You are a wiki search assistant. Given a user's question and a set of candidate wiki pages (with content snippets), re-rank them by relevance to the question.
 
@@ -369,10 +384,12 @@ export async function buildQuerySystemPrompt(
     systemPrompt += `\n\nThe wiki you are querying follows these conventions (from SCHEMA.md):\n\n${conventions}`;
   }
 
-  // Append the table-formatting hint when requested. Prose is the default and
-  // adds nothing, so existing callers see identical output.
+  // Append format-specific instructions. Prose is the default and adds
+  // nothing, so existing callers see identical output.
   if (format === "table") {
     systemPrompt += `\n\n${TABLE_FORMAT_INSTRUCTION}`;
+  } else if (format === "slides") {
+    systemPrompt += `\n\n${SLIDES_FORMAT_INSTRUCTION}`;
   }
 
   return systemPrompt;
@@ -416,7 +433,8 @@ export async function selectPagesForQuery(
  *
  * The optional `format` controls how the LLM is asked to shape its answer.
  * `"prose"` (the default) is the current free-form markdown behavior;
- * `"table"` adds a system-prompt hint asking for a markdown comparison table.
+ * `"table"` adds a system-prompt hint asking for a markdown comparison table;
+ * `"slides"` asks for a Marp slide deck.
  */
 export async function query(
   question: string,

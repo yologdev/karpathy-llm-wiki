@@ -147,6 +147,17 @@ export default function QueryPage() {
                 />
                 <span>Table</span>
               </label>
+              <label className="flex items-center gap-1.5 cursor-pointer">
+                <input
+                  type="radio"
+                  name="format"
+                  value="slides"
+                  checked={format === "slides"}
+                  onChange={() => setFormat("slides")}
+                  disabled={isProcessing}
+                />
+                <span>Slides</span>
+              </label>
             </fieldset>
             <button
               type="submit"
