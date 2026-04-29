@@ -1,2 +1,0 @@
-Verdict: PASS
-Reason: All task requirements implemented correctly — QueryFormat type expanded to include "slides", SLIDES_FORMAT_INSTRUCTION constant added with correct Marp content, buildQuerySystemPrompt handles the new format, both API routes (stream and non-stream) validate and pass "slides", useStreamingQuery hook widens the format type, and the query page adds a Slides radio button matching the existing pattern. No bugs detected; build and tests pass.
