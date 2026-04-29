@@ -1,208 +1,35 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
 import { Alert } from "@/components/Alert";
 import { BatchIngestForm } from "@/components/BatchIngestForm";
 import { IngestSuccess } from "@/components/IngestSuccess";
 import { IngestPreview } from "@/components/IngestPreview";
-import type { PreviewData } from "@/components/IngestPreview";
-
-type Mode = "text" | "url" | "batch";
-type Stage = "form" | "preview" | "success";
-
-interface IngestResponse {
-  rawPath: string;
-  primarySlug: string;
-  relatedUpdated: string[];
-  wikiPages: string[];
-  indexUpdated: boolean;
-  previewContent?: string;
-  error?: string;
-}
+import { useIngest } from "@/hooks/useIngest";
 
 export default function IngestPage() {
-  const [mode, setMode] = useState<Mode>("text");
-  const [stage, setStage] = useState<Stage>("form");
-  const [title, setTitle] = useState("");
-  const [content, setContent] = useState("");
-  const [url, setUrl] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [result, setResult] = useState<IngestResponse | null>(null);
-  const [preview, setPreview] = useState<PreviewData | null>(null);
-  const [showRawMarkdown, setShowRawMarkdown] = useState(false);
-
-  function switchMode(newMode: Mode) {
-    setMode(newMode);
-    setError(null);
-    if (newMode === "url") {
-      setTitle("");
-      setContent("");
-    } else if (newMode === "text") {
-      setUrl("");
-    } else {
-      setTitle("");
-      setContent("");
-      setUrl("");
-    }
-  }
-
-  /** Phase 1: call the API with preview=true to get LLM output without writing. */
-  async function handlePreview(e: React.FormEvent) {
-    e.preventDefault();
-    setLoading(true);
-    setError(null);
-
-    try {
-      const body =
-        mode === "url"
-          ? { url, preview: true }
-          : { title, content, preview: true };
-
-      const res = await fetch("/api/ingest", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-
-      const data: IngestResponse = await res.json();
-
-      if (!res.ok) {
-        setError(data.error || "Something went wrong");
-        return;
-      }
-
-      setPreview({
-        slug: data.primarySlug,
-        previewContent: data.previewContent ?? "",
-        relatedPages: data.relatedUpdated ?? [],
-        title: mode === "url" ? data.primarySlug : title,
-        content: mode === "url" ? "" : content,
-        url: mode === "url" ? url : undefined,
-      });
-      setStage("preview");
-    } catch {
-      setError("Network error — could not reach the server");
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  /** Phase 2: approve the preview — commit with pre-generated content. */
-  async function handleApprove() {
-    if (!preview) return;
-    setLoading(true);
-    setError(null);
-
-    try {
-      const body = preview.url
-        ? {
-            url: preview.url,
-            generatedContent: preview.previewContent,
-          }
-        : {
-            title: preview.title,
-            content: preview.content,
-            generatedContent: preview.previewContent,
-          };
-
-      const res = await fetch("/api/ingest", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-
-      const data: IngestResponse = await res.json();
-
-      if (!res.ok) {
-        setError(data.error || "Something went wrong");
-        return;
-      }
-
-      setResult(data);
-      setStage("success");
-    } catch {
-      setError("Network error — could not reach the server");
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  /** Direct ingest: skip preview, write immediately. */
-  async function handleDirectIngest(e: React.FormEvent) {
-    e.preventDefault();
-    setError(null);
-
-    // Validate inputs (since this button bypasses HTML5 form validation)
-    if (mode === "url") {
-      if (!url.trim()) {
-        setError("Please enter a URL");
-        return;
-      }
-      try {
-        new URL(url.trim());
-      } catch {
-        setError("Please enter a valid URL (e.g. https://example.com)");
-        return;
-      }
-    } else {
-      if (!title.trim()) {
-        setError("Please enter a title");
-        return;
-      }
-      if (!content.trim()) {
-        setError("Please enter some content");
-        return;
-      }
-    }
-
-    setLoading(true);
-    setResult(null);
-
-    try {
-      const body =
-        mode === "url" ? { url } : { title, content };
-
-      const res = await fetch("/api/ingest", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-
-      const data: IngestResponse = await res.json();
-
-      if (!res.ok) {
-        setError(data.error || "Something went wrong");
-        return;
-      }
-
-      setResult(data);
-      setStage("success");
-    } catch {
-      setError("Network error — could not reach the server");
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  function reset() {
-    setTitle("");
-    setContent("");
-    setUrl("");
-    setError(null);
-    setResult(null);
-    setPreview(null);
-    setStage("form");
-    setShowRawMarkdown(false);
-  }
-
-  function cancelPreview() {
-    setPreview(null);
-    setError(null);
-    setStage("form");
-    setShowRawMarkdown(false);
-  }
+  const {
+    mode,
+    stage,
+    title,
+    content,
+    url,
+    loading,
+    error,
+    result,
+    preview,
+    showRawMarkdown,
+    switchMode,
+    setTitle,
+    setContent,
+    setUrl,
+    handlePreview,
+    handleApprove,
+    handleDirectIngest,
+    reset,
+    cancelPreview,
+    toggleRawMarkdown,
+  } = useIngest();
 
   // -------------------------------------------------------------------------
   // Stage: success
@@ -226,7 +53,7 @@ export default function IngestPage() {
         preview={preview}
         loading={loading}
         showRawMarkdown={showRawMarkdown}
-        onToggleMarkdown={() => setShowRawMarkdown((v) => !v)}
+        onToggleMarkdown={toggleRawMarkdown}
         onApprove={handleApprove}
         onCancel={cancelPreview}
         error={error}
