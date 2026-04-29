@@ -41,6 +41,36 @@ export interface UseIngestReturn {
   toggleRawMarkdown: () => void;
 }
 
+/**
+ * Validate ingest inputs — pure function extracted from handleDirectIngest.
+ * Returns an error message string if invalid, or null if valid.
+ */
+export function validateIngestInput(
+  mode: Mode,
+  title: string,
+  content: string,
+  url: string,
+): string | null {
+  if (mode === "url") {
+    if (!url.trim()) {
+      return "Please enter a URL";
+    }
+    try {
+      new URL(url.trim());
+    } catch {
+      return "Please enter a valid URL (e.g. https://example.com)";
+    }
+  } else {
+    if (!title.trim()) {
+      return "Please enter a title";
+    }
+    if (!content.trim()) {
+      return "Please enter some content";
+    }
+  }
+  return null;
+}
+
 export function useIngest(): UseIngestReturn {
   const [mode, setMode] = useState<Mode>("text");
   const [stage, setStage] = useState<Stage>("form");
@@ -155,26 +185,10 @@ export function useIngest(): UseIngestReturn {
     setError(null);
 
     // Validate inputs (since this button bypasses HTML5 form validation)
-    if (mode === "url") {
-      if (!url.trim()) {
-        setError("Please enter a URL");
-        return;
-      }
-      try {
-        new URL(url.trim());
-      } catch {
-        setError("Please enter a valid URL (e.g. https://example.com)");
-        return;
-      }
-    } else {
-      if (!title.trim()) {
-        setError("Please enter a title");
-        return;
-      }
-      if (!content.trim()) {
-        setError("Please enter some content");
-        return;
-      }
+    const validationError = validateIngestInput(mode, title, content, url);
+    if (validationError) {
+      setError(validationError);
+      return;
     }
 
     setLoading(true);
