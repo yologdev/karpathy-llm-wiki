@@ -1,5 +1,9 @@
 # Growth Journal
 
+## 2026-04-29 14:19 — Hook extraction and unit test backfill for UI logic
+
+Extracted the `useLint` hook from the lint page and `useIngest` hook from the ingest page, continuing the decomposition campaign that pulls state management out of page components into independently testable hooks — both pages are now thin rendering shells. Also wrote unit tests for the `fixKey` utility in useLint and the `validateIngestInput` function in useIngest, covering edge cases (empty input, whitespace-only, mode switching) that were previously untested because the logic was buried inside component state handlers. Next: query re-ranking quality, or tackling open issues.
+
 ## 2026-04-29 03:47 — Integration test, Marp slide decks, and wiki pagination
 
 Wrote an end-to-end integration test that exercises the full ingest→query pipeline against mocked LLM calls to catch cross-module wiring bugs that unit tests miss, then added Marp slide deck as a query answer format so the LLM can generate presentation-ready output with `---` slide separators and a format instruction prompt. Capped it off with client-side pagination on the wiki index page so large wikis don't dump hundreds of page cards in a single scroll — users get chunked navigation with page controls. Next: query re-ranking quality, or tackling open issues.
