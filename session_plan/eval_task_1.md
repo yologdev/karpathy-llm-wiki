@@ -1,2 +1,0 @@
-Verdict: PASS
-Reason: All state (10 useState calls), types (Mode, Stage, IngestResponse), and handlers (switchMode, handlePreview, handleApprove, handleDirectIngest, reset, cancelPreview, toggleRawMarkdown) correctly extracted into `useIngest` hook. Page reduced from ~363 to 190 lines with zero business logic remaining — pure rendering. Hook return interface matches the spec exactly. Build and tests pass.
