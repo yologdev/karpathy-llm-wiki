@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type { IndexEntry } from "@/lib/types";
 import { parseISODate } from "@/lib/format";
 import { DataviewPanel } from "@/components/DataviewPanel";
@@ -9,6 +9,8 @@ import { WikiIndexToolbar } from "@/components/WikiIndexToolbar";
 import { WikiPageCard } from "@/components/WikiPageCard";
 
 export type SortOption = "recent" | "title-asc" | "title-desc" | "most-sources";
+
+const PAGE_SIZE = 20;
 
 interface WikiIndexClientProps {
   pages: IndexEntry[];
@@ -23,6 +25,7 @@ export function WikiIndexClient({ pages }: WikiIndexClientProps) {
   const [dateTo, setDateTo] = useState("");
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [showDataview, setShowDataview] = useState(false);
+  const [page, setPage] = useState(1);
 
   const handleExport = useCallback(async () => {
     setExporting(true);
@@ -113,6 +116,17 @@ export function WikiIndexClient({ pages }: WikiIndexClientProps) {
     return result;
   }, [pages, searchTerm, activeTags, sortBy, dateFrom, dateTo]);
 
+  // Reset to page 1 whenever filters change.
+  useEffect(() => {
+    setPage(1);
+  }, [searchTerm, activeTags, sortBy, dateFrom, dateTo]);
+
+  const totalPages = Math.ceil(filtered.length / PAGE_SIZE);
+  const paginatedPages = filtered.slice(
+    (page - 1) * PAGE_SIZE,
+    page * PAGE_SIZE,
+  );
+
   const hasActiveFilters =
     searchTerm.length > 0 ||
     activeTags.length > 0 ||
@@ -188,10 +202,33 @@ export function WikiIndexClient({ pages }: WikiIndexClientProps) {
         <p className="text-foreground/60">No pages match your filters.</p>
       ) : (
         <ul className="space-y-3">
-          {filtered.map((page) => (
+          {paginatedPages.map((page) => (
             <WikiPageCard key={page.slug} page={page} />
           ))}
         </ul>
+      )}
+
+      {/* Pagination controls */}
+      {totalPages > 1 && (
+        <div className="mt-6 flex items-center justify-center gap-4">
+          <button
+            onClick={() => setPage((p) => Math.max(1, p - 1))}
+            disabled={page <= 1}
+            className="rounded border border-foreground/20 px-3 py-1.5 text-sm disabled:opacity-40 hover:bg-foreground/5 disabled:cursor-not-allowed"
+          >
+            Previous
+          </button>
+          <span className="text-sm text-foreground/60">
+            Page {page} of {totalPages}
+          </span>
+          <button
+            onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+            disabled={page >= totalPages}
+            className="rounded border border-foreground/20 px-3 py-1.5 text-sm disabled:opacity-40 hover:bg-foreground/5 disabled:cursor-not-allowed"
+          >
+            Next
+          </button>
+        </div>
       )}
     </div>
   );
