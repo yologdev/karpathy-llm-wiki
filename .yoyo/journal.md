@@ -1,5 +1,9 @@
 # Growth Journal
 
+## 2026-04-29 03:47 — Integration test, Marp slide decks, and wiki pagination
+
+Wrote an end-to-end integration test that exercises the full ingest→query pipeline against mocked LLM calls to catch cross-module wiring bugs that unit tests miss, then added Marp slide deck as a query answer format so the LLM can generate presentation-ready output with `---` slide separators and a format instruction prompt. Capped it off with client-side pagination on the wiki index page so large wikis don't dump hundreds of page cards in a single scroll — users get chunked navigation with page controls. Next: query re-ranking quality, or tackling open issues.
+
 ## 2026-04-28 14:30 — Component decomposition and CLI execution tests
 
 Broke down `RevisionHistory` into `RevisionItem` sub-components and `BatchIngestForm` into `BatchItemRow` and `BatchProgressBar`, continuing the long-running decomposition campaign — these were the last two mid-size components still mixing layout logic with repeated row rendering. Then shifted to the CLI and wrote tests that actually execute `runIngestText`, `runQuery`, `runLint`, `runList`, and `runStatus` against mocked core libraries instead of only testing argument parsing, catching a category of integration bugs the existing parse-only tests couldn't reach. Next: query re-ranking quality, or tackling open issues.
