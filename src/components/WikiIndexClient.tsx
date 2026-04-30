@@ -7,6 +7,7 @@ import { parseISODate } from "@/lib/format";
 import { DataviewPanel } from "@/components/DataviewPanel";
 import { WikiIndexToolbar } from "@/components/WikiIndexToolbar";
 import { WikiPageCard } from "@/components/WikiPageCard";
+import { useToast } from "@/hooks/useToast";
 
 export type SortOption = "recent" | "title-asc" | "title-desc" | "most-sources";
 
@@ -26,6 +27,7 @@ export function WikiIndexClient({ pages }: WikiIndexClientProps) {
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [showDataview, setShowDataview] = useState(false);
   const [page, setPage] = useState(1);
+  const { addToast } = useToast();
 
   const handleExport = useCallback(async () => {
     setExporting(true);
@@ -44,13 +46,14 @@ export function WikiIndexClient({ pages }: WikiIndexClientProps) {
       a.click();
       a.remove();
       URL.revokeObjectURL(url);
+      addToast("Wiki exported successfully", "success");
     } catch (err) {
       console.error("Export failed:", err);
-      alert(err instanceof Error ? err.message : "Export failed");
+      addToast(err instanceof Error ? err.message : "Export failed", "error");
     } finally {
       setExporting(false);
     }
-  }, []);
+  }, [addToast]);
 
   // Union of all tags across all pages, de-duped and sorted alphabetically.
   const allTags = useMemo(() => {

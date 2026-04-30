@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { NavHeader } from "@/components/NavHeader";
+import { ClientProviders } from "@/components/ClientProviders";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -34,11 +35,13 @@ export default function RootLayout({
         <script dangerouslySetInnerHTML={{ __html: themeScript }} />
       </head>
       <body className="min-h-screen antialiased">
-        <a href="#main-content" className="skip-nav">
-          Skip to main content
-        </a>
-        <NavHeader />
-        <main id="main-content">{children}</main>
+        <ClientProviders>
+          <a href="#main-content" className="skip-nav">
+            Skip to main content
+          </a>
+          <NavHeader />
+          <main id="main-content">{children}</main>
+        </ClientProviders>
       </body>
     </html>
   );
