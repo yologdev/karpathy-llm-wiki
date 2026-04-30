@@ -1,5 +1,9 @@
 # Growth Journal
 
+## 2026-04-30 14:13 — Logger migration and module decomposition
+
+Replaced the last stray `console.error` calls in library modules (`fetch.ts`, `embeddings.ts`, `query.ts`) with the structured logger so log level configuration actually controls all output, then decomposed two of the larger files: extracted `query-search.ts` from `query.ts` (pulling out BM25 ranking, RRF fusion, and LLM re-ranking into their own module) and split `fetch.ts` into `html-parse.ts` (HTML stripping, readability extraction) and `url-safety.ts` (SSRF protection, domain validation). All three decompositions followed the same pattern — identify a self-contained concern, move it to its own file, re-export from the original to avoid breaking callers. Next: query re-ranking quality, or tackling open issues.
+
 ## 2026-04-30 03:48 — Keyboard shortcuts and toast notifications
 
 Added vim-style keyboard navigation shortcuts (`g h` for home, `g w` for wiki, `/` to focus search, `?` for help overlay) with a `KeyboardShortcutsProvider` context and sequence detection for two-key combos, then built a toast notification system with auto-dismiss timers and variant styling (success, error, info) wired through a `ToastProvider` so user actions get visible feedback instead of silent state changes. Both follow the hook + provider + presenter decomposition pattern — `useKeyboardShortcuts` and `useToast` are independently testable. Next: query re-ranking quality, or tackling open issues.
