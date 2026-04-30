@@ -1,8 +1,14 @@
-import net from "net";
+/**
+ * URL fetching and image downloading.
+ *
+ * This module is the main entry point for URL-related operations. It also
+ * re-exports HTML parsing and URL safety utilities from their dedicated
+ * modules for backwards compatibility — existing imports from "./fetch" or
+ * "@/lib/fetch" continue to work unchanged.
+ */
+
 import fs from "fs/promises";
 import path from "path";
-import { Readability } from "@mozilla/readability";
-import { parseHTML } from "linkedom";
 import {
   MAX_RESPONSE_SIZE,
   MAX_CONTENT_LENGTH,
@@ -10,9 +16,22 @@ import {
   MAX_IMAGES_PER_SOURCE,
 } from "./constants";
 import { logger } from "./logger";
+import {
+  stripHtml,
+  htmlToMarkdown,
+  extractTitle,
+  extractWithReadability,
+} from "./html-parse";
+import { validateUrlSafety } from "./url-safety";
+
+// Re-export HTML parsing utilities for backwards compatibility
+export { stripHtml, htmlToMarkdown, extractTitle, extractWithReadability } from "./html-parse";
+
+// Re-export URL safety utilities for backwards compatibility
+export { validateUrlSafety } from "./url-safety";
 
 // ---------------------------------------------------------------------------
-// URL detection & fetching
+// URL detection
 // ---------------------------------------------------------------------------
 
 /** Check if a string looks like a URL (starts with http:// or https://). */
@@ -21,382 +40,9 @@ export function isUrl(input: string): boolean {
   return trimmed.startsWith("http://") || trimmed.startsWith("https://");
 }
 
-/**
- * Strip HTML to plain text using a simple regex-based approach.
- *
- * 1. Remove <script>, <style>, <nav>, <header>, <footer> elements entirely
- * 2. Strip remaining HTML tags
- * 3. Decode common HTML entities
- * 4. Collapse whitespace
- */
-export function stripHtml(html: string): string {
-  let text = html;
-
-  // Remove elements whose content should be discarded entirely
-  const removeTags = ["script", "style", "nav", "header", "footer", "noscript"];
-  for (const tag of removeTags) {
-    const re = new RegExp(`<${tag}[^>]*>[\\s\\S]*?</${tag}>`, "gi");
-    text = text.replace(re, " ");
-  }
-
-  // Strip remaining HTML tags
-  text = text.replace(/<[^>]+>/g, " ");
-
-  // Decode common HTML entities
-  text = text
-    .replace(/&amp;/g, "&")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/&nbsp;/g, " ")
-    // Common named HTML5 entities
-    .replace(/&mdash;/g, "\u2014")
-    .replace(/&ndash;/g, "\u2013")
-    .replace(/&hellip;/g, "\u2026")
-    .replace(/&rsquo;/g, "\u2019")
-    .replace(/&lsquo;/g, "\u2018")
-    .replace(/&rdquo;/g, "\u201D")
-    .replace(/&ldquo;/g, "\u201C")
-    .replace(/&trade;/g, "\u2122")
-    .replace(/&copy;/g, "\u00A9")
-    .replace(/&reg;/g, "\u00AE")
-    .replace(/&bull;/g, "\u2022")
-    .replace(/&middot;/g, "\u00B7")
-    // Numeric entities: &#123; and &#x1F;
-    .replace(/&#(\d+);/g, (_, n) => String.fromCodePoint(parseInt(n, 10)))
-    .replace(/&#x([0-9a-fA-F]+);/g, (_, h) => String.fromCodePoint(parseInt(h, 16)));
-
-  // Collapse whitespace
-  text = text.replace(/\s+/g, " ").trim();
-
-  return text;
-}
-
 // ---------------------------------------------------------------------------
-// HTML → Markdown converter (lightweight, no external deps)
+// URL fetching
 // ---------------------------------------------------------------------------
-
-/**
- * Decode common HTML entities to their plain-text equivalents.
- * Shared between `stripHtml` (above) and `htmlToMarkdown`.
- */
-function decodeEntities(text: string): string {
-  return text
-    .replace(/&amp;/g, "&")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/&nbsp;/g, " ")
-    .replace(/&mdash;/g, "\u2014")
-    .replace(/&ndash;/g, "\u2013")
-    .replace(/&hellip;/g, "\u2026")
-    .replace(/&rsquo;/g, "\u2019")
-    .replace(/&lsquo;/g, "\u2018")
-    .replace(/&rdquo;/g, "\u201D")
-    .replace(/&ldquo;/g, "\u201C")
-    .replace(/&trade;/g, "\u2122")
-    .replace(/&copy;/g, "\u00A9")
-    .replace(/&reg;/g, "\u00AE")
-    .replace(/&bull;/g, "\u2022")
-    .replace(/&middot;/g, "\u00B7")
-    .replace(/&#(\d+);/g, (_, n) => String.fromCodePoint(parseInt(n, 10)))
-    .replace(/&#x([0-9a-fA-F]+);/g, (_, h) =>
-      String.fromCodePoint(parseInt(h, 16)),
-    );
-}
-
-/**
- * Convert simple HTML to markdown.
- *
- * Handles the subset of HTML that Readability typically outputs:
- *   - `<img>` → `![alt](src)`
- *   - `<a>` → `[text](href)`
- *   - `<h1>`–`<h6>` → `#`–`######`
- *   - `<p>` → double newline
- *   - `<strong>/<b>` → `**text**`
- *   - `<em>/<i>` → `*text*`
- *   - `<ul>/<li>` → `- item`
- *   - `<br>` → newline
- *   - Strips all other tags while preserving their text content.
- *
- * No external dependencies — pure regex/string processing.
- */
-export function htmlToMarkdown(html: string): string {
-  let md = html;
-
-  // Remove <script>, <style>, <nav>, <header>, <footer> blocks entirely
-  const removeTags = ["script", "style", "nav", "header", "footer", "noscript"];
-  for (const tag of removeTags) {
-    const re = new RegExp(`<${tag}[^>]*>[\\s\\S]*?</${tag}>`, "gi");
-    md = md.replace(re, "");
-  }
-
-  // --- Block-level elements ---
-
-  // Headings: <h1>–<h6>
-  for (let level = 1; level <= 6; level++) {
-    const re = new RegExp(
-      `<h${level}[^>]*>([\\s\\S]*?)</h${level}>`,
-      "gi",
-    );
-    const prefix = "#".repeat(level);
-    md = md.replace(re, (_, inner) => {
-      const text = inner.replace(/<[^>]+>/g, "").trim();
-      return `\n\n${prefix} ${decodeEntities(text)}\n\n`;
-    });
-  }
-
-  // Images (self-closing or void): <img src="..." alt="..."> / <img ... />
-  // Must be processed BEFORE stripping other tags, since <img> is void.
-  md = md.replace(
-    /<img\s[^>]*?\bsrc\s*=\s*"([^"]*)"[^>]*?\balt\s*=\s*"([^"]*)"[^>]*\/?>/gi,
-    (_, src, alt) => `![${decodeEntities(alt)}](${src})`,
-  );
-  md = md.replace(
-    /<img\s[^>]*?\balt\s*=\s*"([^"]*)"[^>]*?\bsrc\s*=\s*"([^"]*)"[^>]*\/?>/gi,
-    (_, alt, src) => `![${decodeEntities(alt)}](${src})`,
-  );
-  // Images with no alt attribute
-  md = md.replace(
-    /<img\s[^>]*?\bsrc\s*=\s*"([^"]*)"[^>]*\/?>/gi,
-    (_, src) => `![](${src})`,
-  );
-
-  // Paragraphs
-  md = md.replace(/<p[^>]*>/gi, "\n\n");
-  md = md.replace(/<\/p>/gi, "\n\n");
-
-  // Line breaks
-  md = md.replace(/<br\s*\/?>/gi, "\n");
-
-  // Lists
-  md = md.replace(/<\/?ul[^>]*>/gi, "\n");
-  md = md.replace(/<\/?ol[^>]*>/gi, "\n");
-  md = md.replace(/<li[^>]*>([\s\S]*?)<\/li>/gi, (_, inner) => {
-    const text = inner.replace(/<[^>]+>/g, "").trim();
-    return `- ${decodeEntities(text)}\n`;
-  });
-
-  // --- Inline elements ---
-
-  // Bold: <strong> and <b>
-  md = md.replace(/<(strong|b)>([\s\S]*?)<\/\1>/gi, (_, _tag, inner) => {
-    const text = inner.replace(/<[^>]+>/g, "");
-    return `**${text}**`;
-  });
-
-  // Italic: <em> and <i>
-  md = md.replace(/<(em|i)>([\s\S]*?)<\/\1>/gi, (_, _tag, inner) => {
-    const text = inner.replace(/<[^>]+>/g, "");
-    return `*${text}*`;
-  });
-
-  // Links: <a href="...">text</a>
-  md = md.replace(
-    /<a\s[^>]*?\bhref\s*=\s*"([^"]*)"[^>]*>([\s\S]*?)<\/a>/gi,
-    (_, href, inner) => {
-      const text = inner.replace(/<[^>]+>/g, "").trim();
-      return `[${decodeEntities(text)}](${href})`;
-    },
-  );
-
-  // Strip all remaining HTML tags
-  md = md.replace(/<[^>]+>/g, "");
-
-  // Decode HTML entities
-  md = decodeEntities(md);
-
-  // Clean up excessive whitespace
-  // Collapse 3+ newlines to 2
-  md = md.replace(/\n{3,}/g, "\n\n");
-  // Collapse spaces/tabs on a single line (but preserve newlines)
-  md = md.replace(/[^\S\n]+/g, " ");
-  // Remove leading/trailing spaces on each line
-  md = md
-    .split("\n")
-    .map((line) => line.trim())
-    .join("\n");
-
-  return md.trim();
-}
-
-/**
- * Extract the <title> content from HTML.
- * Falls back to empty string if not found.
- */
-export function extractTitle(html: string): string {
-  const match = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
-  if (!match) return "";
-  // Strip any inner tags and collapse whitespace
-  return match[1].replace(/<[^>]+>/g, "").replace(/\s+/g, " ").trim();
-}
-
-/**
- * Extract article content from HTML using @mozilla/readability + linkedom.
- * Returns `null` when Readability cannot identify an article in the page.
- *
- * Returns both `textContent` (plain text, for backward compat) and
- * `htmlContent` (sanitised HTML that Readability produces, which preserves
- * images, links, and formatting).
- */
-export function extractWithReadability(
-  html: string,
-): { title: string; textContent: string; htmlContent: string } | null {
-  try {
-    const { document } = parseHTML(html);
-    const reader = new Readability(document);
-    const article = reader.parse();
-
-    if (article && article.textContent && article.textContent.trim().length > 0) {
-      return {
-        title: article.title || "",
-        textContent: article.textContent.trim(),
-        htmlContent: article.content || "",
-      };
-    }
-    return null;
-  } catch (err) {
-    logger.warn("ingest", "Readability extraction failed:", err);
-    return null;
-  }
-}
-
-// ---------------------------------------------------------------------------
-// SSRF protection
-// ---------------------------------------------------------------------------
-
-/** Blocked hostname suffixes for local/internal DNS names. */
-const BLOCKED_HOST_SUFFIXES = [".local", ".internal", ".localhost"];
-
-/** Blocked exact hostnames. */
-const BLOCKED_HOSTNAMES = new Set([
-  "localhost",
-  "127.0.0.1",
-  "::1",
-  "0.0.0.0",
-]);
-
-/**
- * Check whether an IPv4 address string falls in a private/reserved range.
- *
- *  - 10.0.0.0/8
- *  - 172.16.0.0/12
- *  - 192.168.0.0/16
- *  - 169.254.0.0/16 (link-local, cloud metadata)
- *  - 127.0.0.0/8 (loopback)
- *  - 0.0.0.0/8
- */
-function isPrivateIPv4(ip: string): boolean {
-  const parts = ip.split(".").map(Number);
-  if (parts.length !== 4 || parts.some((p) => isNaN(p))) return false;
-  const [a, b] = parts;
-  if (a === 10) return true;
-  if (a === 172 && b >= 16 && b <= 31) return true;
-  if (a === 192 && b === 168) return true;
-  if (a === 169 && b === 254) return true;
-  if (a === 127) return true;
-  if (a === 0) return true;
-  return false;
-}
-
-/**
- * Check whether an IPv6 address string falls in a private/reserved range.
- *
- *  - ::1 (loopback)
- *  - fd00::/8 (unique local address)
- *  - fe80::/10 (link-local)
- */
-function isPrivateIPv6(ip: string): boolean {
-  // Normalise: lowercase, strip brackets
-  const normalized = ip.replace(/^\[|\]$/g, "").toLowerCase();
-  if (normalized === "::1") return true;
-  if (normalized.startsWith("fd")) return true;
-  if (normalized.startsWith("fe80")) return true;
-
-  // IPv4-mapped IPv6: ::ffff:A.B.C.D or ::ffff:XXXX:XXXX (hex form)
-  if (normalized.startsWith("::ffff:")) {
-    const suffix = normalized.slice(7); // after "::ffff:"
-    if (net.isIPv4(suffix)) {
-      // Dotted-decimal form: ::ffff:127.0.0.1
-      return isPrivateIPv4(suffix);
-    }
-    // Hex form: ::ffff:7f00:1 (URL class normalizes to this)
-    const hexMatch = suffix.match(/^([0-9a-f]{1,4}):([0-9a-f]{1,4})$/);
-    if (hexMatch) {
-      const hi = parseInt(hexMatch[1], 16);
-      const lo = parseInt(hexMatch[2], 16);
-      const a = (hi >> 8) & 0xff;
-      const b = hi & 0xff;
-      const c = (lo >> 8) & 0xff;
-      const d = lo & 0xff;
-      return isPrivateIPv4(`${a}.${b}.${c}.${d}`);
-    }
-  }
-
-  return false;
-}
-
-/**
- * Validate that a URL is safe to fetch — reject private/reserved addresses
- * and non-HTTP(S) schemes to prevent SSRF attacks.
- *
- * @throws Error if the URL targets a private/reserved address or uses a
- *   non-HTTP(S) scheme.
- */
-export function validateUrlSafety(url: string): void {
-  let parsed: URL;
-  try {
-    parsed = new URL(url);
-  } catch (err) {
-    logger.warn("ingest", "URL parse failed:", err);
-    throw new Error("URL blocked: invalid URL");
-  }
-
-  // Only allow http and https schemes
-  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
-    throw new Error(
-      `URL blocked: scheme "${parsed.protocol.replace(":", "")}" is not allowed (only http/https)`,
-    );
-  }
-
-  // Extract hostname (URL class may keep brackets around IPv6 literals)
-  const rawHostname = parsed.hostname.toLowerCase();
-  // Strip brackets for IPv6 literals so lookups work correctly
-  const hostname = rawHostname.startsWith("[") && rawHostname.endsWith("]")
-    ? rawHostname.slice(1, -1)
-    : rawHostname;
-
-  // Check exact blocked hostnames
-  if (BLOCKED_HOSTNAMES.has(hostname)) {
-    throw new Error(
-      "URL blocked: hostname resolves to a private/reserved address",
-    );
-  }
-
-  // Check blocked suffixes
-  for (const suffix of BLOCKED_HOST_SUFFIXES) {
-    if (hostname.endsWith(suffix)) {
-      throw new Error(
-        "URL blocked: hostname resolves to a private/reserved address",
-      );
-    }
-  }
-
-  // If the hostname is a raw IP address, check private ranges
-  const ipVersion = net.isIP(hostname);
-  if (ipVersion === 4 && isPrivateIPv4(hostname)) {
-    throw new Error(
-      "URL blocked: hostname resolves to a private/reserved address",
-    );
-  }
-  if (ipVersion === 6 && isPrivateIPv6(hostname)) {
-    throw new Error(
-      "URL blocked: hostname resolves to a private/reserved address",
-    );
-  }
-}
 
 // MIME types that fetchUrlContent will accept. Anything outside this list
 // (e.g. application/pdf, image/png) is rejected early to avoid feeding binary
