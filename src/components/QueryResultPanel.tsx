@@ -4,6 +4,7 @@ import { useState, useCallback, useEffect } from "react";
 import Link from "next/link";
 import { MarkdownRenderer } from "@/components/MarkdownRenderer";
 import { Alert } from "@/components/Alert";
+import { logger } from "@/lib/logger";
 
 interface SaveState {
   status: "idle" | "editing" | "saving" | "saved" | "error";
@@ -54,7 +55,7 @@ export function QueryResultPanel({
       await navigator.clipboard.writeText(lines.join("\n"));
       setCopyState("copied");
     } catch (err) {
-      console.error("[query] copy failed:", err);
+      logger.error("query", "copy failed", err);
       setCopyState("error");
     }
   }, [result, question]);

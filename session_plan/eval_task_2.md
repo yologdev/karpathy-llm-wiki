@@ -1,0 +1,2 @@
+Verdict: PASS
+Reason: The decomposition correctly extracts all five search/ranking functions and four constants into `query-search.ts`, with proper re-exports from `query.ts` maintaining full backwards compatibility. All existing test imports from `"../query"` continue to resolve, and build+tests pass. The minor widening of the `buildQuerySystemPrompt` entries parameter from `IndexEntry[]` to a structural type is fully compatible.

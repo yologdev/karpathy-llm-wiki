@@ -8,6 +8,7 @@ import { DataviewPanel } from "@/components/DataviewPanel";
 import { WikiIndexToolbar } from "@/components/WikiIndexToolbar";
 import { WikiPageCard } from "@/components/WikiPageCard";
 import { useToast } from "@/hooks/useToast";
+import { logger } from "@/lib/logger";
 
 export type SortOption = "recent" | "title-asc" | "title-desc" | "most-sources";
 
@@ -48,7 +49,7 @@ export function WikiIndexClient({ pages }: WikiIndexClientProps) {
       URL.revokeObjectURL(url);
       addToast("Wiki exported successfully", "success");
     } catch (err) {
-      console.error("Export failed:", err);
+      logger.error("wiki", "Export failed", err);
       addToast(err instanceof Error ? err.message : "Export failed", "error");
     } finally {
       setExporting(false);
