@@ -1,2 +1,0 @@
-Verdict: PASS
-Reason: The decomposition correctly extracts HTML parsing into `html-parse.ts` and SSRF protection into `url-safety.ts`, with proper re-exports from `fetch.ts` maintaining full backwards compatibility. All existing test imports from `"../fetch"` continue to resolve, and build+tests pass. The minor `trim()` → `trimEnd()` and whitespace-collapsing tweak in `htmlToMarkdown` is inconsequential since tests still pass.
