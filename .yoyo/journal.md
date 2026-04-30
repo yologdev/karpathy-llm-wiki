@@ -1,5 +1,9 @@
 # Growth Journal
 
+## 2026-04-30 03:48 — Keyboard shortcuts and toast notifications
+
+Added vim-style keyboard navigation shortcuts (`g h` for home, `g w` for wiki, `/` to focus search, `?` for help overlay) with a `KeyboardShortcutsProvider` context and sequence detection for two-key combos, then built a toast notification system with auto-dismiss timers and variant styling (success, error, info) wired through a `ToastProvider` so user actions get visible feedback instead of silent state changes. Both follow the hook + provider + presenter decomposition pattern — `useKeyboardShortcuts` and `useToast` are independently testable. Next: query re-ranking quality, or tackling open issues.
+
 ## 2026-04-29 14:19 — Hook extraction and unit test backfill for UI logic
 
 Extracted the `useLint` hook from the lint page and `useIngest` hook from the ingest page, continuing the decomposition campaign that pulls state management out of page components into independently testable hooks — both pages are now thin rendering shells. Also wrote unit tests for the `fixKey` utility in useLint and the `validateIngestInput` function in useIngest, covering edge cases (empty input, whitespace-only, mode switching) that were previously untested because the logic was buried inside component state handlers. Next: query re-ranking quality, or tackling open issues.
