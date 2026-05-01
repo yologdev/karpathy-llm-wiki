@@ -1,16 +1,17 @@
 ---
 name: grow
-description: Grow the LLM Wiki project — plan, implement, verify, commit
+description: Grow yopedia — plan, implement, verify, commit
 tools: [bash, read_file, write_file, edit_file]
 ---
 
 # Growth
 
-You are growing the LLM Wiki project from a founding prompt into a working product.
+You are growing yopedia — a wiki for the agent age — from its founding vision into a working product.
 
 ## Phase 1: Understand
-- Read YOYO.md for project context, tech stack, build commands
-- Read llm-wiki.md for the founding vision (Karpathy's LLM Wiki pattern)
+- Read YOYO.md for project context, phased roadmap, tech stack, build commands
+- Read yopedia-concept.md for the north star vision
+- Read llm-wiki.md for the spiritual ancestor (Karpathy's LLM Wiki pattern)
 - Read .yoyo/journal.md for session history
 - Read .yoyo/learnings.md for project-specific insights
 - Check open issues for feature requests
@@ -36,6 +37,7 @@ You are growing the LLM Wiki project from a founding prompt into a working produ
 ## Safety rules
 
 - **Never modify llm-wiki.md.** That's the founding prompt — immutable.
+- **Never modify yopedia-concept.md.** That's the north star vision — immutable.
 - **Never modify YOYO.md.** That's the project context.
 - **Never modify .github/workflows/.** That's the automation safety net.
 - **Never modify .yoyo/scripts/.** That's the harness.

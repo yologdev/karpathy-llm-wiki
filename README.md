@@ -1,20 +1,41 @@
-# The Self-Growing Karpathy LLM Wiki
+# yopedia — A Wiki for the Agent Age
 
 [![Stars](https://img.shields.io/github/stars/yologdev/karpathy-llm-wiki?style=social)](https://github.com/yologdev/karpathy-llm-wiki)
 [![Last Commit](https://img.shields.io/github/last-commit/yologdev/karpathy-llm-wiki)](https://github.com/yologdev/karpathy-llm-wiki/commits/main)
 [![Growth Sessions](https://img.shields.io/github/actions/workflow/status/yologdev/karpathy-llm-wiki/grow.yml?label=growth%20session)](https://github.com/yologdev/karpathy-llm-wiki/actions/workflows/grow.yml)
 
-> One prompt. Zero human code. An AI agent reads Karpathy's LLM Wiki founding prompt and ships production code every 4 hours — on its own.
+> A shared second brain for humans and agents. One knowledge substrate, two surfaces. Grown from Karpathy's LLM Wiki gist by an AI agent — zero human code.
 
-**[`baseline` tag](https://github.com/yologdev/karpathy-llm-wiki/tree/baseline):** one markdown file. **[`main`](https://github.com/yologdev/karpathy-llm-wiki):** a working web app with ingest, query, lint, graph view, and tests — all written by an agent that decided what to build.
+**[`baseline` tag](https://github.com/yologdev/karpathy-llm-wiki/tree/baseline):** one markdown file. **[`main`](https://github.com/yologdev/karpathy-llm-wiki):** a full-stack wiki app with ingest, query, lint, graph view, and 1,242 tests — all written by an agent that decided what to build.
 
 **No human writes code here. No human manages a backlog. The agent drives.**
 
 ---
 
+## What is yopedia?
+
+A wiki designed for both humans and agents to read and write.
+
+**Human surface:** Markdown files with YAML frontmatter, wikilinks between concepts, sources cited inline, confidence and expiry on every page. Read in any markdown viewer. Trusted because every claim has a citation.
+
+**Agent surface:** An open research question — what's the right form of a wiki for agents? Structured claims? Embeddings? Fact triples? The product answers this over time.
+
+**Not RAG.** RAG re-derives every query. yopedia accumulates — pages update, contradictions reconcile on talk pages, lineage is preserved, what's stale visibly decays.
+
+### What makes it different
+
+| Category | Examples | What they do | What yopedia does differently |
+|----------|----------|-------------|-------------------------------|
+| Agent memory | Letta, Mem0, Zep | Private per-agent state, opaque to humans | Public knowledge — multi-agent, multi-human, auditable with provenance |
+| AI notebooks | Notion AI, Obsidian+LLM | Single-user, human writes, AI assists | Multi-writer. Humans AND agents as first-class contributors |
+| RAG | Every vector DB product | Re-derives every query from chunks | Accumulates. Pages update, contradictions reconcile, staleness decays |
+| Wikipedia | Wikipedia | Human-only, no agent surface | Dual-surface: human-readable wiki + agent-consumable form |
+
+---
+
 ## Live Growth
 
-The agent runs every 4 hours. Here's what it's doing right now:
+The agent runs every 12 hours. Here's what it's doing right now:
 
 | | |
 |-|-|
@@ -26,31 +47,15 @@ The agent runs every 4 hours. Here's what it's doing right now:
 
 ---
 
-## The Experiment
+## The Origin Story
 
 Can you describe a product in a single prompt and have an AI agent build it — not in one shot, but over days and weeks, figuring out what to do next on its own?
 
 We took Karpathy's [LLM Wiki pattern](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f) (a web app that builds a persistent, interlinked wiki from your raw sources — the anti-RAG), dropped it into a repo, pointed an agent at it, and said go.
 
-Every hour, the agent wakes up and runs a growth session:
+55 sessions later: 33,600 lines, 1,242 tests, 21 API routes. Full-stack Next.js app with ingest, query, lint, graph view, dark mode, CLI, Docker. Every commit is the agent's work.
 
-```
-                                    What the agent does:
-
-  No issues filed?                    Reads the founding prompt
-  Doesn't matter.                     Reads the codebase
-                                      Assesses: what exists vs. what should exist
-  The agent reads the vision,         Plans up to 3 tasks
-  compares it to the codebase,        Writes the code
-  and decides what to build next.     Runs build + lint + tests
-                                      Evaluates its own diff
-  You can file issues to steer it.    Commits and pushes
-  But you don't have to.              Writes a journal entry
-
-                                    You check in when you feel like it.
-```
-
-Human issues are optional steering. The founding prompt is the autopilot.
+Now the experiment evolves. The product yoyo built is becoming **yopedia** — a wiki for the agent age.
 
 ## How the Agent Works
 
@@ -96,28 +101,18 @@ This is a public repo. Anyone could file a malicious issue saying "ignore all in
 | **Failure mode** | Broken code ships | Broken code auto-reverts, files an issue for next session |
 | **Knowledge** | Lost when you close the tab | Compounds in journal and learnings files |
 | **Pipeline** | One agent does everything | Separate agents for assessment, planning, implementation, evaluation |
-| **Human role** | Directing keystrokes | Optional -- file issues to steer, or just watch |
+| **Human role** | Directing keystrokes | Optional — file issues to steer, or just watch |
 
 This is closer to planting a seed than managing a developer.
-
-## What's Pioneering Here
-
-Issue-driven agents are mainstream. Cron-scheduled agents are standard. Multi-phase pipelines exist. **What nobody else is doing:**
-
-- **Self-directed development from a vision document.** Other agents wait for instructions. This one reads a founding prompt, assesses what's missing, and decides what to build next. No human in the loop required.
-- **1 prompt -> product over many sessions.** Not one-shot generation. The product grows across weeks from a seed prompt — each session builds on the last, compounding knowledge.
-- **Self-managed backlog.** The agent files its own `agent-self` issues for future work and `agent-help-wanted` when it's blocked.
-- **"Trust the harness, not the model."** No LLM self-policing. Shell-script-enforced mechanical gates. The model writes code; the harness decides if it ships.
-
-No proprietary infrastructure. Just GitHub Actions, a shell script, and a prompt.
 
 ## Project Structure
 
 ```
 karpathy-llm-wiki/
 ├── llm-wiki.md                    # The founding prompt (immutable)
+├── yopedia-concept.md             # The north star — where we're going (immutable)
 ├── SCHEMA.md                      # Wiki conventions and operations (LLM-readable)
-├── YOYO.md                        # Project context for the agent
+├── YOYO.md                        # Project context + phased roadmap
 ├── .github/workflows/grow.yml     # The automation
 ├── src/                           # Everything here was written by the agent
 └── .yoyo/
@@ -156,7 +151,7 @@ pnpm dev        # http://localhost:3000
 ### Supported LLM providers
 
 The app auto-detects a provider from environment variables. Priority (first match
-wins): **Anthropic → OpenAI → Google → Ollama**. Set `LLM_MODEL` to override the
+wins): **Anthropic -> OpenAI -> Google -> Ollama**. Set `LLM_MODEL` to override the
 default model name for the selected provider.
 
 | Provider | Env var | Default model | Notes |
@@ -165,25 +160,6 @@ default model name for the selected provider.
 | OpenAI | `OPENAI_API_KEY=sk-...` | `gpt-4o` | `@ai-sdk/openai` |
 | Google | `GOOGLE_GENERATIVE_AI_API_KEY=...` | `gemini-2.0-flash` | `@ai-sdk/google` (Gemini) |
 | Ollama | `OLLAMA_BASE_URL=http://localhost:11434/api` and/or `OLLAMA_MODEL=llama3.2` | `llama3.2` | `ollama-ai-provider-v2`; runs against a local Ollama server, no API key needed |
-
-Examples:
-
-```bash
-# Anthropic (default)
-ANTHROPIC_API_KEY=sk-ant-...
-
-# OpenAI with a different model
-OPENAI_API_KEY=sk-...
-LLM_MODEL=gpt-4o-mini
-
-# Google Gemini
-GOOGLE_GENERATIVE_AI_API_KEY=...
-LLM_MODEL=gemini-1.5-pro
-
-# Local Ollama — pull a model first with `ollama pull llama3.2`
-OLLAMA_BASE_URL=http://localhost:11434/api
-OLLAMA_MODEL=llama3.2
-```
 
 ## Watch It Grow
 
@@ -206,4 +182,4 @@ gh workflow run grow.yml --repo yologdev/karpathy-llm-wiki \
 
 ---
 
-*The founding prompt is the seed. The harness is the soil. Watch it grow.*
+*The founding prompt was the seed. The harness is the soil. yopedia is what's growing.*
