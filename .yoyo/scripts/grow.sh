@@ -58,6 +58,47 @@ if ! command -v yoyo &>/dev/null; then
     exit 1
 fi
 
+# ── Download yoyo's identity + skills from yoyo-evolve ──
+echo "→ Downloading yoyo identity + skills from yoyo-evolve..."
+YOYO_EVOLVE_DIR="/tmp/yoyo-evolve"
+SHARED_SKILLS="/tmp/yoyo-skills"
+IDENTITY_DIR=".yoyo/identity"
+SYSTEM_FILE=""
+
+rm -rf "$YOYO_EVOLVE_DIR" "$SHARED_SKILLS"
+mkdir -p "$YOYO_EVOLVE_DIR" "$IDENTITY_DIR"
+
+if gh api "repos/yologdev/yoyo-evolve/tarball/main" > /tmp/yoyo-evolve.tar.gz 2>/dev/null; then
+    tar xzf /tmp/yoyo-evolve.tar.gz -C "$YOYO_EVOLVE_DIR" --strip-components=1
+    rm -f /tmp/yoyo-evolve.tar.gz
+
+    # Build identity — reuse yoyo-evolve's yoyo_context.sh
+    if [ -f "$YOYO_EVOLVE_DIR/scripts/yoyo_context.sh" ]; then
+        YOYO_REPO="$YOYO_EVOLVE_DIR" source "$YOYO_EVOLVE_DIR/scripts/yoyo_context.sh"
+        echo "$YOYO_CONTEXT" > "$IDENTITY_DIR/SOUL.md"
+        SYSTEM_FILE="$IDENTITY_DIR/SOUL.md"
+        echo "  Identity loaded ($(wc -l < "$IDENTITY_DIR/SOUL.md" | tr -d ' ') lines)"
+    else
+        echo "  WARNING: yoyo_context.sh not found, running without identity"
+    fi
+
+    # Prepare shared skills
+    if [ -d "$YOYO_EVOLVE_DIR/skills" ]; then
+        cp -r "$YOYO_EVOLVE_DIR/skills" "$SHARED_SKILLS"
+        # Remove skills not applicable to external projects
+        rm -rf "$SHARED_SKILLS/evolve"    # for modifying yoyo-evolve's own Rust source
+        rm -rf "$SHARED_SKILLS/release"   # crates.io publishing
+        rm -rf "$SHARED_SKILLS/family"    # yoyo family registration
+        rm -rf "$SHARED_SKILLS/_journal.md"
+        echo "  Skills loaded: $(ls "$SHARED_SKILLS" | tr '\n' ' ')"
+    fi
+
+    rm -rf "$YOYO_EVOLVE_DIR"
+else
+    echo "  WARNING: Failed to download yoyo-evolve. Running with local skills only."
+    rm -f /tmp/yoyo-evolve.tar.gz
+fi
+
 # ── Timeout command (cross-platform) ──
 TIMEOUT_CMD="timeout"
 if ! command -v timeout &>/dev/null; then
@@ -80,7 +121,9 @@ run_agent() {
     # shellcheck disable=SC2086
     ${TIMEOUT_CMD:+$TIMEOUT_CMD "$timeout_val"} yoyo \
         --model "$MODEL" \
+        ${SYSTEM_FILE:+--system-file "$SYSTEM_FILE"} \
         --skills .yoyo/skills \
+        ${SHARED_SKILLS:+--skills "$SHARED_SKILLS"} \
         $extra_flags \
         < "$prompt_file" 2>&1 | tee "$log_file" || exit_code=$?
 
