@@ -11,6 +11,8 @@ import {
   checkMissingCrossRefs,
   checkContradictions,
   checkMissingConceptPages,
+  checkStalePages,
+  checkLowConfidence,
   buildSummary,
   parseLLMJsonArray,
   extractCrossRefSlugs,
@@ -37,6 +39,8 @@ export {
   parseMissingConceptResponse,
   checkMissingConceptPages,
   checkBrokenLinks,
+  checkStalePages,
+  checkLowConfidence,
   ALL_CHECK_TYPES,
 };
 
@@ -44,7 +48,7 @@ export {
  * Run all lint checks against the wiki and return the results.
  *
  * @param options - Optional configuration for selective checks and severity filtering.
- *   - `checks`: array of check types to run (defaults to all 7)
+ *   - `checks`: array of check types to run (defaults to all 9)
  *   - `minSeverity`: minimum severity to include in results (defaults to "info")
  */
 export async function lint(options?: LintOptions): Promise<LintResult> {
@@ -72,7 +76,7 @@ export async function lint(options?: LintOptions): Promise<LintResult> {
     const indexSlugs = new Set(indexPages.map((p) => p.slug));
 
     // Run lightweight checks in parallel
-    const [orphans, stale, empty, crossRefs, brokenLinks] = await Promise.all([
+    const [orphans, stale, empty, crossRefs, brokenLinks, stalePages, lowConfidence] = await Promise.all([
       enabledChecks.has("orphan-page")
         ? checkOrphanPages(diskSlugs, indexSlugs)
         : [],
@@ -88,6 +92,12 @@ export async function lint(options?: LintOptions): Promise<LintResult> {
       enabledChecks.has("broken-link")
         ? checkBrokenLinks(diskSlugs)
         : [],
+      enabledChecks.has("stale-page")
+        ? checkStalePages()
+        : [],
+      enabledChecks.has("low-confidence")
+        ? checkLowConfidence()
+        : [],
     ]);
 
     // Contradiction + missing-concept detection both require LLM calls but are
@@ -101,7 +111,7 @@ export async function lint(options?: LintOptions): Promise<LintResult> {
         : [],
     ]);
 
-    let issues = [...orphans, ...stale, ...empty, ...crossRefs, ...brokenLinks, ...contradictions, ...missingConcepts];
+    let issues = [...orphans, ...stale, ...empty, ...crossRefs, ...brokenLinks, ...stalePages, ...lowConfidence, ...contradictions, ...missingConcepts];
 
     // Filter by minimum severity
     if (minSeverityRank > 0) {

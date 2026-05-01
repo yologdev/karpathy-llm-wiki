@@ -1,5 +1,5 @@
 import fs from "fs/promises";
-import { readWikiPage } from "./wiki";
+import { readWikiPage, readWikiPageWithFrontmatter, listWikiPages } from "./wiki";
 import { hasLLMKey, callLLM } from "./llm";
 import { loadPageConventions } from "./schema";
 import { extractWikiLinks } from "./links";
@@ -15,6 +15,8 @@ export const ALL_CHECK_TYPES: LintIssue["type"][] = [
   "broken-link",
   "contradiction",
   "missing-concept-page",
+  "stale-page",
+  "low-confidence",
 ];
 
 // Files that are part of the wiki infrastructure, not content pages.
@@ -542,4 +544,67 @@ export async function checkMissingConceptPages(
     logger.warn("lint", "LLM coverage gap check failed:", err);
     return [];
   }
+}
+
+// ---------------------------------------------------------------------------
+// Stale-page check — flags pages whose `expiry` date has passed.
+// ---------------------------------------------------------------------------
+
+/**
+ * Check for stale pages — pages whose `expiry` frontmatter date is in the past.
+ * These pages should be reviewed and either refreshed or given a new expiry.
+ */
+export async function checkStalePages(): Promise<LintIssue[]> {
+  const pages = await listWikiPages();
+  const today = new Date().toISOString().slice(0, 10);
+  const issues: LintIssue[] = [];
+
+  for (const entry of pages) {
+    const page = await readWikiPageWithFrontmatter(entry.slug);
+    if (!page) continue;
+    const expiry = page.frontmatter.expiry;
+    if (typeof expiry === "string" && expiry !== "" && expiry <= today) {
+      issues.push({
+        type: "stale-page",
+        slug: entry.slug,
+        message: `Page expired on ${expiry} — content may be outdated`,
+        severity: "warning",
+        suggestion: `Re-ingest from the original source or manually review and update the expiry date`,
+      });
+    }
+  }
+  return issues;
+}
+
+// ---------------------------------------------------------------------------
+// Low-confidence check — flags pages whose `confidence` is below threshold.
+// ---------------------------------------------------------------------------
+
+/** Pages with confidence below this threshold are flagged for more sources. */
+export const LOW_CONFIDENCE_THRESHOLD = 0.3;
+
+/**
+ * Check for low-confidence pages — pages whose `confidence` frontmatter value
+ * is below {@link LOW_CONFIDENCE_THRESHOLD}. These pages need more supporting
+ * sources to be trustworthy.
+ */
+export async function checkLowConfidence(): Promise<LintIssue[]> {
+  const pages = await listWikiPages();
+  const issues: LintIssue[] = [];
+
+  for (const entry of pages) {
+    const page = await readWikiPageWithFrontmatter(entry.slug);
+    if (!page) continue;
+    const confidence = page.frontmatter.confidence;
+    if (typeof confidence === "number" && confidence < LOW_CONFIDENCE_THRESHOLD) {
+      issues.push({
+        type: "low-confidence",
+        slug: entry.slug,
+        message: `Confidence is ${confidence} (below ${LOW_CONFIDENCE_THRESHOLD}) — page needs more supporting sources`,
+        severity: "info",
+        suggestion: `Ingest additional sources about "${entry.title}" to improve confidence`,
+      });
+    }
+  }
+  return issues;
 }

@@ -11,12 +11,17 @@ import {
   checkEmptyPages,
   checkBrokenLinks,
   checkMissingCrossRefs,
+  checkStalePages,
+  checkLowConfidence,
+  LOW_CONFIDENCE_THRESHOLD,
   buildSummary,
 } from "../lint-checks";
 import type { LintIssue } from "../types";
 
 // We use writeWikiPage / ensureDirectories to set up wiki pages on disk.
-import { writeWikiPage, ensureDirectories } from "../wiki";
+import { writeWikiPage, updateIndex, ensureDirectories } from "../wiki";
+import { serializeFrontmatter } from "../frontmatter";
+import type { IndexEntry } from "../types";
 
 let tmpDir: string;
 let originalWikiDir: string | undefined;
@@ -453,5 +458,144 @@ describe("buildSummary", () => {
     ];
     const summary = buildSummary(issues);
     expect(summary).toBe("Found 3 issues: 1 error, 1 warning, 1 info.");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Helper: create a wiki page with frontmatter and add it to the index
+// ---------------------------------------------------------------------------
+
+/** Accumulator for index entries within a single test. */
+let _testIndexEntries: IndexEntry[] = [];
+
+/** Reset between tests so entries don't leak. */
+const _originalBeforeEach = beforeEach;
+
+// Insert a cleanup step at the start of each test.
+_originalBeforeEach(() => {
+  _testIndexEntries = [];
+});
+
+async function createPageWithIndex(
+  slug: string,
+  title: string,
+  frontmatter: Record<string, string | string[] | number | boolean>,
+  body?: string,
+): Promise<void> {
+  const md = body ?? `# ${title}\n\nContent for ${title} with enough text for validation.`;
+  const content = serializeFrontmatter(frontmatter, md);
+  await writeWikiPage(slug, content);
+  _testIndexEntries.push({ slug, title, summary: `About ${title}` });
+  await updateIndex(_testIndexEntries);
+}
+
+// ---------------------------------------------------------------------------
+// checkStalePages
+// ---------------------------------------------------------------------------
+describe("checkStalePages", () => {
+  it("flags a page whose expiry is in the past", async () => {
+    await createPageWithIndex("old-news", "Old News", {
+      expiry: "2020-01-01",
+      created: "2019-01-01",
+    });
+
+    const issues = await checkStalePages();
+    expect(issues).toHaveLength(1);
+    expect(issues[0].type).toBe("stale-page");
+    expect(issues[0].slug).toBe("old-news");
+    expect(issues[0].severity).toBe("warning");
+    expect(issues[0].message).toContain("2020-01-01");
+    expect(issues[0].suggestion).toBeDefined();
+  });
+
+  it("does NOT flag a page whose expiry is in the future", async () => {
+    await createPageWithIndex("fresh-page", "Fresh Page", {
+      expiry: "2099-12-31",
+      created: "2025-01-01",
+    });
+
+    const issues = await checkStalePages();
+    expect(issues).toHaveLength(0);
+  });
+
+  it("gracefully skips pages with no expiry field", async () => {
+    await createPageWithIndex("no-expiry", "No Expiry", {
+      created: "2025-01-01",
+    });
+
+    const issues = await checkStalePages();
+    expect(issues).toHaveLength(0);
+  });
+
+  it("flags multiple stale pages", async () => {
+    await createPageWithIndex("stale-a", "Stale A", { expiry: "2020-06-01" });
+    await createPageWithIndex("stale-b", "Stale B", { expiry: "2021-03-15" });
+    await createPageWithIndex("fresh-c", "Fresh C", { expiry: "2099-01-01" });
+
+    const issues = await checkStalePages();
+    expect(issues).toHaveLength(2);
+    expect(issues.map((i) => i.slug).sort()).toEqual(["stale-a", "stale-b"]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// checkLowConfidence
+// ---------------------------------------------------------------------------
+describe("checkLowConfidence", () => {
+  it("flags a page with confidence below the threshold", async () => {
+    await createPageWithIndex("shaky-page", "Shaky Page", {
+      confidence: 0.1,
+      created: "2025-01-01",
+    });
+
+    const issues = await checkLowConfidence();
+    expect(issues).toHaveLength(1);
+    expect(issues[0].type).toBe("low-confidence");
+    expect(issues[0].slug).toBe("shaky-page");
+    expect(issues[0].severity).toBe("info");
+    expect(issues[0].message).toContain("0.1");
+    expect(issues[0].message).toContain(String(LOW_CONFIDENCE_THRESHOLD));
+    expect(issues[0].suggestion).toBeDefined();
+    expect(issues[0].suggestion).toContain("Shaky Page");
+  });
+
+  it("does NOT flag a page with confidence above the threshold", async () => {
+    await createPageWithIndex("solid-page", "Solid Page", {
+      confidence: 0.5,
+      created: "2025-01-01",
+    });
+
+    const issues = await checkLowConfidence();
+    expect(issues).toHaveLength(0);
+  });
+
+  it("gracefully skips pages with no confidence field", async () => {
+    await createPageWithIndex("no-confidence", "No Confidence", {
+      created: "2025-01-01",
+    });
+
+    const issues = await checkLowConfidence();
+    expect(issues).toHaveLength(0);
+  });
+
+  it("does NOT flag a page with confidence exactly at the threshold", async () => {
+    await createPageWithIndex("borderline", "Borderline", {
+      confidence: LOW_CONFIDENCE_THRESHOLD,
+      created: "2025-01-01",
+    });
+
+    const issues = await checkLowConfidence();
+    expect(issues).toHaveLength(0);
+  });
+
+  it("flags confidence of 0", async () => {
+    await createPageWithIndex("zero-conf", "Zero Confidence", {
+      confidence: 0,
+      created: "2025-01-01",
+    });
+
+    const issues = await checkLowConfidence();
+    expect(issues).toHaveLength(1);
+    expect(issues[0].slug).toBe("zero-conf");
   });
 });
