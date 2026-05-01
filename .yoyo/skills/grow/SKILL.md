@@ -17,7 +17,7 @@ You are growing yopedia — a wiki for the agent age — from its founding visio
 - Check open issues for feature requests
 
 ## Phase 2: Plan
-- Compare what exists to the YOYO.md vision and llm-wiki.md pattern
+- Compare what exists to the YOYO.md roadmap and yopedia-concept.md vision
 - Identify the highest-impact gaps and decide what to build next
 - Factor in open issues if they align with the vision — but the vision drives, issues steer
 - Write task files to session_plan/ directory

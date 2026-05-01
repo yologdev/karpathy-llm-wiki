@@ -35,7 +35,7 @@ A wiki designed for both humans and agents to read and write.
 
 ## Live Growth
 
-The agent runs every 12 hours. Here's what it's doing right now:
+The agent runs every 4 hours. Here's what it's doing right now:
 
 | | |
 |-|-|
