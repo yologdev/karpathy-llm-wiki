@@ -6,6 +6,8 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 
 vi.mock("../wiki", () => ({
   readWikiPage: vi.fn(),
+  readWikiPageWithFrontmatter: vi.fn(),
+  writeWikiPage: vi.fn(),
   listWikiPages: vi.fn(),
   updateIndex: vi.fn(),
   appendToLog: vi.fn(),
@@ -28,7 +30,20 @@ vi.mock("../llm", () => ({
   hasLLMKey: vi.fn(() => false),
 }));
 
-import { readWikiPage, listWikiPages, updateIndex, appendToLog } from "../wiki";
+vi.mock("../frontmatter", () => ({
+  serializeFrontmatter: vi.fn(
+    (data: Record<string, unknown>, body: string) => {
+      const lines = ["---"];
+      for (const [k, v] of Object.entries(data)) {
+        lines.push(`${k}: ${String(v)}`);
+      }
+      lines.push("---");
+      return `${lines.join("\n")}\n\n${body}`;
+    },
+  ),
+}));
+
+import { readWikiPage, readWikiPageWithFrontmatter, writeWikiPage, listWikiPages, updateIndex, appendToLog } from "../wiki";
 import {
   writeWikiPageWithSideEffects,
   deleteWikiPage,
@@ -42,12 +57,15 @@ import {
   fixMissingCrossRef,
   fixContradiction,
   fixMissingConceptPage,
+  fixStalePage,
   fixLintIssue,
   FixValidationError,
   FixNotFoundError,
 } from "../lint-fix";
 
 const mockedReadWikiPage = vi.mocked(readWikiPage);
+const mockedReadWikiPageWithFrontmatter = vi.mocked(readWikiPageWithFrontmatter);
+const mockedWriteWikiPage = vi.mocked(writeWikiPage);
 const mockedListWikiPages = vi.mocked(listWikiPages);
 const mockedUpdateIndex = vi.mocked(updateIndex);
 const mockedAppendToLog = vi.mocked(appendToLog);
@@ -568,6 +586,53 @@ describe("fixMissingConceptPage", () => {
 });
 
 // ---------------------------------------------------------------------------
+// fixStalePage
+// ---------------------------------------------------------------------------
+
+describe("fixStalePage", () => {
+  it("throws FixValidationError when slug is empty", async () => {
+    await expect(fixStalePage("")).rejects.toThrow(FixValidationError);
+    await expect(fixStalePage("")).rejects.toThrow(
+      "Missing required field: slug",
+    );
+  });
+
+  it("throws FixNotFoundError when page does not exist", async () => {
+    mockedReadWikiPageWithFrontmatter.mockResolvedValue(null);
+
+    await expect(fixStalePage("no-such-page")).rejects.toThrow(
+      FixNotFoundError,
+    );
+    await expect(fixStalePage("no-such-page")).rejects.toThrow(
+      "Page not found: no-such-page",
+    );
+  });
+
+  it("bumps expiry to ~90 days from now and writes page", async () => {
+    mockedReadWikiPageWithFrontmatter.mockResolvedValue({
+      slug: "stale",
+      title: "Stale Page",
+      content: "---\nexpiry: 2025-01-01\n---\n\n# Stale Page\n\nOld content.",
+      path: "/wiki/stale.md",
+      frontmatter: { expiry: "2025-01-01" },
+      body: "# Stale Page\n\nOld content.",
+    });
+
+    const result = await fixStalePage("stale");
+
+    expect(result.success).toBe(true);
+    expect(result.slug).toBe("stale");
+    expect(result.message).toMatch(/^Expiry extended to \d{4}-\d{2}-\d{2}$/);
+    expect(mockedWriteWikiPage).toHaveBeenCalledOnce();
+
+    // Verify the written content includes the new expiry
+    const writtenContent = mockedWriteWikiPage.mock.calls[0][1];
+    expect(writtenContent).toContain("expiry:");
+    expect(writtenContent).toContain("# Stale Page");
+  });
+});
+
+// ---------------------------------------------------------------------------
 // fixLintIssue — dispatcher
 // ---------------------------------------------------------------------------
 
@@ -669,6 +734,53 @@ describe("fixLintIssue", () => {
     );
     await expect(fixLintIssue("banana", "slug")).rejects.toThrow(
       "Auto-fix not supported for this issue type",
+    );
+  });
+
+  it("dispatches stale-page to fixStalePage and bumps expiry by 90 days", async () => {
+    mockedReadWikiPageWithFrontmatter.mockResolvedValue({
+      slug: "old-topic",
+      title: "Old Topic",
+      content: "---\nexpiry: 2025-01-01\n---\n\n# Old Topic\n\nStale content.",
+      path: "/wiki/old-topic.md",
+      frontmatter: { expiry: "2025-01-01" },
+      body: "# Old Topic\n\nStale content.",
+    });
+
+    const result = await fixLintIssue("stale-page", "old-topic");
+
+    expect(result.success).toBe(true);
+    expect(result.slug).toBe("old-topic");
+    expect(result.message).toMatch(/^Expiry extended to \d{4}-\d{2}-\d{2}$/);
+    expect(mockedWriteWikiPage).toHaveBeenCalledOnce();
+
+    // Verify the expiry is approximately 90 days from now
+    const dateMatch = result.message.match(/(\d{4}-\d{2}-\d{2})$/);
+    expect(dateMatch).not.toBeNull();
+    const newExpiry = new Date(dateMatch![1]);
+    const now = new Date();
+    const diffDays = (newExpiry.getTime() - now.getTime()) / (1000 * 60 * 60 * 24);
+    expect(diffDays).toBeGreaterThan(88);
+    expect(diffDays).toBeLessThan(92);
+  });
+
+  it("throws FixNotFoundError for stale-page with missing page", async () => {
+    mockedReadWikiPageWithFrontmatter.mockResolvedValue(null);
+
+    await expect(fixLintIssue("stale-page", "no-such")).rejects.toThrow(
+      FixNotFoundError,
+    );
+    await expect(fixLintIssue("stale-page", "no-such")).rejects.toThrow(
+      "Page not found: no-such",
+    );
+  });
+
+  it("throws helpful FixValidationError for low-confidence type", async () => {
+    await expect(fixLintIssue("low-confidence", "weak-page")).rejects.toThrow(
+      FixValidationError,
+    );
+    await expect(fixLintIssue("low-confidence", "weak-page")).rejects.toThrow(
+      "Low-confidence pages cannot be auto-fixed",
     );
   });
 });

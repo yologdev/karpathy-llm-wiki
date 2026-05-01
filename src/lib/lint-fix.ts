@@ -1,7 +1,8 @@
-import { readWikiPage, listWikiPages, updateIndex, appendToLog } from "./wiki";
+import { readWikiPage, readWikiPageWithFrontmatter, writeWikiPage, listWikiPages, updateIndex, appendToLog } from "./wiki";
 import { writeWikiPageWithSideEffects, deleteWikiPage } from "./lifecycle";
 import { callLLM, hasLLMKey } from "./llm";
 import { slugify } from "./slugify";
+import { serializeFrontmatter } from "./frontmatter";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -419,6 +420,36 @@ export async function fixBrokenLink(
   };
 }
 
+/**
+ * Fix a stale-page lint issue by bumping the expiry date forward by 90 days.
+ *
+ * Reads the page, updates the `expiry` frontmatter field, and writes back.
+ */
+export async function fixStalePage(slug: string): Promise<FixResult> {
+  if (!slug) {
+    throw new FixValidationError("Missing required field: slug");
+  }
+
+  const page = await readWikiPageWithFrontmatter(slug);
+  if (!page) {
+    throw new FixNotFoundError(`Page not found: ${slug}`);
+  }
+
+  const now = new Date();
+  const newExpiry = new Date(now.getTime() + 90 * 24 * 60 * 60 * 1000);
+  const expiryStr = newExpiry.toISOString().split("T")[0];
+
+  page.frontmatter.expiry = expiryStr;
+
+  await writeWikiPage(slug, serializeFrontmatter(page.frontmatter, page.body));
+
+  return {
+    success: true,
+    slug,
+    message: `Expiry extended to ${expiryStr}`,
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Dispatcher
 // ---------------------------------------------------------------------------
@@ -450,6 +481,12 @@ export async function fixLintIssue(
       return fixMissingConceptPage(message ?? "");
     case "broken-link":
       return fixBrokenLink(slug, targetSlug ?? "");
+    case "stale-page":
+      return fixStalePage(slug);
+    case "low-confidence":
+      throw new FixValidationError(
+        "Low-confidence pages cannot be auto-fixed. Ingest additional sources about this topic to improve confidence.",
+      );
     default:
       throw new FixValidationError(
         "Auto-fix not supported for this issue type",
