@@ -263,7 +263,7 @@ describe("ingest — YAML frontmatter", () => {
     // Parsed frontmatter has the four expected keys.
     expect(typeof page!.frontmatter.created).toBe("string");
     expect(typeof page!.frontmatter.updated).toBe("string");
-    expect(page!.frontmatter.source_count).toBe("1");
+    expect(page!.frontmatter.source_count).toBe(1);
     expect(page!.frontmatter.tags).toEqual([]);
 
     // created/updated are YYYY-MM-DD strings.
@@ -281,7 +281,7 @@ describe("ingest — YAML frontmatter", () => {
     const first = await readWikiPageWithFrontmatter("recurring");
     expect(first).not.toBeNull();
     const originalCreated = first!.frontmatter.created as string;
-    expect(first!.frontmatter.source_count).toBe("1");
+    expect(first!.frontmatter.source_count).toBe(1);
 
     // Simulate a later re-ingest: manually rewrite the page with an older
     // `created` date so we can verify it's preserved across re-ingest even
@@ -298,7 +298,7 @@ describe("ingest — YAML frontmatter", () => {
     // created preserved from the existing page on disk
     expect(second!.frontmatter.created).toBe("2020-01-01");
     // source_count incremented
-    expect(second!.frontmatter.source_count).toBe("2");
+    expect(second!.frontmatter.source_count).toBe(2);
     // updated advanced to today (YYYY-MM-DD)
     expect(second!.frontmatter.updated).toMatch(/^\d{4}-\d{2}-\d{2}$/);
     expect(second!.frontmatter.updated).not.toBe("2020-01-01");

@@ -409,7 +409,11 @@ export async function ingest(
     }
     const prevCountRaw = existing.frontmatter.source_count;
     const prevCount =
-      typeof prevCountRaw === "string" ? Number(prevCountRaw) : NaN;
+      typeof prevCountRaw === "number"
+        ? prevCountRaw
+        : typeof prevCountRaw === "string"
+          ? Number(prevCountRaw)
+          : NaN;
     frontmatter.source_count = String(
       (Number.isFinite(prevCount) ? prevCount : 0) + 1,
     );

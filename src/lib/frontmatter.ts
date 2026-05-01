@@ -14,9 +14,9 @@
 // Anything else — block scalars, nested objects, anchors, multi-line strings,
 // block arrays — throws. This is by design.
 
-/** A parsed frontmatter object. Values are either strings or string arrays. */
+/** A parsed frontmatter object. Values are strings, string arrays, numbers, or booleans. */
 export interface Frontmatter {
-  [key: string]: string | string[];
+  [key: string]: string | string[] | number | boolean;
 }
 
 /** Result of {@link parseFrontmatter}: the frontmatter object plus body. */
@@ -44,6 +44,28 @@ function unquoteScalar(raw: string): string {
     }
   }
   return trimmed;
+}
+
+/** Returns true if the raw value (trimmed) is surrounded by matching quotes. */
+function isQuoted(raw: string): boolean {
+  const trimmed = raw.trim();
+  if (trimmed.length < 2) return false;
+  const first = trimmed[0];
+  const last = trimmed[trimmed.length - 1];
+  return (first === '"' && last === '"') || (first === "'" && last === "'");
+}
+
+/**
+ * Coerce an unquoted scalar string to number or boolean when appropriate.
+ * Returns the original string if no coercion applies.
+ */
+function coerceScalar(value: string): string | number | boolean {
+  // Boolean coercion (exact match only)
+  if (value === "true") return true;
+  if (value === "false") return false;
+  // Number coercion: must match an integer or decimal (possibly negative)
+  if (/^-?\d+(\.\d+)?$/.test(value)) return Number(value);
+  return value;
 }
 
 /**
@@ -195,7 +217,12 @@ export function parseFrontmatter(content: string): ParsedPage {
     }
 
     // Plain scalar.
-    data[key] = unquoteScalar(valueRaw);
+    // Quoted values always stay as strings; unquoted values get type coercion.
+    if (isQuoted(valueRaw)) {
+      data[key] = unquoteScalar(valueRaw);
+    } else {
+      data[key] = coerceScalar(unquoteScalar(valueRaw));
+    }
   }
 
   return { data, body };
@@ -251,6 +278,9 @@ export function serializeFrontmatter(
     if (Array.isArray(value)) {
       const parts = value.map(quoteArrayElement);
       lines.push(`${key}: [${parts.join(", ")}]`);
+    } else if (typeof value === "number" || typeof value === "boolean") {
+      // Numbers and booleans are emitted bare (no quotes).
+      lines.push(`${key}: ${String(value)}`);
     } else {
       const str = String(value);
       if (needsScalarQuoting(str)) {

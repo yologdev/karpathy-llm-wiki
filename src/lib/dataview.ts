@@ -48,7 +48,7 @@ export interface DataviewQuery {
 export interface DataviewResult {
   slug: string;
   title: string;
-  frontmatter: Record<string, string | string[]>;
+  frontmatter: Record<string, string | string[] | number | boolean>;
 }
 
 // ---------------------------------------------------------------------------
@@ -149,7 +149,7 @@ function smartCompare(a: string, b: string): number {
  */
 function matchesFilter(
   filter: DataviewFilter,
-  fmValue: string | string[] | undefined,
+  fmValue: string | string[] | number | boolean | undefined,
 ): boolean {
   const { op, value } = filter;
 
@@ -166,12 +166,12 @@ function matchesFilter(
     if (Array.isArray(fmValue)) {
       return fmValue.includes(value!);
     }
-    // For scalar strings, treat as substring check
-    return fmValue.includes(value!);
+    // For scalar strings/numbers/booleans, treat as substring check
+    return String(fmValue).includes(value!);
   }
 
   // For relational/equality ops, coerce to a scalar string.
-  const scalar = Array.isArray(fmValue) ? fmValue.join(", ") : fmValue;
+  const scalar = Array.isArray(fmValue) ? fmValue.join(", ") : String(fmValue);
   const cmp = smartCompare(scalar, value!);
 
   switch (op) {
@@ -257,8 +257,8 @@ export async function queryByFrontmatter(
       if (aVal === undefined) return 1;
       if (bVal === undefined) return -1;
 
-      const aStr = Array.isArray(aVal) ? aVal.join(", ") : aVal;
-      const bStr = Array.isArray(bVal) ? bVal.join(", ") : bVal;
+      const aStr = Array.isArray(aVal) ? aVal.join(", ") : String(aVal);
+      const bStr = Array.isArray(bVal) ? bVal.join(", ") : String(bVal);
 
       const cmp = smartCompare(aStr, bStr);
       return sortOrder === "desc" ? -cmp : cmp;

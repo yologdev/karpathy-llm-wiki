@@ -460,3 +460,105 @@ describe("round-trip: parse ↔ serialize", () => {
     expect(parsed.body).toBe(body);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Number and boolean values
+// ---------------------------------------------------------------------------
+describe("number and boolean values", () => {
+  it("parses unquoted float as number", () => {
+    const text = "---\nconfidence: 0.85\n---\nBody";
+    const { data } = parseFrontmatter(text);
+    expect(data.confidence).toBe(0.85);
+    expect(typeof data.confidence).toBe("number");
+  });
+
+  it("parses unquoted integer as number", () => {
+    const text = "---\nrevision_count: 3\n---\nBody";
+    const { data } = parseFrontmatter(text);
+    expect(data.revision_count).toBe(3);
+    expect(typeof data.revision_count).toBe("number");
+  });
+
+  it("parses unquoted true as boolean", () => {
+    const text = "---\ndisputed: true\n---\nBody";
+    const { data } = parseFrontmatter(text);
+    expect(data.disputed).toBe(true);
+    expect(typeof data.disputed).toBe("boolean");
+  });
+
+  it("parses unquoted false as boolean", () => {
+    const text = "---\ndisputed: false\n---\nBody";
+    const { data } = parseFrontmatter(text);
+    expect(data.disputed).toBe(false);
+    expect(typeof data.disputed).toBe("boolean");
+  });
+
+  it("keeps quoted number as string", () => {
+    const text = '---\nconfidence: "0.85"\n---\nBody';
+    const { data } = parseFrontmatter(text);
+    expect(data.confidence).toBe("0.85");
+    expect(typeof data.confidence).toBe("string");
+  });
+
+  it("keeps quoted boolean as string", () => {
+    const text = '---\ndisputed: "true"\n---\nBody';
+    const { data } = parseFrontmatter(text);
+    expect(data.disputed).toBe("true");
+    expect(typeof data.disputed).toBe("string");
+  });
+
+  it("parses negative number", () => {
+    const text = "---\nscore: -1\n---\nBody";
+    const { data } = parseFrontmatter(text);
+    expect(data.score).toBe(-1);
+    expect(typeof data.score).toBe("number");
+  });
+
+  it("parses larger integer", () => {
+    const text = "---\ncount: 42\n---\nBody";
+    const { data } = parseFrontmatter(text);
+    expect(data.count).toBe(42);
+    expect(typeof data.count).toBe("number");
+  });
+
+  it("does NOT coerce version-like strings to number", () => {
+    const text = "---\nversion: 1.2.3\n---\nBody";
+    const { data } = parseFrontmatter(text);
+    expect(data.version).toBe("1.2.3");
+    expect(typeof data.version).toBe("string");
+  });
+
+  it("does NOT coerce strings with non-numeric chars to number", () => {
+    const text = "---\nslug: 3d-printing\n---\nBody";
+    const { data } = parseFrontmatter(text);
+    expect(data.slug).toBe("3d-printing");
+    expect(typeof data.slug).toBe("string");
+  });
+
+  it("round-trips number and boolean values", () => {
+    const data = {
+      title: "Test",
+      confidence: 0.85,
+      revision_count: 3,
+      disputed: true,
+      archived: false,
+    };
+    const body = "Body";
+    const serialized = serializeFrontmatter(data, body);
+    const parsed = parseFrontmatter(serialized);
+    expect(parsed.data).toEqual(data);
+    expect(parsed.body).toBe(body);
+  });
+
+  it("serializes numbers without quotes", () => {
+    const serialized = serializeFrontmatter({ score: 42 }, "Body");
+    expect(serialized).toContain("score: 42");
+    expect(serialized).not.toContain('"42"');
+  });
+
+  it("serializes booleans without quotes", () => {
+    const serialized = serializeFrontmatter({ disputed: true }, "Body");
+    expect(serialized).toContain("disputed: true");
+    expect(serialized).not.toContain('"true"');
+  });
+});

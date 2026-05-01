@@ -279,12 +279,14 @@ export async function listWikiPages(): Promise<IndexEntry[]> {
             ? fm.updated
             : undefined;
 
-        // source_count is persisted as a string (see ingest.ts); parse defensively.
+        // source_count may be a number (new behavior) or a string (legacy); parse defensively.
         const sourceCountRaw = fm.source_count;
         const sourceCountNum =
-          typeof sourceCountRaw === "string" && sourceCountRaw.length > 0
-            ? Number.parseInt(sourceCountRaw, 10)
-            : NaN;
+          typeof sourceCountRaw === "number"
+            ? sourceCountRaw
+            : typeof sourceCountRaw === "string" && sourceCountRaw.length > 0
+              ? Number.parseInt(sourceCountRaw, 10)
+              : NaN;
         const sourceCount = Number.isFinite(sourceCountNum) && sourceCountNum >= 0
           ? sourceCountNum
           : undefined;

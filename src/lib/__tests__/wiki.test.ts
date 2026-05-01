@@ -915,10 +915,10 @@ describe("parseFrontmatter", () => {
     expect(result.body).toBe("# Body\n");
   });
 
-  it("parses numeric-looking scalars as strings", () => {
+  it("parses numeric-looking unquoted scalars as numbers", () => {
     const content = "---\nsource_count: 3\n---\n\nbody";
     const result = parseFrontmatter(content);
-    expect(result.data.source_count).toBe("3");
+    expect(result.data.source_count).toBe(3);
   });
 
   it("parses inline arrays with plain and quoted elements", () => {
@@ -1018,7 +1018,7 @@ describe("serializeFrontmatter", () => {
     const original = {
       created: "2026-04-08",
       updated: "2026-04-08",
-      source_count: "2",
+      source_count: 2,
       tags: ["foo", "bar", "baz qux"],
     };
     const body = "# Title\n\nBody paragraph.\n";
@@ -1058,7 +1058,7 @@ describe("serializeFrontmatter", () => {
     const original = {
       created: "2026-04-01",
       updated: "2026-04-08",
-      source_count: "3",
+      source_count: 3,
       tags: ["alpha", "beta"],
       custom_key: "some value",
     };
@@ -1100,7 +1100,7 @@ describe("serializeFrontmatter", () => {
     // `created` is preserved, `updated` is bumped, everything else survives.
     expect(reparsed.data.created).toBe("2026-01-15");
     expect(reparsed.data.updated).toBe("2026-04-08");
-    expect(reparsed.data.source_count).toBe("2");
+    expect(reparsed.data.source_count).toBe(2);
     expect(reparsed.data.tags).toEqual(["original", "tag"]);
     expect(reparsed.body).toBe(newBody);
   });
@@ -1186,7 +1186,7 @@ describe("readWikiPageWithFrontmatter", () => {
     const page = await readWikiPageWithFrontmatter("with-fm");
     expect(page).not.toBeNull();
     expect(page!.frontmatter.created).toBe("2026-04-08");
-    expect(page!.frontmatter.source_count).toBe("1");
+    expect(page!.frontmatter.source_count).toBe(1);
     expect(page!.frontmatter.tags).toEqual(["alpha", "beta"]);
 
     // body excludes the YAML block
