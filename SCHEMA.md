@@ -380,10 +380,12 @@ sessions should pick from this list:
 - The yopedia `sources[]` structured array (with `{type, url, fetched,
   triggered_by}` per source) defined in the Phase 1 roadmap is not yet
   implemented. Provenance still uses the flat `source_url` string field.
-- The wiki page view does not yet display yopedia metadata fields
-  (`confidence`, `expiry`, `authors`, `contributors`, `disputed`). These
-  are stored in frontmatter and consumed by lint checks, but have no UI
-  surface yet.
+- The wiki page view displays yopedia metadata fields (`confidence`,
+  `expiry`, `authors`, `contributors`, `disputed`, `aliases`,
+  `supersedes`) when present. Confidence is color-coded (green/yellow/red),
+  expired pages show an amber warning, disputed pages get an orange badge
+  and explanation text, aliases render as muted "Also known as" text, and
+  supersedes links to the replaced page.
 
 ## Planned evolution
 

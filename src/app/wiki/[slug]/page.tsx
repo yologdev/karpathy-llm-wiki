@@ -14,10 +14,37 @@ function formatDate(value: string): string {
   return value.slice(0, 10);
 }
 
+/** Map a numeric confidence score to a human-readable label + color class. */
+function confidenceDisplay(value: number): {
+  label: string;
+  className: string;
+} {
+  if (value >= 0.7) {
+    return {
+      label: `Confidence: ${value}`,
+      className:
+        "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400",
+    };
+  }
+  if (value >= 0.3) {
+    return {
+      label: `Confidence: ${value}`,
+      className:
+        "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400",
+    };
+  }
+  return {
+    label: `Confidence: ${value}`,
+    className:
+      "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400",
+  };
+}
+
 /**
- * Render a small muted metadata strip (date + source count + tag pills)
- * built from a page's parsed frontmatter. Returns `null` when no metadata
- * fields are present, so legacy frontmatter-less pages render nothing.
+ * Render a small muted metadata strip (date + source count + tag pills +
+ * yopedia fields) built from a page's parsed frontmatter. Returns `null`
+ * when no metadata fields are present, so legacy frontmatter-less pages
+ * render nothing.
  */
 function PageMetadata({ frontmatter }: { frontmatter: Frontmatter }) {
   const updatedRaw = frontmatter.updated;
@@ -44,21 +71,101 @@ function PageMetadata({ frontmatter }: { frontmatter: Frontmatter }) {
     ? frontmatter.tags.filter((t) => typeof t === "string" && t.length > 0)
     : [];
 
+  // --- Yopedia fields ---
+
+  // Confidence badge: show only when confidence is a finite number.
+  const confidenceRaw = frontmatter.confidence;
+  const confidenceNum =
+    typeof confidenceRaw === "number" && Number.isFinite(confidenceRaw)
+      ? confidenceRaw
+      : typeof confidenceRaw === "string" && /^-?\d+(\.\d+)?$/.test(confidenceRaw)
+        ? Number(confidenceRaw)
+        : null;
+  const confidence =
+    confidenceNum !== null && Number.isFinite(confidenceNum)
+      ? confidenceDisplay(confidenceNum)
+      : null;
+
+  // Expiry / staleness: show only when expiry is a non-empty string.
+  const expiryRaw = frontmatter.expiry;
+  const expiryStr =
+    typeof expiryRaw === "string" && expiryRaw.length >= 10
+      ? expiryRaw
+      : null;
+  const expiryDate = expiryStr ? new Date(expiryStr) : null;
+  const isExpired =
+    expiryDate !== null && !isNaN(expiryDate.getTime()) && expiryDate < new Date();
+
+  // Authors
+  const authors = Array.isArray(frontmatter.authors)
+    ? frontmatter.authors.filter(
+        (a) => typeof a === "string" && a.length > 0,
+      )
+    : [];
+
+  // Contributors (only show extras not already in authors)
+  const contributors = Array.isArray(frontmatter.contributors)
+    ? frontmatter.contributors.filter(
+        (c) =>
+          typeof c === "string" && c.length > 0 && !authors.includes(c),
+      )
+    : [];
+
+  // Disputed badge
+  const disputed = frontmatter.disputed === true;
+
+  // Aliases
+  const aliases = Array.isArray(frontmatter.aliases)
+    ? frontmatter.aliases.filter(
+        (a) => typeof a === "string" && a.length > 0,
+      )
+    : [];
+
+  // Supersedes
+  const supersedes =
+    typeof frontmatter.supersedes === "string" &&
+    frontmatter.supersedes.length > 0
+      ? frontmatter.supersedes
+      : null;
+
   const hasDateLine = dateLabel !== null || sourceLabel !== null;
   const hasTags = tags.length > 0;
-  if (!hasDateLine && !hasTags) return null;
+  const hasYopedia =
+    confidence !== null ||
+    expiryStr !== null ||
+    authors.length > 0 ||
+    disputed ||
+    aliases.length > 0 ||
+    supersedes !== null;
+
+  if (!hasDateLine && !hasTags && !hasYopedia) return null;
 
   return (
-    <div className="mb-6">
-      {hasDateLine && (
-        <div className="text-sm text-gray-500 dark:text-gray-400">
-          {dateLabel}
-          {dateLabel && sourceLabel ? " · " : ""}
-          {sourceLabel}
+    <div className="mb-6 space-y-2">
+      {/* Row 1: date · sources · confidence · disputed */}
+      {(hasDateLine || confidence || disputed) && (
+        <div className="flex flex-wrap items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
+          {dateLabel && <span>{dateLabel}</span>}
+          {dateLabel && sourceLabel && <span>·</span>}
+          {sourceLabel && <span>{sourceLabel}</span>}
+          {confidence && (
+            <span
+              className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${confidence.className}`}
+            >
+              {confidence.label}
+            </span>
+          )}
+          {disputed && (
+            <span className="inline-block rounded-full bg-orange-100 px-2 py-0.5 text-xs font-medium text-orange-800 dark:bg-orange-900/30 dark:text-orange-400">
+              ⚠ Disputed
+            </span>
+          )}
         </div>
       )}
+
+      {/* Row 2: tags */}
       {hasTags && (
-        <div className="mt-2 flex flex-wrap gap-1.5">
+        <div className="flex flex-wrap gap-1.5">
           {tags.map((tag) => (
             <span
               key={tag}
@@ -67,6 +174,61 @@ function PageMetadata({ frontmatter }: { frontmatter: Frontmatter }) {
               {tag}
             </span>
           ))}
+        </div>
+      )}
+
+      {/* Row 3: authors + contributors */}
+      {authors.length > 0 && (
+        <div className="text-sm text-gray-500 dark:text-gray-400">
+          By {authors.join(", ")}
+          {contributors.length > 0 && (
+            <span className="ml-1 text-gray-400 dark:text-gray-500">
+              + {contributors.length}{" "}
+              {contributors.length === 1 ? "contributor" : "contributors"}
+            </span>
+          )}
+        </div>
+      )}
+
+      {/* Row 4: expiry / staleness */}
+      {expiryStr && expiryDate && !isNaN(expiryDate.getTime()) && (
+        <div className="text-sm">
+          {isExpired ? (
+            <span className="text-amber-600 dark:text-amber-400">
+              ⚠ Expired {formatDate(expiryStr)} — may be outdated
+            </span>
+          ) : (
+            <span className="text-gray-400 dark:text-gray-500">
+              Expires {formatDate(expiryStr)}
+            </span>
+          )}
+        </div>
+      )}
+
+      {/* Row 5: disputed explanation */}
+      {disputed && (
+        <div className="text-sm text-orange-600 dark:text-orange-400">
+          This page has unresolved contradictions
+        </div>
+      )}
+
+      {/* Row 6: aliases */}
+      {aliases.length > 0 && (
+        <div className="text-sm text-gray-400 dark:text-gray-500">
+          Also known as: {aliases.join(", ")}
+        </div>
+      )}
+
+      {/* Row 7: supersedes link */}
+      {supersedes && (
+        <div className="text-sm text-gray-400 dark:text-gray-500">
+          Replaces:{" "}
+          <Link
+            href={`/wiki/${supersedes}`}
+            className="text-blue-600 hover:underline dark:text-blue-400"
+          >
+            {supersedes}
+          </Link>
         </div>
       )}
     </div>
