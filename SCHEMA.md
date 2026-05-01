@@ -48,6 +48,32 @@ yoyo updates this document so future sessions inherit the convention. See
 - Pages should not be edited by humans. The LLM owns the wiki layer; humans
   curate sources and ask questions.
 
+### Yopedia frontmatter fields
+
+In addition to the base fields (`type`, `source_url`, `tags`, `created`,
+`updated`, `source_count`), every wiki page carries yopedia metadata fields.
+These were added in Phase 1 of the yopedia pivot.
+
+| Field | Type | Default | Set when | Consumed by |
+|-------|------|---------|----------|-------------|
+| `confidence` | number (0–1) | `0.7` | Initial ingest (deterministic default); preserved on re-ingest if existing value is higher | `low-confidence` lint check (flags pages below 0.3); future UI badge |
+| `expiry` | ISO date string (YYYY-MM-DD) | 90 days from ingest | Initial ingest and re-ingest (always resets to 90 days from now) | `stale-page` lint check (flags pages past expiry) |
+| `authors` | string array | `["system"]` | Initial ingest; preserved on re-ingest (never reset) | Future contributor profiles, attribution UI |
+| `contributors` | string array | `[]` | Re-ingest appends `"system"` if not already present; manual edits should append the editor's handle | Future contributor profiles |
+| `disputed` | boolean | `false` | Set manually or by future contradiction resolution; preserved on re-ingest | Future talk-page system, UI warning badge |
+| `supersedes` | string (slug) | `""` (empty) | Set manually when a page replaces another; preserved on re-ingest | Future redirect system |
+| `aliases` | string array | `[]` | Set manually for alternative names; preserved on re-ingest | Future redirect/search system |
+
+**Re-ingest behavior:** On re-ingest, `authors`, `contributors`, `disputed`,
+`supersedes`, and `aliases` are preserved from the existing page. `expiry`
+resets to 90 days from now (the page is considered refreshed). `confidence`
+is preserved only if the existing value is higher than the default 0.7
+(indicating a manual upgrade).
+
+**Note:** The `authors` default is `"system"` (not `"yoyo"`) because the
+ingest operation is performed by the system on behalf of the user. Phase 4
+(agent identity) will introduce proper agent attribution.
+
 ## Page templates
 
 The wiki produces several distinct page types. Each type has a recommended
@@ -63,6 +89,13 @@ Created by the **ingest** operation when a URL or text is added.
 type: summary
 source_url: <original URL or "text-paste">
 tags: [<topic1>, <topic2>]
+confidence: 0.7
+expiry: <YYYY-MM-DD, 90 days from ingest>
+authors: [system]
+contributors: []
+disputed: false
+supersedes:
+aliases: []
 ---
 ```
 
@@ -94,6 +127,13 @@ About a specific person, organization, or tool.
 ---
 type: entity
 tags: [<topic1>, <topic2>]
+confidence: 0.7
+expiry: <YYYY-MM-DD, 90 days from ingest>
+authors: [system]
+contributors: []
+disputed: false
+supersedes:
+aliases: []
 ---
 ```
 
@@ -281,6 +321,14 @@ Current checks performed by `lint()` in `src/lib/lint.ts`:
   Requires an LLM key; skipped with an info message when no key is configured.
   Auto-fix: generate a stub concept page via the LLM (or a deterministic
   fallback).
+- **`stale-page`** (warning) — page's `expiry` frontmatter date is in the
+  past, meaning the content may be outdated and should be reviewed or
+  re-ingested. No auto-fix — requires human or agent judgment to refresh
+  or extend the expiry.
+- **`low-confidence`** (info) — page's `confidence` frontmatter value is
+  below 0.3 (`LOW_CONFIDENCE_THRESHOLD` in `src/lib/lint-checks.ts`),
+  indicating the page needs more supporting sources. No auto-fix — requires
+  ingesting additional sources to improve confidence.
 
 ## Provider configuration
 
@@ -312,12 +360,15 @@ sessions should pick from this list:
   via RRF. Batch rebuild of the full vector index is available via the Settings
   page (`/api/settings/rebuild-embeddings`).
   Anthropic-only users see no regression (pure BM25 fallback).
-- Lint auto-fix handles all seven checks (`orphan-page`, `stale-index`,
+- Lint auto-fix handles seven of nine checks (`orphan-page`, `stale-index`,
   `empty-page`, `broken-link`, `missing-crossref`, `contradiction`,
   `missing-concept-page`) via `POST /api/lint/fix`.
   The `contradiction` fix uses the LLM to rewrite the affected page.
   The `missing-concept-page` fix generates a stub page via the LLM.
   The `broken-link` fix removes broken links from the source page.
+  The two newest checks — `stale-page` and `low-confidence` — have no
+  auto-fix yet. Stale pages need human/agent judgment to refresh or extend
+  the expiry; low-confidence pages need additional sources ingested.
 - Long documents are chunked at ingest time (12K chars per chunk ≈ 3K
   tokens) so they fit within provider context windows. Token counting is
   character-based (not tokenizer-exact), which is conservative but not
@@ -326,6 +377,13 @@ sessions should pick from this list:
   cross-references) from TOCTOU races within a single Next.js server process
   via `withFileLock()` in `src/lib/lock.ts`. This does NOT protect against
   multiple server processes (which would require OS-level lockfiles).
+- The yopedia `sources[]` structured array (with `{type, url, fetched,
+  triggered_by}` per source) defined in the Phase 1 roadmap is not yet
+  implemented. Provenance still uses the flat `source_url` string field.
+- The wiki page view does not yet display yopedia metadata fields
+  (`confidence`, `expiry`, `authors`, `contributors`, `disputed`). These
+  are stored in frontmatter and consumed by lint checks, but have no UI
+  surface yet.
 
 ## Planned evolution
 
