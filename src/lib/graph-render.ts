@@ -133,6 +133,72 @@ export function nodeRadius(linkCount: number): number {
   return Math.max(MIN_RADIUS, Math.min(MAX_RADIUS, r));
 }
 
+// --- Physics simulation ---
+
+export interface PhysicsResult {
+  totalVelocity: number;
+}
+
+/**
+ * Run one step of the force-directed physics simulation.
+ * Mutates node positions (x, y) and velocities (vx, vy) in-place.
+ */
+export function stepPhysics(
+  nodes: GraphNode[],
+  edges: GraphEdge[],
+  nodeMap: Map<string, GraphNode>,
+  cx: number,
+  cy: number,
+): PhysicsResult {
+  // Repulsion between all pairs
+  for (let i = 0; i < nodes.length; i++) {
+    for (let j = i + 1; j < nodes.length; j++) {
+      const a = nodes[i];
+      const b = nodes[j];
+      let dx = a.x - b.x;
+      let dy = a.y - b.y;
+      const distSq = dx * dx + dy * dy || 1;
+      const force = REPULSION / distSq;
+      const dist = Math.sqrt(distSq);
+      dx /= dist;
+      dy /= dist;
+      a.vx += dx * force;
+      a.vy += dy * force;
+      b.vx -= dx * force;
+      b.vy -= dy * force;
+    }
+  }
+
+  // Attraction along edges
+  for (const edge of edges) {
+    const a = nodeMap.get(edge.source);
+    const b = nodeMap.get(edge.target);
+    if (!a || !b) continue;
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    const force = ATTRACTION * Math.sqrt(dx * dx + dy * dy);
+    const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+    a.vx += (dx / dist) * force;
+    a.vy += (dy / dist) * force;
+    b.vx -= (dx / dist) * force;
+    b.vy -= (dy / dist) * force;
+  }
+
+  // Center gravity + damping + apply
+  let totalVelocity = 0;
+  for (const n of nodes) {
+    n.vx += (cx - n.x) * CENTER_GRAVITY;
+    n.vy += (cy - n.y) * CENTER_GRAVITY;
+    n.vx *= DAMPING;
+    n.vy *= DAMPING;
+    n.x += n.vx;
+    n.y += n.vy;
+    totalVelocity += Math.abs(n.vx) + Math.abs(n.vy);
+  }
+
+  return { totalVelocity };
+}
+
 // --- Canvas drawing primitives ---
 
 export function roundedRect(

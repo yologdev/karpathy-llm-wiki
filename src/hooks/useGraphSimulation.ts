@@ -13,14 +13,11 @@ import {
   CLUSTER_COLORS_LIGHT,
   CLUSTER_STROKES_DARK,
   CLUSTER_STROKES_LIGHT,
-  REPULSION,
-  ATTRACTION,
-  CENTER_GRAVITY,
-  DAMPING,
   VELOCITY_THRESHOLD,
   nodeRadius,
   roundedRect,
   getColorPalette,
+  stepPhysics,
 } from "@/lib/graph-render";
 
 export interface UseGraphSimulationReturn {
@@ -70,51 +67,7 @@ export function useGraphSimulation(
     const nodeMap = nodeMapRef.current;
 
     // --- Physics step ---
-    // Repulsion between all pairs
-    for (let i = 0; i < nodes.length; i++) {
-      for (let j = i + 1; j < nodes.length; j++) {
-        const a = nodes[i];
-        const b = nodes[j];
-        let dx = a.x - b.x;
-        let dy = a.y - b.y;
-        const distSq = dx * dx + dy * dy || 1;
-        const force = REPULSION / distSq;
-        const dist = Math.sqrt(distSq);
-        dx /= dist;
-        dy /= dist;
-        a.vx += dx * force;
-        a.vy += dy * force;
-        b.vx -= dx * force;
-        b.vy -= dy * force;
-      }
-    }
-
-    // Attraction along edges
-    for (const edge of edges) {
-      const a = nodeMap.get(edge.source);
-      const b = nodeMap.get(edge.target);
-      if (!a || !b) continue;
-      const dx = b.x - a.x;
-      const dy = b.y - a.y;
-      const force = ATTRACTION * Math.sqrt(dx * dx + dy * dy);
-      const dist = Math.sqrt(dx * dx + dy * dy) || 1;
-      a.vx += (dx / dist) * force;
-      a.vy += (dy / dist) * force;
-      b.vx -= (dx / dist) * force;
-      b.vy -= (dy / dist) * force;
-    }
-
-    // Center gravity + damping + apply
-    let totalV = 0;
-    for (const n of nodes) {
-      n.vx += (cx - n.x) * CENTER_GRAVITY;
-      n.vy += (cy - n.y) * CENTER_GRAVITY;
-      n.vx *= DAMPING;
-      n.vy *= DAMPING;
-      n.x += n.vx;
-      n.y += n.vy;
-      totalV += Math.abs(n.vx) + Math.abs(n.vy);
-    }
+    const { totalVelocity } = stepPhysics(nodes, edges, nodeMap, cx, cy);
 
     // --- Render ---
     ctx.clearRect(0, 0, W, H);
@@ -245,7 +198,7 @@ export function useGraphSimulation(
     }
 
     // Continue or stop
-    if (totalV > VELOCITY_THRESHOLD) {
+    if (totalVelocity > VELOCITY_THRESHOLD) {
       animRef.current = requestAnimationFrame(simulate);
     }
   }, [canvasRef]);
