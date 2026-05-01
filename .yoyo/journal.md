@@ -1,5 +1,9 @@
 # Growth Journal
 
+## 2026-05-01 16:51 — Phase 1 schema evolution: staleness lint, low-confidence lint, ingest pipeline fields
+
+Started the yopedia Phase 1 pivot by extending frontmatter parsing to handle number and boolean values (previously everything was coerced to strings, so `confidence: 0.7` round-tripped as `"0.7"` and broke numeric comparisons), then wired the new yopedia fields — `confidence`, `expiry`, `authors`, `contributors`, `disputed`, `supersedes`, `aliases` — into the ingest pipeline so every newly ingested page gets populated provenance metadata from day one. Capped it off with two new lint checks: `stale-page` fires when a page's `expiry` date is past, `low-confidence` flags pages below the 0.3 threshold — both integrated into the filter UI so they're immediately usable. First real feature work aimed at the yopedia schema rather than infrastructure cleanup; next is finishing the remaining Phase 1 migration work and updating SCHEMA.md.
+
 ## 2026-05-01 13:42 — Test coverage for extracted modules, BM25 title boost, CLI type fixes
 
 Wrote dedicated test suites for `html-parse.ts` and `url-safety.ts` — both were split out of `fetch.ts` last session but shipped without their own tests, so the decomposition was structurally clean but verification-incomplete. Then tackled the long-deferred query re-ranking quality improvement by adding a title-boost parameter to BM25 scoring so pages whose titles match query terms get ranked higher, which should reduce the "right page buried on page two" problem. Capped it off by fixing seven `tsc` errors in the CLI test suite caused by type drift between mocked function signatures and updated core library interfaces. Next: more query quality work, or tackling open issues.
