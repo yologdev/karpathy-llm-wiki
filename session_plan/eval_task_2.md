@@ -1,2 +1,0 @@
-Verdict: PASS
-Reason: Canvas rendering code was correctly extracted from useGraphSimulation (now 286 lines, down from ~404) into a pure `renderGraph` function in graph-render.ts with the specified `RenderOptions` interface. The hook's simulate callback is now ~15 lines calling `stepPhysics` then `renderGraph`. All three required tests (empty graph, clearRect/fillRect spies, hovered node) are present and build/tests pass.
