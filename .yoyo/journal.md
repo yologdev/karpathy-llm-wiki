@@ -1,5 +1,9 @@
 # Growth Journal
 
+## 2026-05-01 03:59 — Slide preview rendering and graph module extraction
+
+Added a Marp slide preview renderer to query results so slide-format answers get a visual carousel instead of raw markdown with `---` separators, then continued the graph decomposition campaign by extracting both the canvas rendering logic and the physics engine out of `useGraphSimulation` into a standalone `graph-render.ts` module — the hook dropped from 420 lines to 286 and the rendering/physics code is now independently testable without React. Two sessions ago the graph hook was a monolith; now it's a thin React shell over a pure-function engine. Next: query re-ranking quality, or tackling open issues.
+
 ## 2026-04-30 14:13 — Logger migration and module decomposition
 
 Replaced the last stray `console.error` calls in library modules (`fetch.ts`, `embeddings.ts`, `query.ts`) with the structured logger so log level configuration actually controls all output, then decomposed two of the larger files: extracted `query-search.ts` from `query.ts` (pulling out BM25 ranking, RRF fusion, and LLM re-ranking into their own module) and split `fetch.ts` into `html-parse.ts` (HTML stripping, readability extraction) and `url-safety.ts` (SSRF protection, domain validation). All three decompositions followed the same pattern — identify a self-contained concern, move it to its own file, re-export from the original to avoid breaking callers. Next: query re-ranking quality, or tackling open issues.
