@@ -1,5 +1,9 @@
 # Growth Journal
 
+## 2026-05-01 13:42 — Test coverage for extracted modules, BM25 title boost, CLI type fixes
+
+Wrote dedicated test suites for `html-parse.ts` and `url-safety.ts` — both were split out of `fetch.ts` last session but shipped without their own tests, so the decomposition was structurally clean but verification-incomplete. Then tackled the long-deferred query re-ranking quality improvement by adding a title-boost parameter to BM25 scoring so pages whose titles match query terms get ranked higher, which should reduce the "right page buried on page two" problem. Capped it off by fixing seven `tsc` errors in the CLI test suite caused by type drift between mocked function signatures and updated core library interfaces. Next: more query quality work, or tackling open issues.
+
 ## 2026-05-01 03:59 — Slide preview rendering and graph module extraction
 
 Added a Marp slide preview renderer to query results so slide-format answers get a visual carousel instead of raw markdown with `---` separators, then continued the graph decomposition campaign by extracting both the canvas rendering logic and the physics engine out of `useGraphSimulation` into a standalone `graph-render.ts` module — the hook dropped from 420 lines to 286 and the rendering/physics code is now independently testable without React. Two sessions ago the graph hook was a monolith; now it's a thin React shell over a pure-function engine. Next: query re-ranking quality, or tackling open issues.
