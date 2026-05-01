@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { tokenize, buildCorpusStats, bm25Score } from "../bm25";
-import { BM25_K1, BM25_B } from "../constants";
+import { BM25_K1, BM25_B, TITLE_BOOST } from "../constants";
 import type { IndexEntry } from "../types";
 
 // ---------------------------------------------------------------------------
@@ -75,6 +75,7 @@ describe("buildCorpusStats", () => {
     expect(stats.avgdl).toBe(0);
     expect(stats.df.size).toBe(0);
     expect(stats.docTokens.size).toBe(0);
+    expect(stats.titleTokens.size).toBe(0);
   });
 
   it("computes correct stats for a single entry", async () => {
@@ -86,6 +87,9 @@ describe("buildCorpusStats", () => {
     const expectedTokens = tokenize("Neural Networks Deep learning fundamentals");
     expect(stats.docTokens.get("neural-nets")).toEqual(expectedTokens);
     expect(stats.avgdl).toBe(expectedTokens.length);
+
+    // Title tokens stored separately
+    expect(stats.titleTokens.get("neural-nets")).toEqual(tokenize("Neural Networks"));
 
     // Each unique token should have df = 1
     for (const tok of new Set(expectedTokens)) {
@@ -159,6 +163,7 @@ describe("bm25Score", () => {
       avgdl: 0,
       df: new Map<string, number>(),
       docTokens: new Map<string, string[]>(),
+      titleTokens: new Map<string, string[]>(),
     };
     const e = entry("test", "Test", "Content");
     expect(bm25Score(e, ["test"], emptyStats)).toBe(0);
@@ -248,5 +253,79 @@ describe("bm25Score", () => {
     // Verify the constants are the expected standard values
     expect(BM25_K1).toBe(1.5);
     expect(BM25_B).toBe(0.75);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Title boost
+// ---------------------------------------------------------------------------
+
+describe("bm25Score title boost", () => {
+  it("scores a page with the query term in its title higher than one with the term only in the body", async () => {
+    const entries = [
+      entry("title-match", "Quantum Computing", "General overview of modern topics"),
+      entry("body-match", "General Overview", "Quantum computing research and applications"),
+    ];
+    const stats = await buildCorpusStats(entries, { fullBody: false });
+
+    const scoreTitle = bm25Score(entries[0], ["quantum"], stats);
+    const scoreBody = bm25Score(entries[1], ["quantum"], stats);
+
+    expect(scoreTitle).toBeGreaterThan(scoreBody);
+  });
+
+  it("boost is proportional — more title-matching terms means higher score", async () => {
+    const entries = [
+      entry("one-match", "Quantum Overview", "Computing research and algorithms"),
+      entry("two-match", "Quantum Computing", "Research and algorithms overview"),
+    ];
+    const stats = await buildCorpusStats(entries, { fullBody: false });
+
+    const queryTokens = ["quantum", "computing"];
+    const scoreOne = bm25Score(entries[0], queryTokens, stats);
+    const scoreTwo = bm25Score(entries[1], queryTokens, stats);
+
+    // Both pages contain both terms in body (title+summary gets concatenated),
+    // but "two-match" has both query terms in the title while "one-match" has only one
+    expect(scoreTwo).toBeGreaterThan(scoreOne);
+  });
+
+  it("a page with zero body matches but a title match still gets a meaningful score", async () => {
+    // "photosynthesis" appears only in the title of page-a, nowhere else in the corpus
+    const entries = [
+      entry("page-a", "Photosynthesis", "Plants convert sunlight energy"),
+      entry("page-b", "Geology", "Rocks minerals earth layers"),
+    ];
+    const stats = await buildCorpusStats(entries, { fullBody: false });
+
+    const score = bm25Score(entries[0], ["photosynthesis"], stats);
+    expect(score).toBeGreaterThan(0);
+  });
+
+  it("does not cause pathological ranking when titles are very short", async () => {
+    // A short-title page with the query term in the title should rank higher,
+    // but not so high that it overwhelms a page with deep body relevance.
+    const entries = [
+      entry("short-title", "Rust", "Programming language for systems"),
+      entry("deep-body", "Systems Programming Languages",
+        "Rust rust rust rust rust performance safety concurrency rust applications rust ecosystem"),
+    ];
+    const stats = await buildCorpusStats(entries, { fullBody: false });
+
+    const scoreShort = bm25Score(entries[0], ["rust"], stats);
+    const scoreDeep = bm25Score(entries[1], ["rust"], stats);
+
+    // Both should score positively
+    expect(scoreShort).toBeGreaterThan(0);
+    expect(scoreDeep).toBeGreaterThan(0);
+
+    // The title-boosted page should score well, but the deep-body page with
+    // many occurrences should remain competitive (not pathologically crushed)
+    // — deep-body's BM25 TF component is much larger
+    expect(scoreDeep).toBeGreaterThan(0.5 * scoreShort);
+  });
+
+  it("TITLE_BOOST constant is 2.0", () => {
+    expect(TITLE_BOOST).toBe(2.0);
   });
 });

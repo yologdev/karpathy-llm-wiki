@@ -1,6 +1,6 @@
 import { readWikiPage } from "./wiki";
 import type { IndexEntry } from "./types";
-import { BM25_K1, BM25_B } from "./constants";
+import { BM25_K1, BM25_B, TITLE_BOOST } from "./constants";
 import { logger } from "./logger";
 
 // ---------------------------------------------------------------------------
@@ -53,6 +53,8 @@ export interface CorpusStats {
   df: Map<string, number>;
   /** Tokenized body for each entry, keyed by slug. */
   docTokens: Map<string, string[]>;
+  /** Tokenized title for each entry, keyed by slug.  Used for title-boost. */
+  titleTokens: Map<string, string[]>;
 }
 
 /**
@@ -73,6 +75,7 @@ export async function buildCorpusStats(
 ): Promise<CorpusStats> {
   const useFullBody = opts?.fullBody ?? true;
   const docTokens = new Map<string, string[]>();
+  const titleTokens = new Map<string, string[]>();
   const df = new Map<string, number>();
   let totalLen = 0;
 
@@ -93,6 +96,7 @@ export async function buildCorpusStats(
 
     const tokens = tokenize(text);
     docTokens.set(entry.slug, tokens);
+    titleTokens.set(entry.slug, tokenize(entry.title));
     totalLen += tokens.length;
 
     // Count each unique term once for df
@@ -108,7 +112,7 @@ export async function buildCorpusStats(
   const N = entries.length;
   const avgdl = N > 0 ? totalLen / N : 0;
 
-  return { N, avgdl, df, docTokens };
+  return { N, avgdl, df, docTokens, titleTokens };
 }
 
 /**
@@ -161,6 +165,23 @@ export function bm25Score(
       termFreq + BM25_K1 * (1 - BM25_B + BM25_B * (dl / avgdl));
 
     score += idf * (numerator / denominator);
+  }
+
+  // ---- Title boost (BM25F-style field bonus) --------------------------------
+  // For each query term that appears in the page's title, add a bonus
+  // proportional to the term's IDF.  This rewards pages whose titles directly
+  // mention the query topic without altering the core BM25 formulation.
+  const titleToks = corpusStats.titleTokens?.get(entry.slug);
+  if (titleToks && titleToks.length > 0) {
+    const titleSet = new Set(titleToks);
+    for (const term of queryTokens) {
+      if (!titleSet.has(term)) continue;
+      const df = corpusStats.df.get(term) ?? 0;
+      const idf = Math.log(
+        1 + (corpusStats.N - df + 0.5) / (df + 0.5),
+      );
+      score += TITLE_BOOST * idf;
+    }
   }
 
   return score;

@@ -56,6 +56,15 @@ export const BM25_K1 = 1.5;
 export const BM25_B = 0.75;
 
 /**
+ * BM25 title-match boost factor.
+ *
+ * When a query term appears in a page's title, an additional IDF-weighted
+ * bonus is added to the BM25 score. This implements a lightweight BM25F-style
+ * field boost without changing the core scoring formula.
+ */
+export const TITLE_BOOST = 2.0;
+
+/**
  * Reciprocal Rank Fusion (RRF) constant.
  *
  * Dampens the influence of high-rank positions when fusing BM25 and vector
