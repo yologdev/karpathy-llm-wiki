@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach, type MockInstance } from "vitest";
 import { parseArgs } from "../../cli";
 
 describe("CLI argument parsing", () => {
@@ -152,14 +152,14 @@ vi.mock("../lint-fix", () => ({
 describe("CLI command execution", () => {
   let logSpy: ReturnType<typeof vi.spyOn>;
   let errorSpy: ReturnType<typeof vi.spyOn>;
-  let exitSpy: ReturnType<typeof vi.spyOn>;
+  let exitSpy: MockInstance<(code?: number) => never>;
 
   beforeEach(() => {
     logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
     errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     exitSpy = vi
       .spyOn(process, "exit")
-      .mockImplementation((() => { throw new Error("process.exit"); }) as never);
+      .mockImplementation((() => { throw new Error("process.exit"); }) as unknown as () => never);
   });
 
   afterEach(() => {
@@ -173,8 +173,8 @@ describe("CLI command execution", () => {
     const { listWikiPages } = await import("../wiki");
     const mock = vi.mocked(listWikiPages);
     mock.mockResolvedValueOnce([
-      { slug: "transformers", title: "Transformers", content: "", path: "wiki/transformers.md" },
-      { slug: "attention", title: "Attention", content: "", path: "wiki/attention.md" },
+      { slug: "transformers", title: "Transformers", summary: "" },
+      { slug: "attention", title: "Attention", summary: "" },
     ]);
 
     const { runList } = await import("../../cli");
@@ -210,9 +210,9 @@ describe("CLI command execution", () => {
     const { getEffectiveSettings } = await import("../config");
 
     vi.mocked(listWikiPages).mockResolvedValueOnce([
-      { slug: "page-1", title: "Page 1", content: "", path: "wiki/page-1.md" },
-      { slug: "page-2", title: "Page 2", content: "", path: "wiki/page-2.md" },
-      { slug: "page-3", title: "Page 3", content: "", path: "wiki/page-3.md" },
+      { slug: "page-1", title: "Page 1", summary: "" },
+      { slug: "page-2", title: "Page 2", summary: "" },
+      { slug: "page-3", title: "Page 3", summary: "" },
     ]);
     vi.mocked(listRawSources).mockResolvedValueOnce([
       { slug: "raw-1", filename: "raw-1.md", size: 50, modified: "2025-01-01T00:00:00Z" },
@@ -315,6 +315,7 @@ describe("CLI command execution", () => {
       checkedAt: "2025-01-01T00:00:00Z",
     });
     vi.mocked(fixLintIssue).mockResolvedValueOnce({
+      success: true,
       message: "Page populated",
       slug: "empty",
     });
