@@ -121,7 +121,7 @@ These are questions the product answers over time, not assumptions to fix now:
 - **Styling**: Tailwind CSS
 - **LLM**: Multi-provider via Vercel AI SDK (Anthropic, OpenAI, Google, Ollama)
 - **Testing**: vitest
-- **Storage**: Local filesystem (markdown in `raw/`, `wiki/`, `discuss/`)
+- **Storage**: Local filesystem (markdown in `raw/`, `wiki/`)
 - **Search**: BM25 + optional embedding-based vector search with RRF fusion
 
 ## Build & Test

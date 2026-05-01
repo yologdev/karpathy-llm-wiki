@@ -327,17 +327,12 @@ sessions should pick from this list:
   via `withFileLock()` in `src/lib/lock.ts`. This does NOT protect against
   multiple server processes (which would require OS-level lockfiles).
 
-## Schema evolution — toward yopedia
+## Planned evolution
 
-This schema is evolving toward the richer page model defined in
-[`yopedia-concept.md`](yopedia-concept.md). The target frontmatter includes
-`confidence`, `expiry`, `authors[]`, `contributors[]`, `sources[]` (with type
-and provenance), `disputed`, `supersedes`, and `aliases`. New page types will
-include talk pages (`discuss/<slug>.md`) and contributor profiles.
-
-Migration is incremental — existing pages gain new fields with sensible defaults,
-nothing breaks. See YOYO.md for the phased roadmap. As each phase lands, update
-this schema to reflect the new conventions.
+The schema will evolve toward the richer page model defined in
+[`yopedia-concept.md`](yopedia-concept.md). See YOYO.md for the phased roadmap.
+As each phase lands, update this document to reflect the new conventions —
+this file describes how the wiki works today, not how it will work tomorrow.
 
 ## Co-evolution
 
