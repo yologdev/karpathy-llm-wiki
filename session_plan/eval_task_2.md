@@ -1,2 +1,0 @@
-Verdict: PASS
-Reason: All seven Phase 1 frontmatter fields added to the ingest pipeline with correct defaults for new pages, correct preservation/merge logic on re-ingest (authors kept, system appended to contributors without duplication, disputed/supersedes/aliases preserved, confidence preserved only if higher, expiry reset to 90 days), and four tests covering every specified scenario. No bugs detected.

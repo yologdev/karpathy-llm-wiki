@@ -1,2 +1,0 @@
-Verdict: PASS
-Reason: All five task requirements implemented correctly: Frontmatter type extended with `number | boolean`, `parseFrontmatter` coerces unquoted scalars via `coerceScalar()` while preserving quoted values as strings, `serializeFrontmatter` emits bare numbers/booleans, 13 new tests cover every specified case, and downstream consumers (dataview, wiki, ingest) updated defensively to handle both old string and new number/boolean types. Build and tests pass.
