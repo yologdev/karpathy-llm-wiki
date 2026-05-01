@@ -389,11 +389,21 @@ export async function ingest(
   // slug preserves `created`, advances `updated`, increments `source_count`,
   // and preserves any user-edited tags.
   const now = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+  const expiry = new Date();
+  expiry.setDate(expiry.getDate() + 90);
+  const expiryDate = expiry.toISOString().slice(0, 10);
   const frontmatter: Frontmatter = {
     created: now,
     updated: now,
     source_count: "1",
     tags: [],
+    confidence: 0.7,
+    expiry: expiryDate,
+    authors: ["system"],
+    contributors: [],
+    disputed: false,
+    supersedes: "",
+    aliases: [],
   };
 
   // Persist the original source URL when provided (URL-based ingest).
@@ -427,6 +437,40 @@ export async function ingest(
       existing.frontmatter.source_url !== ""
     ) {
       frontmatter.source_url = existing.frontmatter.source_url;
+    }
+
+    // --- Phase 1 fields: preserve on re-ingest ---
+    // Preserve authors from existing page (don't reset to ["system"]).
+    if (Array.isArray(existing.frontmatter.authors)) {
+      frontmatter.authors = existing.frontmatter.authors;
+    }
+    // Append "system" to contributors if not already present.
+    const existingContribs = Array.isArray(existing.frontmatter.contributors)
+      ? existing.frontmatter.contributors
+      : [];
+    if (!existingContribs.includes("system")) {
+      frontmatter.contributors = [...existingContribs, "system"];
+    } else {
+      frontmatter.contributors = existingContribs;
+    }
+    // Preserve disputed flag from existing.
+    if (typeof existing.frontmatter.disputed === "boolean") {
+      frontmatter.disputed = existing.frontmatter.disputed;
+    }
+    // Preserve supersedes from existing.
+    if (typeof existing.frontmatter.supersedes === "string") {
+      frontmatter.supersedes = existing.frontmatter.supersedes;
+    }
+    // Preserve aliases from existing.
+    if (Array.isArray(existing.frontmatter.aliases)) {
+      frontmatter.aliases = existing.frontmatter.aliases;
+    }
+    // Expiry resets to 90 days from now (re-ingest refreshes the page).
+    // (already set above — no need to change)
+    // Preserve confidence if existing was higher (manually set).
+    const existingConf = existing.frontmatter.confidence;
+    if (typeof existingConf === "number" && existingConf > 0.7) {
+      frontmatter.confidence = existingConf;
     }
   }
 

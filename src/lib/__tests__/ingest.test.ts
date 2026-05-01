@@ -310,6 +310,113 @@ describe("ingest — YAML frontmatter", () => {
 });
 
 // ---------------------------------------------------------------------------
+// ingest — Phase 1 (yopedia) frontmatter fields
+// ---------------------------------------------------------------------------
+
+describe("ingest — Phase 1 frontmatter fields", () => {
+  it("new page gets confidence, disputed, authors, expiry", async () => {
+    await ingest("Phase1 New", "Fresh content for Phase 1. Has details.");
+
+    const { readWikiPageWithFrontmatter } = await import("../wiki");
+    const page = await readWikiPageWithFrontmatter("phase1-new");
+    expect(page).not.toBeNull();
+
+    expect(page!.frontmatter.confidence).toBe(0.7);
+    expect(page!.frontmatter.disputed).toBe(false);
+    expect(page!.frontmatter.authors).toEqual(["system"]);
+    expect(page!.frontmatter.contributors).toEqual([]);
+    expect(page!.frontmatter.supersedes).toBe("");
+    expect(page!.frontmatter.aliases).toEqual([]);
+
+    // expiry should be a YYYY-MM-DD string ~90 days from now
+    const expiry = page!.frontmatter.expiry as string;
+    expect(expiry).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    const expiryDate = new Date(expiry);
+    const now = new Date();
+    const diffDays = (expiryDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24);
+    expect(diffDays).toBeGreaterThan(85);
+    expect(diffDays).toBeLessThan(95);
+  });
+
+  it("re-ingest preserves authors, aliases, disputed and adds system to contributors", async () => {
+    // First ingest to create the page
+    await ingest("Phase1 Reingest", "First version content. With details.");
+
+    // Manually rewrite the page with custom Phase 1 fields to simulate edits
+    await writeWikiPage(
+      "phase1-reingest",
+      `---\ncreated: 2024-06-01\nupdated: 2024-06-01\nsource_count: 1\ntags: []\nconfidence: 0.9\nexpiry: 2024-09-01\nauthors: [alice]\ncontributors: [bob]\ndisputed: true\nsupersedes: old-page\naliases: [p1r, phase-one]\n---\n\n# Phase1 Reingest\n\nEdited body.\n`,
+    );
+
+    // Re-ingest
+    await ingest("Phase1 Reingest", "Second version content. Updated info.");
+
+    const { readWikiPageWithFrontmatter } = await import("../wiki");
+    const page = await readWikiPageWithFrontmatter("phase1-reingest");
+    expect(page).not.toBeNull();
+
+    // authors preserved (not reset to ["system"])
+    expect(page!.frontmatter.authors).toEqual(["alice"]);
+    // "system" appended to contributors since not already present
+    expect(page!.frontmatter.contributors).toEqual(["bob", "system"]);
+    // disputed preserved
+    expect(page!.frontmatter.disputed).toBe(true);
+    // supersedes preserved
+    expect(page!.frontmatter.supersedes).toBe("old-page");
+    // aliases preserved
+    expect(page!.frontmatter.aliases).toEqual(["p1r", "phase-one"]);
+    // confidence preserved because existing (0.9) > 0.7
+    expect(page!.frontmatter.confidence).toBe(0.9);
+
+    // expiry reset to ~90 days from now (not the old 2024-09-01)
+    const expiry = page!.frontmatter.expiry as string;
+    const expiryDate = new Date(expiry);
+    const now = new Date();
+    const diffDays = (expiryDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24);
+    expect(diffDays).toBeGreaterThan(85);
+    expect(diffDays).toBeLessThan(95);
+  });
+
+  it("re-ingest does not duplicate system in contributors", async () => {
+    await ingest("Phase1 NoDup", "Content for dedup test. Some text.");
+
+    // Manually set contributors to include "system" already
+    await writeWikiPage(
+      "phase1-nodup",
+      `---\ncreated: 2024-06-01\nupdated: 2024-06-01\nsource_count: 1\ntags: []\nconfidence: 0.7\nexpiry: 2024-09-01\nauthors: [system]\ncontributors: [system, editor]\ndisputed: false\nsupersedes:\naliases: []\n---\n\n# Phase1 NoDup\n\nBody.\n`,
+    );
+
+    await ingest("Phase1 NoDup", "Second content for dedup test. More text.");
+
+    const { readWikiPageWithFrontmatter } = await import("../wiki");
+    const page = await readWikiPageWithFrontmatter("phase1-nodup");
+    expect(page).not.toBeNull();
+
+    // "system" should appear only once
+    expect(page!.frontmatter.contributors).toEqual(["system", "editor"]);
+  });
+
+  it("re-ingest keeps lower confidence at 0.7 when existing is lower", async () => {
+    await ingest("Phase1 LowConf", "Content for confidence test. Details here.");
+
+    // Manually set confidence to 0.5 (below default)
+    await writeWikiPage(
+      "phase1-lowconf",
+      `---\ncreated: 2024-06-01\nupdated: 2024-06-01\nsource_count: 1\ntags: []\nconfidence: 0.5\nexpiry: 2024-09-01\nauthors: [system]\ncontributors: []\ndisputed: false\nsupersedes:\naliases: []\n---\n\n# Phase1 LowConf\n\nBody.\n`,
+    );
+
+    await ingest("Phase1 LowConf", "Second content. Updated details.");
+
+    const { readWikiPageWithFrontmatter } = await import("../wiki");
+    const page = await readWikiPageWithFrontmatter("phase1-lowconf");
+    expect(page).not.toBeNull();
+
+    // confidence stays at 0.7 (default) since existing 0.5 is not higher
+    expect(page!.frontmatter.confidence).toBe(0.7);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // ingest — source URL tracking in frontmatter
 // ---------------------------------------------------------------------------
 
