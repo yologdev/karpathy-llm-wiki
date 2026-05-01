@@ -3,6 +3,7 @@
 import { useState, useCallback, useEffect } from "react";
 import Link from "next/link";
 import { MarkdownRenderer } from "@/components/MarkdownRenderer";
+import { SlidePreview } from "@/components/SlidePreview";
 import { Alert } from "@/components/Alert";
 import { logger } from "@/lib/logger";
 
@@ -121,7 +122,12 @@ export function QueryResultPanel({
   return (
     <div className="mt-8 space-y-6">
       <div className="rounded-lg border border-foreground/10 p-6">
-        <MarkdownRenderer content={result.answer} />
+        {!streaming &&
+        result.answer.trimStart().startsWith("---\nmarp: true") ? (
+          <SlidePreview content={result.answer} />
+        ) : (
+          <MarkdownRenderer content={result.answer} />
+        )}
         {streaming && (
           <span className="inline-block w-2 h-4 bg-foreground/60 animate-pulse ml-0.5 align-text-bottom" />
         )}
