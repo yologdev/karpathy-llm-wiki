@@ -1,5 +1,5 @@
 #!/bin/bash
-# .yoyo/scripts/grow.sh — One growth session for the LLM Wiki project.
+# .yoyo/scripts/grow.sh — One growth session for yopedia.
 # Multi-phase pipeline: Assessment → Planning → Implementation (with eval + fix loops) → Communication
 #
 # Usage:
@@ -131,7 +131,7 @@ run_agent() {
 }
 
 # Protected files for this project
-PROTECTED_PATHS="llm-wiki.md YOYO.md .github/workflows/ .yoyo/scripts/ .yoyo/config.toml .yoyo/.gitignore .yoyo/skills/grow/ .yoyo/skills/communicate/ .yoyo/skills/research/"
+PROTECTED_PATHS="llm-wiki.md yopedia-concept.md YOYO.md .github/workflows/ .yoyo/scripts/ .yoyo/config.toml .yoyo/.gitignore .yoyo/skills/grow/ .yoyo/skills/communicate/ .yoyo/skills/research/"
 
 check_protected_files() {
     local base_sha="$1"
@@ -243,7 +243,7 @@ ASSESS_TIMEOUT=$((TIMEOUT / 2))
 echo "→ Phase A1: Assessment (${ASSESS_TIMEOUT}s)..."
 ASSESS_PROMPT=$(mktemp)
 cat > "$ASSESS_PROMPT" <<ASSESSEOF
-You are yoyo, a coding agent growing the LLM Wiki project. Today is $DATE $SESSION_TIME.
+You are yoyo, a coding agent growing yopedia. Today is $DATE $SESSION_TIME.
 
 === YOUR TASK: ASSESSMENT ===
 
@@ -252,7 +252,7 @@ Your job: understand the current state of the project and produce a structured a
 
 Steps:
 
-1. **Read project context** — YOYO.md (project goals, tech stack), llm-wiki.md (founding vision)
+1. **Read project context** — YOYO.md (project goals, roadmap, tech stack), yopedia-concept.md (north star vision), llm-wiki.md (founding ancestor)
 
 2. **Read the codebase** — all source files under src/ (if they exist). Note directory structure, key components, line counts.
 
@@ -337,7 +337,7 @@ Read the codebase yourself: YOYO.md, llm-wiki.md, src/ (if exists), package.json
 fi
 
 cat > "$PLAN_PROMPT" <<PLANEOF
-You are yoyo, a coding agent growing the LLM Wiki project. Today is $DATE $SESSION_TIME.
+You are yoyo, a coding agent growing yopedia. Today is $DATE $SESSION_TIME.
 
 $ASSESSMENT_SECTION
 ${MANUAL_TASK:+
@@ -467,7 +467,7 @@ for TASK_FILE in session_plan/task_*.md; do
     for ATTEMPT in 1 2; do
         TASK_PROMPT=$(mktemp)
         cat > "$TASK_PROMPT" <<TEOF
-You are yoyo, a coding agent growing the LLM Wiki project. Today is $DATE $SESSION_TIME.
+You are yoyo, a coding agent growing yopedia. Today is $DATE $SESSION_TIME.
 
 Your ONLY job: implement this single task and commit.
 
@@ -763,7 +763,7 @@ if ! grep -q "## $DATE $SESSION_TIME" .yoyo/journal.md 2>/dev/null; then
 
     JOURNAL_PROMPT=$(mktemp)
     cat > "$JOURNAL_PROMPT" <<JEOF
-You are yoyo, growing the LLM Wiki project. You just finished a growth session ($DATE $SESSION_TIME).
+You are yoyo, growing yopedia. You just finished a growth session ($DATE $SESSION_TIME).
 
 This session's commits: $COMMITS
 
@@ -792,7 +792,7 @@ if [ -n "$COMMITS_FOR_REFLECTION" ]; then
     echo "  Reflecting on learnings..."
     REFLECT_PROMPT=$(mktemp)
     cat > "$REFLECT_PROMPT" <<REOF
-You are yoyo, growing the LLM Wiki project. You just finished a session ($DATE $SESSION_TIME).
+You are yoyo, growing yopedia. You just finished a session ($DATE $SESSION_TIME).
 
 Commits: $COMMITS_FOR_REFLECTION
 
@@ -829,7 +829,7 @@ if [ "$ISSUE_COUNT" -gt 0 ] && command -v gh &>/dev/null; then
     SESSION_COMMITS=$(git log --oneline "$SESSION_START_SHA"..HEAD --format="%s" || true)
     RESPOND_PROMPT=$(mktemp)
     cat > "$RESPOND_PROMPT" <<RESPONDEOF
-You are yoyo, growing the LLM Wiki project. You finished a growth session ($DATE $SESSION_TIME).
+You are yoyo, growing yopedia. You finished a growth session ($DATE $SESSION_TIME).
 
 Issues from this session:
 $ALL_ISSUES
@@ -897,7 +897,7 @@ if [ -n "${YOYO_EVOLVE_TOKEN:-}" ] && [ -f .yoyo/journal.md ]; then
 $CURRENT_CONTENT"
         else
             CURRENT_SHA=""
-            NEW_CONTENT="# LLM Wiki — Growth Journal
+            NEW_CONTENT="# yopedia — Growth Journal
 
 $LATEST_ENTRY"
         fi

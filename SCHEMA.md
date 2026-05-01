@@ -327,6 +327,13 @@ sessions should pick from this list:
   via `withFileLock()` in `src/lib/lock.ts`. This does NOT protect against
   multiple server processes (which would require OS-level lockfiles).
 
+## Planned evolution
+
+The schema will evolve toward the richer page model defined in
+[`yopedia-concept.md`](yopedia-concept.md). See YOYO.md for the phased roadmap.
+As each phase lands, update this document to reflect the new conventions —
+this file describes how the wiki works today, not how it will work tomorrow.
+
 ## Co-evolution
 
 This document is meant to be updated by yoyo as conventions emerge. When a
