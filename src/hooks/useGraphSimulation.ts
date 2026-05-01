@@ -9,15 +9,11 @@ import {
   type GraphData,
   type ColorPalette,
   DARK_PALETTE,
-  CLUSTER_COLORS_DARK,
-  CLUSTER_COLORS_LIGHT,
-  CLUSTER_STROKES_DARK,
-  CLUSTER_STROKES_LIGHT,
   VELOCITY_THRESHOLD,
   nodeRadius,
-  roundedRect,
   getColorPalette,
   stepPhysics,
+  renderGraph,
 } from "@/lib/graph-render";
 
 export interface UseGraphSimulationReturn {
@@ -70,132 +66,18 @@ export function useGraphSimulation(
     const { totalVelocity } = stepPhysics(nodes, edges, nodeMap, cx, cy);
 
     // --- Render ---
-    ctx.clearRect(0, 0, W, H);
-    ctx.fillStyle = palette.bg;
-    ctx.fillRect(0, 0, W, H);
-
-    // Edges
-    for (const edge of edges) {
-      const a = nodeMap.get(edge.source);
-      const b = nodeMap.get(edge.target);
-      if (!a || !b) continue;
-      // Subtle thickness scaling based on combined connection count
-      const combinedLinks = (a.linkCount + b.linkCount) / 2;
-      ctx.strokeStyle = palette.edge;
-      ctx.lineWidth = Math.min(0.5 + combinedLinks * 0.15, 3);
-      ctx.beginPath();
-      ctx.moveTo(a.x, a.y);
-      ctx.lineTo(b.x, b.y);
-      ctx.stroke();
-    }
-
-    // Nodes
-    const hovered = hoveredRef.current;
-    const isDark = palette === DARK_PALETTE;
-    const clusterFills = isDark ? CLUSTER_COLORS_DARK : CLUSTER_COLORS_LIGHT;
-    const clusterStrokes = isDark
-      ? CLUSTER_STROKES_DARK
-      : CLUSTER_STROKES_LIGHT;
-
-    for (const n of nodes) {
-      const r = nodeRadius(n.linkCount);
-      const colorIdx = n.cluster % clusterFills.length;
-      ctx.beginPath();
-      ctx.arc(n.x, n.y, r, 0, Math.PI * 2);
-      ctx.fillStyle = clusterFills[colorIdx];
-      ctx.fill();
-      ctx.strokeStyle = clusterStrokes[colorIdx];
-      ctx.lineWidth = hovered?.id === n.id ? 2.5 : 1.5;
-      ctx.stroke();
-
-      // Label
-      ctx.fillStyle = palette.label;
-      ctx.font = "12px sans-serif";
-      ctx.textAlign = "center";
-      ctx.fillText(n.label, n.x, n.y - r - 4);
-    }
-
-    // Tooltip for hovered node
-    if (hovered) {
-      const mx = mouseRef.current.x;
-      const my = mouseRef.current.y;
-      const connText = `${hovered.linkCount} connection${hovered.linkCount !== 1 ? "s" : ""}`;
-      const tooltipText = `${hovered.label} — ${connText}`;
-      ctx.font = "13px sans-serif";
-      const metrics = ctx.measureText(tooltipText);
-      const tipW = metrics.width + 16;
-      const tipH = 28;
-      // Position tooltip near cursor, keeping it within canvas bounds
-      let tipX = mx + 14;
-      let tipY = my - tipH - 6;
-      if (tipX + tipW > W) tipX = mx - tipW - 6;
-      if (tipY < 0) tipY = my + 20;
-
-      // Background
-      ctx.fillStyle = palette.tooltipBg;
-      roundedRect(ctx, tipX, tipY, tipW, tipH, 5);
-      ctx.fill();
-
-      // Border
-      ctx.strokeStyle = palette.edge;
-      ctx.lineWidth = 1;
-      ctx.stroke();
-
-      // Text
-      ctx.fillStyle = palette.tooltip;
-      ctx.font = "13px sans-serif";
-      ctx.textAlign = "left";
-      ctx.fillText(tooltipText, tipX + 8, tipY + 18);
-    }
-
-    // Cluster legend (bottom-left corner)
-    const clusterCount = clusterCountRef.current;
-    if (clusterCount > 1) {
-      const legendX = 12;
-      const legendItemH = 18;
-      const legendPad = 8;
-      const displayCount = Math.min(clusterCount, clusterFills.length);
-      const legendH = displayCount * legendItemH + legendPad * 2;
-      const legendW = 110;
-      const legendY = H - legendH - 12;
-
-      // Count nodes per cluster
-      const clusterSizes = new Map<number, number>();
-      for (const n of nodes) {
-        clusterSizes.set(n.cluster, (clusterSizes.get(n.cluster) ?? 0) + 1);
-      }
-
-      // Background
-      ctx.fillStyle = palette.tooltipBg;
-      roundedRect(ctx, legendX, legendY, legendW, legendH, 5);
-      ctx.fill();
-      ctx.strokeStyle = palette.edge;
-      ctx.lineWidth = 1;
-      ctx.stroke();
-
-      // Items
-      for (let i = 0; i < displayCount; i++) {
-        const y = legendY + legendPad + i * legendItemH + 12;
-        const colorIdx = i % clusterFills.length;
-        const size = clusterSizes.get(i) ?? 0;
-
-        // Color swatch
-        ctx.beginPath();
-        ctx.arc(legendX + 16, y - 4, 5, 0, Math.PI * 2);
-        ctx.fillStyle = clusterFills[colorIdx];
-        ctx.fill();
-
-        // Label
-        ctx.fillStyle = palette.label;
-        ctx.font = "11px sans-serif";
-        ctx.textAlign = "left";
-        ctx.fillText(
-          `Cluster ${i + 1} (${size})`,
-          legendX + 26,
-          y,
-        );
-      }
-    }
+    renderGraph({
+      nodes,
+      edges,
+      nodeMap,
+      ctx,
+      width: W,
+      height: H,
+      palette,
+      hovered: hoveredRef.current,
+      mouse: mouseRef.current,
+      clusterCount: clusterCountRef.current,
+    });
 
     // Continue or stop
     if (totalVelocity > VELOCITY_THRESHOLD) {

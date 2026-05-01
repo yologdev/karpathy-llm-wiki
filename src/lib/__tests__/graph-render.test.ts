@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import {
   nodeRadius,
   MIN_RADIUS,
@@ -6,8 +6,10 @@ import {
   getColorPalette,
   DARK_PALETTE,
   stepPhysics,
+  renderGraph,
   type GraphNode,
   type GraphEdge,
+  type RenderOptions,
 } from "../graph-render";
 
 function makeNode(overrides: Partial<GraphNode> & { id: string }): GraphNode {
@@ -118,6 +120,83 @@ describe("graph-render", () => {
       // More specifically, it should be much closer than the starting 300
       expect(Math.abs(node.x - cx)).toBeLessThan(50);
       expect(Math.abs(node.y - cy)).toBeLessThan(50);
+    });
+  });
+
+  describe("renderGraph", () => {
+    /** Create a minimal mock CanvasRenderingContext2D sufficient for renderGraph */
+    function mockCtx(): CanvasRenderingContext2D {
+      const noop = vi.fn();
+      return {
+        clearRect: vi.fn(),
+        fillRect: vi.fn(),
+        fillText: vi.fn(),
+        strokeStyle: "",
+        fillStyle: "",
+        lineWidth: 0,
+        font: "",
+        textAlign: "",
+        beginPath: noop,
+        moveTo: noop,
+        lineTo: noop,
+        stroke: noop,
+        fill: noop,
+        arc: noop,
+        closePath: noop,
+        roundRect: noop,
+        measureText: vi.fn(() => ({ width: 80 })),
+      } as unknown as CanvasRenderingContext2D;
+    }
+
+    function baseOpts(overrides?: Partial<RenderOptions>): RenderOptions {
+      return {
+        nodes: [],
+        edges: [],
+        nodeMap: new Map(),
+        ctx: mockCtx(),
+        width: 800,
+        height: 600,
+        palette: DARK_PALETTE,
+        hovered: null,
+        mouse: { x: 0, y: 0 },
+        clusterCount: 0,
+        ...overrides,
+      };
+    }
+
+    it("renders empty graph without throwing", () => {
+      const opts = baseOpts();
+      expect(() => renderGraph(opts)).not.toThrow();
+      // Should still clear and fill background
+      expect(opts.ctx.clearRect).toHaveBeenCalledWith(0, 0, 800, 600);
+      expect(opts.ctx.fillRect).toHaveBeenCalledWith(0, 0, 800, 600);
+    });
+
+    it("calls clearRect and fillRect for background", () => {
+      const ctx = mockCtx();
+      const opts = baseOpts({ ctx });
+      renderGraph(opts);
+      expect(ctx.clearRect).toHaveBeenCalledTimes(1);
+      expect(ctx.fillRect).toHaveBeenCalledTimes(1);
+    });
+
+    it("renders with a hovered node without throwing", () => {
+      const hovered = makeNode({ id: "hover-target", x: 100, y: 100, linkCount: 3 });
+      const nodes = [
+        hovered,
+        makeNode({ id: "other", x: 200, y: 200 }),
+      ];
+      const nodeMap = new Map(nodes.map((n) => [n.id, n]));
+      const opts = baseOpts({
+        nodes,
+        nodeMap,
+        hovered,
+        mouse: { x: 120, y: 80 },
+        clusterCount: 1,
+      });
+      expect(() => renderGraph(opts)).not.toThrow();
+      // Should have drawn tooltip text
+      expect(opts.ctx.fillText).toHaveBeenCalled();
     });
   });
 });
