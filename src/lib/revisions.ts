@@ -28,6 +28,8 @@ export interface Revision {
   sizeBytes: number;
   /** Who made this change — undefined for legacy revisions without attribution. */
   author?: string;
+  /** Edit summary — why this change was made. */
+  reason?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -65,14 +67,15 @@ function uniqueTimestamp(): number {
  * previous version is preserved. New pages (first write) skip this step
  * because there is no previous content to snapshot.
  *
- * When `author` is provided, a JSON sidecar (`<timestamp>.meta.json`) is
- * written alongside the `.md` file to record attribution without changing
- * the markdown file format.
+ * When `author` or `reason` is provided, a JSON sidecar (`<timestamp>.meta.json`)
+ * is written alongside the `.md` file to record attribution and edit summary
+ * without changing the markdown file format.
  */
 export async function saveRevision(
   slug: string,
   content: string,
   author?: string,
+  reason?: string,
 ): Promise<void> {
   validateSlug(slug);
   const dir = getRevisionsDir(slug);
@@ -81,10 +84,13 @@ export async function saveRevision(
   const filePath = path.join(dir, `${timestamp}.md`);
   await fs.writeFile(filePath, content, "utf-8");
 
-  // Write author attribution as a JSON sidecar when provided.
-  if (author !== undefined) {
+  // Write attribution/reason as a JSON sidecar when provided.
+  if (author !== undefined || reason !== undefined) {
     const metaPath = path.join(dir, `${timestamp}.meta.json`);
-    await fs.writeFile(metaPath, JSON.stringify({ author }), "utf-8");
+    const meta: Record<string, string> = {};
+    if (author !== undefined) meta.author = author;
+    if (reason !== undefined) meta.reason = reason;
+    await fs.writeFile(metaPath, JSON.stringify(meta), "utf-8");
   }
 }
 
@@ -121,17 +127,21 @@ export async function listRevisions(slug: string): Promise<Revision[]> {
     try {
       const stat = await fs.stat(filePath);
 
-      // Read the optional author sidecar.
+      // Read the optional author/reason sidecar.
       let author: string | undefined;
+      let reason: string | undefined;
       const metaPath = path.join(dir, `${stem}.meta.json`);
       try {
         const metaRaw = await fs.readFile(metaPath, "utf-8");
-        const meta = JSON.parse(metaRaw) as { author?: string };
+        const meta = JSON.parse(metaRaw) as { author?: string; reason?: string };
         if (typeof meta.author === "string") {
           author = meta.author;
         }
+        if (typeof meta.reason === "string") {
+          reason = meta.reason;
+        }
       } catch {
-        // No sidecar → no author attribution (backward compat).
+        // No sidecar → no author/reason attribution (backward compat).
       }
 
       revisions.push({
@@ -140,6 +150,7 @@ export async function listRevisions(slug: string): Promise<Revision[]> {
         slug,
         sizeBytes: stat.size,
         ...(author !== undefined && { author }),
+        ...(reason !== undefined && { reason }),
       });
     } catch (err) {
       // File disappeared between readdir and stat — skip.

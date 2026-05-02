@@ -234,3 +234,72 @@ describe("author attribution", () => {
     expect(metaFiles).toHaveLength(0);
   });
 });
+
+describe("reason attribution", () => {
+  it("saveRevision with author and reason writes both to sidecar", async () => {
+    await ensureDirectories();
+    const content = "# Reasoned\n\nSome content.";
+    await saveRevision("reason-page", content, "yoyo", "fix typo in heading");
+
+    const dir = getRevisionsDir("reason-page");
+    const files = await fs.readdir(dir);
+    const metaFiles = files.filter((f) => f.endsWith(".meta.json"));
+    expect(metaFiles).toHaveLength(1);
+
+    const meta = JSON.parse(
+      await fs.readFile(path.join(dir, metaFiles[0]), "utf-8"),
+    );
+    expect(meta).toEqual({ author: "yoyo", reason: "fix typo in heading" });
+  });
+
+  it("listRevisions returns reason when sidecar contains it", async () => {
+    await ensureDirectories();
+    await saveRevision("with-reason", "# Page\n\nContent.", "alice", "added examples");
+
+    const revisions = await listRevisions("with-reason");
+    expect(revisions).toHaveLength(1);
+    expect(revisions[0].author).toBe("alice");
+    expect(revisions[0].reason).toBe("added examples");
+  });
+
+  it("listRevisions returns undefined reason when sidecar has no reason (backward compat)", async () => {
+    await ensureDirectories();
+    // Save with author only — sidecar has author but no reason.
+    await saveRevision("author-only", "# Page\n\nContent.", "bob");
+
+    const revisions = await listRevisions("author-only");
+    expect(revisions).toHaveLength(1);
+    expect(revisions[0].author).toBe("bob");
+    expect(revisions[0].reason).toBeUndefined();
+  });
+
+  it("saveRevision with reason but no author writes only reason to sidecar", async () => {
+    await ensureDirectories();
+    await saveRevision("reason-no-author", "# Page\n\nContent.", undefined, "automated cleanup");
+
+    const dir = getRevisionsDir("reason-no-author");
+    const files = await fs.readdir(dir);
+    const metaFiles = files.filter((f) => f.endsWith(".meta.json"));
+    expect(metaFiles).toHaveLength(1);
+
+    const meta = JSON.parse(
+      await fs.readFile(path.join(dir, metaFiles[0]), "utf-8"),
+    );
+    expect(meta).toEqual({ reason: "automated cleanup" });
+
+    const revisions = await listRevisions("reason-no-author");
+    expect(revisions).toHaveLength(1);
+    expect(revisions[0].author).toBeUndefined();
+    expect(revisions[0].reason).toBe("automated cleanup");
+  });
+
+  it("omitting both author and reason does not create sidecar", async () => {
+    await ensureDirectories();
+    await saveRevision("bare", "# Page\n\nContent.");
+
+    const dir = getRevisionsDir("bare");
+    const files = await fs.readdir(dir);
+    const metaFiles = files.filter((f) => f.endsWith(".meta.json"));
+    expect(metaFiles).toHaveLength(0);
+  });
+});

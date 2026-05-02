@@ -200,6 +200,7 @@ export async function writeWikiPage(
   slug: string,
   content: string,
   author?: string,
+  reason?: string,
 ): Promise<void> {
   validateSlug(slug);
   await ensureDirectories();
@@ -210,7 +211,7 @@ export async function writeWikiPage(
   // a previous version to save).
   try {
     const existing = await fs.readFile(filePath, "utf-8");
-    await saveRevision(slug, existing, author);
+    await saveRevision(slug, existing, author, reason);
   } catch (err) {
     // File doesn't exist yet — first write, no revision needed.
     if (!isEnoent(err)) {

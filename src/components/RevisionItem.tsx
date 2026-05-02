@@ -8,6 +8,7 @@ export interface Revision {
   slug: string;
   sizeBytes: number;
   author?: string;
+  reason?: string;
 }
 
 export interface RevisionItemProps {
@@ -72,6 +73,13 @@ export function RevisionItem({
           </button>
         </div>
       </div>
+
+      {/* Edit summary / reason */}
+      {rev.reason && (
+        <p className="mt-1 text-xs italic text-foreground/50">
+          {rev.reason}
+        </p>
+      )}
 
       {/* Inline content viewer */}
       {isViewing && viewContent !== null && (
