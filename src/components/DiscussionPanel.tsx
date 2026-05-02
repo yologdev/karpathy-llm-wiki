@@ -22,6 +22,167 @@ function StatusBadge({ status }: { status: TalkThread["status"] }) {
   );
 }
 
+// ---------------------------------------------------------------------------
+// Comment tree builder
+// ---------------------------------------------------------------------------
+
+interface CommentTreeNode {
+  comment: TalkComment;
+  children: CommentTreeNode[];
+}
+
+/** Build a tree from flat comments using parentId linkage. */
+function buildCommentTree(comments: TalkComment[]): CommentTreeNode[] {
+  const nodeMap = new Map<string, CommentTreeNode>();
+  const roots: CommentTreeNode[] = [];
+
+  // Create nodes for all comments
+  for (const comment of comments) {
+    nodeMap.set(comment.id, { comment, children: [] });
+  }
+
+  // Link children to parents
+  for (const comment of comments) {
+    const node = nodeMap.get(comment.id)!;
+    if (comment.parentId && nodeMap.has(comment.parentId)) {
+      nodeMap.get(comment.parentId)!.children.push(node);
+    } else {
+      roots.push(node);
+    }
+  }
+
+  return roots;
+}
+
+// ---------------------------------------------------------------------------
+// Recursive comment renderer
+// ---------------------------------------------------------------------------
+
+const MAX_VISUAL_DEPTH = 3;
+
+interface CommentNodeProps {
+  node: CommentTreeNode;
+  depth: number;
+  replyingTo: string | null;
+  onReplyClick: (commentId: string) => void;
+  onCancelReply: () => void;
+  onSubmitReply: (parentId: string, author: string, body: string) => Promise<void>;
+  inputClasses: string;
+  replying: boolean;
+}
+
+function CommentNode({
+  node,
+  depth,
+  replyingTo,
+  onReplyClick,
+  onCancelReply,
+  onSubmitReply,
+  inputClasses,
+  replying,
+}: CommentNodeProps) {
+  const [replyAuthor, setReplyAuthor] = useState("");
+  const [replyBody, setReplyBody] = useState("");
+
+  // Cap visual indentation at MAX_VISUAL_DEPTH
+  const visualDepth = Math.min(depth, MAX_VISUAL_DEPTH);
+  const isNested = visualDepth > 0;
+
+  const indentClasses = isNested
+    ? "ml-4 pl-3 border-l-2 border-foreground/10"
+    : "";
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    await onSubmitReply(node.comment.id, replyAuthor, replyBody);
+    setReplyAuthor("");
+    setReplyBody("");
+  }
+
+  const isReplyFormOpen = replyingTo === node.comment.id;
+
+  return (
+    <div className={indentClasses}>
+      <div className="rounded bg-foreground/5 p-2">
+        <div className="flex items-center gap-2 text-xs text-foreground/50">
+          <span className="font-medium text-foreground/70">{node.comment.author}</span>
+          <span>·</span>
+          <span>{formatRelativeTime(node.comment.created)}</span>
+        </div>
+        <p className="mt-1 text-sm whitespace-pre-wrap">{node.comment.body}</p>
+        <button
+          type="button"
+          onClick={() => onReplyClick(node.comment.id)}
+          className="mt-1 text-xs text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
+        >
+          Reply
+        </button>
+      </div>
+
+      {/* Inline reply form */}
+      {isReplyFormOpen && (
+        <form onSubmit={handleSubmit} className="mt-2 ml-4 space-y-2 rounded border border-foreground/10 p-2">
+          <input
+            type="text"
+            placeholder="Your name"
+            value={replyAuthor}
+            onChange={(e) => setReplyAuthor(e.target.value)}
+            required
+            className={inputClasses}
+          />
+          <textarea
+            placeholder={`Reply to ${node.comment.author}…`}
+            value={replyBody}
+            onChange={(e) => setReplyBody(e.target.value)}
+            required
+            rows={2}
+            className={inputClasses}
+          />
+          <div className="flex gap-2">
+            <button
+              type="submit"
+              disabled={replying}
+              className="rounded bg-blue-600 px-3 py-1 text-xs text-white hover:bg-blue-700 disabled:opacity-50"
+            >
+              {replying ? "Posting…" : "Reply"}
+            </button>
+            <button
+              type="button"
+              onClick={onCancelReply}
+              className="rounded px-3 py-1 text-xs text-foreground/50 hover:text-foreground/70"
+            >
+              Cancel
+            </button>
+          </div>
+        </form>
+      )}
+
+      {/* Render children recursively */}
+      {node.children.length > 0 && (
+        <div className="mt-2 space-y-2">
+          {node.children.map((child) => (
+            <CommentNode
+              key={child.comment.id}
+              node={child}
+              depth={depth + 1}
+              replyingTo={replyingTo}
+              onReplyClick={onReplyClick}
+              onCancelReply={onCancelReply}
+              onSubmitReply={onSubmitReply}
+              inputClasses={inputClasses}
+              replying={replying}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Main DiscussionPanel
+// ---------------------------------------------------------------------------
+
 /**
  * Collapsible discussion panel for a wiki page's talk threads.
  *
@@ -46,10 +207,14 @@ export function DiscussionPanel({ slug }: DiscussionPanelProps) {
   const [newBody, setNewBody] = useState("");
   const [creating, setCreating] = useState(false);
 
-  // Comment form
+  // Top-level comment form
   const [commentAuthor, setCommentAuthor] = useState("");
   const [commentBody, setCommentBody] = useState("");
   const [commenting, setCommenting] = useState(false);
+
+  // Reply-to-comment state
+  const [replyingTo, setReplyingTo] = useState<string | null>(null);
+  const [replySubmitting, setReplySubmitting] = useState(false);
 
   const fetchThreads = useCallback(async () => {
     setLoading(true);
@@ -103,6 +268,7 @@ export function DiscussionPanel({ slug }: DiscussionPanelProps) {
       setExpandedThread(null);
       return;
     }
+    setReplyingTo(null);
     await refreshThread(idx);
   }
 
@@ -158,6 +324,32 @@ export function DiscussionPanel({ slug }: DiscussionPanelProps) {
       setError(err instanceof Error ? err.message : "Unknown error");
     } finally {
       setCommenting(false);
+    }
+  }
+
+  async function handleReplySubmit(parentId: string, author: string, body: string) {
+    if (expandedIdx === null) return;
+    setReplySubmitting(true);
+    setError(null);
+    try {
+      const res = await fetch(
+        `/api/wiki/${encodeURIComponent(slug)}/discuss/${expandedIdx}/comments`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ author, body, parentId }),
+        },
+      );
+      if (!res.ok) {
+        const errBody = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(errBody.error ?? `Failed to add reply (${res.status})`);
+      }
+      setReplyingTo(null);
+      await refreshThread(expandedIdx);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unknown error");
+    } finally {
+      setReplySubmitting(false);
     }
   }
 
@@ -271,19 +463,22 @@ export function DiscussionPanel({ slug }: DiscussionPanelProps) {
 
                       {expandedThread && (
                         <>
-                          {/* Comments */}
-                          <ul className="space-y-2">
-                            {expandedThread.comments.map((comment: TalkComment) => (
-                              <li key={comment.id} className="rounded bg-foreground/5 p-2">
-                                <div className="flex items-center gap-2 text-xs text-foreground/50">
-                                  <span className="font-medium text-foreground/70">{comment.author}</span>
-                                  <span>·</span>
-                                  <span>{formatRelativeTime(comment.created)}</span>
-                                </div>
-                                <p className="mt-1 text-sm whitespace-pre-wrap">{comment.body}</p>
-                              </li>
+                          {/* Comments — nested tree */}
+                          <div className="space-y-2">
+                            {buildCommentTree(expandedThread.comments).map((rootNode) => (
+                              <CommentNode
+                                key={rootNode.comment.id}
+                                node={rootNode}
+                                depth={0}
+                                replyingTo={replyingTo}
+                                onReplyClick={(id) => setReplyingTo(replyingTo === id ? null : id)}
+                                onCancelReply={() => setReplyingTo(null)}
+                                onSubmitReply={handleReplySubmit}
+                                inputClasses={inputClasses}
+                                replying={replySubmitting}
+                              />
                             ))}
-                          </ul>
+                          </div>
 
                           {/* Resolve / Won't Fix buttons for open threads */}
                           {expandedThread.status === "open" && (
@@ -305,10 +500,11 @@ export function DiscussionPanel({ slug }: DiscussionPanelProps) {
                             </div>
                           )}
 
-                          {/* Add comment form */}
+                          {/* Top-level comment form */}
                           <form onSubmit={handleAddComment} className="space-y-2 border-t border-foreground/10 pt-3">
+                            <p className="text-xs font-medium text-foreground/50 uppercase tracking-wide">Add a comment</p>
                             <input type="text" placeholder="Your name" value={commentAuthor} onChange={(e) => setCommentAuthor(e.target.value)} required className={inputClasses} />
-                            <textarea placeholder="Add a comment…" value={commentBody} onChange={(e) => setCommentBody(e.target.value)} required rows={2} className={inputClasses} />
+                            <textarea placeholder="Write a comment…" value={commentBody} onChange={(e) => setCommentBody(e.target.value)} required rows={2} className={inputClasses} />
                             <button type="submit" disabled={commenting} className="rounded bg-blue-600 px-3 py-1 text-sm text-white hover:bg-blue-700 disabled:opacity-50">
                               {commenting ? "Posting…" : "Comment"}
                             </button>

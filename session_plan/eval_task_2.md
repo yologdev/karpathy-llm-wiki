@@ -1,0 +1,2 @@
+Verdict: PASS
+Reason: All four requirements implemented correctly — `getDiscussionStats` and `getDiscussionStatsForSlugs` added to talk.ts with efficient batch reading, WikiPageCard accepts and displays the discussion badge with amber styling, wiki index page fetches stats in batch and passes them through WikiIndexClient, page header also shows the badge, and comprehensive tests cover zero-state, mixed statuses, batch correctness, and filtering. Build and tests pass.

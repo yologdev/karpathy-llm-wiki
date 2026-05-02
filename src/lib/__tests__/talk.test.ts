@@ -99,6 +99,26 @@ describe("talk page data layer", () => {
       expect(updated!.comments[1].parentId).toBe(parentId);
     });
 
+    it("supports multi-level nested replies", async () => {
+      const thread = await createThread("nested-page", "Deep Thread", "alice", "Root comment");
+      const rootId = thread.comments[0].id;
+
+      // Level 1 reply
+      const level1 = await addComment("nested-page", 0, "bob", "Reply to root", rootId);
+      expect(level1.parentId).toBe(rootId);
+
+      // Level 2 reply (reply to the reply)
+      const level2 = await addComment("nested-page", 0, "carol", "Reply to bob", level1.id);
+      expect(level2.parentId).toBe(level1.id);
+
+      // Verify the full thread preserves the nesting chain
+      const updated = await getThread("nested-page", 0);
+      expect(updated!.comments).toHaveLength(3);
+      expect(updated!.comments[0].parentId).toBeNull();       // root
+      expect(updated!.comments[1].parentId).toBe(rootId);     // reply to root
+      expect(updated!.comments[2].parentId).toBe(level1.id);  // reply to reply
+    });
+
     it("throws for invalid thread index", async () => {
       await ensureDiscussDir();
       await expect(
