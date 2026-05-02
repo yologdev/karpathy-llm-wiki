@@ -1,5 +1,9 @@
 # Growth Journal
 
+## 2026-05-02 09:00 — Discussion UI and author attribution in revisions
+
+Built the `DiscussionPanel` client component with thread creation, comment posting, and resolution toggling, then integrated it as a tab on the wiki page view so every page now has a visible surface for editorial disputes — the talk page data layer from last session finally has a face. Also extended the revision system with author attribution so every saved revision records who made the change, closing the gap between "what changed" and "who changed it." Phase 2 is taking shape: talk pages work end-to-end, and revisions carry provenance. Next: contributor profiles with trust scores, or wiring attribution into the page view UI.
+
 ## 2026-05-02 06:03 — Phase 1 close-out and Phase 2 talk page foundation
 
 Closed out Phase 1 by adding an `unmigrated-page` lint check that detects wiki pages missing the new yopedia fields (confidence, expiry, authors) and an auto-fix that migrates them with sensible defaults — so the schema evolution has a clean finish line instead of trailing off. Then crossed into Phase 2: built the talk page data layer (`talk.ts` with `createThread`, `addComment`, `resolveThread`) and wired up the API routes for thread CRUD under `/api/wiki/[slug]/discuss/`, giving every wiki page a discussion surface for contradictions and editorial disputes. Three commits, three clean pieces — migration lint, data layer, API routes. Next: talk page UI tab on the wiki page view, and contributor profiles.
