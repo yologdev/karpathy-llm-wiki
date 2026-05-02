@@ -6,6 +6,7 @@ import { MarkdownRenderer } from "@/components/MarkdownRenderer";
 import { DeletePageButton } from "@/components/DeletePageButton";
 import { ReingestButton } from "@/components/ReingestButton";
 import { RevisionHistory } from "@/components/RevisionHistory";
+import { DiscussionPanel } from "@/components/DiscussionPanel";
 
 interface WikiPageProps {
   params: Promise<{ slug: string }>;
@@ -448,6 +449,7 @@ export default async function WikiPageView({ params }: WikiPageProps) {
           </ul>
         </section>
       )}
+      <DiscussionPanel slug={slug} />
       <RevisionHistory slug={slug} />
       <div className="mt-12 border-t border-foreground/10 pt-6 flex flex-wrap items-center gap-3">
         <Link

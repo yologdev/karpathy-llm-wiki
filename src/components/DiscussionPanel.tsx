@@ -77,12 +77,7 @@ export function DiscussionPanel({ slug }: DiscussionPanelProps) {
     }
   }
 
-  async function handleExpandThread(idx: number) {
-    if (expandedIdx === idx) {
-      setExpandedIdx(null);
-      setExpandedThread(null);
-      return;
-    }
+  async function refreshThread(idx: number) {
     setExpandedIdx(idx);
     setExpandedThread(null);
     setDetailLoading(true);
@@ -100,6 +95,15 @@ export function DiscussionPanel({ slug }: DiscussionPanelProps) {
     } finally {
       setDetailLoading(false);
     }
+  }
+
+  async function handleExpandThread(idx: number) {
+    if (expandedIdx === idx) {
+      setExpandedIdx(null);
+      setExpandedThread(null);
+      return;
+    }
+    await refreshThread(idx);
   }
 
   async function handleCreateThread(e: React.FormEvent) {
@@ -148,8 +152,8 @@ export function DiscussionPanel({ slug }: DiscussionPanelProps) {
       }
       setCommentAuthor("");
       setCommentBody("");
-      // Refresh expanded thread
-      await handleExpandThread(expandedIdx);
+      // Refresh expanded thread without toggling
+      await refreshThread(expandedIdx);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unknown error");
     } finally {
@@ -171,7 +175,7 @@ export function DiscussionPanel({ slug }: DiscussionPanelProps) {
       }
       await fetchThreads();
       if (expandedIdx === idx) {
-        await handleExpandThread(idx);
+        await refreshThread(idx);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unknown error");
