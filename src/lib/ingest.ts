@@ -518,6 +518,7 @@ export async function ingest(
     summary,
     logOp: "ingest",
     crossRefSource: content,
+    author: "system",
     logDetails: ({ updatedSlugs }) =>
       `slug: ${slug} · updated ${updatedSlugs.length} related page(s)`,
   });

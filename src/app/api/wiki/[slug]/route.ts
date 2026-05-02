@@ -73,6 +73,15 @@ export async function PUT(
       );
     }
 
+    // Optional author attribution from the request body.
+    const author =
+      body && typeof body === "object" && "author" in body
+        ? (body as { author: unknown }).author
+        : undefined;
+    const authorStr = typeof author === "string" && author.trim().length > 0
+      ? author.trim()
+      : undefined;
+
     const existing = await readWikiPageWithFrontmatter(slug);
     if (!existing) {
       return NextResponse.json(
@@ -114,6 +123,7 @@ export async function PUT(
       // Use the user-visible body as the cross-ref signal so the YAML
       // block doesn't bias related-page matching.
       crossRefSource: newBody,
+      author: authorStr,
       logDetails: (ctx) =>
         `edited · updated ${ctx.updatedSlugs.length} cross-ref(s)`,
     });

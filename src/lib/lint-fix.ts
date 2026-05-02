@@ -208,6 +208,7 @@ export async function fixMissingCrossRef(
     logOp: "edit",
     logDetails: () => `auto-fix: added cross-reference to ${targetSlug}.md`,
     crossRefSource: null, // skip cross-ref discovery — we're adding a specific link
+    author: "lint-fix",
   });
 
   return {
@@ -271,6 +272,7 @@ export async function fixContradiction(
     logDetails: () =>
       `auto-fix: resolved contradiction with ${targetSlug}.md`,
     crossRefSource: null,
+    author: "lint-fix",
   });
 
   return {
@@ -351,6 +353,7 @@ export async function fixMissingConceptPage(
     logDetails: () =>
       `auto-fix: created stub page for missing concept "${concept}"`,
     crossRefSource: content,
+    author: "lint-fix",
   });
 
   return {
@@ -411,6 +414,7 @@ export async function fixBrokenLink(
     logDetails: () =>
       `auto-fix: removed broken link(s) to "${targetSlug}.md"`,
     crossRefSource: null,
+    author: "lint-fix",
   });
 
   return {
