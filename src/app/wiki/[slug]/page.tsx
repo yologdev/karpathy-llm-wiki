@@ -1,5 +1,7 @@
 import Link from "next/link";
 import { readWikiPageWithFrontmatter, findBacklinks, type Frontmatter } from "@/lib/wiki";
+import { parseSources } from "@/lib/sources";
+import type { SourceEntry } from "@/lib/types";
 import { MarkdownRenderer } from "@/components/MarkdownRenderer";
 import { DeletePageButton } from "@/components/DeletePageButton";
 import { ReingestButton } from "@/components/ReingestButton";
@@ -38,6 +40,159 @@ function confidenceDisplay(value: number): {
     className:
       "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400",
   };
+}
+
+/** Map a source type to a display label + Tailwind color classes. */
+function sourceTypeBadge(type: SourceEntry["type"]): {
+  label: string;
+  className: string;
+} {
+  switch (type) {
+    case "url":
+      return {
+        label: "URL",
+        className:
+          "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400",
+      };
+    case "text":
+      return {
+        label: "Text",
+        className:
+          "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300",
+      };
+    case "x-mention":
+      return {
+        label: "𝕏 Mention",
+        className:
+          "bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-400",
+      };
+    default:
+      return {
+        label: String(type),
+        className:
+          "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300",
+      };
+  }
+}
+
+/**
+ * Display structured provenance entries from the `sources[]` frontmatter
+ * field. Falls back to showing the flat `source_url` when no structured
+ * sources exist (backward compat for pre-yopedia pages).
+ */
+function SourceProvenance({
+  frontmatter,
+}: {
+  frontmatter: Frontmatter;
+}) {
+  // Parse structured sources (stored as JSON string in frontmatter).
+  const rawSources = frontmatter.sources as
+    | string
+    | string[]
+    | undefined;
+  const sources = parseSources(rawSources);
+
+  // Flat legacy source_url (pre-yopedia pages).
+  const sourceUrl =
+    typeof frontmatter.source_url === "string" &&
+    frontmatter.source_url.trim().length > 0
+      ? frontmatter.source_url.trim()
+      : null;
+
+  // Nothing to show.
+  if (sources.length === 0 && !sourceUrl) return null;
+
+  // Structured sources available — render the rich provenance section.
+  if (sources.length > 0) {
+    return (
+      <section className="mt-8 border-t border-foreground/10 pt-6">
+        <h2 className="text-sm font-medium text-foreground/50 uppercase tracking-wide mb-3">
+          Provenance
+        </h2>
+        <div className="space-y-2">
+          {sources.map((entry, idx) => {
+            const badge = sourceTypeBadge(entry.type);
+            const isLink =
+              entry.type !== "text" &&
+              entry.url !== "text-paste" &&
+              /^https?:\/\//.test(entry.url);
+
+            return (
+              <div
+                key={`${entry.url}-${idx}`}
+                className="flex flex-wrap items-center gap-2 text-sm"
+              >
+                {/* Type badge */}
+                <span
+                  className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${badge.className}`}
+                >
+                  {badge.label}
+                </span>
+
+                {/* URL or label */}
+                {isLink ? (
+                  <a
+                    href={entry.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-blue-600 hover:underline dark:text-blue-400 truncate max-w-md"
+                    title={entry.url}
+                  >
+                    {entry.url}
+                  </a>
+                ) : (
+                  <span className="text-foreground/60">
+                    {entry.url === "text-paste" ? "Text paste" : entry.url}
+                  </span>
+                )}
+
+                {/* Fetch date */}
+                {entry.fetched && (
+                  <span className="text-foreground/40 text-xs">
+                    fetched {formatDate(entry.fetched)}
+                  </span>
+                )}
+
+                {/* Triggered by */}
+                {entry.triggered_by && entry.triggered_by !== "system" && (
+                  <span className="text-foreground/40 text-xs">
+                    via {entry.triggered_by}
+                  </span>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </section>
+    );
+  }
+
+  // Fallback: legacy flat source_url.
+  return (
+    <section className="mt-8 border-t border-foreground/10 pt-6">
+      <h2 className="text-sm font-medium text-foreground/50 uppercase tracking-wide mb-3">
+        Source
+      </h2>
+      <div className="flex items-center gap-2 text-sm">
+        <span className="inline-block rounded-full bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-800 dark:bg-blue-900/30 dark:text-blue-400">
+          URL
+        </span>
+        {/^https?:\/\//.test(sourceUrl!) ? (
+          <a
+            href={sourceUrl!}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-blue-600 hover:underline dark:text-blue-400 truncate max-w-md"
+            title={sourceUrl!}
+          >
+            {sourceUrl}
+          </a>
+        ) : (
+          <span className="text-foreground/60">{sourceUrl}</span>
+        )}
+      </div>
+    </section>
+  );
 }
 
 /**
@@ -273,6 +428,7 @@ export default async function WikiPageView({ params }: WikiPageProps) {
         <PageMetadata frontmatter={page.frontmatter} />
         <MarkdownRenderer content={page.content} />
       </article>
+      <SourceProvenance frontmatter={page.frontmatter} />
       {backlinks.length > 0 && (
         <section className="mt-10 border-t border-foreground/10 pt-6">
           <h2 className="text-sm font-medium text-foreground/50 uppercase tracking-wide">

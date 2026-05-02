@@ -63,6 +63,7 @@ These were added in Phase 1 of the yopedia pivot.
 | `disputed` | boolean | `false` | Set manually or by future contradiction resolution; preserved on re-ingest | Future talk-page system, UI warning badge |
 | `supersedes` | string (slug) | `""` (empty) | Set manually when a page replaces another; preserved on re-ingest | Future redirect system |
 | `aliases` | string array | `[]` | Set manually for alternative names; preserved on re-ingest | Future redirect/search system |
+| `sources` | JSON string (SourceEntry[]) | `"[]"` | Ingest appends a new entry; re-ingest appends if the source URL is new | Wiki page view provenance section; parseSources() in `src/lib/sources.ts` |
 
 **Re-ingest behavior:** On re-ingest, `authors`, `contributors`, `disputed`,
 `supersedes`, and `aliases` are preserved from the existing page. `expiry`
@@ -73,6 +74,16 @@ is preserved only if the existing value is higher than the default 0.7
 **Note:** The `authors` default is `"system"` (not `"yoyo"`) because the
 ingest operation is performed by the system on behalf of the user. Phase 4
 (agent identity) will introduce proper agent attribution.
+
+**Sources format:** The `sources` field is a JSON-encoded string (since the
+frontmatter parser rejects nested YAML objects) containing an array of
+`SourceEntry` objects, each with `{type, url, fetched, triggered_by}`.
+Types are `"url"` (fetched from a URL), `"text"` (pasted text), or
+`"x-mention"` (triggered by an X/Twitter mention — Phase 3). Use
+`parseSources()` and `serializeSources()` from `src/lib/sources.ts` to
+read and write this field. The wiki page view displays structured sources
+as provenance badges; falls back to showing flat `source_url` for legacy
+pages.
 
 ## Page templates
 
@@ -96,6 +107,7 @@ contributors: []
 disputed: false
 supersedes:
 aliases: []
+sources: <JSON array of {type, url, fetched, triggered_by}>
 ---
 ```
 
@@ -134,6 +146,7 @@ contributors: []
 disputed: false
 supersedes:
 aliases: []
+sources: <JSON array of {type, url, fetched, triggered_by}>
 ---
 ```
 
@@ -378,15 +391,16 @@ sessions should pick from this list:
   cross-references) from TOCTOU races within a single Next.js server process
   via `withFileLock()` in `src/lib/lock.ts`. This does NOT protect against
   multiple server processes (which would require OS-level lockfiles).
-- The yopedia `sources[]` structured array (with `{type, url, fetched,
-  triggered_by}` per source) defined in the Phase 1 roadmap is not yet
-  implemented. Provenance still uses the flat `source_url` string field.
 - The wiki page view displays yopedia metadata fields (`confidence`,
   `expiry`, `authors`, `contributors`, `disputed`, `aliases`,
-  `supersedes`) when present. Confidence is color-coded (green/yellow/red),
-  expired pages show an amber warning, disputed pages get an orange badge
-  and explanation text, aliases render as muted "Also known as" text, and
-  supersedes links to the replaced page.
+  `supersedes`, `sources`) when present. Confidence is color-coded
+  (green/yellow/red), expired pages show an amber warning, disputed pages
+  get an orange badge and explanation text, aliases render as muted "Also
+  known as" text, supersedes links to the replaced page, and structured
+  sources display as a provenance section with type badges (URL/Text/𝕏
+  Mention), clickable URLs, fetch dates, and triggered-by attribution.
+  Falls back to showing flat `source_url` for legacy pages without
+  structured `sources`.
 
 ## Planned evolution
 
