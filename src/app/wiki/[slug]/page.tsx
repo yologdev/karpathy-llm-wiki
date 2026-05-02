@@ -7,6 +7,7 @@ import { DeletePageButton } from "@/components/DeletePageButton";
 import { ReingestButton } from "@/components/ReingestButton";
 import { RevisionHistory } from "@/components/RevisionHistory";
 import { DiscussionPanel } from "@/components/DiscussionPanel";
+import { AuthorBadges } from "@/components/AuthorBadges";
 
 interface WikiPageProps {
   params: Promise<{ slug: string }>;
@@ -333,17 +334,9 @@ function PageMetadata({ frontmatter }: { frontmatter: Frontmatter }) {
         </div>
       )}
 
-      {/* Row 3: authors + contributors */}
+      {/* Row 3: authors + contributors (with trust badges) */}
       {authors.length > 0 && (
-        <div className="text-sm text-gray-500 dark:text-gray-400">
-          By {authors.join(", ")}
-          {contributors.length > 0 && (
-            <span className="ml-1 text-gray-400 dark:text-gray-500">
-              + {contributors.length}{" "}
-              {contributors.length === 1 ? "contributor" : "contributors"}
-            </span>
-          )}
-        </div>
+        <AuthorBadges authors={authors} contributors={contributors} />
       )}
 
       {/* Row 4: expiry / staleness */}
