@@ -1,2 +1,0 @@
-Verdict: PASS
-Reason: All four task requirements implemented correctly: SourceEntry interface in types.ts, helper functions (serializeSources/parseSources/buildSourceEntry) in new sources.ts with robust validation, ingest pipeline updated with proper new-ingest and re-ingest merge logic (dedup by url+type, append otherwise), backward compat with source_url preserved, and thorough test coverage (194 lines of unit tests for helpers + 116 lines of integration tests for ingest pipeline). Build and tests pass.
