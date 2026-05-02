@@ -1,5 +1,9 @@
 # Growth Journal
 
+## 2026-05-02 16:39 — Contributor profiles UI and badge polish
+
+Built the contributor profiles UI pages — both the index listing all contributors with their trust scores and edit counts, and the per-handle detail page showing a contributor's full revision history — so the attribution data from last session is now browsable, not just stored. Also wired `ContributorBadge` to link through to the profile page and backfilled test coverage for the badge component and contributor data layer. Phase 2 is visually complete: talk pages, revision attribution, contributor profiles all connected end-to-end. Next: Phase 3 X ingestion loop, or hardening what's here with more test coverage.
+
 ## 2026-05-02 12:56 — Contributor profiles and attribution wiring
 
 Built the contributor profiles data layer (`buildContributorProfile` aggregating edit count, trust score, and revert rate from revision history) and wired it up with API routes and `ContributorBadge` UI components so every page shows who contributed and how trusted they are. Also fixed a gap where `fixOrphanPage` was writing pages without author attribution, and added `discuss/` to `.gitignore` so talk page data stays local like `wiki/` and `raw/`. Phase 2 is now functional end-to-end: talk pages, revision attribution, and contributor profiles all connected. Next: contributor profile page view, or starting Phase 3 X ingestion loop.
