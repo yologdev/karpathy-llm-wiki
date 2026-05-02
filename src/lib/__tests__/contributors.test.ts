@@ -136,6 +136,7 @@ describe("contributors data layer", () => {
       expect(profile.pagesEdited).toBe(0);
       expect(profile.commentCount).toBe(0);
       expect(profile.threadsCreated).toBe(0);
+      expect(profile.revertCount).toBe(0);
       expect(profile.trustScore).toBe(0);
     });
   });
@@ -219,6 +220,97 @@ describe("contributors data layer", () => {
       const profile = await buildContributorProfile("ghost");
       expect(profile.firstSeen).toBe(new Date(0).toISOString());
       expect(profile.lastSeen).toBe(new Date(0).toISOString());
+    });
+  });
+
+  describe("revert detection", () => {
+    it("contributor with no reverts gets full trust score", async () => {
+      await createPage("page-norevert", "No Revert", "# No Revert\n\nContent.");
+
+      // Alice makes several edits, no one reverts
+      for (let i = 0; i < 10; i++) {
+        await saveRevision("page-norevert", `# No Revert\n\nv${i} ${"x".repeat(100)}`, "alice");
+      }
+
+      const profile = await buildContributorProfile("alice");
+      expect(profile.revertCount).toBe(0);
+      // trust = min(1, 10/50) * (1 - min(0.5, 0*0.1)) = 0.2 * 1 = 0.2
+      expect(profile.trustScore).toBeCloseTo(0.2);
+    });
+
+    it("contributor whose content was reverted gets reduced trust score", async () => {
+      await createPage("page-reverted", "Reverted", "# Reverted\n\nContent.");
+
+      // Alice writes a long revision
+      await saveRevision("page-reverted", "# Reverted\n\n" + "x".repeat(1000), "alice");
+      // Bob substantially reduces it (>50% reduction = revert of alice)
+      await saveRevision("page-reverted", "# Reverted\n\nShort.", "bob");
+
+      const aliceProfile = await buildContributorProfile("alice");
+      expect(aliceProfile.revertCount).toBe(1);
+      // trust = min(1, 1/50) * (1 - min(0.5, 1*0.1)) = 0.02 * 0.9 = 0.018
+      expect(aliceProfile.trustScore).toBeCloseTo(0.018);
+
+      // Bob should have 0 reverts (his content wasn't reverted)
+      const bobProfile = await buildContributorProfile("bob");
+      expect(bobProfile.revertCount).toBe(0);
+    });
+
+    it("revert detection only triggers when different author reverts", async () => {
+      await createPage("page-self", "Self Edit", "# Self\n\nContent.");
+
+      // Alice writes a long revision then shortens it herself
+      await saveRevision("page-self", "# Self\n\n" + "x".repeat(1000), "alice");
+      await saveRevision("page-self", "# Self\n\nShort.", "alice");
+
+      const profile = await buildContributorProfile("alice");
+      // Same author reducing own content is NOT a revert
+      expect(profile.revertCount).toBe(0);
+    });
+
+    it("revert detection requires >50% size reduction", async () => {
+      await createPage("page-small-edit", "Small Edit", "# Small\n\nContent.");
+
+      // Alice writes 100 chars
+      await saveRevision("page-small-edit", "# Small\n\n" + "x".repeat(100), "alice");
+      // Bob trims only 30% (not enough to count as revert)
+      await saveRevision("page-small-edit", "# Small\n\n" + "x".repeat(77), "bob");
+
+      const profile = await buildContributorProfile("alice");
+      expect(profile.revertCount).toBe(0);
+    });
+
+    it("multiple reverts accumulate and cap trust penalty at 50%", async () => {
+      await createPage("page-multi", "Multi Revert", "# Multi\n\nContent.");
+
+      // Alice writes and bob reverts 6 times (above the 5-revert cap)
+      for (let i = 0; i < 6; i++) {
+        await saveRevision("page-multi", `# Multi\n\n${"x".repeat(1000)} round ${i}`, "alice");
+        await saveRevision("page-multi", "# Multi\n\nReverted.", "bob");
+      }
+
+      const aliceProfile = await buildContributorProfile("alice");
+      expect(aliceProfile.revertCount).toBe(6);
+      // trust = min(1, 6/50) * (1 - min(0.5, 6*0.1)) = 0.12 * 0.5 = 0.06
+      // (penalty capped at 0.5 even though 6*0.1 = 0.6)
+      expect(aliceProfile.trustScore).toBeCloseTo(0.06);
+    });
+
+    it("revert counts show up in listContributors", async () => {
+      await createPage("page-list", "List Test", "# List\n\nContent.");
+
+      // Alice writes, bob reverts
+      await saveRevision("page-list", "# List\n\n" + "x".repeat(500), "alice");
+      await saveRevision("page-list", "# List\n\nShort.", "bob");
+
+      const contributors = await listContributors();
+      const alice = contributors.find(c => c.handle === "alice");
+      const bob = contributors.find(c => c.handle === "bob");
+
+      expect(alice).toBeDefined();
+      expect(alice!.revertCount).toBe(1);
+      expect(bob).toBeDefined();
+      expect(bob!.revertCount).toBe(0);
     });
   });
 });

@@ -145,10 +145,12 @@ export interface ContributorProfile {
   firstSeen: string;
   /** ISO date of the author's most recent activity */
   lastSeen: string;
-  /** Trust score 0–1. For now: a simple heuristic based on activity volume.
-   *  Formula: min(1, (editCount + commentCount) / 50)
-   *  This is a placeholder — the roadmap says trust should eventually
-   *  incorporate revert rate, contradiction rates, and external citation. */
+  /** Number of revisions where this author's content was subsequently reverted
+   *  (i.e., a later revision by a different author substantially reduced content). */
+  revertCount: number;
+  /** Trust score 0–1. Heuristic based on activity volume and revert rate.
+   *  Formula: min(1, (editCount + commentCount) / 50) * (1 - min(0.5, revertCount * 0.1))
+   *  Each revert reduces trust by 10%, capped at 50% reduction. */
   trustScore: number;
 }
 

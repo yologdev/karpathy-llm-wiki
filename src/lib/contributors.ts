@@ -118,13 +118,63 @@ function mergeTalkActivity(
 }
 
 // ---------------------------------------------------------------------------
+// Revert detection
+// ---------------------------------------------------------------------------
+
+/** Size reduction threshold — a revision must shrink the previous content by
+ *  more than this fraction to count as a revert. */
+const REVERT_SIZE_REDUCTION_THRESHOLD = 0.5;
+
+/**
+ * Scan all revisions across all pages and detect "reverts" — cases where
+ * revision N+1 by author B substantially reduces the content of revision N
+ * by author A (>50% size reduction).
+ *
+ * Returns a map from author handle → number of times their content was reverted.
+ */
+async function detectReverts(): Promise<Map<string, number>> {
+  const revertCounts = new Map<string, number>();
+  const pages = await listWikiPages();
+
+  for (const page of pages) {
+    const revisions = await listRevisions(page.slug);
+    if (revisions.length < 2) continue;
+
+    // listRevisions returns newest-first; we need chronological order.
+    const chronological = revisions.slice().reverse();
+
+    for (let i = 0; i < chronological.length - 1; i++) {
+      const current = chronological[i];
+      const next = chronological[i + 1];
+
+      // Both revisions must have authors, and they must be different.
+      if (!current.author || !next.author) continue;
+      if (current.author === next.author) continue;
+
+      // Check if the next revision substantially reduced the content size.
+      if (current.sizeBytes === 0) continue;
+      const reduction = (current.sizeBytes - next.sizeBytes) / current.sizeBytes;
+      if (reduction > REVERT_SIZE_REDUCTION_THRESHOLD) {
+        const count = revertCounts.get(current.author) ?? 0;
+        revertCounts.set(current.author, count + 1);
+      }
+    }
+  }
+
+  return revertCounts;
+}
+
+// ---------------------------------------------------------------------------
 // Trust score
 // ---------------------------------------------------------------------------
 
-/** Compute trust score from activity counts.
- *  Placeholder heuristic: min(1, (editCount + commentCount) / 50). */
-function computeTrustScore(editCount: number, commentCount: number): number {
-  return Math.min(1, (editCount + commentCount) / 50);
+/** Compute trust score from activity counts and revert rate.
+ *  Formula: min(1, (editCount + commentCount) / 50) * (1 - min(0.5, revertCount * 0.1))
+ *  Each revert reduces trust by 10%, capped at 50% reduction. */
+function computeTrustScore(editCount: number, commentCount: number, revertCount: number): number {
+  const activityScore = Math.min(1, (editCount + commentCount) / 50);
+  const revertPenalty = 1 - Math.min(0.5, revertCount * 0.1);
+  return activityScore * revertPenalty;
 }
 
 // ---------------------------------------------------------------------------
@@ -134,6 +184,7 @@ function computeTrustScore(editCount: number, commentCount: number): number {
 function buildProfileFromActivity(
   handle: string,
   act: AuthorActivity,
+  revertCount: number,
 ): ContributorProfile {
   // Sort dates chronologically to find first/last.
   const sorted = act.dates.slice().sort();
@@ -149,7 +200,8 @@ function buildProfileFromActivity(
     threadsCreated: act.threadsCreated,
     firstSeen,
     lastSeen,
-    trustScore: computeTrustScore(act.editCount, act.commentCount),
+    revertCount,
+    trustScore: computeTrustScore(act.editCount, act.commentCount, revertCount),
   };
 }
 
@@ -175,7 +227,11 @@ export async function buildContributorProfile(
   talkMap.set(handle, act);
   mergeTalkActivity(talkMap, threads);
 
-  return buildProfileFromActivity(handle, act);
+  // Detect reverts.
+  const revertCounts = await detectReverts();
+  const revertCount = revertCounts.get(handle) ?? 0;
+
+  return buildProfileFromActivity(handle, act, revertCount);
 }
 
 /**
@@ -188,9 +244,13 @@ export async function listContributors(): Promise<ContributorProfile[]> {
   const threads = await loadAllThreads();
   mergeTalkActivity(map, threads);
 
+  // Detect reverts across all pages.
+  const revertCounts = await detectReverts();
+
   const profiles: ContributorProfile[] = [];
   for (const [handle, act] of map) {
-    profiles.push(buildProfileFromActivity(handle, act));
+    const revertCount = revertCounts.get(handle) ?? 0;
+    profiles.push(buildProfileFromActivity(handle, act, revertCount));
   }
 
   // Sort by editCount descending, then handle ascending for stability.
