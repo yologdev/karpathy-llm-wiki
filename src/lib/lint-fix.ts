@@ -67,6 +67,7 @@ export async function fixOrphanPage(slug: string): Promise<FixResult> {
     logOp: "edit",
     logDetails: () => "auto-fix: added orphan page to index",
     crossRefSource: null,
+    author: "lint-fix",
   });
 
   return {
