@@ -11,6 +11,8 @@ import {
   addComment,
   resolveThread,
   deleteDiscussions,
+  getDiscussionStats,
+  getDiscussionStatsForSlugs,
   _resetTimestamp,
 } from "../talk";
 import { _resetLocks } from "../lock";
@@ -203,6 +205,76 @@ describe("talk page data layer", () => {
       // All comment IDs should be unique
       const ids = thread!.comments.map((c) => c.id);
       expect(new Set(ids).size).toBe(11);
+    });
+  });
+
+  describe("getDiscussionStats", () => {
+    it("returns { total: 0, open: 0 } when no discuss file exists", async () => {
+      const stats = await getDiscussionStats("nonexistent-page");
+      expect(stats).toEqual({ total: 0, open: 0 });
+    });
+
+    it("returns correct counts with a mix of open/resolved/wontfix threads", async () => {
+      // Create 3 threads: 2 open, 1 resolved, then resolve one more as wontfix
+      await createThread("stats-page", "Thread 1", "alice", "Open");
+      await createThread("stats-page", "Thread 2", "bob", "Will resolve");
+      await createThread("stats-page", "Thread 3", "carol", "Will wontfix");
+
+      await resolveThread("stats-page", 1, "resolved");
+      await resolveThread("stats-page", 2, "wontfix");
+
+      const stats = await getDiscussionStats("stats-page");
+      expect(stats.total).toBe(3);
+      expect(stats.open).toBe(1); // only Thread 1 is still open
+    });
+
+    it("counts all threads as open when none are resolved", async () => {
+      await createThread("all-open", "A", "alice", "body");
+      await createThread("all-open", "B", "bob", "body");
+
+      const stats = await getDiscussionStats("all-open");
+      expect(stats).toEqual({ total: 2, open: 2 });
+    });
+  });
+
+  describe("getDiscussionStatsForSlugs", () => {
+    it("returns a map with correct per-slug stats", async () => {
+      // Page A: 2 threads, 1 open
+      await createThread("page-a", "A1", "alice", "open");
+      await createThread("page-a", "A2", "alice", "resolved");
+      await resolveThread("page-a", 1, "resolved");
+
+      // Page B: 1 thread, all open
+      await createThread("page-b", "B1", "bob", "open");
+
+      // Page C: no threads (doesn't exist)
+
+      const stats = await getDiscussionStatsForSlugs([
+        "page-a",
+        "page-b",
+        "page-c",
+      ]);
+
+      expect(stats.get("page-a")).toEqual({ total: 2, open: 1 });
+      expect(stats.get("page-b")).toEqual({ total: 1, open: 1 });
+      expect(stats.get("page-c")).toEqual({ total: 0, open: 0 });
+    });
+
+    it("returns all zeros when discuss directory does not exist", async () => {
+      // Don't create any discussions — the discuss/ dir shouldn't exist
+      const stats = await getDiscussionStatsForSlugs(["x", "y"]);
+      expect(stats.get("x")).toEqual({ total: 0, open: 0 });
+      expect(stats.get("y")).toEqual({ total: 0, open: 0 });
+    });
+
+    it("ignores discuss files for slugs not in the requested list", async () => {
+      await createThread("included", "T", "alice", "body");
+      await createThread("excluded", "T", "bob", "body");
+
+      const stats = await getDiscussionStatsForSlugs(["included"]);
+      expect(stats.has("included")).toBe(true);
+      expect(stats.has("excluded")).toBe(false);
+      expect(stats.get("included")).toEqual({ total: 1, open: 1 });
     });
   });
 });

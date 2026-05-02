@@ -4,15 +4,18 @@ import { formatRelativeTime } from "@/lib/format";
 
 interface WikiPageCardProps {
   page: IndexEntry;
+  discussionCount?: { total: number; open: number };
 }
 
-export function WikiPageCard({ page }: WikiPageCardProps) {
+export function WikiPageCard({ page, discussionCount }: WikiPageCardProps) {
   const relLabel = page.updated ? formatRelativeTime(page.updated) : null;
   const pageTags = page.tags ?? [];
+  const hasOpenDiscussions = (discussionCount?.open ?? 0) > 0;
   const hasMeta =
     pageTags.length > 0 ||
     relLabel !== null ||
-    (page.sourceCount ?? 0) > 0;
+    (page.sourceCount ?? 0) > 0 ||
+    hasOpenDiscussions;
 
   return (
     <li>
@@ -41,6 +44,11 @@ export function WikiPageCard({ page }: WikiPageCardProps) {
               <span>
                 {page.sourceCount}{" "}
                 {page.sourceCount === 1 ? "source" : "sources"}
+              </span>
+            )}
+            {hasOpenDiscussions && (
+              <span className="inline-flex items-center gap-0.5 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800 dark:bg-amber-900/30 dark:text-amber-400">
+                💬 {discussionCount!.open} open
               </span>
             )}
           </div>

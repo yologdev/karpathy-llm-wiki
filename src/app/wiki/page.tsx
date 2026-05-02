@@ -1,9 +1,20 @@
 import Link from "next/link";
 import { listWikiPages } from "@/lib/wiki";
+import { getDiscussionStatsForSlugs } from "@/lib/talk";
 import { WikiIndexClient } from "@/components/WikiIndexClient";
 
 export default async function WikiIndex() {
   const pages = await listWikiPages();
+
+  // Fetch discussion stats for all pages in one batch.
+  const slugs = pages.map((p) => p.slug);
+  const statsMap = await getDiscussionStatsForSlugs(slugs);
+
+  // Convert Map → plain object so it can be serialized across the server/client boundary.
+  const discussionStats: Record<string, { total: number; open: number }> = {};
+  for (const [slug, stats] of statsMap) {
+    discussionStats[slug] = stats;
+  }
 
   return (
     <main className="mx-auto max-w-3xl px-6 py-12">
@@ -25,7 +36,7 @@ export default async function WikiIndex() {
         </div>
       </div>
 
-      <WikiIndexClient pages={pages} />
+      <WikiIndexClient pages={pages} discussionStats={discussionStats} />
     </main>
   );
 }

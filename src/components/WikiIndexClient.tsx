@@ -16,9 +16,10 @@ const PAGE_SIZE = 20;
 
 interface WikiIndexClientProps {
   pages: IndexEntry[];
+  discussionStats?: Record<string, { total: number; open: number }>;
 }
 
-export function WikiIndexClient({ pages }: WikiIndexClientProps) {
+export function WikiIndexClient({ pages, discussionStats }: WikiIndexClientProps) {
   const [searchTerm, setSearchTerm] = useState("");
   const [activeTags, setActiveTags] = useState<string[]>([]);
   const [exporting, setExporting] = useState(false);
@@ -207,7 +208,11 @@ export function WikiIndexClient({ pages }: WikiIndexClientProps) {
       ) : (
         <ul className="space-y-3">
           {paginatedPages.map((page) => (
-            <WikiPageCard key={page.slug} page={page} />
+            <WikiPageCard
+              key={page.slug}
+              page={page}
+              discussionCount={discussionStats?.[page.slug]}
+            />
           ))}
         </ul>
       )}

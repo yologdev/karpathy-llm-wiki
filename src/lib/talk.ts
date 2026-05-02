@@ -196,6 +196,78 @@ export async function resolveThread(
   });
 }
 
+// ---------------------------------------------------------------------------
+// Discussion stats — lightweight counts for badges and index views
+// ---------------------------------------------------------------------------
+
+/** Thread count stats for a single wiki page. */
+export interface DiscussionStats {
+  /** Total number of threads (any status). */
+  total: number;
+  /** Number of threads with status "open". */
+  open: number;
+}
+
+/** Return discussion thread counts for a single page. Lightweight — reads
+ *  the JSON file but only counts statuses, doesn't expose full content. */
+export async function getDiscussionStats(
+  pageSlug: string,
+): Promise<DiscussionStats> {
+  const threads = await readDiscussFile(pageSlug);
+  return {
+    total: threads.length,
+    open: threads.filter((t) => t.status === "open").length,
+  };
+}
+
+/**
+ * Batch version: return discussion stats for multiple slugs in one pass.
+ * Reads the discuss directory once and returns a Map keyed by slug.
+ * Slugs with no discussions are included with `{ total: 0, open: 0 }`.
+ */
+export async function getDiscussionStatsForSlugs(
+  slugs: string[],
+): Promise<Map<string, DiscussionStats>> {
+  const result = new Map<string, DiscussionStats>();
+
+  // Pre-populate with zeros so every requested slug has an entry.
+  for (const slug of slugs) {
+    result.set(slug, { total: 0, open: 0 });
+  }
+
+  // Read directory listing once to find which discuss files exist.
+  let files: string[] = [];
+  try {
+    files = await fs.readdir(getDiscussDir());
+  } catch (err) {
+    if (isEnoent(err)) return result; // No discuss dir → all zeros.
+    throw err;
+  }
+
+  // Build a set of slugs we care about for fast lookup.
+  const slugSet = new Set(slugs);
+
+  // Only read files that match a requested slug.
+  const promises: Promise<void>[] = [];
+  for (const file of files) {
+    if (!file.endsWith(".json")) continue;
+    const slug = file.slice(0, -5); // strip ".json"
+    if (!slugSet.has(slug)) continue;
+
+    promises.push(
+      readDiscussFile(slug).then((threads) => {
+        result.set(slug, {
+          total: threads.length,
+          open: threads.filter((t) => t.status === "open").length,
+        });
+      }),
+    );
+  }
+
+  await Promise.all(promises);
+  return result;
+}
+
 /**
  * Remove all discussions for a page (called when a wiki page is deleted).
  * No-op if no discussions exist.

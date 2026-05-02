@@ -1,0 +1,2 @@
+Verdict: PASS
+Reason: All four task requirements implemented correctly — `reason?: string` added to the `Revision` interface in revisions.ts, passed through from `writeWikiPage()` in wiki.ts, displayed in RevisionItem.tsx when present, and covered by five new tests (author+reason, reason-only via listRevisions, backward compat without reason, reason without author, and no sidecar when both omitted). No API routes or lifecycle.ts touched, as specified. Build and tests pass.

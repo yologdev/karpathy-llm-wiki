@@ -8,6 +8,8 @@ import { ReingestButton } from "@/components/ReingestButton";
 import { RevisionHistory } from "@/components/RevisionHistory";
 import { DiscussionPanel } from "@/components/DiscussionPanel";
 import { AuthorBadges } from "@/components/AuthorBadges";
+import { getDiscussionStats } from "@/lib/talk";
+import type { DiscussionStats } from "@/lib/talk";
 
 interface WikiPageProps {
   params: Promise<{ slug: string }>;
@@ -203,7 +205,7 @@ function SourceProvenance({
  * when no metadata fields are present, so legacy frontmatter-less pages
  * render nothing.
  */
-function PageMetadata({ frontmatter }: { frontmatter: Frontmatter }) {
+function PageMetadata({ frontmatter, discussionStats }: { frontmatter: Frontmatter; discussionStats?: DiscussionStats }) {
   const updatedRaw = frontmatter.updated;
   const createdRaw = frontmatter.created;
   const dateLabel =
@@ -285,6 +287,9 @@ function PageMetadata({ frontmatter }: { frontmatter: Frontmatter }) {
       ? frontmatter.supersedes
       : null;
 
+  // Discussion stats
+  const hasOpenDiscussions = (discussionStats?.open ?? 0) > 0;
+
   const hasDateLine = dateLabel !== null || sourceLabel !== null;
   const hasTags = tags.length > 0;
   const hasYopedia =
@@ -293,14 +298,15 @@ function PageMetadata({ frontmatter }: { frontmatter: Frontmatter }) {
     authors.length > 0 ||
     disputed ||
     aliases.length > 0 ||
-    supersedes !== null;
+    supersedes !== null ||
+    hasOpenDiscussions;
 
   if (!hasDateLine && !hasTags && !hasYopedia) return null;
 
   return (
     <div className="mb-6 space-y-2">
-      {/* Row 1: date · sources · confidence · disputed */}
-      {(hasDateLine || confidence || disputed) && (
+      {/* Row 1: date · sources · confidence · disputed · discussions */}
+      {(hasDateLine || confidence || disputed || hasOpenDiscussions) && (
         <div className="flex flex-wrap items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
           {dateLabel && <span>{dateLabel}</span>}
           {dateLabel && sourceLabel && <span>·</span>}
@@ -315,6 +321,11 @@ function PageMetadata({ frontmatter }: { frontmatter: Frontmatter }) {
           {disputed && (
             <span className="inline-block rounded-full bg-orange-100 px-2 py-0.5 text-xs font-medium text-orange-800 dark:bg-orange-900/30 dark:text-orange-400">
               ⚠ Disputed
+            </span>
+          )}
+          {hasOpenDiscussions && (
+            <span className="inline-flex items-center gap-0.5 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800 dark:bg-amber-900/30 dark:text-amber-400">
+              💬 {discussionStats!.open} open {discussionStats!.open === 1 ? "thread" : "threads"}
             </span>
           )}
         </div>
@@ -406,6 +417,7 @@ export default async function WikiPageView({ params }: WikiPageProps) {
   }
 
   const backlinks = await findBacklinks(slug);
+  const discussStats = await getDiscussionStats(slug);
   const hasSourceUrl =
     typeof page.frontmatter.source_url === "string" &&
     page.frontmatter.source_url.trim().length > 0;
@@ -419,7 +431,7 @@ export default async function WikiPageView({ params }: WikiPageProps) {
         ← Back to index
       </Link>
       <article className="mt-6">
-        <PageMetadata frontmatter={page.frontmatter} />
+        <PageMetadata frontmatter={page.frontmatter} discussionStats={discussStats} />
         <MarkdownRenderer content={page.content} />
       </article>
       <SourceProvenance frontmatter={page.frontmatter} />
