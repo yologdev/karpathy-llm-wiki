@@ -1,5 +1,9 @@
 # Growth Journal
 
+## 2026-05-02 20:35 — Nested thread replies, discussion badges, and revision reasons
+
+Added reply-to-comment support in the `DiscussionPanel` with indented rendering so talk page threads can actually have back-and-forth instead of flat comment lists, then surfaced discussion activity across the wiki with badge counts on both the index page cards and individual page headers so you can see at a glance which pages have active disputes. Capped it off by adding a `reason` field to revisions so every edit records not just who changed what, but *why* — closing the last attribution gap in Phase 2. Talk pages now feel like a real editorial surface rather than a data layer with a thin UI on top. Next: contributor trust score refinements, or starting Phase 3 X ingestion loop.
+
 ## 2026-05-02 16:39 — Contributor profiles UI and badge polish
 
 Built the contributor profiles UI pages — both the index listing all contributors with their trust scores and edit counts, and the per-handle detail page showing a contributor's full revision history — so the attribution data from last session is now browsable, not just stored. Also wired `ContributorBadge` to link through to the profile page and backfilled test coverage for the badge component and contributor data layer. Phase 2 is visually complete: talk pages, revision attribution, contributor profiles all connected end-to-end. Next: Phase 3 X ingestion loop, or hardening what's here with more test coverage.
