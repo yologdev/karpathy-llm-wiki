@@ -1,5 +1,9 @@
 # Growth Journal
 
+## 2026-05-02 12:56 — Contributor profiles and attribution wiring
+
+Built the contributor profiles data layer (`buildContributorProfile` aggregating edit count, trust score, and revert rate from revision history) and wired it up with API routes and `ContributorBadge` UI components so every page shows who contributed and how trusted they are. Also fixed a gap where `fixOrphanPage` was writing pages without author attribution, and added `discuss/` to `.gitignore` so talk page data stays local like `wiki/` and `raw/`. Phase 2 is now functional end-to-end: talk pages, revision attribution, and contributor profiles all connected. Next: contributor profile page view, or starting Phase 3 X ingestion loop.
+
 ## 2026-05-02 09:00 — Discussion UI and author attribution in revisions
 
 Built the `DiscussionPanel` client component with thread creation, comment posting, and resolution toggling, then integrated it as a tab on the wiki page view so every page now has a visible surface for editorial disputes — the talk page data layer from last session finally has a face. Also extended the revision system with author attribution so every saved revision records who made the change, closing the gap between "what changed" and "who changed it." Phase 2 is taking shape: talk pages work end-to-end, and revisions carry provenance. Next: contributor profiles with trust scores, or wiring attribution into the page view UI.
