@@ -152,13 +152,73 @@ discuss/             # talk pages for conflict resolution (future)
 
 ## How yoyo Works Here
 
-- Each session: read the vision docs (yopedia-concept.md, llm-wiki.md), assess
-  the codebase, identify gaps between vision and reality
-- Decide what to build next based on the phased roadmap above
-- Factor in GitHub issues labeled `agent-input` if they align — but the vision
-  drives, issues steer
-- Run `pnpm build && pnpm lint && pnpm test` after every change
-- If builds break and can't be fixed in 3 attempts, revert
-- Write session notes to `.yoyo/journal.md`
-- Record project-specific learnings to `.yoyo/learnings.md`
-- The git history IS the story — write clear commit messages
+Five independent agents communicate through GitHub Issues. Each has one job,
+runs on its own schedule, and leaves a visible trail. Multiple build agents
+can run in parallel on different issues.
+
+### Agent Architecture
+
+**1. Research Agent** (Sundays 9am UTC via `research.yml`):
+- Scans the field: LLM wiki variants, agent memory systems, knowledge-graph
+  products, second-brain projects, multi-agent collaboration tools
+- Distills findings into actionable intelligence (not wiki pages)
+- Files max 3 issues with `agent-research` + `triage` labels
+- Appends a research entry to `.yoyo/journal.md`
+
+**2. PM Agent** (daily 6am UTC via `pm.yml`):
+- Reads vision docs, assesses codebase state, identifies gaps
+- Files structured implementation issues (max 3 per session)
+- Each issue has: Context, Requirements, Files Involved, Acceptance Criteria,
+  Size Estimate
+- Labels: `agent-self` + `triage` + type (feature/bug/refactor/docs)
+- Closes stale or superseded issues
+
+**3. Office Hour Agent** (daily 7am UTC + on issue open via `office-hour.yml`):
+- Triages all `triage` issues: groom → `ready`, reject → close, or → `blocked`
+- Adds priority label (p0–p3), verifies acceptance criteria
+- Reviews existing `ready` issues for reprioritization
+- Adding the `ready` label triggers build agents
+
+**4. Build Agent** (on `ready` label + every 4h fallback via `build.yml`):
+- Claims one issue: swaps `ready` → `in-progress`
+- Creates branch `yoyo/issue-{N}`, implements, runs build/lint/test
+- Build-fix loop: up to 5 attempts to fix failures
+- On success: opens PR with "Closes #N"
+- On failure: reverts, comments reason, re-queues as `ready`
+- **No concurrency limit** — multiple build agents run in parallel on
+  different issues
+
+**5. Review Agent** (on PR opened/updated via `review.yml`):
+- Reviews PR diff against linked issue's acceptance criteria
+- Checks: build passes, tests added, protected files untouched
+- Approves + auto-merges if passing; requests changes if not
+- Handles merge conflicts via rebase
+
+### Issue Lifecycle
+
+```
+Filed (PM / Research / Human) → [triage]
+  → Office Hour grooms → [ready] + priority
+  → Build Agent claims → [in-progress] + branch
+  → PR opened → Review Agent reviews
+    → approved → auto-merge → issue closes
+    → changes requested → build agent fixes
+```
+
+### Label Taxonomy
+
+| Dimension | Labels |
+|-----------|--------|
+| **Status** | `triage`, `ready`, `in-progress`, `blocked` |
+| **Priority** | `p0-critical`, `p1-high`, `p2-medium`, `p3-low` |
+| **Source** | `agent-input`, `agent-self`, `agent-research`, `agent-help-wanted` |
+| **Type** | `bug`, `feature`, `refactor`, `docs` |
+
+### Shared Infrastructure
+
+All agents source `.yoyo/scripts/setup-agent.sh` which provides:
+- Identity + skills download from yoyo-evolve
+- `run_agent()` helper (invokes yoyo with identity + skills)
+- `check_protected_files()` enforcement
+- `sanitize_issue_content()` for untrusted input
+- `commit_and_push_journal()` for journal updates
