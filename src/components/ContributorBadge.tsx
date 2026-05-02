@@ -90,7 +90,12 @@ export function ContributorBadge({
         }}
         aria-hidden="true"
       />
-      {handle}
+      <a
+        href={`/wiki/contributors/${encodeURIComponent(handle)}`}
+        className="hover:underline"
+      >
+        {handle}
+      </a>
     </span>
   );
 }
