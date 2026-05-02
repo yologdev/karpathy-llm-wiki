@@ -21,6 +21,7 @@ import {
   validateUrlSafety,
 } from "../fetch";
 import { findRelatedPages, updateRelatedPages } from "../search";
+import { parseSources } from "../sources";
 import { MAX_LLM_INPUT_CHARS } from "../constants";
 import { listWikiPages, readWikiPage, writeWikiPage } from "../wiki";
 import type { IndexEntry } from "../types";
@@ -523,6 +524,122 @@ describe("ingest — source URL tracking", () => {
     } finally {
       global.fetch = originalFetch;
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// ingest — structured sources[] provenance
+// ---------------------------------------------------------------------------
+
+describe("ingest — structured sources[] provenance", () => {
+  it("new URL ingest creates sources[] with a url-type entry", async () => {
+    await ingest("Sources Url", "Content from a URL. Full sentence here.", {
+      sourceUrl: "https://example.com/sources-test",
+    });
+
+    const { readWikiPageWithFrontmatter } = await import("../wiki");
+    const page = await readWikiPageWithFrontmatter("sources-url");
+    expect(page).not.toBeNull();
+
+    const sources = parseSources(page!.frontmatter.sources as string);
+    expect(sources).toHaveLength(1);
+    expect(sources[0].type).toBe("url");
+    expect(sources[0].url).toBe("https://example.com/sources-test");
+    expect(sources[0].fetched).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    expect(sources[0].triggered_by).toBe("system");
+  });
+
+  it("new text ingest creates sources[] with a text-type entry", async () => {
+    await ingest("Sources Text", "Pasted text content. More details here.");
+
+    const { readWikiPageWithFrontmatter } = await import("../wiki");
+    const page = await readWikiPageWithFrontmatter("sources-text");
+    expect(page).not.toBeNull();
+
+    const sources = parseSources(page!.frontmatter.sources as string);
+    expect(sources).toHaveLength(1);
+    expect(sources[0].type).toBe("text");
+    expect(sources[0].url).toBe("text-paste");
+    expect(sources[0].triggered_by).toBe("system");
+  });
+
+  it("re-ingest with different URL appends to sources[]", async () => {
+    // First ingest with URL A
+    await ingest("Sources Append", "First content. Full sentence.", {
+      sourceUrl: "https://example.com/a",
+    });
+
+    // Re-ingest with URL B
+    await ingest("Sources Append", "Second content. Updated info.", {
+      sourceUrl: "https://example.com/b",
+    });
+
+    const { readWikiPageWithFrontmatter } = await import("../wiki");
+    const page = await readWikiPageWithFrontmatter("sources-append");
+    expect(page).not.toBeNull();
+
+    const sources = parseSources(page!.frontmatter.sources as string);
+    expect(sources).toHaveLength(2);
+    expect(sources[0].url).toBe("https://example.com/a");
+    expect(sources[1].url).toBe("https://example.com/b");
+  });
+
+  it("re-ingest with same URL updates fetched date instead of duplicating", async () => {
+    await ingest("Sources Dedup", "First version content. Details.", {
+      sourceUrl: "https://example.com/same",
+    });
+
+    // Re-ingest with the same URL
+    await ingest("Sources Dedup", "Updated content version. More info.", {
+      sourceUrl: "https://example.com/same",
+    });
+
+    const { readWikiPageWithFrontmatter } = await import("../wiki");
+    const page = await readWikiPageWithFrontmatter("sources-dedup");
+    expect(page).not.toBeNull();
+
+    const sources = parseSources(page!.frontmatter.sources as string);
+    // Should still be 1 entry, not 2
+    expect(sources).toHaveLength(1);
+    expect(sources[0].url).toBe("https://example.com/same");
+    expect(sources[0].fetched).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+  });
+
+  it("re-ingest of text-paste over existing URL preserves both entries", async () => {
+    // First ingest with a URL
+    await ingest("Sources Mixed", "URL content. Full sentence here.", {
+      sourceUrl: "https://example.com/mixed",
+    });
+
+    // Re-ingest as text paste (no sourceUrl)
+    await ingest("Sources Mixed", "Additional pasted text. More info.");
+
+    const { readWikiPageWithFrontmatter } = await import("../wiki");
+    const page = await readWikiPageWithFrontmatter("sources-mixed");
+    expect(page).not.toBeNull();
+
+    const sources = parseSources(page!.frontmatter.sources as string);
+    expect(sources).toHaveLength(2);
+    expect(sources[0].type).toBe("url");
+    expect(sources[0].url).toBe("https://example.com/mixed");
+    expect(sources[1].type).toBe("text");
+    expect(sources[1].url).toBe("text-paste");
+  });
+
+  it("backward compat: source_url still set alongside sources[]", async () => {
+    await ingest("Sources Compat", "Content for compat test. Sentence.", {
+      sourceUrl: "https://example.com/compat",
+    });
+
+    const { readWikiPageWithFrontmatter } = await import("../wiki");
+    const page = await readWikiPageWithFrontmatter("sources-compat");
+    expect(page).not.toBeNull();
+
+    // Old field still present for backward compat
+    expect(page!.frontmatter.source_url).toBe("https://example.com/compat");
+    // New structured field also present
+    const sources = parseSources(page!.frontmatter.sources as string);
+    expect(sources).toHaveLength(1);
   });
 });
 

@@ -11,6 +11,11 @@ import { callLLM, hasLLMKey } from "./llm";
 import { fetchUrlContent, downloadImages } from "./fetch";
 import type { IngestResult } from "./types";
 import {
+  serializeSources,
+  parseSources,
+  buildSourceEntry,
+} from "./sources";
+import {
   MAX_LLM_INPUT_CHARS,
 } from "./constants";
 import { slugify } from "./slugify";
@@ -411,6 +416,12 @@ export async function ingest(
     frontmatter.source_url = options.sourceUrl;
   }
 
+  // Build the structured sources[] provenance entry for this ingest.
+  const sourceEntry = options?.sourceUrl
+    ? buildSourceEntry(options.sourceUrl, "url")
+    : buildSourceEntry("text-paste", "text");
+  frontmatter.sources = serializeSources([sourceEntry]);
+
   const existing = await readWikiPageWithFrontmatter(slug);
   if (existing) {
     const existingCreated = existing.frontmatter.created;
@@ -438,6 +449,27 @@ export async function ingest(
     ) {
       frontmatter.source_url = existing.frontmatter.source_url;
     }
+
+    // Merge structured sources[]: parse existing, update or append new entry.
+    const existingSourcesRaw = existing.frontmatter.sources;
+    const existingSources = parseSources(
+      typeof existingSourcesRaw === "string"
+        ? existingSourcesRaw
+        : Array.isArray(existingSourcesRaw)
+          ? existingSourcesRaw
+          : undefined,
+    );
+    // If the new source URL already has an entry, update its fetched date.
+    // Otherwise append the new entry.
+    const matchIdx = existingSources.findIndex(
+      (s) => s.url === sourceEntry.url && s.type === sourceEntry.type,
+    );
+    if (matchIdx >= 0) {
+      existingSources[matchIdx] = { ...existingSources[matchIdx], fetched: sourceEntry.fetched };
+    } else {
+      existingSources.push(sourceEntry);
+    }
+    frontmatter.sources = serializeSources(existingSources);
 
     // --- Phase 1 fields: preserve on re-ingest ---
     // Preserve authors from existing page (don't reset to ["system"]).

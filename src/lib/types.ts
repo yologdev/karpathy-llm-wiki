@@ -79,6 +79,18 @@ export interface LintResult {
   checkedAt: string;
 }
 
+/** A single provenance entry in the structured `sources[]` array. */
+export interface SourceEntry {
+  /** Provenance type: how the source was acquired. */
+  type: "url" | "text" | "x-mention";
+  /** Source URL or "text-paste" for pasted content. */
+  url: string;
+  /** ISO date string of when the source was fetched/ingested. */
+  fetched: string;
+  /** Who triggered the ingest (user handle or "system"). */
+  triggered_by: string;
+}
+
 /** Metadata about the currently configured LLM provider. */
 export interface ProviderInfo {
   /** true if any provider key / config is set */
