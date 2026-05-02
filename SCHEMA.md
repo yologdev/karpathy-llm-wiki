@@ -360,15 +360,16 @@ sessions should pick from this list:
   via RRF. Batch rebuild of the full vector index is available via the Settings
   page (`/api/settings/rebuild-embeddings`).
   Anthropic-only users see no regression (pure BM25 fallback).
-- Lint auto-fix handles seven of nine checks (`orphan-page`, `stale-index`,
+- Lint auto-fix handles eight of nine checks (`orphan-page`, `stale-index`,
   `empty-page`, `broken-link`, `missing-crossref`, `contradiction`,
-  `missing-concept-page`) via `POST /api/lint/fix`.
+  `missing-concept-page`, `stale-page`) via `POST /api/lint/fix`.
   The `contradiction` fix uses the LLM to rewrite the affected page.
   The `missing-concept-page` fix generates a stub page via the LLM.
   The `broken-link` fix removes broken links from the source page.
-  The two newest checks — `stale-page` and `low-confidence` — have no
-  auto-fix yet. Stale pages need human/agent judgment to refresh or extend
-  the expiry; low-confidence pages need additional sources ingested.
+  The `stale-page` fix bumps the expiry date forward by 90 days.
+  The sole exception is `low-confidence`, which has no auto-fix by design —
+  raising confidence requires ingesting additional sources, not rewriting
+  what's already there.
 - Long documents are chunked at ingest time (12K chars per chunk ≈ 3K
   tokens) so they fit within provider context windows. Token counting is
   character-based (not tokenizer-exact), which is conservative but not
