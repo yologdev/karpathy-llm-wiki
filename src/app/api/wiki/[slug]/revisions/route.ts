@@ -1,9 +1,11 @@
 import { NextResponse } from "next/server";
 import { readWikiPage, readWikiPageWithFrontmatter, writeWikiPageWithSideEffects } from "@/lib/wiki";
-import { listRevisions, readRevision } from "@/lib/revisions";
+import { listRevisions, readRevision, getRevisionsDir } from "@/lib/revisions";
 import { extractSummary } from "@/lib/ingest";
 import { serializeFrontmatter } from "@/lib/frontmatter";
 import { getErrorMessage } from "@/lib/errors";
+import fs from "fs/promises";
+import path from "path";
 
 type RouteParams = { params: Promise<{ slug: string }> };
 
@@ -51,6 +53,19 @@ export async function GET(req: Request, { params }: RouteParams) {
         );
       }
 
+      // Read optional author sidecar.
+      let author: string | undefined;
+      try {
+        const metaPath = path.join(getRevisionsDir(slug), `${timestamp}.meta.json`);
+        const metaRaw = await fs.readFile(metaPath, "utf-8");
+        const meta = JSON.parse(metaRaw) as { author?: string };
+        if (typeof meta.author === "string") {
+          author = meta.author;
+        }
+      } catch {
+        // No sidecar → no author attribution.
+      }
+
       return NextResponse.json({
         content,
         revision: {
@@ -58,6 +73,7 @@ export async function GET(req: Request, { params }: RouteParams) {
           date: new Date(timestamp).toISOString(),
           slug,
           sizeBytes: Buffer.byteLength(content, "utf-8"),
+          ...(author !== undefined && { author }),
         },
       });
     }

@@ -179,3 +179,58 @@ describe("writeWikiPage integration", () => {
     expect(oldest).toBe("# V1\n\nFirst.");
   });
 });
+
+describe("author attribution", () => {
+  it("saveRevision with author creates .meta.json sidecar", async () => {
+    await ensureDirectories();
+    const content = "# Authored\n\nSome content.";
+    await saveRevision("authored-page", content, "yoyo");
+
+    const dir = getRevisionsDir("authored-page");
+    const files = await fs.readdir(dir);
+    const mdFiles = files.filter((f) => f.endsWith(".md"));
+    const metaFiles = files.filter((f) => f.endsWith(".meta.json"));
+
+    expect(mdFiles).toHaveLength(1);
+    expect(metaFiles).toHaveLength(1);
+
+    // The meta filename should match the md filename stem.
+    const stem = mdFiles[0].slice(0, -3);
+    expect(metaFiles[0]).toBe(`${stem}.meta.json`);
+
+    // The sidecar should contain the author.
+    const meta = JSON.parse(
+      await fs.readFile(path.join(dir, metaFiles[0]), "utf-8"),
+    );
+    expect(meta).toEqual({ author: "yoyo" });
+  });
+
+  it("listRevisions returns author when sidecar exists", async () => {
+    await ensureDirectories();
+    await saveRevision("with-author", "# Page\n\nContent.", "alice");
+
+    const revisions = await listRevisions("with-author");
+    expect(revisions).toHaveLength(1);
+    expect(revisions[0].author).toBe("alice");
+  });
+
+  it("listRevisions returns undefined author when no sidecar (backward compat)", async () => {
+    await ensureDirectories();
+    // Save without author — no sidecar created.
+    await saveRevision("no-author", "# Page\n\nContent.");
+
+    const revisions = await listRevisions("no-author");
+    expect(revisions).toHaveLength(1);
+    expect(revisions[0].author).toBeUndefined();
+  });
+
+  it("saveRevision without author does not create sidecar", async () => {
+    await ensureDirectories();
+    await saveRevision("no-meta", "# Page\n\nContent.");
+
+    const dir = getRevisionsDir("no-meta");
+    const files = await fs.readdir(dir);
+    const metaFiles = files.filter((f) => f.endsWith(".meta.json"));
+    expect(metaFiles).toHaveLength(0);
+  });
+});

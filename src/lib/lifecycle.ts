@@ -56,6 +56,8 @@ export interface WritePageOptions {
    *   imports where you want to control linking yourself).
    */
   crossRefSource?: string | null;
+  /** Who made this change — stored in the revision sidecar for attribution. */
+  author?: string;
 }
 
 /** Result of a {@link writeWikiPageWithSideEffects} call. */
@@ -109,6 +111,8 @@ type PageLifecycleOp =
        * - string → use that text (e.g. raw source in ingest).
        */
       crossRefSource?: string | null;
+      /** Who made this change — stored in the revision sidecar. */
+      author?: string;
     }
   | {
       kind: "delete";
@@ -177,7 +181,7 @@ async function runPageLifecycleOp(
 
   // 2. Mutate the page file.
   if (op.kind === "write") {
-    await writeWikiPage(slug, op.content);
+    await writeWikiPage(slug, op.content, op.author);
   } else {
     const filePath = path.join(getWikiDir(), `${slug}.md`);
     try {
@@ -360,6 +364,7 @@ export async function writeWikiPageWithSideEffects(
       content,
       summary,
       crossRefSource: opts.crossRefSource,
+      author: opts.author,
     },
     logOp,
     ({ crossRefedSlugs }) => logDetails?.({ updatedSlugs: crossRefedSlugs }),

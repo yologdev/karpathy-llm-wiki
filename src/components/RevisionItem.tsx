@@ -7,6 +7,7 @@ export interface Revision {
   date: string;
   slug: string;
   sizeBytes: number;
+  author?: string;
 }
 
 export interface RevisionItemProps {
@@ -38,7 +39,7 @@ export function RevisionItem({
     <li>
       <div className="flex items-center gap-3 flex-wrap">
         <span className="text-sm text-foreground/70">
-          {formatRelativeTime(rev.date)}
+          {rev.author ? `by ${rev.author} · ` : ""}{formatRelativeTime(rev.date)}
         </span>
         <span className="text-xs text-foreground/40">
           {formatBytes(rev.sizeBytes)}

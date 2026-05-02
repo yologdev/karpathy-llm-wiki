@@ -26,6 +26,8 @@ export interface Revision {
   slug: string;
   /** Byte length of the revision content. */
   sizeBytes: number;
+  /** Who made this change — undefined for legacy revisions without attribution. */
+  author?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -62,10 +64,15 @@ function uniqueTimestamp(): number {
  * Called by `writeWikiPage()` **before** the file is overwritten, so the
  * previous version is preserved. New pages (first write) skip this step
  * because there is no previous content to snapshot.
+ *
+ * When `author` is provided, a JSON sidecar (`<timestamp>.meta.json`) is
+ * written alongside the `.md` file to record attribution without changing
+ * the markdown file format.
  */
 export async function saveRevision(
   slug: string,
   content: string,
+  author?: string,
 ): Promise<void> {
   validateSlug(slug);
   const dir = getRevisionsDir(slug);
@@ -73,6 +80,12 @@ export async function saveRevision(
   const timestamp = uniqueTimestamp();
   const filePath = path.join(dir, `${timestamp}.md`);
   await fs.writeFile(filePath, content, "utf-8");
+
+  // Write author attribution as a JSON sidecar when provided.
+  if (author !== undefined) {
+    const metaPath = path.join(dir, `${timestamp}.meta.json`);
+    await fs.writeFile(metaPath, JSON.stringify({ author }), "utf-8");
+  }
 }
 
 /**
@@ -107,11 +120,26 @@ export async function listRevisions(slug: string): Promise<Revision[]> {
     const filePath = path.join(dir, entry);
     try {
       const stat = await fs.stat(filePath);
+
+      // Read the optional author sidecar.
+      let author: string | undefined;
+      const metaPath = path.join(dir, `${stem}.meta.json`);
+      try {
+        const metaRaw = await fs.readFile(metaPath, "utf-8");
+        const meta = JSON.parse(metaRaw) as { author?: string };
+        if (typeof meta.author === "string") {
+          author = meta.author;
+        }
+      } catch {
+        // No sidecar → no author attribution (backward compat).
+      }
+
       revisions.push({
         timestamp,
         date: new Date(timestamp).toISOString(),
         slug,
         sizeBytes: stat.size,
+        ...(author !== undefined && { author }),
       });
     } catch (err) {
       // File disappeared between readdir and stat — skip.
