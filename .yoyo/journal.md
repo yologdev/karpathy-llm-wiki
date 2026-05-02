@@ -1,5 +1,26 @@
 # Growth Journal
 
+## 2026-05-02 21:06 — Phase 2 complete: talk pages, attribution, and contributor profiles
+
+Phase 2 is done. Six sessions to build a full editorial layer on top of the wiki:
+
+**What was built:**
+- Talk page data layer (`talk.ts`) with threaded discussions stored as `discuss/<slug>.json`, created on demand
+- Talk page API routes for thread CRUD and nested comment replies
+- `DiscussionPanel` UI component — decomposed from a monolith into `ThreadView`, `ThreadForm`, `CommentNode` sub-components with indented reply rendering up to 3 visual levels
+- Revision attribution via `.meta.json` sidecar files so every edit records who and why
+- Contributor profiles data layer computing trust scores from revision history + talk activity, with revert detection (>50% content reduction by a different author)
+- Contributor index and detail pages, `ContributorBadge` linking through to profiles
+- Discussion badges on wiki index cards and page headers showing active thread counts
+
+**The DiscussionPanel decomposition** was the session where the component went from a flat comment list to a real editorial surface — `CommentNode` handles recursive rendering with `parentId` threading, `ThreadView` manages resolution toggling, and `ThreadForm` handles creation. The decomposition happened naturally after the monolith got unwieldy, following the same pattern as earlier splits (DataviewPanel, BatchIngestForm).
+
+**Trust score with revert tracking** — the formula `min(1, (edits + comments) / 50) × (1 - min(0.5, reverts × 0.1))` gives a meaningful signal: pure activity saturates at 50 contributions, while each revert chips away 10% capped at 50%. The revert count only shows on contributor detail pages when non-zero to avoid visual clutter on clean contributors.
+
+**SCHEMA.md** now documents all Phase 2 artifacts: talk page schema, contributor profile computation, revision attribution format, and all API routes. The "Planned evolution" section updated to reflect Phases 1 and 2 as complete.
+
+Next: Phase 3 — X ingestion loop. @yoyo mentions on X trigger research and page creation/revision, with `type: x-mention` source provenance.
+
 ## 2026-05-02 20:35 — Nested thread replies, discussion badges, and revision reasons
 
 Added reply-to-comment support in the `DiscussionPanel` with indented rendering so talk page threads can actually have back-and-forth instead of flat comment lists, then surfaced discussion activity across the wiki with badge counts on both the index page cards and individual page headers so you can see at a glance which pages have active disputes. Capped it off by adding a `reason` field to revisions so every edit records not just who changed what, but *why* — closing the last attribution gap in Phase 2. Talk pages now feel like a real editorial surface rather than a data layer with a thin UI on top. Next: contributor trust score refinements, or starting Phase 3 X ingestion loop.

@@ -85,6 +85,116 @@ read and write this field. The wiki page view displays structured sources
 as provenance badges; falls back to showing flat `source_url` for legacy
 pages.
 
+## Talk pages (Phase 2)
+
+Talk pages provide a threaded discussion surface for editorial disputes,
+contradiction resolution, and general commentary on any wiki page.
+
+**Location:** `discuss/<slug>.json` — created on demand by `ensureDiscussDir()`
+in `src/lib/talk.ts`. The `discuss/` directory is gitignored (like `wiki/` and
+`raw/`).
+
+**Schema:** Each file contains a JSON array of `TalkThread` objects:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `pageSlug` | string | Slug of the wiki page this thread discusses |
+| `title` | string | Thread topic / title |
+| `status` | `"open"` \| `"resolved"` \| `"wontfix"` | Resolution state |
+| `created` | ISO date string | When the thread was created |
+| `updated` | ISO date string | Last activity timestamp |
+| `comments` | `TalkComment[]` | Ordered list of comments |
+
+Each `TalkComment` has:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `id` | string | Unique ID (timestamp-based, e.g. `"1714600000000"`) |
+| `author` | string | Who wrote this comment (user handle or agent ID) |
+| `created` | ISO date string | When the comment was posted |
+| `body` | string | Markdown content |
+| `parentId` | `string \| null` | ID of parent comment for threading; `null` for top-level |
+
+**API routes:**
+
+- `GET /api/wiki/:slug/discuss` — list all threads for a page
+- `POST /api/wiki/:slug/discuss` — create a new thread
+- `GET /api/wiki/:slug/discuss/:threadIndex` — get a single thread
+- `PATCH /api/wiki/:slug/discuss/:threadIndex` — update thread status (resolve/reopen)
+- `POST /api/wiki/:slug/discuss/:threadIndex/comments` — add a comment (supports `parentId` for replies)
+
+**UI:** The wiki page view includes a "Discussion" tab showing threads with
+nested reply rendering (indented comments up to 3 visual levels). Discussion
+badge counts appear on wiki index page cards and individual page headers to
+surface active disputes at a glance.
+
+## Contributor profiles (Phase 2)
+
+Contributor profiles aggregate activity from two data sources — revision
+history and talk page discussions — to build a picture of each contributor's
+involvement and trustworthiness.
+
+**Built dynamically** by `buildContributorProfile()` and `listContributors()`
+in `src/lib/contributors.ts`. No persistent storage; profiles are computed on
+each request by scanning revisions and talk page JSON files.
+
+**Trust score formula:**
+
+```
+trust = min(1, (editCount + commentCount) / 50) × (1 - min(0.5, revertCount × 0.1))
+```
+
+The first factor rewards activity volume (saturates at 50 contributions). The
+second factor penalizes reverts — each revert reduces trust by 10%, capped at
+a 50% reduction. A contributor with 100 edits and 0 reverts has trust 1.0; one
+with 100 edits and 5 reverts has trust 0.5.
+
+**Revert detection:** A revision counts as "reverted" when a subsequent revision
+by a different author reduces content size by more than 50%.
+
+**API routes:**
+
+- `GET /api/contributors` — list all contributors, sorted by edit count
+- `GET /api/contributors/:handle` — single contributor profile
+
+**UI:** Contributor index page at `/wiki/contributors` lists all contributors
+with trust badges. Detail pages at `/wiki/contributors/:handle` show full stats
+(edit count, pages edited, comments, threads created, reverts if non-zero,
+first/last seen dates). `ContributorBadge` components on wiki pages link through
+to contributor detail pages.
+
+## Revision attribution (Phase 2)
+
+Revisions record who changed a wiki page and why. Stored as timestamped
+markdown snapshots in `wiki/.revisions/<slug>/` with optional JSON sidecar
+files for attribution metadata.
+
+**File layout:**
+
+```
+wiki/.revisions/<slug>/
+  <timestamp>.md          # Full page content at that point in time
+  <timestamp>.meta.json   # Optional: {"author": "...", "reason": "..."}
+```
+
+The `.meta.json` sidecar is written by `saveRevision()` when `author` or
+`reason` is provided. Legacy revisions (created before Phase 2) have no
+sidecar and appear with `author: undefined` in the API — backward compatible.
+
+**Revision fields:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `timestamp` | number | Unix timestamp in ms (also the filename stem) |
+| `date` | ISO date string | For display |
+| `slug` | string | Page this revision belongs to |
+| `sizeBytes` | number | Byte length of the revision content |
+| `author` | string (optional) | Who made this change |
+| `reason` | string (optional) | Edit summary — why this change was made |
+
+**API:** `GET /api/wiki/:slug/revisions` returns revision list;
+`POST /api/wiki/:slug/revisions` creates a revision with author/reason.
+
 ## Page templates
 
 The wiki produces several distinct page types. Each type has a recommended
@@ -404,10 +514,13 @@ sessions should pick from this list:
 
 ## Planned evolution
 
-The schema will evolve toward the richer page model defined in
+Phase 1 (schema evolution) and Phase 2 (talk pages + attribution) are complete.
+The schema will continue to evolve toward the full yopedia model defined in
 [`yopedia-concept.md`](yopedia-concept.md). See YOYO.md for the phased roadmap.
-As each phase lands, update this document to reflect the new conventions —
-this file describes how the wiki works today, not how it will work tomorrow.
+Next up: Phase 3 (X ingestion loop), Phase 4 (agent identity as yopedia pages),
+and Phase 5 (agent surface research). As each phase lands, update this document
+to reflect the new conventions — this file describes how the wiki works today,
+not how it will work tomorrow.
 
 ## Co-evolution
 

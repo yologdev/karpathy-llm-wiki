@@ -101,7 +101,9 @@ export default async function ContributorDetailPage({
         <StatCard label="Pages edited" value={profile.pagesEdited} />
         <StatCard label="Comments" value={profile.commentCount} />
         <StatCard label="Threads created" value={profile.threadsCreated} />
-        <StatCard label="Reverts" value={profile.revertCount} />
+        {profile.revertCount > 0 && (
+          <StatCard label="Reverts" value={profile.revertCount} />
+        )}
         <StatCard label="First seen" value={formatDate(profile.firstSeen)} />
         <StatCard label="Last seen" value={formatDate(profile.lastSeen)} />
       </div>
