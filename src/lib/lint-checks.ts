@@ -17,6 +17,7 @@ export const ALL_CHECK_TYPES: LintIssue["type"][] = [
   "missing-concept-page",
   "stale-page",
   "low-confidence",
+  "unmigrated-page",
 ];
 
 // Files that are part of the wiki infrastructure, not content pages.
@@ -603,6 +604,45 @@ export async function checkLowConfidence(): Promise<LintIssue[]> {
         message: `Confidence is ${confidence} (below ${LOW_CONFIDENCE_THRESHOLD}) — page needs more supporting sources`,
         severity: "info",
         suggestion: `Ingest additional sources about "${entry.title}" to improve confidence`,
+      });
+    }
+  }
+  return issues;
+}
+
+// ---------------------------------------------------------------------------
+// Unmigrated-page check — flags pages missing ALL core yopedia metadata.
+// ---------------------------------------------------------------------------
+
+/**
+ * Check for unmigrated pages — pages ingested before Phase 1 that lack ALL
+ * three core yopedia fields (confidence, authors, expiry). A page that has
+ * at least one of these fields is considered partially migrated and not flagged.
+ */
+export async function checkUnmigratedPages(): Promise<LintIssue[]> {
+  const pages = await listWikiPages();
+  const issues: LintIssue[] = [];
+
+  for (const entry of pages) {
+    // Skip infrastructure files
+    if (INFRASTRUCTURE_FILES.has(`${entry.slug}.md`)) continue;
+
+    const page = await readWikiPageWithFrontmatter(entry.slug);
+    if (!page) continue;
+
+    const fm = page.frontmatter;
+    const hasConfidence = "confidence" in fm;
+    const hasAuthors = "authors" in fm;
+    const hasExpiry = "expiry" in fm;
+
+    // Only flag if ALL THREE are missing — partial migration is fine
+    if (!hasConfidence && !hasAuthors && !hasExpiry) {
+      issues.push({
+        type: "unmigrated-page",
+        slug: entry.slug,
+        message: `Page lacks yopedia metadata — run auto-fix to migrate`,
+        severity: "info",
+        suggestion: `Auto-fix will add default confidence (0.5), expiry (90 days), and authors ([system])`,
       });
     }
   }

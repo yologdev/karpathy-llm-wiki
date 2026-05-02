@@ -58,6 +58,7 @@ import {
   fixContradiction,
   fixMissingConceptPage,
   fixStalePage,
+  fixUnmigratedPage,
   fixLintIssue,
   FixValidationError,
   FixNotFoundError,
@@ -633,6 +634,109 @@ describe("fixStalePage", () => {
 });
 
 // ---------------------------------------------------------------------------
+// fixUnmigratedPage
+// ---------------------------------------------------------------------------
+
+describe("fixUnmigratedPage", () => {
+  it("throws FixValidationError when slug is empty", async () => {
+    await expect(fixUnmigratedPage("")).rejects.toThrow(FixValidationError);
+    await expect(fixUnmigratedPage("")).rejects.toThrow(
+      "Missing required field: slug",
+    );
+  });
+
+  it("throws FixNotFoundError when page does not exist", async () => {
+    mockedReadWikiPageWithFrontmatter.mockResolvedValue(null);
+
+    await expect(fixUnmigratedPage("no-such")).rejects.toThrow(
+      FixNotFoundError,
+    );
+    await expect(fixUnmigratedPage("no-such")).rejects.toThrow(
+      "Page not found: no-such",
+    );
+  });
+
+  it("adds all missing yopedia defaults to a bare page", async () => {
+    mockedReadWikiPageWithFrontmatter.mockResolvedValue({
+      slug: "bare-page",
+      title: "Bare Page",
+      content: "---\ncreated: 2025-01-01\n---\n\n# Bare Page\n\nContent.",
+      path: "/wiki/bare-page.md",
+      frontmatter: { created: "2025-01-01" },
+      body: "# Bare Page\n\nContent.",
+    });
+
+    const result = await fixUnmigratedPage("bare-page");
+
+    expect(result.success).toBe(true);
+    expect(result.slug).toBe("bare-page");
+    expect(result.message).toContain("confidence");
+    expect(result.message).toContain("expiry");
+    expect(result.message).toContain("authors");
+    expect(result.message).toContain("contributors");
+    expect(result.message).toContain("disputed");
+    expect(mockedWriteWikiPage).toHaveBeenCalledOnce();
+
+    // Verify the frontmatter passed to serializeFrontmatter
+    const writeCall = mockedWriteWikiPage.mock.calls[0];
+    expect(writeCall[0]).toBe("bare-page");
+    // The serialized output will contain the defaults
+    const written = writeCall[1];
+    expect(written).toContain("confidence");
+    expect(written).toContain("0.5");
+    expect(written).toContain("authors");
+    expect(written).toContain("system");
+    expect(written).toContain("disputed");
+    expect(written).toContain("false");
+  });
+
+  it("does NOT overwrite existing fields", async () => {
+    mockedReadWikiPageWithFrontmatter.mockResolvedValue({
+      slug: "partial",
+      title: "Partial",
+      content: "---\nconfidence: 0.9\nauthors: [yoyo]\n---\n\n# Partial\n\nContent.",
+      path: "/wiki/partial.md",
+      frontmatter: { confidence: 0.9, authors: ["yoyo"] },
+      body: "# Partial\n\nContent.",
+    });
+
+    const result = await fixUnmigratedPage("partial");
+
+    expect(result.success).toBe(true);
+    // Should only add the missing fields
+    expect(result.message).toContain("expiry");
+    expect(result.message).toContain("contributors");
+    expect(result.message).toContain("disputed");
+    // Should NOT mention fields that already existed
+    expect(result.message).not.toContain("confidence");
+    expect(result.message).not.toContain("authors");
+    expect(mockedWriteWikiPage).toHaveBeenCalledOnce();
+  });
+
+  it("reports no changes when all fields already present", async () => {
+    mockedReadWikiPageWithFrontmatter.mockResolvedValue({
+      slug: "complete",
+      title: "Complete",
+      content: "---\nconfidence: 0.8\nauthors: [human]\nexpiry: 2026-12-01\ncontributors: []\ndisputed: false\n---\n\n# Complete\n\nContent.",
+      path: "/wiki/complete.md",
+      frontmatter: {
+        confidence: 0.8,
+        authors: ["human"],
+        expiry: "2026-12-01",
+        contributors: [],
+        disputed: false,
+      },
+      body: "# Complete\n\nContent.",
+    });
+
+    const result = await fixUnmigratedPage("complete");
+
+    expect(result.success).toBe(true);
+    expect(result.message).toContain("no changes needed");
+  });
+});
+
+// ---------------------------------------------------------------------------
 // fixLintIssue — dispatcher
 // ---------------------------------------------------------------------------
 
@@ -782,5 +886,23 @@ describe("fixLintIssue", () => {
     await expect(fixLintIssue("low-confidence", "weak-page")).rejects.toThrow(
       "Low-confidence pages cannot be auto-fixed",
     );
+  });
+
+  it("dispatches unmigrated-page to fixUnmigratedPage", async () => {
+    mockedReadWikiPageWithFrontmatter.mockResolvedValue({
+      slug: "old-page",
+      title: "Old Page",
+      content: "---\ncreated: 2025-01-01\n---\n\n# Old Page\n\nLegacy content.",
+      path: "/wiki/old-page.md",
+      frontmatter: { created: "2025-01-01" },
+      body: "# Old Page\n\nLegacy content.",
+    });
+
+    const result = await fixLintIssue("unmigrated-page", "old-page");
+
+    expect(result.success).toBe(true);
+    expect(result.slug).toBe("old-page");
+    expect(result.message).toContain("yopedia defaults");
+    expect(mockedWriteWikiPage).toHaveBeenCalledOnce();
   });
 });

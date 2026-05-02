@@ -451,6 +451,74 @@ export async function fixStalePage(slug: string): Promise<FixResult> {
 }
 
 // ---------------------------------------------------------------------------
+// Unmigrated-page fix — adds sensible yopedia defaults to pre-Phase-1 pages.
+// ---------------------------------------------------------------------------
+
+/**
+ * Fix an unmigrated-page lint issue by adding sensible yopedia defaults.
+ *
+ * Adds only missing fields — never overwrites existing ones:
+ * - `confidence: 0.5` (moderate default)
+ * - `expiry: <90 days from now>` (reasonable review interval)
+ * - `authors: ["system"]` (migrated by automation)
+ * - `contributors: []` (empty)
+ * - `disputed: false`
+ *
+ * Does NOT add `supersedes` or `aliases` — those are page-specific with no
+ * sensible default.
+ */
+export async function fixUnmigratedPage(slug: string): Promise<FixResult> {
+  if (!slug) {
+    throw new FixValidationError("Missing required field: slug");
+  }
+
+  const page = await readWikiPageWithFrontmatter(slug);
+  if (!page) {
+    throw new FixNotFoundError(`Page not found: ${slug}`);
+  }
+
+  const fm = page.frontmatter;
+  const added: string[] = [];
+
+  // 90 days from now as ISO date
+  const now = new Date();
+  const defaultExpiry = new Date(now.getTime() + 90 * 24 * 60 * 60 * 1000)
+    .toISOString()
+    .split("T")[0];
+
+  if (!("confidence" in fm)) {
+    fm.confidence = 0.5;
+    added.push("confidence");
+  }
+  if (!("expiry" in fm)) {
+    fm.expiry = defaultExpiry;
+    added.push("expiry");
+  }
+  if (!("authors" in fm)) {
+    fm.authors = ["system"];
+    added.push("authors");
+  }
+  if (!("contributors" in fm)) {
+    fm.contributors = [];
+    added.push("contributors");
+  }
+  if (!("disputed" in fm)) {
+    fm.disputed = false;
+    added.push("disputed");
+  }
+
+  await writeWikiPage(slug, serializeFrontmatter(fm, page.body));
+
+  return {
+    success: true,
+    slug,
+    message: added.length > 0
+      ? `Added yopedia defaults: ${added.join(", ")}`
+      : `Page already has all yopedia fields — no changes needed`,
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Dispatcher
 // ---------------------------------------------------------------------------
 
@@ -483,6 +551,8 @@ export async function fixLintIssue(
       return fixBrokenLink(slug, targetSlug ?? "");
     case "stale-page":
       return fixStalePage(slug);
+    case "unmigrated-page":
+      return fixUnmigratedPage(slug);
     case "low-confidence":
       throw new FixValidationError(
         "Low-confidence pages cannot be auto-fixed. Ingest additional sources about this topic to improve confidence.",

@@ -13,6 +13,7 @@ import {
   checkMissingCrossRefs,
   checkStalePages,
   checkLowConfidence,
+  checkUnmigratedPages,
   LOW_CONFIDENCE_THRESHOLD,
   buildSummary,
 } from "../lint-checks";
@@ -597,5 +598,77 @@ describe("checkLowConfidence", () => {
     const issues = await checkLowConfidence();
     expect(issues).toHaveLength(1);
     expect(issues[0].slug).toBe("zero-conf");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// checkUnmigratedPages
+// ---------------------------------------------------------------------------
+describe("checkUnmigratedPages", () => {
+  it("flags a page with no yopedia fields", async () => {
+    await createPageWithIndex("old-page", "Old Page", {
+      created: "2025-01-01",
+    });
+
+    const issues = await checkUnmigratedPages();
+    expect(issues).toHaveLength(1);
+    expect(issues[0].type).toBe("unmigrated-page");
+    expect(issues[0].slug).toBe("old-page");
+    expect(issues[0].severity).toBe("info");
+    expect(issues[0].message).toContain("yopedia metadata");
+    expect(issues[0].suggestion).toBeDefined();
+  });
+
+  it("does NOT flag a page with all three core fields", async () => {
+    await createPageWithIndex("migrated-page", "Migrated Page", {
+      created: "2025-01-01",
+      confidence: 0.7,
+      authors: ["yoyo"],
+      expiry: "2026-06-01",
+    });
+
+    const issues = await checkUnmigratedPages();
+    expect(issues).toHaveLength(0);
+  });
+
+  it("does NOT flag a page with only confidence (partial is fine)", async () => {
+    await createPageWithIndex("partial-page", "Partial Page", {
+      created: "2025-01-01",
+      confidence: 0.5,
+    });
+
+    const issues = await checkUnmigratedPages();
+    expect(issues).toHaveLength(0);
+  });
+
+  it("does NOT flag a page with only authors", async () => {
+    await createPageWithIndex("author-only", "Author Only", {
+      created: "2025-01-01",
+      authors: ["system"],
+    });
+
+    const issues = await checkUnmigratedPages();
+    expect(issues).toHaveLength(0);
+  });
+
+  it("does NOT flag a page with only expiry", async () => {
+    await createPageWithIndex("expiry-only", "Expiry Only", {
+      created: "2025-01-01",
+      expiry: "2026-12-01",
+    });
+
+    const issues = await checkUnmigratedPages();
+    expect(issues).toHaveLength(0);
+  });
+
+  it("never flags infrastructure pages (index.md)", async () => {
+    // Write an index.md file with no yopedia fields — it should be skipped
+    const wikiDir = process.env.WIKI_DIR!;
+    await fs.writeFile(path.join(wikiDir, "index.md"), "# Index\n\n- stuff");
+
+    // The index isn't in the listWikiPages results by convention,
+    // but even if somehow it appears the INFRASTRUCTURE_FILES check guards it
+    const issues = await checkUnmigratedPages();
+    expect(issues).toHaveLength(0);
   });
 });

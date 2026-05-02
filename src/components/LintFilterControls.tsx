@@ -12,6 +12,7 @@ export const ALL_CHECK_TYPES: LintIssue["type"][] = [
   "missing-concept-page",
   "stale-page",
   "low-confidence",
+  "unmigrated-page",
 ];
 
 const checkTypeLabels: Record<LintIssue["type"], string> = {
@@ -24,6 +25,7 @@ const checkTypeLabels: Record<LintIssue["type"], string> = {
   "missing-concept-page": "Missing concepts",
   "stale-page": "Stale pages",
   "low-confidence": "Low confidence",
+  "unmigrated-page": "Unmigrated pages",
 };
 
 const severityFilterLabels: Record<SeverityFilter, string> = {
