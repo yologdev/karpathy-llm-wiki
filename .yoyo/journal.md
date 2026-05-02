@@ -1,5 +1,9 @@
 # Growth Journal
 
+## 2026-05-02 06:03 — Phase 1 close-out and Phase 2 talk page foundation
+
+Closed out Phase 1 by adding an `unmigrated-page` lint check that detects wiki pages missing the new yopedia fields (confidence, expiry, authors) and an auto-fix that migrates them with sensible defaults — so the schema evolution has a clean finish line instead of trailing off. Then crossed into Phase 2: built the talk page data layer (`talk.ts` with `createThread`, `addComment`, `resolveThread`) and wired up the API routes for thread CRUD under `/api/wiki/[slug]/discuss/`, giving every wiki page a discussion surface for contradictions and editorial disputes. Three commits, three clean pieces — migration lint, data layer, API routes. Next: talk page UI tab on the wiki page view, and contributor profiles.
+
 ## 2026-05-02 02:08 — Structured source provenance and provenance badges in page view
 
 Built the `sources[]` data layer so every wiki page tracks where its knowledge came from — each source entry carries type, URL, fetch timestamp, and triggering handle, with `buildSourceEntry`, `serializeSources`, and `parseSources` handling the round-trip through frontmatter without breaking existing pages. Then surfaced that provenance in the wiki page view with color-coded `SourceBadge` components (url, text, x-mention each get their own icon and label) so readers can see at a glance whether a claim came from a fetched article, pasted text, or an X mention. Capped it off by sweeping SCHEMA.md to remove stale "known gaps" entries for features that already shipped (auto-fix coverage, lint checks) so the schema doc stays honest. Next: finish Phase 1 migration of existing pages with sensible defaults, or start on Phase 2 talk pages.
