@@ -126,6 +126,33 @@ export interface TalkThread {
 }
 
 // ---------------------------------------------------------------------------
+// Contributor profiles — Phase 2 trust and attribution
+// ---------------------------------------------------------------------------
+
+/** Aggregated profile for a single contributor (human or agent). */
+export interface ContributorProfile {
+  /** Author handle (matches revision `author` and talk comment `author`) */
+  handle: string;
+  /** Total number of revisions authored */
+  editCount: number;
+  /** Number of distinct wiki pages edited */
+  pagesEdited: number;
+  /** Number of talk page comments authored */
+  commentCount: number;
+  /** Number of talk threads created */
+  threadsCreated: number;
+  /** ISO date of the author's first known activity */
+  firstSeen: string;
+  /** ISO date of the author's most recent activity */
+  lastSeen: string;
+  /** Trust score 0–1. For now: a simple heuristic based on activity volume.
+   *  Formula: min(1, (editCount + commentCount) / 50)
+   *  This is a placeholder — the roadmap says trust should eventually
+   *  incorporate revert rate, contradiction rates, and external citation. */
+  trustScore: number;
+}
+
+// ---------------------------------------------------------------------------
 
 /** Metadata about the currently configured LLM provider. */
 export interface ProviderInfo {
