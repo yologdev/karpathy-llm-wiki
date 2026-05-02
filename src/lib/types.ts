@@ -91,6 +91,42 @@ export interface SourceEntry {
   triggered_by: string;
 }
 
+// ---------------------------------------------------------------------------
+// Talk pages — Phase 2 threaded discussion system
+// ---------------------------------------------------------------------------
+
+/** A single comment in a talk page thread. */
+export interface TalkComment {
+  /** Unique ID (timestamp-based, e.g. "1714600000000") */
+  id: string;
+  /** Who wrote this comment (user handle or agent ID) */
+  author: string;
+  /** ISO date string */
+  created: string;
+  /** Markdown content */
+  body: string;
+  /** ID of parent comment for threading, or null for top-level */
+  parentId: string | null;
+}
+
+/** A talk page thread linked to a wiki page. */
+export interface TalkThread {
+  /** Slug of the wiki page this discussion is about */
+  pageSlug: string;
+  /** Thread title / topic */
+  title: string;
+  /** "open" | "resolved" | "wontfix" */
+  status: "open" | "resolved" | "wontfix";
+  /** ISO date of creation */
+  created: string;
+  /** ISO date of last activity */
+  updated: string;
+  /** Ordered list of comments */
+  comments: TalkComment[];
+}
+
+// ---------------------------------------------------------------------------
+
 /** Metadata about the currently configured LLM provider. */
 export interface ProviderInfo {
   /** true if any provider key / config is set */

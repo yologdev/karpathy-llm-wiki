@@ -3,6 +3,7 @@ import path from "path";
 import type { IndexEntry } from "./types";
 import { upsertEmbedding, removeEmbedding } from "./embeddings";
 import { deleteRevisions } from "./revisions";
+import { deleteDiscussions } from "./talk";
 import {
   validateSlug,
   writeWikiPage,
@@ -213,6 +214,16 @@ async function runPageLifecycleOp(
       logger.warn(
         "wiki",
         `deleteRevisions failed for "${slug}":`,
+        getErrorMessage(err, String(err)),
+      );
+    }
+    // 2d. Clean up talk page discussions when deleting a page.
+    try {
+      await deleteDiscussions(slug);
+    } catch (err) {
+      logger.warn(
+        "wiki",
+        `deleteDiscussions failed for "${slug}":`,
         getErrorMessage(err, String(err)),
       );
     }
