@@ -46,6 +46,9 @@ jobs:
         with:
           version: 9
 
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile 2>/dev/null || pnpm install || true
+
       - name: Install yoyo
         run: |
           REPO="yologdev/yoyo-evolve"

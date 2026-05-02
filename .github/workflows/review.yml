@@ -2,7 +2,7 @@ name: Review
 
 on:
   pull_request:
-    types: [opened, synchronize]
+    types: [opened]
 
 concurrency:
   group: review-${{ github.event.pull_request.number }}
@@ -18,8 +18,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
-    # Only review yoyo's own PRs
-    if: startsWith(github.event.pull_request.head.ref, 'yoyo/')
+    # Only review yoyo's own PRs from this repo (not forks)
+    if: >
+      startsWith(github.event.pull_request.head.ref, 'yoyo/') &&
+      github.event.pull_request.head.repo.full_name == github.repository
 
     steps:
       - name: Generate bot token

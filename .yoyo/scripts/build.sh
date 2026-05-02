@@ -126,9 +126,11 @@ echo "→ Verifying build..."
 for ATTEMPT in $(seq 1 $MAX_FIX_ATTEMPTS); do
     if [ -f package.json ]; then
         BUILD_OK=true
-        if ! pnpm build 2>&1 | tail -5; then BUILD_OK=false; fi
-        if ! pnpm lint 2>&1 | tail -5; then BUILD_OK=false; fi
-        if ! pnpm test 2>&1 | tail -5; then BUILD_OK=false; fi
+        # Note: pipefail is set via setup-agent.sh, so pipeline exit code
+        # reflects pnpm's exit, not tail's. Be explicit with PIPESTATUS as defense.
+        pnpm build 2>&1 | tail -5; [ "${PIPESTATUS[0]}" -eq 0 ] || BUILD_OK=false
+        pnpm lint 2>&1 | tail -5; [ "${PIPESTATUS[0]}" -eq 0 ] || BUILD_OK=false
+        pnpm test 2>&1 | tail -5; [ "${PIPESTATUS[0]}" -eq 0 ] || BUILD_OK=false
 
         if $BUILD_OK; then
             echo "  Build: PASS (attempt $ATTEMPT)"

@@ -119,7 +119,7 @@ jobs:
 
           3. **Produce outputs:**
              a. File GitHub issues for concrete changes we should make:
-                \`gh issue create --repo $REPO --title "Research: ..." --body "..." --label "agent-self"\`
+                \`gh issue create --repo $REPO --title "Research: ..." --body "..." --label "agent-research" --label "triage"\`
                 Max 3 issues. Each should be specific and actionable.
              b. Append a research entry to .yoyo/journal.md:
                 \`## $DATE (research scan)\`

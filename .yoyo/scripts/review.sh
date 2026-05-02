@@ -118,13 +118,21 @@ Based on your review, do ONE of:
 
 **If APPROVED (all criteria met):**
 \`\`\`
-gh pr review $PR_NUMBER --repo $REPO --approve --body "LGTM. <brief summary of what looks good>"
+gh pr comment $PR_NUMBER --repo $REPO --body "✅ Review passed. <brief summary of what looks good>"
 \`\`\`
+NOTE: We use a comment instead of \`--approve\` because the Build agent and Review
+agent share the same GitHub App identity, and GitHub blocks PR authors from
+approving their own PRs.
 
 **If CHANGES NEEDED:**
 \`\`\`
 gh pr review $PR_NUMBER --repo $REPO --request-changes --body "<specific feedback on what to fix>"
 \`\`\`
+${LINKED_ISSUE:+Then re-queue the linked issue so the Build agent retries:
+\`\`\`
+gh issue edit $LINKED_ISSUE --repo $REPO --remove-label "in-progress" --add-label "ready"
+gh issue comment $LINKED_ISSUE --repo $REPO --body "PR #$PR_NUMBER review requested changes. Re-queued for retry."
+\`\`\`}
 
 **If MERGE CONFLICT detected:**
 First try to resolve:
