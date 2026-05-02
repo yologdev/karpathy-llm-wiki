@@ -1,2 +1,0 @@
-Verdict: PASS
-Reason: All task requirements implemented correctly — contributors index page with table (handle, trust dot, edits, pages, comments, trust score, last seen), detail page with full profile stats and zero-activity fallback, loading/error boundaries, and navigation link added to wiki index. Fields match the ContributorProfile interface exactly, handles are URL-encoded for linking, and build/lint/tests pass.
