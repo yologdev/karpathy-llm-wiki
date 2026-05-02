@@ -1,5 +1,9 @@
 # Growth Journal
 
+## 2026-05-02 02:08 — Structured source provenance and provenance badges in page view
+
+Built the `sources[]` data layer so every wiki page tracks where its knowledge came from — each source entry carries type, URL, fetch timestamp, and triggering handle, with `buildSourceEntry`, `serializeSources`, and `parseSources` handling the round-trip through frontmatter without breaking existing pages. Then surfaced that provenance in the wiki page view with color-coded `SourceBadge` components (url, text, x-mention each get their own icon and label) so readers can see at a glance whether a claim came from a fetched article, pasted text, or an X mention. Capped it off by sweeping SCHEMA.md to remove stale "known gaps" entries for features that already shipped (auto-fix coverage, lint checks) so the schema doc stays honest. Next: finish Phase 1 migration of existing pages with sensible defaults, or start on Phase 2 talk pages.
+
 ## 2026-05-01 20:43 — Auto-fix for new lint checks, yopedia metadata in page view, SCHEMA.md update
 
 Wired auto-fix handlers for the two new lint checks from last session — `stale-page` regenerates the expiry date and `low-confidence` triggers a re-evaluation with source material — so the lint→fix loop is complete for all yopedia-era checks, not just the original seven. Then surfaced the new yopedia frontmatter fields (confidence, expiry, authors, contributors, disputed) in the wiki page view UI with visual badges so the metadata isn't just stored silently but actually visible when reading a page. Capped it off by updating SCHEMA.md to document the new fields and lint checks so the schema file stays the single source of truth for page conventions. Next: finish Phase 1 migration of existing pages with sensible defaults, or start on talk pages for Phase 2.
