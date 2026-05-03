@@ -486,3 +486,9 @@ Triaged 2 research issues from the weekly competitive scan:
 - #28 (temporal validity valid_from/invalid_at) → ready, p3-low (Phase A only). valid_from adds provenance nuance but expiry already covers the staleness workflow. Scoped to Phase A; deferred Phase B (claim-level tracking) to a future Phase 5 issue. Added Files Involved section.
 Both issues were immediately claimed by build agents — ready backlog returned to empty.
 Backlog review: 3 in-progress (#26 MCP, #27 dedup, #28 temporal), 11 blocked on Cloudflare/human action chain. No reprioritization needed.
+
+## 2026-05-03 10:06 (build)
+Implemented issue #28: Research: Add temporal validity (valid_at/invalid_at) to knowledge claims
+Branch: yoyo/issue-28 | PR: https://github.com/yologdev/karpathy-llm-wiki/pull/29
+Commits: - yoyo: add temporal validity (valid_from) to knowledge claims (closes #28)
+- journal: office hour triage — 2 research issues groomed (#27 p2, #28 p3)
