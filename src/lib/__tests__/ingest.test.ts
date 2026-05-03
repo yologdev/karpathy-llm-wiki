@@ -6,6 +6,8 @@ import {
   extractSummary,
   ingest,
   ingestUrl,
+  ingestXMention,
+  extractUrls,
   reingest,
   buildIngestSystemPrompt,
   chunkText,
@@ -1997,5 +1999,195 @@ describe("reingest", () => {
     await expect(reingest("nonexistent-page")).rejects.toThrow(
       /not found/,
     );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// extractUrls — helper for X mention ingestion
+// ---------------------------------------------------------------------------
+
+describe("extractUrls", () => {
+  it("extracts HTTP and HTTPS URLs from text", () => {
+    const text = "Check out https://example.com/article and http://other.com/page for details.";
+    const urls = extractUrls(text);
+    expect(urls).toEqual(["https://example.com/article", "http://other.com/page"]);
+  });
+
+  it("strips trailing punctuation from URLs", () => {
+    expect(extractUrls("See https://example.com/page.")).toEqual(["https://example.com/page"]);
+    expect(extractUrls("Visit https://example.com/page,")).toEqual(["https://example.com/page"]);
+    expect(extractUrls("(https://example.com/page)")).toEqual(["https://example.com/page"]);
+  });
+
+  it("excludes the specified URL", () => {
+    const text = "https://x.com/user/status/123 mentions https://example.com/article";
+    const urls = extractUrls(text, "https://x.com/user/status/123");
+    expect(urls).toEqual(["https://example.com/article"]);
+  });
+
+  it("returns empty array when no URLs found", () => {
+    expect(extractUrls("just some plain text")).toEqual([]);
+  });
+
+  it("returns empty array for empty string", () => {
+    expect(extractUrls("")).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// ingestXMention — X post ingestion
+// ---------------------------------------------------------------------------
+
+describe("ingestXMention", () => {
+  it("ingests X post with linked URL — uses linked content as primary source", async () => {
+    const originalFetch = global.fetch;
+
+    // The X post page contains text with a linked URL
+    const xPostHtml = `<html><head><title>Post by @researcher</title></head>
+      <body><p>Great article on neural networks! https://example.com/neural-nets</p></body></html>`;
+
+    // The linked article page
+    const linkedHtml = `<html><head><title>Neural Networks Explained</title></head>
+      <body><p>Neural networks are computational systems inspired by biological brains. They learn from data.</p></body></html>`;
+
+    let callCount = 0;
+    global.fetch = vi.fn().mockImplementation((url: string) => {
+      callCount++;
+      const isXPost = typeof url === "string" && url.includes("x.com");
+      const html = isXPost ? xPostHtml : linkedHtml;
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        headers: { get: () => null },
+        body: null,
+        text: () => Promise.resolve(html),
+      });
+    });
+
+    try {
+      const result = await ingestXMention(
+        "https://x.com/researcher/status/12345",
+        "@researcher",
+      );
+      expect(result.indexUpdated).toBe(true);
+      expect(result.primarySlug).toBe("neural-networks-explained");
+
+      // Verify the page was created
+      const entries = await listWikiPages();
+      const entry = entries.find((e) => e.slug === "neural-networks-explained");
+      expect(entry).toBeDefined();
+
+      // Verify x-mention provenance in sources[]
+      const { readWikiPageWithFrontmatter } = await import("../wiki");
+      const page = await readWikiPageWithFrontmatter("neural-networks-explained");
+      expect(page).not.toBeNull();
+
+      const sources = parseSources(page!.frontmatter.sources as string);
+      const xMentionSource = sources.find((s) => s.type === "x-mention");
+      expect(xMentionSource).toBeDefined();
+      expect(xMentionSource!.url).toBe("https://x.com/researcher/status/12345");
+      expect(xMentionSource!.triggered_by).toBe("@researcher");
+
+      // Verify fetch was called at least twice (X post + linked URL)
+      expect(callCount).toBeGreaterThanOrEqual(2);
+    } finally {
+      global.fetch = originalFetch;
+    }
+  });
+
+  it("ingests X post without links — uses post text directly", async () => {
+    const originalFetch = global.fetch;
+
+    // The X post page has no linked URLs
+    const xPostHtml = `<html><head><title>Thought by @thinker</title></head>
+      <body><p>The future of AI lies in making models that can reason about their own limitations. This is a critical insight for safety research.</p></body></html>`;
+
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      headers: { get: () => null },
+      body: null,
+      text: () => Promise.resolve(xPostHtml),
+    });
+
+    try {
+      const result = await ingestXMention(
+        "https://x.com/thinker/status/67890",
+        "@thinker",
+      );
+      expect(result.indexUpdated).toBe(true);
+
+      // Verify x-mention provenance
+      const { readWikiPageWithFrontmatter } = await import("../wiki");
+      const page = await readWikiPageWithFrontmatter(result.primarySlug);
+      expect(page).not.toBeNull();
+
+      const sources = parseSources(page!.frontmatter.sources as string);
+      const xMentionSource = sources.find((s) => s.type === "x-mention");
+      expect(xMentionSource).toBeDefined();
+      expect(xMentionSource!.url).toBe("https://x.com/thinker/status/67890");
+      expect(xMentionSource!.triggered_by).toBe("@thinker");
+    } finally {
+      global.fetch = originalFetch;
+    }
+  });
+
+  it("throws when X post URL is unreachable", async () => {
+    const originalFetch = global.fetch;
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 404,
+      statusText: "Not Found",
+      headers: { get: () => null },
+      body: null,
+      text: () => Promise.resolve(""),
+    });
+
+    try {
+      await expect(
+        ingestXMention("https://x.com/user/status/deleted", "@user"),
+      ).rejects.toThrow(/Failed to fetch URL/);
+    } finally {
+      global.fetch = originalFetch;
+    }
+  });
+
+  it("handles linked URL fetch failure gracefully — falls back to post text", async () => {
+    const originalFetch = global.fetch;
+
+    // X post with a linked URL that will fail to fetch
+    const xPostHtml = `<html><head><title>Post by @sharer</title></head>
+      <body><p>Check this out https://broken-link.example.com/gone — amazing stuff about distributed systems!</p></body></html>`;
+
+    global.fetch = vi.fn().mockImplementation((url: string) => {
+      const isXPost = typeof url === "string" && url.includes("x.com");
+      if (isXPost) {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          headers: { get: () => null },
+          body: null,
+          text: () => Promise.resolve(xPostHtml),
+        });
+      }
+      // Linked URL fails
+      return Promise.resolve({
+        ok: false,
+        status: 500,
+        statusText: "Internal Server Error",
+        headers: { get: () => null },
+        body: null,
+        text: () => Promise.resolve(""),
+      });
+    });
+
+    try {
+      // The linked URL fetch will fail, which should propagate as an error
+      await expect(
+        ingestXMention("https://x.com/sharer/status/99999", "@sharer"),
+      ).rejects.toThrow(/Failed to fetch URL/);
+    } finally {
+      global.fetch = originalFetch;
+    }
   });
 });

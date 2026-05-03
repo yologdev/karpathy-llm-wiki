@@ -5,6 +5,7 @@ import {
   serializeFrontmatter,
   listWikiPages,
   findRelatedPages,
+  writeWikiPage,
   type Frontmatter,
 } from "./wiki";
 import { callLLM, hasLLMKey } from "./llm";
@@ -22,6 +23,116 @@ import { slugify } from "./slugify";
 import { loadPageConventions } from "./schema";
 import { getRawDir } from "./config";
 
+
+// ---------------------------------------------------------------------------
+// URL extraction from plain text (for X post ingestion)
+// ---------------------------------------------------------------------------
+
+/**
+ * Extract HTTP(S) URLs from plain text.
+ *
+ * Matches `https://…` and `http://…` tokens delimited by whitespace or
+ * end-of-string. Strips trailing punctuation (commas, periods, parens) that
+ * are typically not part of the URL but occur in natural prose.
+ *
+ * Excludes the X post URL itself (the `excludeUrl` parameter) so we only
+ * return *linked* URLs, not the post's own permalink.
+ */
+export function extractUrls(text: string, excludeUrl?: string): string[] {
+  const urlRe = /https?:\/\/[^\s]+/gi;
+  const matches = text.match(urlRe) ?? [];
+  return matches
+    .map((u) => u.replace(/[,.)]+$/, "")) // strip trailing punctuation
+    .filter((u) => u !== excludeUrl);
+}
+
+// ---------------------------------------------------------------------------
+// X mention ingestion
+// ---------------------------------------------------------------------------
+
+/**
+ * Ingest an X (Twitter) post into the wiki.
+ *
+ * Strategy:
+ * 1. Fetch the X post page to get the post text.
+ * 2. Extract any linked URLs from the post body.
+ * 3. If linked URLs exist, fetch the *first* linked URL as the primary
+ *    source content, with the post text as supplementary context.
+ * 4. If no linked URLs, use the post text itself as the source content.
+ * 5. Run the result through the standard `ingest()` pipeline with an
+ *    `x-mention` provenance entry.
+ *
+ * @param postUrl      - The X post URL (e.g. `https://x.com/user/status/123`)
+ * @param triggeredBy  - Handle of the user who triggered this ingest
+ *                       (e.g. `@someone`)
+ */
+export async function ingestXMention(
+  postUrl: string,
+  triggeredBy: string,
+): Promise<IngestResult> {
+  // 1. Fetch the X post page
+  const { title: postTitle, content: postText } = await fetchUrlContent(postUrl);
+
+  // 2. Extract linked URLs from the post text (exclude the post URL itself)
+  const linkedUrls = extractUrls(postText, postUrl);
+
+  let title: string;
+  let content: string;
+  let sourceUrl: string;
+
+  if (linkedUrls.length > 0) {
+    // 3a. Fetch the first linked URL as the primary source
+    const linkedUrl = linkedUrls[0];
+    const linked = await fetchUrlContent(linkedUrl);
+    title = linked.title;
+    // Prepend the X post text as supplementary context for the LLM
+    content = `[X post by ${triggeredBy}]: ${postText}\n\n---\n\n${linked.content}`;
+    sourceUrl = linkedUrl;
+  } else {
+    // 3b. No linked URLs — use the post text directly
+    title = postTitle;
+    content = postText;
+    sourceUrl = postUrl;
+  }
+
+  // 4. Build the x-mention provenance entry
+  const sourceEntry = buildSourceEntry(postUrl, "x-mention", triggeredBy);
+
+  // 5. Run through the standard ingest pipeline.
+  //    We pass sourceUrl so it's stored in frontmatter. The x-mention
+  //    provenance is injected by overriding the sources[] field after
+  //    ingest() builds it (ingest() always creates a "url" or "text"
+  //    source entry, so we need to replace it).
+  const result = await ingest(title, content, { sourceUrl });
+
+  // 6. Patch the sources[] field to use x-mention provenance instead of
+  //    the default "url" type that ingest() created.
+  const page = await readWikiPageWithFrontmatter(result.primarySlug);
+  if (page) {
+    const existingSources = parseSources(
+      typeof page.frontmatter.sources === "string"
+        ? page.frontmatter.sources
+        : Array.isArray(page.frontmatter.sources)
+          ? page.frontmatter.sources
+          : undefined,
+    );
+    // Replace any source entries for this URL with our x-mention entry
+    const filtered = existingSources.filter(
+      (s) => !(s.url === sourceUrl && s.type === "url"),
+    );
+    // Add the x-mention entry if not already present
+    if (!filtered.some((s) => s.url === postUrl && s.type === "x-mention")) {
+      filtered.push(sourceEntry);
+    }
+    page.frontmatter.sources = serializeSources(filtered);
+
+    // Write the updated frontmatter back
+    const updatedContent = serializeFrontmatter(page.frontmatter, page.body);
+    await writeWikiPage(result.primarySlug, updatedContent);
+  }
+
+  return result;
+}
 
 /**
  * Ingest a URL into the wiki.
