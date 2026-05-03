@@ -23,18 +23,25 @@ import {
   fuzzyMatch,
   levenshteinDistance,
   fuzzySearchWikiContent,
+  resolveScope,
 } from "../search";
+import type { SearchScope } from "../search";
+import { registerAgent, ensureAgentsDir } from "../agents";
+import type { AgentProfile } from "../types";
 
 let tmpDir: string;
 let originalWikiDir: string | undefined;
 let originalRawDir: string | undefined;
+let originalDataDir: string | undefined;
 
 beforeEach(async () => {
   tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "search-test-"));
   originalWikiDir = process.env.WIKI_DIR;
   originalRawDir = process.env.RAW_DIR;
+  originalDataDir = process.env.DATA_DIR;
   process.env.WIKI_DIR = path.join(tmpDir, "wiki");
   process.env.RAW_DIR = path.join(tmpDir, "raw");
+  process.env.DATA_DIR = tmpDir;
 });
 
 afterEach(async () => {
@@ -47,6 +54,11 @@ afterEach(async () => {
     delete process.env.RAW_DIR;
   } else {
     process.env.RAW_DIR = originalRawDir;
+  }
+  if (originalDataDir === undefined) {
+    delete process.env.DATA_DIR;
+  } else {
+    process.env.DATA_DIR = originalDataDir;
   }
   await fs.rm(tmpDir, { recursive: true, force: true });
 });
@@ -538,5 +550,182 @@ describe("fuzzySearchWikiContent", () => {
     const slugs = results.map((r) => r.slug);
     expect(slugs).toContain("ai-page");
     expect(slugs).not.toContain("xy-page");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Scoped search — searchWikiContent with scope parameter
+// ---------------------------------------------------------------------------
+
+describe("searchWikiContent with scope", () => {
+  it("returns all matching pages when no scope is provided", async () => {
+    await ensureDirectories();
+    await writeWikiPage("alpha", "# Alpha\n\nMachine learning concepts.");
+    await writeWikiPage("beta", "# Beta\n\nMore machine learning.");
+    await writeWikiPage("gamma", "# Gamma\n\nUnrelated content about cooking.");
+
+    const results = await searchWikiContent("machine learning");
+    expect(results).toHaveLength(2);
+    const slugs = results.map((r) => r.slug);
+    expect(slugs).toContain("alpha");
+    expect(slugs).toContain("beta");
+  });
+
+  it("returns only pages in the scope's slug list", async () => {
+    await ensureDirectories();
+    await writeWikiPage("alpha", "# Alpha\n\nMachine learning concepts.");
+    await writeWikiPage("beta", "# Beta\n\nMore machine learning.");
+    await writeWikiPage("gamma", "# Gamma\n\nMachine learning for cooking.");
+
+    const scope: SearchScope = { agentId: "test", slugs: ["alpha", "gamma"] };
+    const results = await searchWikiContent("machine learning", 10, scope);
+    expect(results).toHaveLength(2);
+    const slugs = results.map((r) => r.slug);
+    expect(slugs).toContain("alpha");
+    expect(slugs).toContain("gamma");
+    expect(slugs).not.toContain("beta");
+  });
+
+  it("returns empty when scope slugs don't match any existing pages", async () => {
+    await ensureDirectories();
+    await writeWikiPage("alpha", "# Alpha\n\nMachine learning concepts.");
+
+    const scope: SearchScope = { agentId: "test", slugs: ["nonexistent"] };
+    const results = await searchWikiContent("machine learning", 10, scope);
+    expect(results).toEqual([]);
+  });
+
+  it("returns empty when scope slugs exist but don't match query", async () => {
+    await ensureDirectories();
+    await writeWikiPage("alpha", "# Alpha\n\nMachine learning concepts.");
+    await writeWikiPage("beta", "# Beta\n\nCooking recipes.");
+
+    const scope: SearchScope = { agentId: "test", slugs: ["beta"] };
+    const results = await searchWikiContent("machine learning", 10, scope);
+    expect(results).toEqual([]);
+  });
+
+  it("scope with empty slugs array returns no results", async () => {
+    await ensureDirectories();
+    await writeWikiPage("alpha", "# Alpha\n\nMachine learning concepts.");
+
+    const scope: SearchScope = { agentId: "test", slugs: [] };
+    const results = await searchWikiContent("machine learning", 10, scope);
+    expect(results).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Scoped search — fuzzySearchWikiContent with scope parameter
+// ---------------------------------------------------------------------------
+
+describe("fuzzySearchWikiContent with scope", () => {
+  it("applies scope filtering to both exact and fuzzy phases", async () => {
+    await ensureDirectories();
+    await writeWikiPage("exact-match", "# Exact\n\nAttention is important.");
+    await writeWikiPage("typo-match", "# Typo\n\nAttnetion mechanisms are useful.");
+    await writeWikiPage("excluded", "# Excluded\n\nAttention should be excluded.");
+
+    // Scope includes exact-match and typo-match, but not excluded
+    const scope: SearchScope = { agentId: "test", slugs: ["exact-match", "typo-match"] };
+    const results = await fuzzySearchWikiContent("attention", 10, scope);
+    const slugs = results.map((r) => r.slug);
+    expect(slugs).toContain("exact-match");
+    expect(slugs).toContain("typo-match");
+    expect(slugs).not.toContain("excluded");
+  });
+
+  it("returns no results when scope excludes all matching pages", async () => {
+    await ensureDirectories();
+    await writeWikiPage("match", "# Match\n\nAttention is important.");
+
+    const scope: SearchScope = { agentId: "test", slugs: ["other-page"] };
+    const results = await fuzzySearchWikiContent("attention", 10, scope);
+    expect(results).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// resolveScope — parse scope strings and resolve to SearchScope
+// ---------------------------------------------------------------------------
+
+describe("resolveScope", () => {
+  function makeProfile(overrides: Partial<AgentProfile> = {}): AgentProfile {
+    return {
+      id: "yoyo",
+      name: "Yoyo",
+      description: "A test agent",
+      identityPages: ["yoyo-identity"],
+      learningPages: ["yoyo-learnings"],
+      socialPages: ["yoyo-social"],
+      registered: new Date().toISOString(),
+      lastUpdated: new Date().toISOString(),
+      ...overrides,
+    };
+  }
+
+  it("resolves 'agent:yoyo' to the agent's page slugs", async () => {
+    await ensureAgentsDir();
+    await registerAgent(makeProfile());
+
+    const result = await resolveScope("agent:yoyo");
+    expect(result).not.toBeNull();
+    expect(result!.agentId).toBe("yoyo");
+    expect(result!.slugs).toEqual(
+      expect.arrayContaining(["yoyo-identity", "yoyo-learnings", "yoyo-social"]),
+    );
+    expect(result!.slugs).toHaveLength(3);
+  });
+
+  it("returns null for agent that does not exist", async () => {
+    await ensureAgentsDir();
+    const result = await resolveScope("agent:nonexistent");
+    expect(result).toBeNull();
+  });
+
+  it("returns null for invalid scope format", async () => {
+    const result = await resolveScope("invalid");
+    expect(result).toBeNull();
+  });
+
+  it("returns null for empty string", async () => {
+    const result = await resolveScope("");
+    expect(result).toBeNull();
+  });
+
+  it("returns null for scope with unknown prefix", async () => {
+    const result = await resolveScope("user:someone");
+    expect(result).toBeNull();
+  });
+
+  it("combines all three page arrays from agent profile", async () => {
+    await ensureAgentsDir();
+    await registerAgent(
+      makeProfile({
+        identityPages: ["id-1", "id-2"],
+        learningPages: ["learn-1"],
+        socialPages: [],
+      }),
+    );
+
+    const result = await resolveScope("agent:yoyo");
+    expect(result).not.toBeNull();
+    expect(result!.slugs).toEqual(["id-1", "id-2", "learn-1"]);
+  });
+
+  it("returns empty slugs array when agent has no pages", async () => {
+    await ensureAgentsDir();
+    await registerAgent(
+      makeProfile({
+        identityPages: [],
+        learningPages: [],
+        socialPages: [],
+      }),
+    );
+
+    const result = await resolveScope("agent:yoyo");
+    expect(result).not.toBeNull();
+    expect(result!.agentId).toBe("yoyo");
+    expect(result!.slugs).toEqual([]);
   });
 });

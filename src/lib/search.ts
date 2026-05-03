@@ -14,6 +14,7 @@ import {
   withPageCache,
 } from "./wiki";
 import { isEnoent } from "./errors";
+import { getAgent } from "./agents";
 
 // ---------------------------------------------------------------------------
 // Cross-referencing helpers
@@ -170,6 +171,16 @@ export interface ContentSearchResult {
   fuzzy?: boolean;
 }
 
+/**
+ * Scope filter for search — restricts results to a set of known slugs.
+ * The caller resolves agent IDs (or other scope sources) to slug lists
+ * before calling search, keeping search.ts decoupled from agents.ts.
+ */
+export interface SearchScope {
+  agentId: string;
+  slugs: string[];
+}
+
 // ---------------------------------------------------------------------------
 // Fuzzy matching — Levenshtein-based typo tolerance
 // ---------------------------------------------------------------------------
@@ -267,10 +278,14 @@ export function fuzzyMatch(
  * Simple case-insensitive term matching across all wiki pages.
  * Designed for the real-time search bar — uses OR semantics (any term matches)
  * and scores by number of matching terms.
+ *
+ * When `scope` is provided, only pages whose slug appears in `scope.slugs`
+ * are searched.
  */
 export async function searchWikiContent(
   query: string,
   maxResults = 10,
+  scope?: SearchScope,
 ): Promise<ContentSearchResult[]> {
   const terms = query
     .toLowerCase()
@@ -290,6 +305,7 @@ export async function searchWikiContent(
   }
 
   const SKIP = new Set(["index.md", "log.md"]);
+  const scopeSlugs = scope ? new Set(scope.slugs) : null;
 
   const scored: Array<{
     slug: string;
@@ -302,6 +318,9 @@ export async function searchWikiContent(
   for (const file of files) {
     if (!file.endsWith(".md") || SKIP.has(file)) continue;
     const slug = file.replace(/\.md$/, "");
+
+    // Scope filtering: skip pages not in the scope's slug set
+    if (scopeSlugs && !scopeSlugs.has(slug)) continue;
 
     let content: string;
     try {
@@ -374,13 +393,17 @@ const FUZZY_FALLBACK_THRESHOLD = 3;
  *
  * Exact matches are returned first (without the fuzzy flag). Fuzzy matches
  * are appended after with `fuzzy: true`. Duplicates are removed.
+ *
+ * When `scope` is provided, only pages whose slug appears in `scope.slugs`
+ * are searched (both exact and fuzzy phases).
  */
 export async function fuzzySearchWikiContent(
   query: string,
   maxResults = 10,
+  scope?: SearchScope,
 ): Promise<ContentSearchResult[]> {
   // Start with exact search
-  const exactResults = await searchWikiContent(query, maxResults);
+  const exactResults = await searchWikiContent(query, maxResults, scope);
 
   // If we have enough exact results, just return them
   if (exactResults.length >= FUZZY_FALLBACK_THRESHOLD) {
@@ -410,12 +433,16 @@ export async function fuzzySearchWikiContent(
 
   const SKIP = new Set(["index.md", "log.md"]);
   const exactSlugs = new Set(exactResults.map((r) => r.slug));
+  const scopeSlugs = scope ? new Set(scope.slugs) : null;
 
   const fuzzyResults: ContentSearchResult[] = [];
 
   for (const file of files) {
     if (!file.endsWith(".md") || SKIP.has(file)) continue;
     const slug = file.replace(/\.md$/, "");
+
+    // Scope filtering: skip pages not in the scope's slug set
+    if (scopeSlugs && !scopeSlugs.has(slug)) continue;
 
     // Skip pages already in exact results
     if (exactSlugs.has(slug)) continue;
@@ -466,4 +493,46 @@ export async function fuzzySearchWikiContent(
   // Combine: exact first, then fuzzy to fill up to maxResults
   const remaining = maxResults - exactResults.length;
   return [...exactResults, ...fuzzyResults.slice(0, remaining)];
+}
+
+// ---------------------------------------------------------------------------
+// Scope resolution — parse a scope string and resolve to a SearchScope
+// ---------------------------------------------------------------------------
+
+/**
+ * Parse a scope parameter string and resolve it to a {@link SearchScope}.
+ *
+ * Currently supports:
+ *   - `"agent:<id>"` — looks up the agent via {@link getAgent} and returns all
+ *     page slugs from `identityPages + learningPages + socialPages`.
+ *
+ * Returns `null` if the scope string format is invalid or the referenced
+ * entity doesn't exist.
+ */
+export async function resolveScope(
+  scopeParam: string,
+): Promise<SearchScope | null> {
+  if (!scopeParam || typeof scopeParam !== "string") return null;
+
+  const match = scopeParam.match(/^agent:(.+)$/);
+  if (!match) return null;
+
+  const agentId = match[1];
+  if (!agentId) return null;
+
+  try {
+    const agent = await getAgent(agentId);
+    if (!agent) return null;
+
+    const slugs = [
+      ...(agent.identityPages ?? []),
+      ...(agent.learningPages ?? []),
+      ...(agent.socialPages ?? []),
+    ];
+
+    return { agentId: agent.id, slugs };
+  } catch {
+    // Invalid agent ID format or other error — treat as unresolvable
+    return null;
+  }
 }
