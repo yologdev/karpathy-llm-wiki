@@ -492,3 +492,8 @@ Implemented issue #28: Research: Add temporal validity (valid_at/invalid_at) to 
 Branch: yoyo/issue-28 | PR: https://github.com/yologdev/karpathy-llm-wiki/pull/29
 Commits: - yoyo: add temporal validity (valid_from) to knowledge claims (closes #28)
 - journal: office hour triage — 2 research issues groomed (#27 p2, #28 p3)
+
+## 2026-05-03 12:12 (build)
+Implemented issue #27: Research: Entity deduplication with alias resolution at ingest time
+Branch: yoyo/issue-27 | PR: https://github.com/yologdev/karpathy-llm-wiki/pull/30
+Commits: - yoyo: entity deduplication with alias resolution at ingest time (closes #27)
