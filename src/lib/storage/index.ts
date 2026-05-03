@@ -12,6 +12,8 @@
  */
 
 import type { StorageProvider } from "./types";
+import { FilesystemStorageProvider } from "./filesystem";
+import { getDataDir } from "../config";
 
 // ---------------------------------------------------------------------------
 // Runtime detection
@@ -75,14 +77,12 @@ export function getStorage(): StorageProvider {
   }
 
   switch (desired) {
-    case "fs":
-      // Filesystem provider is a stub for now — will be implemented in a
-      // follow-up issue that migrates existing fs calls to use this interface.
-      throw new Error(
-        "FileSystemProvider not yet implemented. " +
-        "This interface is Phase 1 (definition only). " +
-        "The concrete provider will be added in a subsequent issue."
-      );
+    case "fs": {
+      const provider = new FilesystemStorageProvider(getDataDir());
+      _instance = provider;
+      _providerType = desired;
+      return provider;
+    }
 
     case "cloudflare-r2":
       throw new Error(

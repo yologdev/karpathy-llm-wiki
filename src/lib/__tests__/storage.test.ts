@@ -11,15 +11,19 @@ describe("storage factory", () => {
     vi.unstubAllEnvs();
   });
 
-  it("defaults to fs provider (which is not yet implemented)", () => {
+  it("defaults to fs provider (FilesystemStorageProvider)", () => {
     // No env override, no Cloudflare runtime → should detect "fs"
-    // fs provider is not yet implemented, so getStorage() throws
-    expect(() => getStorage()).toThrow("FileSystemProvider not yet implemented");
+    // fs provider is now implemented, so getStorage() returns a provider
+    const storage = getStorage();
+    expect(storage).toBeDefined();
+    expect(typeof storage.readFile).toBe("function");
   });
 
   it("respects STORAGE_PROVIDER=fs override", () => {
     vi.stubEnv("STORAGE_PROVIDER", "fs");
-    expect(() => getStorage()).toThrow("FileSystemProvider not yet implemented");
+    const storage = getStorage();
+    expect(storage).toBeDefined();
+    expect(typeof storage.readFile).toBe("function");
   });
 
   it("respects STORAGE_PROVIDER=cloudflare-r2 override", () => {
@@ -29,7 +33,10 @@ describe("storage factory", () => {
 
   it("ignores invalid STORAGE_PROVIDER values and falls back to fs", () => {
     vi.stubEnv("STORAGE_PROVIDER", "invalid-provider");
-    expect(() => getStorage()).toThrow("FileSystemProvider not yet implemented");
+    // Invalid values are ignored, falls back to "fs" which is now implemented
+    const storage = getStorage();
+    expect(storage).toBeDefined();
+    expect(typeof storage.readFile).toBe("function");
   });
 });
 
