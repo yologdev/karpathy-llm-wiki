@@ -13,6 +13,7 @@ export const ALL_CHECK_TYPES: LintIssue["type"][] = [
   "stale-page",
   "low-confidence",
   "unmigrated-page",
+  "duplicate-entity",
 ];
 
 const checkTypeLabels: Record<LintIssue["type"], string> = {
@@ -26,6 +27,7 @@ const checkTypeLabels: Record<LintIssue["type"], string> = {
   "stale-page": "Stale pages",
   "low-confidence": "Low confidence",
   "unmigrated-page": "Unmigrated pages",
+  "duplicate-entity": "Duplicate entities",
 };
 
 const severityFilterLabels: Record<SeverityFilter, string> = {

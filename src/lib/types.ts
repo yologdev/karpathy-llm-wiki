@@ -52,9 +52,9 @@ export interface QueryResult {
 
 /** A single issue found by the lint operation. */
 export interface LintIssue {
-  type: "orphan-page" | "stale-index" | "missing-crossref" | "empty-page" | "contradiction" | "missing-concept-page" | "broken-link" | "stale-page" | "low-confidence" | "unmigrated-page";
+  type: "orphan-page" | "stale-index" | "missing-crossref" | "empty-page" | "contradiction" | "missing-concept-page" | "broken-link" | "stale-page" | "low-confidence" | "unmigrated-page" | "duplicate-entity";
   slug: string;
-  /** Structured target slug for cross-ref, contradiction, and broken-link fixes.
+  /** Structured target slug for cross-ref, contradiction, broken-link, and duplicate-entity fixes.
    * Eliminates the need to parse human-readable messages to extract targets. */
   target?: string;
   message: string;

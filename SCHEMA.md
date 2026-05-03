@@ -63,7 +63,7 @@ These were added in Phase 1 of the yopedia pivot.
 | `contributors` | string array | `[]` | Re-ingest appends `"system"` if not already present; manual edits should append the editor's handle | Future contributor profiles |
 | `disputed` | boolean | `false` | Set manually or by future contradiction resolution; preserved on re-ingest | Future talk-page system, UI warning badge |
 | `supersedes` | string (slug) | `""` (empty) | Set manually when a page replaces another; preserved on re-ingest | Future redirect system |
-| `aliases` | string array | `[]` | Set manually for alternative names; preserved on re-ingest | Future redirect/search system |
+| `aliases` | string array | `[]` | Set manually for alternative names; preserved on re-ingest | Alias index for entity deduplication at ingest time; `duplicate-entity` lint check; search resolution |
 | `sources` | JSON string (SourceEntry[]) | `"[]"` | Ingest appends a new entry; re-ingest appends if the source URL is new | Wiki page view provenance section; parseSources() in `src/lib/sources.ts` |
 
 **Re-ingest behavior:** On re-ingest, `authors`, `contributors`, `disputed`,
@@ -95,6 +95,19 @@ Types are `"url"` (fetched from a URL), `"text"` (pasted text), or
 read and write this field. The wiki page view displays structured sources
 as provenance badges; falls back to showing flat `source_url` for legacy
 pages.
+
+**Alias resolution at ingest time:** The `aliases` field powers entity
+deduplication. Before creating a new page, the ingest pipeline checks
+the alias index (`src/lib/alias-index.ts`) for matches:
+1. Slugified title matches an existing page's slug
+2. Title (lowercased) matches a registered alias
+3. Slugified title matches a slugified alias
+
+If a match is found, the existing page is updated instead of creating a
+duplicate. The alias index is an in-memory map rebuilt from page
+frontmatter on demand and updated incrementally on page write. The
+`duplicate-entity` lint check scans for pages whose titles/aliases
+overlap (suggesting they should be merged).
 
 ## Talk pages (Phase 2)
 
@@ -549,6 +562,10 @@ Current checks performed by `lint()` in `src/lib/lint.ts`:
   below 0.3 (`LOW_CONFIDENCE_THRESHOLD` in `src/lib/lint-checks.ts`),
   indicating the page needs more supporting sources. No auto-fix — requires
   ingesting additional sources to improve confidence.
+- **`duplicate-entity`** (warning) — two pages have overlapping titles or
+  aliases, suggesting they may be about the same concept. The `target` field
+  contains the slug of the other page. No auto-fix — requires human judgment
+  to merge pages and update aliases.
 
 ## Provider configuration
 
