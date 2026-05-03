@@ -21,6 +21,8 @@ import {
   buildContext,
 } from "./query-search";
 
+import { resolveScope } from "./search";
+
 // Re-export BM25 helpers so existing callers (and tests) that import them
 // from `./query` continue to work after the bm25 extraction.
 export { buildCorpusStats, bm25Score };
@@ -155,13 +157,36 @@ export async function buildQuerySystemPrompt(
  * `"prose"` (the default) is the current free-form markdown behavior;
  * `"table"` adds a system-prompt hint asking for a markdown comparison table;
  * `"slides"` asks for a Marp slide deck.
+ *
+ * The optional `scope` filters search to a subset of pages (e.g.
+ * `"agent:yoyo"` limits to that agent's pages).
  */
 export async function query(
   question: string,
   format: QueryFormat = "prose",
+  scope?: string,
 ): Promise<QueryResult> {
   return withPageCache(async () => {
     const entries = await listWikiPages();
+
+    // Resolve scope to a set of slugs when provided
+    let scopeSlugs: string[] | undefined;
+    if (scope) {
+      const resolved = await resolveScope(scope);
+      if (!resolved) {
+        return {
+          answer: `Invalid scope or agent not found: '${scope}'`,
+          sources: [],
+        };
+      }
+      scopeSlugs = resolved.slugs;
+      if (scopeSlugs.length === 0) {
+        return {
+          answer: `No pages found for scope '${scope}'`,
+          sources: [],
+        };
+      }
+    }
 
     // Empty wiki — nothing to query
     if (entries.length === 0) {
@@ -173,7 +198,7 @@ export async function query(
     }
 
     // Determine which pages to load
-    const selectedSlugs = await selectPagesForQuery(question, entries);
+    const selectedSlugs = await selectPagesForQuery(question, entries, scopeSlugs);
 
     const { context } = await buildContext(selectedSlugs);
 

@@ -288,21 +288,33 @@ export async function buildContext(slugs?: string[]): Promise<{
  * For small wikis (<= {@link SMALL_WIKI_THRESHOLD}), returns all pages.
  * For larger wikis, uses BM25 + LLM-based index search.
  *
+ * When `scopeSlugs` is provided, entries are pre-filtered to only those
+ * slugs before any search or selection logic runs.
+ *
  * Exported so the streaming endpoint can reuse the same selection logic.
  */
 export async function selectPagesForQuery(
   question: string,
   entries: IndexEntry[],
+  scopeSlugs?: string[],
 ): Promise<string[]> {
-  if (entries.length <= SMALL_WIKI_THRESHOLD) {
-    return entries.map((e) => e.slug);
+  // Pre-filter entries when a scope is provided
+  const effective = scopeSlugs
+    ? (() => {
+        const allowed = new Set(scopeSlugs);
+        return entries.filter((e) => allowed.has(e.slug));
+      })()
+    : entries;
+
+  if (effective.length <= SMALL_WIKI_THRESHOLD) {
+    return effective.map((e) => e.slug);
   }
 
-  const selected = await searchIndex(question, entries);
+  const selected = await searchIndex(question, effective);
 
   // If no matches found, fall back to first N pages
   if (selected.length === 0) {
-    return entries.slice(0, MAX_CONTEXT_PAGES).map((e) => e.slug);
+    return effective.slice(0, MAX_CONTEXT_PAGES).map((e) => e.slug);
   }
 
   return selected;

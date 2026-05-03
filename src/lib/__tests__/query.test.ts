@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import fs from "fs/promises";
 import os from "os";
 import path from "path";
-import { searchIndex, buildContext, query, saveAnswerToWiki, buildCorpusStats, bm25Score, extractCitedSlugs, reciprocalRankFusion, buildQuerySystemPrompt, TABLE_FORMAT_INSTRUCTION, extractBestSnippet } from "../query";
+import { searchIndex, buildContext, query, saveAnswerToWiki, buildCorpusStats, bm25Score, extractCitedSlugs, reciprocalRankFusion, buildQuerySystemPrompt, TABLE_FORMAT_INSTRUCTION, extractBestSnippet, selectPagesForQuery } from "../query";
 import { writeWikiPage, updateIndex, ensureDirectories, readWikiPage, readWikiPageWithFrontmatter, listWikiPages } from "../wiki";
 import type { IndexEntry } from "../types";
 
@@ -34,13 +34,16 @@ const mockedSearchByVector = vi.mocked(searchByVector);
 let tmpDir: string;
 let originalWikiDir: string | undefined;
 let originalRawDir: string | undefined;
+let originalDataDir: string | undefined;
 
 beforeEach(async () => {
   tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "query-test-"));
   originalWikiDir = process.env.WIKI_DIR;
   originalRawDir = process.env.RAW_DIR;
+  originalDataDir = process.env.DATA_DIR;
   process.env.WIKI_DIR = path.join(tmpDir, "wiki");
   process.env.RAW_DIR = path.join(tmpDir, "raw");
+  process.env.DATA_DIR = tmpDir;
 
   // Reset mocks
   mockedHasLLMKey.mockReturnValue(false);
@@ -59,6 +62,11 @@ afterEach(async () => {
     delete process.env.RAW_DIR;
   } else {
     process.env.RAW_DIR = originalRawDir;
+  }
+  if (originalDataDir === undefined) {
+    delete process.env.DATA_DIR;
+  } else {
+    process.env.DATA_DIR = originalDataDir;
   }
   await fs.rm(tmpDir, { recursive: true, force: true });
 });
@@ -1235,5 +1243,74 @@ describe("buildQuerySystemPrompt — format option", () => {
     // Default behavior must match explicit "prose" — guards against the
     // default ever drifting away from existing callers' expectations.
     expect(proseDefault).toBe(proseExplicit);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// selectPagesForQuery — scope filtering
+// ---------------------------------------------------------------------------
+describe("selectPagesForQuery — scopeSlugs", () => {
+  it("returns all entries when no scope is provided", async () => {
+    const entries: IndexEntry[] = [
+      { slug: "a", title: "A", summary: "A" },
+      { slug: "b", title: "B", summary: "B" },
+      { slug: "c", title: "C", summary: "C" },
+    ];
+    // Small wiki — returns all
+    const result = await selectPagesForQuery("anything", entries);
+    expect(result).toEqual(["a", "b", "c"]);
+  });
+
+  it("filters to only scoped slugs when scopeSlugs is provided", async () => {
+    const entries: IndexEntry[] = [
+      { slug: "a", title: "A", summary: "A" },
+      { slug: "b", title: "B", summary: "B" },
+      { slug: "c", title: "C", summary: "C" },
+    ];
+    const result = await selectPagesForQuery("anything", entries, ["a", "c"]);
+    expect(result).toEqual(["a", "c"]);
+  });
+
+  it("returns empty array when scopeSlugs matches no entries", async () => {
+    const entries: IndexEntry[] = [
+      { slug: "a", title: "A", summary: "A" },
+    ];
+    const result = await selectPagesForQuery("anything", entries, ["z"]);
+    expect(result).toEqual([]);
+  });
+
+  it("ignores scope slugs that don't exist in entries", async () => {
+    const entries: IndexEntry[] = [
+      { slug: "a", title: "A", summary: "A" },
+      { slug: "b", title: "B", summary: "B" },
+    ];
+    const result = await selectPagesForQuery("anything", entries, ["a", "nonexistent"]);
+    expect(result).toEqual(["a"]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// query() — scope parameter
+// ---------------------------------------------------------------------------
+describe("query — scope parameter", () => {
+  it("returns helpful message for invalid scope", async () => {
+    await ensureDirectories();
+    await writeWikiPage("test", "# Test\n\nSome content");
+    await updateIndex([{ slug: "test", title: "Test", summary: "Some content" }]);
+
+    const result = await query("test question", "prose", "invalid-scope");
+    expect(result.answer).toContain("Invalid scope or agent not found");
+  });
+
+  it("works normally without scope parameter", async () => {
+    await ensureDirectories();
+    await writeWikiPage("test", "# Test\n\nSome content about testing.");
+    await updateIndex([{ slug: "test", title: "Test", summary: "Some content about testing." }]);
+
+    // No LLM key => returns the no-key fallback
+    mockedHasLLMKey.mockReturnValue(false);
+    const result = await query("test question");
+    expect(result.answer).toContain("No API key configured");
+    expect(result.answer).toContain("test");
   });
 });

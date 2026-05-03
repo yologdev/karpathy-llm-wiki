@@ -13,7 +13,7 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
 
-    const { question, format } = body;
+    const { question, format, scope } = body;
 
     if (
       !question ||
@@ -39,7 +39,19 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const result = await query(question.trim(), parseFormat(format));
+    // Validate `scope` if present — must be a string.
+    if (scope !== undefined && typeof scope !== "string") {
+      return NextResponse.json(
+        { error: "scope must be a string (e.g. 'agent:yoyo')" },
+        { status: 400 },
+      );
+    }
+
+    const result = await query(
+      question.trim(),
+      parseFormat(format),
+      scope || undefined,
+    );
 
     return NextResponse.json(result);
   } catch (error) {

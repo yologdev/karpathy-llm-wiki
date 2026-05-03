@@ -7,13 +7,14 @@ import {
   buildQuerySystemPrompt,
   type QueryFormat,
 } from "@/lib/query";
+import { resolveScope } from "@/lib/search";
 import { getErrorMessage } from "@/lib/errors";
 import { logger } from "@/lib/logger";
 
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { question, format } = body;
+    const { question, format, scope } = body;
 
     if (
       !question ||
@@ -40,6 +41,33 @@ export async function POST(request: NextRequest) {
     }
     const queryFormat: QueryFormat = format === "table" ? "table" : format === "slides" ? "slides" : "prose";
 
+    // Validate `scope` if present — must be a string.
+    if (scope !== undefined && typeof scope !== "string") {
+      return NextResponse.json(
+        { error: "scope must be a string (e.g. 'agent:yoyo')" },
+        { status: 400 },
+      );
+    }
+
+    // Resolve scope to a set of slugs when provided
+    let scopeSlugs: string[] | undefined;
+    if (scope) {
+      const resolved = await resolveScope(scope);
+      if (!resolved) {
+        return NextResponse.json(
+          { error: `Invalid scope or agent not found: '${scope}'` },
+          { status: 400 },
+        );
+      }
+      scopeSlugs = resolved.slugs;
+      if (scopeSlugs.length === 0) {
+        return NextResponse.json(
+          { error: `No pages found for scope '${scope}'` },
+          { status: 400 },
+        );
+      }
+    }
+
     const trimmedQuestion = question.trim();
     const entries = await listWikiPages();
 
@@ -65,7 +93,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Select relevant pages and build context (same logic as query())
-    const selectedSlugs = await selectPagesForQuery(trimmedQuestion, entries);
+    const selectedSlugs = await selectPagesForQuery(trimmedQuestion, entries, scopeSlugs);
     const { context, slugs: loadedSlugs } =
       await buildContext(selectedSlugs);
 
