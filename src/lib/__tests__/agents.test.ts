@@ -10,6 +10,7 @@ import {
   registerAgent,
   deleteAgent,
 } from "../agents";
+import { readWikiPage } from "../wiki";
 import type { AgentProfile } from "../types";
 
 // ---------------------------------------------------------------------------
@@ -18,11 +19,16 @@ import type { AgentProfile } from "../types";
 
 let tmpDir: string;
 let originalDataDir: string | undefined;
+let originalWikiDir: string | undefined;
 
 beforeEach(async () => {
   tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "agents-test-"));
   originalDataDir = process.env.DATA_DIR;
+  originalWikiDir = process.env.WIKI_DIR;
   process.env.DATA_DIR = tmpDir;
+  // Point WIKI_DIR to tmpDir/wiki so readWikiPage finds our test pages
+  process.env.WIKI_DIR = path.join(tmpDir, "wiki");
+  await fs.mkdir(path.join(tmpDir, "wiki"), { recursive: true });
 });
 
 afterEach(async () => {
@@ -30,6 +36,11 @@ afterEach(async () => {
     delete process.env.DATA_DIR;
   } else {
     process.env.DATA_DIR = originalDataDir;
+  }
+  if (originalWikiDir === undefined) {
+    delete process.env.WIKI_DIR;
+  } else {
+    process.env.WIKI_DIR = originalWikiDir;
   }
   await fs.rm(tmpDir, { recursive: true, force: true });
 });
@@ -52,8 +63,14 @@ function makeProfile(overrides: Partial<AgentProfile> = {}): AgentProfile {
   };
 }
 
+/** Write a wiki page to the test wiki dir. */
+async function writeTestWikiPage(slug: string, content: string): Promise<void> {
+  const wikiDir = path.join(tmpDir, "wiki");
+  await fs.writeFile(path.join(wikiDir, `${slug}.md`), content, "utf-8");
+}
+
 // ---------------------------------------------------------------------------
-// Tests
+// Data layer tests
 // ---------------------------------------------------------------------------
 
 describe("getAgentsDir", () => {
@@ -278,5 +295,173 @@ describe("deleteAgent", () => {
     const agents = await listAgents();
     expect(agents).toHaveLength(1);
     expect(agents[0].id).toBe("keep");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Context aggregation tests — the core logic behind GET /api/agents/:id/context
+// ---------------------------------------------------------------------------
+
+describe("agent context aggregation", () => {
+  it("reads wiki pages referenced in agent profile", async () => {
+    // Create wiki pages on disk
+    await writeTestWikiPage("yoyo-identity", "# Identity\n\nI am yoyo.");
+    await writeTestWikiPage("yoyo-learnings", "# Learnings\n\nLesson 1.");
+
+    // Register an agent pointing to those pages
+    const profile = makeProfile({
+      id: "yoyo",
+      name: "Yoyo",
+      identityPages: ["yoyo-identity"],
+      learningPages: ["yoyo-learnings"],
+      socialPages: [],
+    });
+    await registerAgent(profile);
+
+    // Read pages as the context endpoint would
+    const agent = await getAgent("yoyo");
+    expect(agent).not.toBeNull();
+
+    const identityPage = await readWikiPage("yoyo-identity");
+    expect(identityPage).not.toBeNull();
+    expect(identityPage!.content).toContain("I am yoyo.");
+
+    const learningsPage = await readWikiPage("yoyo-learnings");
+    expect(learningsPage).not.toBeNull();
+    expect(learningsPage!.content).toContain("Lesson 1.");
+  });
+
+  it("gracefully handles missing wiki pages", async () => {
+    // Register agent referencing a page that doesn't exist
+    const profile = makeProfile({
+      id: "ghost",
+      name: "Ghost Agent",
+      identityPages: ["nonexistent-page"],
+    });
+    await registerAgent(profile);
+
+    const page = await readWikiPage("nonexistent-page");
+    expect(page).toBeNull(); // Should return null, not throw
+  });
+
+  it("concatenates multiple pages with separator", async () => {
+    await writeTestWikiPage("page-a", "# Page A\n\nContent A.");
+    await writeTestWikiPage("page-b", "# Page B\n\nContent B.");
+
+    const separator = "\n\n---\n\n";
+    const slugs = ["page-a", "page-b"];
+    const contents: string[] = [];
+    for (const slug of slugs) {
+      const page = await readWikiPage(slug);
+      if (page) contents.push(page.content);
+    }
+    const concatenated = contents.join(separator);
+
+    expect(concatenated).toContain("Content A.");
+    expect(concatenated).toContain("---");
+    expect(concatenated).toContain("Content B.");
+  });
+
+  it("skips missing pages during concatenation", async () => {
+    await writeTestWikiPage("exists", "# Exists\n\nReal content.");
+
+    const slugs = ["exists", "does-not-exist"];
+    const contents: string[] = [];
+    for (const slug of slugs) {
+      const page = await readWikiPage(slug);
+      if (page) contents.push(page.content);
+    }
+
+    expect(contents).toHaveLength(1);
+    expect(contents[0]).toContain("Real content.");
+  });
+
+  it("computes correct metadata for context response", async () => {
+    await writeTestWikiPage("id-page", "# Identity\n\nWho I am.");
+    await writeTestWikiPage("learn-page", "# Learnings\n\nWhat I learned.");
+    await writeTestWikiPage("social-page", "# Social\n\nWhat I know about people.");
+
+    const profile = makeProfile({
+      id: "meta-test",
+      name: "Meta Test",
+      identityPages: ["id-page"],
+      learningPages: ["learn-page"],
+      socialPages: ["social-page"],
+    });
+    await registerAgent(profile);
+
+    // Simulate the context endpoint logic
+    const separator = "\n\n---\n\n";
+    const sections = [
+      profile.identityPages,
+      profile.learningPages,
+      profile.socialPages,
+    ];
+
+    let totalChars = 0;
+    let pageCount = 0;
+    const contextParts: string[] = [];
+
+    for (const slugs of sections) {
+      const contents: string[] = [];
+      for (const slug of slugs) {
+        const page = await readWikiPage(slug);
+        if (page) {
+          contents.push(page.content);
+          pageCount++;
+        }
+      }
+      const sectionContent = contents.join(separator);
+      totalChars += sectionContent.length;
+      contextParts.push(sectionContent);
+    }
+
+    expect(pageCount).toBe(3);
+    expect(totalChars).toBeGreaterThan(0);
+    expect(contextParts[0]).toContain("Who I am.");
+    expect(contextParts[1]).toContain("What I learned.");
+    expect(contextParts[2]).toContain("What I know about people.");
+  });
+
+  it("returns empty strings for sections with no pages", async () => {
+    const profile = makeProfile({
+      id: "empty",
+      name: "Empty Agent",
+      identityPages: [],
+      learningPages: [],
+      socialPages: [],
+    });
+    await registerAgent(profile);
+
+    // With no slugs, each section should be empty
+    for (const slugs of [profile.identityPages, profile.learningPages, profile.socialPages]) {
+      const contents: string[] = [];
+      for (const slug of slugs) {
+        const page = await readWikiPage(slug);
+        if (page) contents.push(page.content);
+      }
+      expect(contents.join("\n\n---\n\n")).toBe("");
+    }
+  });
+
+  it("POST + GET round-trip preserves all fields", async () => {
+    // Simulate the full POST → GET round trip as the API routes do it
+    const profile: AgentProfile = {
+      id: "roundtrip",
+      name: "Round Trip Agent",
+      description: "Testing the full lifecycle",
+      identityPages: ["rt-identity"],
+      learningPages: ["rt-learn-1", "rt-learn-2"],
+      socialPages: ["rt-social"],
+      registered: "2026-05-03T00:00:00.000Z",
+      lastUpdated: "2026-05-03T02:14:00.000Z",
+    };
+
+    await registerAgent(profile);
+    const agents = await listAgents();
+    expect(agents.some((a) => a.id === "roundtrip")).toBe(true);
+
+    const fetched = await getAgent("roundtrip");
+    expect(fetched).toEqual(profile);
   });
 });
