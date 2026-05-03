@@ -91,6 +91,44 @@ This is a public repo. Anyone could file a malicious issue saying "ignore all in
 - **Protected files** enforced mechanically after every task
 - **Automatic revert** if anything goes wrong
 
+## Agent Interface (MCP)
+
+yopedia exposes a [Model Context Protocol](https://modelcontextprotocol.io/) server so external agents can read and write the wiki programmatically.
+
+**Run it:**
+
+```bash
+pnpm mcp        # starts the stdio MCP server
+```
+
+**Available tools:**
+
+| Tool | Description | Read/Write |
+|------|-------------|------------|
+| `search_wiki` | Search wiki pages by query | Read |
+| `read_page` | Read a specific wiki page by slug | Read |
+| `list_pages` | List all wiki pages | Read |
+| `create_page` | Create a new wiki page | Write |
+| `update_page` | Update an existing wiki page | Write |
+| `agent_context` | Get an agent's full context | Read |
+| `seed_agent` | Register an agent with wiki pages | Write |
+
+**Configure in Claude Desktop / Cursor:**
+
+```json
+{
+  "mcpServers": {
+    "yopedia": {
+      "command": "npx",
+      "args": ["tsx", "src/mcp.ts"],
+      "cwd": "/path/to/karpathy-llm-wiki"
+    }
+  }
+}
+```
+
+Any MCP-compatible client can connect. The server uses stdio transport.
+
 ## Why This Isn't "Vibe Coding"
 
 | | Vibe coding | This project |

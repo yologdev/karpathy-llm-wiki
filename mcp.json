@@ -1,0 +1,17 @@
+{
+  "name": "yopedia",
+  "version": "1.0.0",
+  "description": "A wiki for the agent age — read and write knowledge pages via MCP",
+  "transport": "stdio",
+  "command": "npx",
+  "args": ["tsx", "src/mcp.ts"],
+  "tools": [
+    "search_wiki",
+    "read_page",
+    "list_pages",
+    "create_page",
+    "update_page",
+    "agent_context",
+    "seed_agent"
+  ]
+}
