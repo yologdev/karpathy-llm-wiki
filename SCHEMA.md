@@ -57,7 +57,8 @@ These were added in Phase 1 of the yopedia pivot.
 | Field | Type | Default | Set when | Consumed by |
 |-------|------|---------|----------|-------------|
 | `confidence` | number (0–1) | `0.7` | Initial ingest (deterministic default); preserved on re-ingest if existing value is higher | `low-confidence` lint check (flags pages below 0.3); future UI badge |
-| `expiry` | ISO date string (YYYY-MM-DD) | 90 days from ingest | Initial ingest and re-ingest (always resets to 90 days from now) | `stale-page` lint check (flags pages past expiry) |
+| `expiry` | ISO date string (YYYY-MM-DD) | 90 days from ingest | Initial ingest and re-ingest (always resets to 90 days from now) | `stale-page` lint check (flags pages past expiry); page view temporal range |
+| `valid_from` | ISO date string (YYYY-MM-DD) | Today (ingest date) | Initial ingest and re-ingest (always resets to today — the content is re-verified) | `stale-page` lint check (flags pages verified over 180 days ago); page view temporal range ("Verified May 2026 · Review by Oct 2026") |
 | `authors` | string array | `["system"]` | Initial ingest; preserved on re-ingest (never reset) | Future contributor profiles, attribution UI |
 | `contributors` | string array | `[]` | Re-ingest appends `"system"` if not already present; manual edits should append the editor's handle | Future contributor profiles |
 | `disputed` | boolean | `false` | Set manually or by future contradiction resolution; preserved on re-ingest | Future talk-page system, UI warning badge |
@@ -67,9 +68,19 @@ These were added in Phase 1 of the yopedia pivot.
 
 **Re-ingest behavior:** On re-ingest, `authors`, `contributors`, `disputed`,
 `supersedes`, and `aliases` are preserved from the existing page. `expiry`
-resets to 90 days from now (the page is considered refreshed). `confidence`
-is preserved only if the existing value is higher than the default 0.7
-(indicating a manual upgrade).
+resets to 90 days from now and `valid_from` resets to today (the page is
+considered refreshed and re-verified). `confidence` is preserved only if the
+existing value is higher than the default 0.7 (indicating a manual upgrade).
+
+**Temporal validity:** The `valid_from` field records WHEN the page's
+information was last confirmed accurate — distinct from `updated` (when the
+page was last edited) and `expiry` (when the page should next be reviewed).
+Together, `valid_from` and `expiry` define a temporal validity window. The
+page view displays this as "Verified May 2026 · Review by Oct 2026". The
+`stale-page` lint check uses `valid_from` to flag pages verified more than
+180 days ago, even if their expiry hasn't passed yet (info severity). This
+is the page-level analog of Graphiti's `valid_at`/`invalid_at` model for
+temporal knowledge management.
 
 **Note:** The `authors` default is `"system"` (not `"yoyo"`) because the
 ingest operation is performed by the system on behalf of the user. Phase 4
@@ -575,7 +586,8 @@ sessions should pick from this list:
   The `contradiction` fix uses the LLM to rewrite the affected page.
   The `missing-concept-page` fix generates a stub page via the LLM.
   The `broken-link` fix removes broken links from the source page.
-  The `stale-page` fix bumps the expiry date forward by 90 days.
+  The `stale-page` fix bumps the expiry date forward by 90 days and
+  refreshes `valid_from` to today.
   The sole exception is `low-confidence`, which has no auto-fix by design —
   raising confidence requires ingesting additional sources, not rewriting
   what's already there.
@@ -588,9 +600,10 @@ sessions should pick from this list:
   via `withFileLock()` in `src/lib/lock.ts`. This does NOT protect against
   multiple server processes (which would require OS-level lockfiles).
 - The wiki page view displays yopedia metadata fields (`confidence`,
-  `expiry`, `authors`, `contributors`, `disputed`, `aliases`,
+  `expiry`, `valid_from`, `authors`, `contributors`, `disputed`, `aliases`,
   `supersedes`, `sources`) when present. Confidence is color-coded
-  (green/yellow/red), expired pages show an amber warning, disputed pages
+  (green/yellow/red), temporal validity shows as "Verified May 2026 ·
+  Review by Oct 2026" (or an amber warning when expired), disputed pages
   get an orange badge and explanation text, aliases render as muted "Also
   known as" text, supersedes links to the replaced page, and structured
   sources display as a provenance section with type badges (URL/Text/𝕏

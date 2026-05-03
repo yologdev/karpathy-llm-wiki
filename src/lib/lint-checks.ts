@@ -551,26 +551,56 @@ export async function checkMissingConceptPages(
 // Stale-page check — flags pages whose `expiry` date has passed.
 // ---------------------------------------------------------------------------
 
+/** Pages with `valid_from` older than this many days get a staleness warning even if expiry hasn't passed. */
+export const STALE_VERIFICATION_DAYS = 180;
+
 /**
- * Check for stale pages — pages whose `expiry` frontmatter date is in the past.
- * These pages should be reviewed and either refreshed or given a new expiry.
+ * Check for stale pages — pages whose `expiry` frontmatter date is in the past,
+ * or whose `valid_from` date is older than {@link STALE_VERIFICATION_DAYS} days.
+ *
+ * Pages past expiry get a warning. Pages with very old verification but valid
+ * expiry get an info-level nudge.
  */
 export async function checkStalePages(): Promise<LintIssue[]> {
   const pages = await listWikiPages();
   const today = new Date().toISOString().slice(0, 10);
+  const staleVerificationDate = new Date();
+  staleVerificationDate.setDate(staleVerificationDate.getDate() - STALE_VERIFICATION_DAYS);
+  const staleVerificationStr = staleVerificationDate.toISOString().slice(0, 10);
   const issues: LintIssue[] = [];
 
   for (const entry of pages) {
     const page = await readWikiPageWithFrontmatter(entry.slug);
     if (!page) continue;
     const expiry = page.frontmatter.expiry;
+    const validFrom = page.frontmatter.valid_from;
+    const validFromStr = typeof validFrom === "string" && validFrom.length >= 10
+      ? validFrom
+      : null;
+
+    // Primary check: expiry in the past → warning
     if (typeof expiry === "string" && expiry !== "" && expiry <= today) {
+      const verifiedSuffix = validFromStr
+        ? ` (last verified ${validFromStr})`
+        : "";
       issues.push({
         type: "stale-page",
         slug: entry.slug,
-        message: `Page expired on ${expiry} — content may be outdated`,
+        message: `Page expired on ${expiry}${verifiedSuffix} — content may be outdated`,
         severity: "warning",
         suggestion: `Re-ingest from the original source or manually review and update the expiry date`,
+      });
+      continue; // Don't double-flag
+    }
+
+    // Secondary check: valid_from very old but expiry not yet passed → info
+    if (validFromStr && validFromStr <= staleVerificationStr) {
+      issues.push({
+        type: "stale-page",
+        slug: entry.slug,
+        message: `Page was last verified on ${validFromStr} (over ${STALE_VERIFICATION_DAYS} days ago) — consider re-verifying`,
+        severity: "info",
+        suggestion: `Re-ingest from the original source to refresh verification date, or manually update valid_from if content has been reviewed`,
       });
     }
   }

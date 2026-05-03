@@ -434,6 +434,7 @@ export async function ingest(
     tags: [],
     confidence: 0.7,
     expiry: expiryDate,
+    valid_from: now,
     authors: ["system"],
     contributors: [],
     disputed: false,
@@ -529,7 +530,8 @@ export async function ingest(
       frontmatter.aliases = existing.frontmatter.aliases;
     }
     // Expiry resets to 90 days from now (re-ingest refreshes the page).
-    // (already set above — no need to change)
+    // valid_from also resets to now (the page's information is re-verified).
+    // (both already set above — no need to change)
     // Preserve confidence if existing was higher (manually set).
     const existingConf = existing.frontmatter.confidence;
     if (typeof existingConf === "number" && existingConf > 0.7) {
