@@ -1,5 +1,4 @@
 import fs from "fs/promises";
-import path from "path";
 import { getWikiDir, validateSlug } from "./wiki";
 import { isEnoent } from "./errors";
 import { logger } from "./logger";
@@ -40,7 +39,7 @@ const REVISIONS_DIR_NAME = ".revisions";
 
 /** Return the revisions directory for a given slug. */
 export function getRevisionsDir(slug: string): string {
-  return path.join(getWikiDir(), REVISIONS_DIR_NAME, slug);
+  return `${getWikiDir()}/${REVISIONS_DIR_NAME}/${slug}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -81,12 +80,12 @@ export async function saveRevision(
   const dir = getRevisionsDir(slug);
   await fs.mkdir(dir, { recursive: true });
   const timestamp = uniqueTimestamp();
-  const filePath = path.join(dir, `${timestamp}.md`);
+  const filePath = `${dir}/${timestamp}.md`;
   await fs.writeFile(filePath, content, "utf-8");
 
   // Write attribution/reason as a JSON sidecar when provided.
   if (author !== undefined || reason !== undefined) {
-    const metaPath = path.join(dir, `${timestamp}.meta.json`);
+    const metaPath = `${dir}/${timestamp}.meta.json`;
     const meta: Record<string, string> = {};
     if (author !== undefined) meta.author = author;
     if (reason !== undefined) meta.reason = reason;
@@ -123,14 +122,14 @@ export async function listRevisions(slug: string): Promise<Revision[]> {
     if (Number.isNaN(timestamp) || timestamp <= 0) continue;
 
     // Stat the file to get size.
-    const filePath = path.join(dir, entry);
+    const filePath = `${dir}/${entry}`;
     try {
       const stat = await fs.stat(filePath);
 
       // Read the optional author/reason sidecar.
       let author: string | undefined;
       let reason: string | undefined;
-      const metaPath = path.join(dir, `${stem}.meta.json`);
+      const metaPath = `${dir}/${stem}.meta.json`;
       try {
         const metaRaw = await fs.readFile(metaPath, "utf-8");
         const meta = JSON.parse(metaRaw) as { author?: string; reason?: string };
@@ -175,7 +174,7 @@ export async function readRevision(
   timestamp: number,
 ): Promise<string | null> {
   validateSlug(slug);
-  const filePath = path.join(getRevisionsDir(slug), `${timestamp}.md`);
+  const filePath = `${getRevisionsDir(slug)}/${timestamp}.md`;
   try {
     return await fs.readFile(filePath, "utf-8");
   } catch (err) {

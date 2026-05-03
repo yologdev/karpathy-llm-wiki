@@ -9,7 +9,6 @@
 // ---------------------------------------------------------------------------
 
 import fs from "fs/promises";
-import path from "path";
 import { getDataDir } from "./config";
 import { withFileLock } from "./lock";
 import { isEnoent } from "./errors";
@@ -23,7 +22,7 @@ const DISCUSS_DIR_NAME = "discuss";
 
 /** Returns the discuss directory path. */
 export function getDiscussDir(): string {
-  return path.join(getDataDir(), DISCUSS_DIR_NAME);
+  return `${getDataDir()}/${DISCUSS_DIR_NAME}`;
 }
 
 /** Creates the `discuss/` directory if it doesn't exist. */
@@ -33,7 +32,7 @@ export async function ensureDiscussDir(): Promise<void> {
 
 /** Path to the JSON file for a given page's discussions. */
 function discussFilePath(pageSlug: string): string {
-  return path.join(getDiscussDir(), `${pageSlug}.json`);
+  return `${getDiscussDir()}/${pageSlug}.json`;
 }
 
 // ---------------------------------------------------------------------------

@@ -1,5 +1,4 @@
 import fs from "fs/promises";
-import path from "path";
 import type { IndexEntry } from "./types";
 import { callLLM, hasLLMKey } from "./llm";
 import { withFileLock } from "./lock";
@@ -324,7 +323,7 @@ export async function searchWikiContent(
 
     let content: string;
     try {
-      content = await fs.readFile(path.join(wikiDir, file), "utf-8");
+      content = await fs.readFile(`${wikiDir}/${file}`, "utf-8");
     } catch (err) {
       logger.warn("wiki", `searchWikiContent failed to read "${file}":`, err);
       continue;
@@ -449,7 +448,7 @@ export async function fuzzySearchWikiContent(
 
     let content: string;
     try {
-      content = await fs.readFile(path.join(wikiDir, file), "utf-8");
+      content = await fs.readFile(`${wikiDir}/${file}`, "utf-8");
     } catch (err) {
       if (!isEnoent(err)) {
         logger.warn("search", `unexpected error reading wiki file "${file}":`, err);
