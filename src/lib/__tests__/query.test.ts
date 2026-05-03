@@ -4,6 +4,8 @@ import os from "os";
 import path from "path";
 import { searchIndex, buildContext, query, saveAnswerToWiki, buildCorpusStats, bm25Score, extractCitedSlugs, reciprocalRankFusion, buildQuerySystemPrompt, TABLE_FORMAT_INSTRUCTION, extractBestSnippet, selectPagesForQuery } from "../query";
 import { writeWikiPage, updateIndex, ensureDirectories, readWikiPage, readWikiPageWithFrontmatter, listWikiPages } from "../wiki";
+import { registerAgent } from "../agents";
+import type { AgentProfile } from "../types";
 import type { IndexEntry } from "../types";
 
 // ---------------------------------------------------------------------------
@@ -1312,5 +1314,108 @@ describe("query — scope parameter", () => {
     const result = await query("test question");
     expect(result.answer).toContain("No API key configured");
     expect(result.answer).toContain("test");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// query() — scoped search with registered agent
+// ---------------------------------------------------------------------------
+describe("query — scoped search with registered agent", () => {
+  it("restricts results to agent's pages when scope is agent:id", async () => {
+    await ensureDirectories();
+
+    // Create pages — some owned by the agent, some not
+    await writeWikiPage("agent-identity", "# Agent Identity\n\nI am test-agent.");
+    await writeWikiPage("agent-learnings", "# Learnings\n\nI learned about testing.");
+    await writeWikiPage("unrelated", "# Unrelated\n\nThis is not the agent's page.");
+
+    await updateIndex([
+      { slug: "agent-identity", title: "Agent Identity", summary: "I am test-agent." },
+      { slug: "agent-learnings", title: "Learnings", summary: "I learned about testing." },
+      { slug: "unrelated", title: "Unrelated", summary: "This is not the agent's page." },
+    ]);
+
+    // Register the agent
+    const profile: AgentProfile = {
+      id: "test-agent",
+      name: "Test Agent",
+      description: "A test agent",
+      identityPages: ["agent-identity"],
+      learningPages: ["agent-learnings"],
+      socialPages: [],
+      registered: "2026-01-01",
+      lastUpdated: "2026-01-01",
+    };
+    await registerAgent(profile);
+
+    // With LLM key — verify the scoped pages are selected for context
+    mockedHasLLMKey.mockReturnValue(true);
+    mockedCallLLM.mockResolvedValue(
+      "The agent knows about testing. [[agent-identity]] [[agent-learnings]]",
+    );
+
+    const result = await query("what do you know?", "prose", "agent:test-agent");
+    // The LLM was called — verify the response came through
+    expect(result.answer).toContain("testing");
+    // Sources should only include agent's pages (not unrelated)
+    expect(result.sources).not.toContain("unrelated");
+  });
+
+  it("returns error for nonexistent agent scope", async () => {
+    await ensureDirectories();
+    await writeWikiPage("test", "# Test\n\nContent.");
+    await updateIndex([{ slug: "test", title: "Test", summary: "Content." }]);
+
+    const result = await query("anything", "prose", "agent:nonexistent");
+    expect(result.answer).toContain("Invalid scope or agent not found");
+  });
+
+  it("returns 'no pages found' when agent has empty page lists", async () => {
+    await ensureDirectories();
+    await writeWikiPage("test", "# Test\n\nContent.");
+    await updateIndex([{ slug: "test", title: "Test", summary: "Content." }]);
+
+    // Register an agent with no pages
+    const profile: AgentProfile = {
+      id: "empty-agent",
+      name: "Empty Agent",
+      description: "An agent with no pages",
+      identityPages: [],
+      learningPages: [],
+      socialPages: [],
+      registered: "2026-01-01",
+      lastUpdated: "2026-01-01",
+    };
+    await registerAgent(profile);
+
+    const result = await query("anything", "prose", "agent:empty-agent");
+    expect(result.answer).toContain("No pages found for scope");
+  });
+
+  it("handles agent referencing deleted wiki pages gracefully", async () => {
+    await ensureDirectories();
+
+    // Only create one page but register agent with two
+    await writeWikiPage("existing-page", "# Existing\n\nThis page exists.");
+    await updateIndex([
+      { slug: "existing-page", title: "Existing", summary: "This page exists." },
+    ]);
+
+    const profile: AgentProfile = {
+      id: "partial-agent",
+      name: "Partial Agent",
+      description: "Agent referencing deleted pages",
+      identityPages: ["existing-page", "deleted-page"],
+      learningPages: [],
+      socialPages: [],
+      registered: "2026-01-01",
+      lastUpdated: "2026-01-01",
+    };
+    await registerAgent(profile);
+
+    mockedHasLLMKey.mockReturnValue(false);
+    const result = await query("anything", "prose", "agent:partial-agent");
+    // Should work with whatever pages exist — the existing-page should show up
+    expect(result.answer).toContain("existing-page");
   });
 });
