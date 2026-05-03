@@ -195,6 +195,69 @@ sidecar and appear with `author: undefined` in the API — backward compatible.
 **API:** `GET /api/wiki/:slug/revisions` returns revision list;
 `POST /api/wiki/:slug/revisions` creates a revision with author/reason.
 
+## Agent registry (Phase 4)
+
+Agents are registered entities in yopedia whose identity, learnings, and social
+wisdom are stored as wiki pages. This is how yopedia "eats its own cooking" —
+agents are yopedia citizens with proper attribution and provenance.
+
+**Location:** `agents/<id>.json` — under the data directory (configured via
+`DATA_DIR`). Each agent gets a JSON profile file, mirroring the `discuss/`
+pattern for talk pages.
+
+**Agent profile schema (`AgentProfile`):**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `id` | string | Unique agent identifier, e.g. `"yoyo"`. Must match `/^[a-z0-9][a-z0-9-]*$/` |
+| `name` | string | Display name |
+| `description` | string | Short description of who this agent is |
+| `identityPages` | `string[]` | Wiki page slugs forming the agent's identity context |
+| `learningPages` | `string[]` | Wiki page slugs containing the agent's learnings |
+| `socialPages` | `string[]` | Wiki page slugs containing social wisdom |
+| `registered` | ISO date string | When the agent was first registered |
+| `lastUpdated` | ISO date string | When the agent's context was last updated |
+
+**The `agent-identity` page type:** Wiki pages created for agents use
+`type: agent-identity` in their frontmatter. These pages have:
+- `authors: [<agent-id>]` — the agent that owns the content
+- `confidence: 0.9` — agents know themselves well
+- `expiry: <1 year from now>` — identity is stable, reviewed annually
+- `contributors: [<agent-id>]` — attribution
+
+**Seeding:** The `seedAgent()` utility in `src/lib/agents.ts` creates wiki
+pages for each section (identity, learnings, social) with proper frontmatter
+and registers the agent profile in one idempotent call. It uses
+`writeWikiPageWithSideEffects` for proper index, revision, and embedding
+side effects.
+
+**API routes:**
+
+- `GET /api/agents` — list all registered agents
+- `POST /api/agents` — register a new agent (body: `AgentProfile` fields)
+- `GET /api/agents/:id` — get a single agent profile
+- `DELETE /api/agents/:id` — remove an agent (does not delete wiki pages)
+- `GET /api/agents/:id/context` — get the agent's full context (identity +
+  learnings + social wisdom concatenated from wiki pages), designed for
+  bootstrapping an agent's system prompt from yopedia
+
+**Context endpoint response (`GET /api/agents/:id/context`):**
+
+```json
+{
+  "agent": { "id": "yoyo", "name": "Yoyo", ... },
+  "context": {
+    "identity": "<concatenated identity page contents>",
+    "learnings": "<concatenated learnings page contents>",
+    "social": "<concatenated social page contents>"
+  },
+  "meta": {
+    "pageCount": 3,
+    "totalChars": 12500
+  }
+}
+```
+
 ## Page templates
 
 The wiki produces several distinct page types. Each type has a recommended
@@ -339,6 +402,29 @@ tags: [<topic1>, <topic2>]
 ## Sources
 
 - [<wiki page cited>](cited-page.md)
+```
+
+### Agent identity page
+
+Created by `seedAgent()` for agent self-documentation. These pages store an
+agent's identity, learnings, or social wisdom as first-class wiki content.
+
+```yaml
+---
+type: agent-identity
+authors: [<agent-id>]
+confidence: 0.9
+expiry: <YYYY-MM-DD, 1 year from creation>
+created: <ISO date>
+updated: <ISO date>
+contributors: [<agent-id>]
+---
+```
+
+```markdown
+# <Agent Name> <Section>
+
+<Content describing the agent's identity, learnings, or social wisdom.>
 ```
 
 ## Operations
@@ -515,12 +601,15 @@ sessions should pick from this list:
 ## Planned evolution
 
 Phase 1 (schema evolution) and Phase 2 (talk pages + attribution) are complete.
+Phase 4 (agent identity as yopedia pages) is **in progress** — the agent
+registry, context API, `seedAgent()` utility, and `agent-identity` page type
+are implemented. Remaining Phase 4 work: migrating yoyo's actual identity
+content into yopedia pages, scoped search, and grow.sh integration.
 The schema will continue to evolve toward the full yopedia model defined in
 [`yopedia-concept.md`](yopedia-concept.md). See YOYO.md for the phased roadmap.
-Next up: Phase 3 (X ingestion loop), Phase 4 (agent identity as yopedia pages),
-and Phase 5 (agent surface research). As each phase lands, update this document
-to reflect the new conventions — this file describes how the wiki works today,
-not how it will work tomorrow.
+Next up: Phase 3 (X ingestion loop) and Phase 5 (agent surface research).
+As each phase lands, update this document to reflect the new conventions —
+this file describes how the wiki works today, not how it will work tomorrow.
 
 ## Co-evolution
 

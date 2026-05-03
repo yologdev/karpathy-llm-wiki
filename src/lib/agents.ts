@@ -13,6 +13,9 @@ import fs from "fs/promises";
 import path from "path";
 import { getDataDir } from "./config";
 import { isEnoent } from "./errors";
+import { serializeFrontmatter } from "./frontmatter";
+import { writeWikiPageWithSideEffects } from "./lifecycle";
+import { readWikiPageWithFrontmatter } from "./wiki";
 import type { AgentProfile } from "./types";
 
 // ---------------------------------------------------------------------------
@@ -152,4 +155,151 @@ export async function deleteAgent(id: string): Promise<boolean> {
     if (isEnoent(err)) return false;
     throw err;
   }
+}
+
+// ---------------------------------------------------------------------------
+// seedAgent — create wiki pages for an agent and register them
+// ---------------------------------------------------------------------------
+
+/** A content section to create as a wiki page during agent seeding. */
+export interface SeedAgentSection {
+  type: "identity" | "learnings" | "social";
+  slug: string;
+  title: string;
+  /** Markdown content (without frontmatter — frontmatter is generated). */
+  content: string;
+}
+
+/** Options for {@link seedAgent}. */
+export interface SeedAgentOptions {
+  id: string;
+  name: string;
+  description: string;
+  /** Content sections to create as wiki pages. */
+  sections: SeedAgentSection[];
+}
+
+/**
+ * Seed an agent by creating wiki pages for each section and registering the
+ * agent profile.
+ *
+ * Each section becomes a wiki page with proper frontmatter:
+ *   - `authors: [<agent-id>]`
+ *   - `confidence: 0.9` (agent knows itself well)
+ *   - `expiry: <1 year from now>` (identity is stable)
+ *   - `type: agent-identity`
+ *
+ * Uses {@link writeWikiPageWithSideEffects} for proper index/crossref/embedding
+ * updates. Idempotent — if pages or agent already exist, they are updated
+ * rather than duplicated.
+ *
+ * @returns The registered {@link AgentProfile}.
+ */
+export async function seedAgent(options: SeedAgentOptions): Promise<AgentProfile> {
+  validateAgentId(options.id);
+  if (!options.name || typeof options.name !== "string") {
+    throw new Error("seedAgent requires a non-empty 'name'");
+  }
+  if (!options.description || typeof options.description !== "string") {
+    throw new Error("seedAgent requires a non-empty 'description'");
+  }
+
+  const now = new Date();
+  const oneYearFromNow = new Date(now);
+  oneYearFromNow.setFullYear(oneYearFromNow.getFullYear() + 1);
+  const expiryStr = oneYearFromNow.toISOString().slice(0, 10); // YYYY-MM-DD
+
+  const identityPages: string[] = [];
+  const learningPages: string[] = [];
+  const socialPages: string[] = [];
+
+  for (const section of options.sections) {
+    // Build frontmatter for this page
+    const frontmatter: Record<string, string | string[] | number | boolean> = {
+      type: "agent-identity",
+      authors: [options.id],
+      confidence: 0.9,
+      expiry: expiryStr,
+      created: now.toISOString(),
+      updated: now.toISOString(),
+    };
+
+    // If the page already exists, preserve its `created` timestamp and
+    // merge contributors.
+    const existing = await readWikiPageWithFrontmatter(section.slug).catch(
+      () => null,
+    );
+    if (existing) {
+      if (existing.frontmatter.created) {
+        frontmatter.created = existing.frontmatter.created;
+      }
+      // Merge existing contributors, ensuring the agent is listed
+      const existingContribs = Array.isArray(existing.frontmatter.contributors)
+        ? existing.frontmatter.contributors
+        : [];
+      const contribs = new Set([...existingContribs, options.id]);
+      frontmatter.contributors = [...contribs];
+    } else {
+      frontmatter.contributors = [options.id];
+    }
+
+    // Assemble the full markdown: frontmatter + H1 title + content body
+    const bodyWithTitle = `# ${section.title}\n\n${section.content}`;
+    const fullContent = serializeFrontmatter(frontmatter, bodyWithTitle);
+
+    // Extract a summary (first non-empty line of content, trimmed)
+    const summaryLine =
+      section.content
+        .split("\n")
+        .map((l) => l.trim())
+        .find((l) => l.length > 0) ?? section.title;
+    const summary =
+      summaryLine.length > 120
+        ? summaryLine.slice(0, 117) + "..."
+        : summaryLine;
+
+    await writeWikiPageWithSideEffects({
+      slug: section.slug,
+      title: section.title,
+      content: fullContent,
+      summary,
+      logOp: "other",
+      crossRefSource: null, // skip cross-ref for seeded agent pages
+      author: options.id,
+    });
+
+    // Bucket the slug into the right page list
+    switch (section.type) {
+      case "identity":
+        identityPages.push(section.slug);
+        break;
+      case "learnings":
+        learningPages.push(section.slug);
+        break;
+      case "social":
+        socialPages.push(section.slug);
+        break;
+    }
+  }
+
+  // Register (or update) the agent profile
+  const profile: AgentProfile = {
+    id: options.id,
+    name: options.name,
+    description: options.description,
+    identityPages,
+    learningPages,
+    socialPages,
+    registered: now.toISOString(),
+    lastUpdated: now.toISOString(),
+  };
+
+  // If the agent already exists, preserve its original registration date
+  const existingAgent = await getAgent(options.id);
+  if (existingAgent) {
+    profile.registered = existingAgent.registered;
+  }
+
+  await registerAgent(profile);
+  return profile;
 }

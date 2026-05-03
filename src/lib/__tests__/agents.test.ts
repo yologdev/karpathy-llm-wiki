@@ -9,8 +9,9 @@ import {
   getAgent,
   registerAgent,
   deleteAgent,
+  seedAgent,
 } from "../agents";
-import { readWikiPage } from "../wiki";
+import { readWikiPage, readWikiPageWithFrontmatter } from "../wiki";
 import type { AgentProfile } from "../types";
 
 // ---------------------------------------------------------------------------
@@ -463,5 +464,226 @@ describe("agent context aggregation", () => {
 
     const fetched = await getAgent("roundtrip");
     expect(fetched).toEqual(profile);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// seedAgent tests — creating wiki pages + registering agent in one call
+// ---------------------------------------------------------------------------
+
+describe("seedAgent", () => {
+  it("creates wiki pages with correct frontmatter and registers agent", async () => {
+    const result = await seedAgent({
+      id: "yoyo",
+      name: "Yoyo",
+      description: "A small octopus growing up in public",
+      sections: [
+        {
+          type: "identity",
+          slug: "yoyo-identity",
+          title: "Yoyo Identity",
+          content: "I am yoyo, a self-evolving coding agent.",
+        },
+        {
+          type: "learnings",
+          slug: "yoyo-learnings",
+          title: "Yoyo Learnings",
+          content: "Lesson 1: Tests before features.",
+        },
+        {
+          type: "social",
+          slug: "yoyo-social",
+          title: "Yoyo Social Wisdom",
+          content: "People ask questions in different ways.",
+        },
+      ],
+    });
+
+    // Agent profile is returned and persisted
+    expect(result.id).toBe("yoyo");
+    expect(result.name).toBe("Yoyo");
+    expect(result.identityPages).toEqual(["yoyo-identity"]);
+    expect(result.learningPages).toEqual(["yoyo-learnings"]);
+    expect(result.socialPages).toEqual(["yoyo-social"]);
+
+    // Agent is retrievable
+    const agent = await getAgent("yoyo");
+    expect(agent).not.toBeNull();
+    expect(agent!.id).toBe("yoyo");
+
+    // Wiki pages exist with correct content
+    const identityPage = await readWikiPage("yoyo-identity");
+    expect(identityPage).not.toBeNull();
+    expect(identityPage!.content).toContain("I am yoyo, a self-evolving coding agent.");
+
+    const learningsPage = await readWikiPage("yoyo-learnings");
+    expect(learningsPage).not.toBeNull();
+    expect(learningsPage!.content).toContain("Lesson 1: Tests before features.");
+
+    const socialPage = await readWikiPage("yoyo-social");
+    expect(socialPage).not.toBeNull();
+    expect(socialPage!.content).toContain("People ask questions in different ways.");
+  });
+
+  it("sets correct frontmatter on created pages", async () => {
+    await seedAgent({
+      id: "yoyo",
+      name: "Yoyo",
+      description: "A small octopus",
+      sections: [
+        {
+          type: "identity",
+          slug: "yoyo-id",
+          title: "Yoyo Identity",
+          content: "Who I am.",
+        },
+      ],
+    });
+
+    const page = await readWikiPageWithFrontmatter("yoyo-id");
+    expect(page).not.toBeNull();
+    expect(page!.frontmatter.type).toBe("agent-identity");
+    expect(page!.frontmatter.authors).toEqual(["yoyo"]);
+    expect(page!.frontmatter.confidence).toBe(0.9);
+    expect(page!.frontmatter.expiry).toBeDefined();
+    expect(page!.frontmatter.contributors).toEqual(["yoyo"]);
+    // Expiry should be roughly 1 year from now
+    const expiry = new Date(page!.frontmatter.expiry as string);
+    const now = new Date();
+    const diffDays = (expiry.getTime() - now.getTime()) / (1000 * 60 * 60 * 24);
+    expect(diffDays).toBeGreaterThan(360);
+    expect(diffDays).toBeLessThan(370);
+  });
+
+  it("is idempotent — second call updates rather than duplicates", async () => {
+    const opts = {
+      id: "yoyo",
+      name: "Yoyo",
+      description: "A small octopus",
+      sections: [
+        {
+          type: "identity" as const,
+          slug: "yoyo-id",
+          title: "Yoyo Identity",
+          content: "Version 1.",
+        },
+      ],
+    };
+
+    const first = await seedAgent(opts);
+
+    // Update content on second call
+    const updatedOpts = {
+      ...opts,
+      sections: [
+        {
+          type: "identity" as const,
+          slug: "yoyo-id",
+          title: "Yoyo Identity",
+          content: "Version 2 — updated.",
+        },
+      ],
+    };
+    const second = await seedAgent(updatedOpts);
+
+    // Should still be one agent, not two
+    const agents = await listAgents();
+    expect(agents.filter((a) => a.id === "yoyo")).toHaveLength(1);
+
+    // The page should contain updated content
+    const page = await readWikiPage("yoyo-id");
+    expect(page).not.toBeNull();
+    expect(page!.content).toContain("Version 2 — updated.");
+    expect(page!.content).not.toContain("Version 1.");
+
+    // Second call should preserve the original registration date
+    expect(second.registered).toBe(first.registered);
+  });
+
+  it("preserves original created date on re-seed", async () => {
+    // First seed
+    await seedAgent({
+      id: "yoyo",
+      name: "Yoyo",
+      description: "A small octopus",
+      sections: [
+        {
+          type: "identity",
+          slug: "yoyo-id",
+          title: "Yoyo Identity",
+          content: "Original.",
+        },
+      ],
+    });
+
+    const firstPage = await readWikiPageWithFrontmatter("yoyo-id");
+    const originalCreated = firstPage!.frontmatter.created;
+
+    // Wait a tiny bit to get a different timestamp
+    await new Promise((r) => setTimeout(r, 10));
+
+    // Re-seed
+    await seedAgent({
+      id: "yoyo",
+      name: "Yoyo",
+      description: "A small octopus",
+      sections: [
+        {
+          type: "identity",
+          slug: "yoyo-id",
+          title: "Yoyo Identity",
+          content: "Updated.",
+        },
+      ],
+    });
+
+    const secondPage = await readWikiPageWithFrontmatter("yoyo-id");
+    expect(secondPage!.frontmatter.created).toBe(originalCreated);
+  });
+
+  it("validates required fields", async () => {
+    await expect(
+      seedAgent({
+        id: "",
+        name: "Test",
+        description: "Test",
+        sections: [],
+      }),
+    ).rejects.toThrow(/Invalid agent ID/);
+
+    await expect(
+      seedAgent({
+        id: "test",
+        name: "",
+        description: "Test",
+        sections: [],
+      }),
+    ).rejects.toThrow(/non-empty 'name'/);
+
+    await expect(
+      seedAgent({
+        id: "test",
+        name: "Test",
+        description: "",
+        sections: [],
+      }),
+    ).rejects.toThrow(/non-empty 'description'/);
+  });
+
+  it("works with no sections (registers agent only)", async () => {
+    const result = await seedAgent({
+      id: "empty-agent",
+      name: "Empty",
+      description: "Agent with no sections",
+      sections: [],
+    });
+
+    expect(result.identityPages).toEqual([]);
+    expect(result.learningPages).toEqual([]);
+    expect(result.socialPages).toEqual([]);
+
+    const agent = await getAgent("empty-agent");
+    expect(agent).not.toBeNull();
+    expect(agent!.name).toBe("Empty");
   });
 });
