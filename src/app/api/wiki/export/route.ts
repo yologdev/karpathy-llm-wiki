@@ -1,4 +1,4 @@
-import archiver from "archiver";
+import { zipSync, strToU8 } from "fflate";
 import { listWikiPages, readWikiPage } from "@/lib/wiki";
 import { convertToObsidianLinks } from "@/lib/export";
 
@@ -9,6 +9,9 @@ import { convertToObsidianLinks } from "@/lib/export";
  * Each page is exported as a markdown file with internal links converted to
  * Obsidian wikilink syntax (`[[slug|Title]]`). YAML frontmatter is preserved
  * as-is since Obsidian reads it natively.
+ *
+ * Uses fflate (pure JS) instead of archiver so this route can run in
+ * Cloudflare Workers as well as Node.js.
  */
 export async function GET() {
   try {
@@ -21,9 +24,8 @@ export async function GET() {
       });
     }
 
-    const archive = archiver("zip", { zlib: { level: 9 } });
-
-    // Track which slugs we've added so we don't double-add index
+    // Build a map of filename → compressed Uint8Array content
+    const files: Record<string, Uint8Array> = {};
     const added = new Set<string>();
 
     for (const entry of pages) {
@@ -31,7 +33,7 @@ export async function GET() {
       if (!page) continue;
 
       const obsidianContent = convertToObsidianLinks(page.content);
-      archive.append(obsidianContent, { name: `${entry.slug}.md` });
+      files[`${entry.slug}.md`] = strToU8(obsidianContent);
       added.add(entry.slug);
     }
 
@@ -39,32 +41,14 @@ export async function GET() {
     if (!added.has("index")) {
       const indexPage = await readWikiPage("index");
       if (indexPage) {
-        archive.append(convertToObsidianLinks(indexPage.content), {
-          name: "index.md",
-        });
+        files["index.md"] = strToU8(convertToObsidianLinks(indexPage.content));
       }
     }
 
-    // Finalize — this signals no more files will be added.
-    // archiver emits data asynchronously after this call.
-    archive.finalize();
+    // Create the zip synchronously (pure JS, no Node.js streams)
+    const zipped = zipSync(files, { level: 9 });
 
-    // Convert the Node.js Readable (archiver output) into a Web ReadableStream
-    const stream = new ReadableStream({
-      start(controller) {
-        archive.on("data", (chunk: Buffer) => {
-          controller.enqueue(new Uint8Array(chunk));
-        });
-        archive.on("end", () => {
-          controller.close();
-        });
-        archive.on("error", (err) => {
-          controller.error(err);
-        });
-      },
-    });
-
-    return new Response(stream, {
+    return new Response(zipped.buffer as ArrayBuffer, {
       headers: {
         "Content-Type": "application/zip",
         "Content-Disposition": 'attachment; filename="llm-wiki-vault.zip"',

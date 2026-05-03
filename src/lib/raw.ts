@@ -1,5 +1,4 @@
 import fs from "fs/promises";
-import path from "path";
 import { getRawDir, validateSlug, ensureDirectories } from "./wiki";
 
 // ---------------------------------------------------------------------------
@@ -13,7 +12,7 @@ export async function saveRawSource(
 ): Promise<string> {
   validateSlug(id);
   await ensureDirectories();
-  const filePath = path.join(getRawDir(), `${id}.md`);
+  const filePath = `${getRawDir()}/${id}.md`;
   await fs.writeFile(filePath, content, "utf-8");
   return filePath;
 }
@@ -78,7 +77,7 @@ export async function listRawSources(): Promise<RawSource[]> {
     if (!entry.isFile()) continue;
     if (entry.name.startsWith(".")) continue;
 
-    const filePath = path.join(rawDir, entry.name);
+    const filePath = `${rawDir}/${entry.name}`;
     const stat = await fs.stat(filePath);
     sources.push({
       slug: stripExtension(entry.name),
@@ -118,7 +117,7 @@ export async function readRawSource(
     throw new Error(`raw source not found: ${slug}`);
   }
 
-  const filePath = path.join(getRawDir(), match.filename);
+  const filePath = `${getRawDir()}/${match.filename}`;
   const content = await fs.readFile(filePath, "utf-8");
 
   return { ...match, content };

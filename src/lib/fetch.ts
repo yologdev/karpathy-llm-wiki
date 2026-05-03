@@ -289,7 +289,7 @@ export async function downloadImages(
   const toDownload = matches.slice(0, MAX_IMAGES_PER_SOURCE);
 
   // Ensure the asset directory exists
-  const assetDir = path.join(rawDir, "assets", slug);
+  const assetDir = `${rawDir}/assets/${slug}`;
   await fs.mkdir(assetDir, { recursive: true });
 
   // Track used filenames for deduplication
@@ -336,7 +336,7 @@ export async function downloadImages(
         count + 1,
       );
 
-      const filePath = path.join(assetDir, filename);
+      const filePath = `${assetDir}/${filename}`;
       await fs.writeFile(filePath, Buffer.from(arrayBuf));
 
       // Rewrite the markdown reference to the local path

@@ -1,5 +1,4 @@
 import fs from "fs/promises";
-import path from "path";
 import type { IndexEntry } from "./types";
 import { upsertEmbedding, removeEmbedding } from "./embeddings";
 import { deleteRevisions } from "./revisions";
@@ -183,7 +182,7 @@ async function runPageLifecycleOp(
   if (op.kind === "write") {
     await writeWikiPage(slug, op.content, op.author);
   } else {
-    const filePath = path.join(getWikiDir(), `${slug}.md`);
+    const filePath = `${getWikiDir()}/${slug}.md`;
     try {
       await fs.unlink(filePath);
     } catch (err: unknown) {

@@ -1,5 +1,4 @@
 import { readFile } from "fs/promises";
-import path from "path";
 import { isEnoent } from "./errors";
 import { logger } from "./logger";
 
@@ -29,7 +28,7 @@ function extractSection(schema: string, heading: string): string {
  */
 async function readSchema(schemaPath?: string): Promise<string> {
   try {
-    const resolved = schemaPath ?? path.join(process.cwd(), "SCHEMA.md");
+    const resolved = schemaPath ?? `${process.cwd()}/SCHEMA.md`;
     return await readFile(resolved, "utf-8");
   } catch (err) {
     if (!isEnoent(err)) {

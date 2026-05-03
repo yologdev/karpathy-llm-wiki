@@ -1,5 +1,4 @@
 import fs from "fs/promises";
-import path from "path";
 import { getWikiDir, ensureDirectories } from "./wiki";
 import { withFileLock } from "./lock";
 import { isEnoent } from "./errors";
@@ -35,7 +34,7 @@ export interface QueryHistoryEntry {
 // ---------------------------------------------------------------------------
 
 function historyPath(): string {
-  return path.join(getWikiDir(), "query-history.json");
+  return `${getWikiDir()}/query-history.json`;
 }
 
 function generateId(): string {

@@ -1,5 +1,4 @@
 import fs from "fs/promises";
-import path from "path";
 import type { WikiPage, IndexEntry } from "./types";
 import { withFileLock } from "./lock";
 import { logger } from "./logger";
@@ -144,7 +143,7 @@ export async function readWikiPage(slug: string): Promise<WikiPage | null> {
     return pageCache.get(slug) ?? null;
   }
 
-  const filePath = path.join(getWikiDir(), `${slug}.md`);
+  const filePath = `${getWikiDir()}/${slug}.md`;
   try {
     const content = await fs.readFile(filePath, "utf-8");
     // Derive title from the first markdown heading, falling back to the slug.
@@ -204,7 +203,7 @@ export async function writeWikiPage(
 ): Promise<void> {
   validateSlug(slug);
   await ensureDirectories();
-  const filePath = path.join(getWikiDir(), `${slug}.md`);
+  const filePath = `${getWikiDir()}/${slug}.md`;
 
   // Snapshot the current content as a revision before overwriting.
   // Only save a revision if the file already exists (new pages don't have
@@ -239,7 +238,7 @@ export async function writeWikiPage(
  *   - [Title](slug.md) — summary
  */
 export async function listWikiPages(): Promise<IndexEntry[]> {
-  const indexPath = path.join(getWikiDir(), "index.md");
+  const indexPath = `${getWikiDir()}/index.md`;
   let raw: string;
   try {
     raw = await fs.readFile(indexPath, "utf-8");
@@ -352,7 +351,7 @@ export async function updateIndexUnsafe(entries: IndexEntry[]): Promise<void> {
     (e) => `- [${e.title}](${e.slug}.md) — ${e.summary}`,
   );
   const content = `# Wiki Index\n\n${lines.join("\n")}\n`;
-  const indexPath = path.join(getWikiDir(), "index.md");
+  const indexPath = `${getWikiDir()}/index.md`;
   await fs.writeFile(indexPath, content, "utf-8");
 }
 

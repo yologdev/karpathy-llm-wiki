@@ -1,5 +1,4 @@
 import fs from "fs/promises";
-import path from "path";
 import { withFileLock } from "./lock";
 import { getWikiDir, ensureDirectories } from "./wiki";
 import { isEnoent } from "./errors";
@@ -62,7 +61,7 @@ export async function appendToLog(
 
   await withFileLock("log.md", async () => {
     await ensureDirectories();
-    const logPath = path.join(getWikiDir(), "log.md");
+    const logPath = `${getWikiDir()}/log.md`;
     const date = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
     const heading = `## [${date}] ${operation} | ${title.trim()}`;
 
@@ -76,7 +75,7 @@ export async function appendToLog(
 
 /** Read the contents of `wiki/log.md`. Returns `null` if the file doesn't exist. */
 export async function readLog(): Promise<string | null> {
-  const logPath = path.join(getWikiDir(), "log.md");
+  const logPath = `${getWikiDir()}/log.md`;
   try {
     return await fs.readFile(logPath, "utf-8");
   } catch (err: unknown) {

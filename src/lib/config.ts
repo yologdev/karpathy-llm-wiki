@@ -60,12 +60,12 @@ export function getDataDir(): string {
 
 /** Wiki pages directory: `WIKI_DIR` env var or `<dataDir>/wiki`. */
 export function getWikiDir(): string {
-  return process.env.WIKI_DIR ?? path.join(getDataDir(), "wiki");
+  return process.env.WIKI_DIR ?? `${getDataDir()}/wiki`;
 }
 
 /** Raw sources directory: `RAW_DIR` env var or `<dataDir>/raw`. */
 export function getRawDir(): string {
-  return process.env.RAW_DIR ?? path.join(getDataDir(), "raw");
+  return process.env.RAW_DIR ?? `${getDataDir()}/raw`;
 }
 
 // ---------------------------------------------------------------------------
@@ -73,7 +73,7 @@ export function getRawDir(): string {
 // ---------------------------------------------------------------------------
 
 export function getConfigPath(): string {
-  return path.join(getDataDir(), ".llm-wiki-config.json");
+  return `${getDataDir()}/.llm-wiki-config.json`;
 }
 
 // ---------------------------------------------------------------------------

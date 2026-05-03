@@ -4,8 +4,7 @@ import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { createOllama } from "ollama-ai-provider-v2";
 import type { EmbeddingModel } from "ai";
 import fs from "fs/promises";
-import path from "path";
-import crypto from "crypto";
+
 import { getWikiDir, listWikiPages, readWikiPage } from "./wiki";
 import { detectEnvProvider, loadConfigSync, getEmbeddingModelOverride, getOllamaBaseUrl } from "./config";
 import { withFileLock } from "./lock";
@@ -20,7 +19,7 @@ import { logger } from "./logger";
 export interface VectorEntry {
   slug: string;
   embedding: number[];
-  /** MD5 hash of the page content — used to detect stale embeddings */
+  /** Hash of the page content — used to detect stale embeddings */
   contentHash: string;
 }
 
@@ -217,9 +216,30 @@ export async function embedTexts(
 // Content hashing
 // ---------------------------------------------------------------------------
 
-/** Compute a simple MD5 hex hash of content — used to detect stale embeddings. */
+/**
+ * Compute a fast, deterministic hex hash of content — used to detect stale
+ * embeddings (not for security). Uses FNV-1a which is pure JS and works in
+ * any runtime (Node.js, Cloudflare Workers, browsers).
+ *
+ * Returns a 16-char hex string (two 32-bit FNV-1a hashes: one from the start,
+ * one from the end of the string, concatenated for better distribution).
+ */
 export function contentHash(content: string): string {
-  return crypto.createHash("md5").update(content).digest("hex");
+  // FNV-1a 32-bit
+  const fnv1a = (s: string): number => {
+    let h = 0x811c9dc5;
+    for (let i = 0; i < s.length; i++) {
+      h ^= s.charCodeAt(i);
+      h = Math.imul(h, 0x01000193);
+    }
+    return h >>> 0;
+  };
+
+  // Two passes for better collision resistance on content-change detection:
+  // forward hash + reverse hash concatenated
+  const fwd = fnv1a(content);
+  const rev = fnv1a(content.split("").reverse().join(""));
+  return fwd.toString(16).padStart(8, "0") + rev.toString(16).padStart(8, "0");
 }
 
 // ---------------------------------------------------------------------------
@@ -230,7 +250,7 @@ const VECTOR_STORE_FILENAME = ".vectors.json";
 
 /** Path to the vector store file on disk. */
 function vectorStorePath(): string {
-  return path.join(getWikiDir(), VECTOR_STORE_FILENAME);
+  return `${getWikiDir()}/${VECTOR_STORE_FILENAME}`;
 }
 
 /**

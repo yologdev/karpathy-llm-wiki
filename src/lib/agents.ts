@@ -10,7 +10,6 @@
 // ---------------------------------------------------------------------------
 
 import fs from "fs/promises";
-import path from "path";
 import { getDataDir } from "./config";
 import { isEnoent } from "./errors";
 import { serializeFrontmatter } from "./frontmatter";
@@ -34,7 +33,7 @@ const AGENT_ID_RE = /^[a-z0-9][a-z0-9-]*$/;
 
 /** Returns the agents directory path. */
 export function getAgentsDir(): string {
-  return path.join(getDataDir(), AGENTS_DIR_NAME);
+  return `${getDataDir()}/${AGENTS_DIR_NAME}`;
 }
 
 /** Creates the `agents/` directory if it doesn't exist. */
@@ -44,7 +43,7 @@ export async function ensureAgentsDir(): Promise<void> {
 
 /** Path to the JSON file for a given agent. */
 function agentFilePath(id: string): string {
-  return path.join(getAgentsDir(), `${id}.json`);
+  return `${getAgentsDir()}/${id}.json`;
 }
 
 // ---------------------------------------------------------------------------
@@ -92,7 +91,7 @@ export async function listAgents(): Promise<AgentProfile[]> {
   for (const file of files) {
     if (!file.endsWith(".json")) continue;
     try {
-      const raw = await fs.readFile(path.join(getAgentsDir(), file), "utf-8");
+      const raw = await fs.readFile(`${getAgentsDir()}/${file}`, "utf-8");
       profiles.push(JSON.parse(raw) as AgentProfile);
     } catch {
       // Skip malformed files silently — don't let one bad file break the list.

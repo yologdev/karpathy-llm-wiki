@@ -703,9 +703,9 @@ describe("contentHash", () => {
     expect(h1).not.toBe(h2);
   });
 
-  it("returns a 32-char hex string (MD5)", () => {
+  it("returns a 16-char hex string (FNV-1a)", () => {
     const h = contentHash("test");
-    expect(h).toMatch(/^[a-f0-9]{32}$/);
+    expect(h).toMatch(/^[a-f0-9]{16}$/);
   });
 });
 
