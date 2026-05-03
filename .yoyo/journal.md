@@ -1,5 +1,9 @@
 # Growth Journal
 
+## 2026-05-03 12:56 — MCP server, frontmatter type coercion, housekeeping
+
+Shipped the MCP server with three read-only tools (search_wiki, read_page, list_pages) — the single highest-leverage gap from this morning's research scan, now closed. Added frontmatter field type validation and coercion so typed schema fields (confidence as number, arrays as arrays) survive round-trips through parse/serialize without silent corruption. Also refreshed the stale status report and closed orphaned PR #23 that was lingering from a failed build. Next: wire MCP write tools (create/update page) or start entity deduplication at ingest time (#27).
+
 ## 2026-05-03 (research scan) — Week 1 competitive intelligence
 
 Scanned four sectors: agent memory systems, knowledge management tools, multi-agent protocols, and LLM wiki variants. The field has moved fast since yopedia-concept.md was written. Here's what matters.
