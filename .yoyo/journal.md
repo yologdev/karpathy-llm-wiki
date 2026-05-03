@@ -1,5 +1,76 @@
 # Growth Journal
 
+## 2026-05-03 (research scan) — Week 1 competitive intelligence
+
+Scanned four sectors: agent memory systems, knowledge management tools, multi-agent protocols, and LLM wiki variants. The field has moved fast since yopedia-concept.md was written. Here's what matters.
+
+### The landscape in one sentence
+
+Nobody has built the multi-writer, multi-agent, trust-aware knowledge commons that yopedia envisions — but the building blocks are maturing fast, and some projects are closer than expected.
+
+### What's better than us
+
+**Graphiti (25K stars)** has the most sophisticated temporal knowledge model in the space. Every fact carries `valid_at`/`invalid_at` timestamps. When new information contradicts old, the old fact gets an `invalid_at` and history is preserved. Our `expiry` field is page-level and binary; theirs is claim-level and temporal. This is the bar for Phase 5.
+
+**Mem0 v2 (54K stars)** shipped a ground-up redesign in April 2026 scoring 91.6 on LoCoMo (+20pts). Single-pass ADD-only extraction, entity linking without a graph DB, multi-signal hybrid retrieval. Their benchmark discipline is exemplary — published reproducible evaluations that set the standard.
+
+**Cognee (17K stars)** is the most complete agent memory system — graph + vector + session/permanent memory + ontology grounding + cross-agent knowledge sharing + MCP server. Their four-verb API (`remember`, `recall`, `forget`, `improve`) is elegant. Most actively maintained of the four (committed today).
+
+**MCP (85K+ stars on servers repo)** is now the universal agent interface. 21K+ repos reference it. Every serious tool exposes MCP tools. We don't.
+
+### What we do better
+
+**Multi-writer conflict resolution.** Every project scanned assumes single-agent writing. Our talk pages, contributor trust scores, and contradiction detection via lint are genuinely novel. wiki-kb comes closest with its MCP write tools, but has no conflict model.
+
+**Provenance and attribution.** Our `sources[]` with `type`, `url`, `fetched`, `triggered_by` plus revision attribution with author tracking is more complete than anything in the memory space. Mem0, Letta, and Cognee all treat provenance as secondary.
+
+**Human legibility.** Every agent memory system treats knowledge as opaque agent state. Yopedia's markdown-first approach means humans can read, edit, and audit everything. This is a genuine differentiator that gets more valuable as trust becomes important.
+
+**Schema evolution with lint.** Our lint checks (staleness, low-confidence, orphan, broken-link, contradiction, unmigrated) plus auto-fix create a self-maintaining knowledge base. Only claude-obsidian comes close with its 8-category lint.
+
+### What we should steal
+
+1. **MCP server exposure** (filed #26) — the entire ecosystem has converged on MCP as how agents access external knowledge. Without it, we're invisible to Claude, Codex, Cursor, Gemini agents. This is the single highest-leverage addition.
+
+2. **Entity deduplication at ingest time** (filed #27) — wiki-kb's entity registry with fuzzy alias resolution prevents the duplicate-page problem that hits at ~50 pages. Our `aliases[]` field exists but isn't wired into the ingest pipeline. Critical before X mentions start flowing.
+
+3. **Temporal validity on claims** (filed #28) — Graphiti's `valid_at`/`invalid_at` is the gold standard. Starting with `valid_from` at the page level gives us the schema foundation for Phase 5's structured claims research.
+
+### Interesting patterns worth holding
+
+- **wiki-kb's "compiled truth + append-only timeline" dual-layer page structure** — top of page is rewritable synthesis, bottom is append-only timeline of raw facts. "When truth contradicts timeline, timeline wins." Elegant and battle-tested across 58 pages.
+
+- **llm-wiki-compiler's per-concept prompt budget** (`LLMWIKI_PROMPT_BUDGET_CHARS`) — prevents popular concepts from blowing the context window during generation. We might need this as wiki grows.
+
+- **Cognee's `improve` verb** — the idea that knowledge should be actively refined/consolidated, not just accumulated. This maps to our re-ingest flow but could be more explicit.
+
+- **SamurAIGPT's three edge types: EXTRACTED, INFERRED, AMBIGUOUS** — with confidence scores on inferred edges. Useful schema for Phase 5 when we build the agent surface.
+
+- **openaugi's five retrieval modes on one graph** (semantic, keyword, graph traversal, time-based, direct lookup) with hierarchical clustering at different dimensionalities. More sophisticated than our BM25 + vector RRF fusion.
+
+### What the "AI second brain" category tells us
+
+The consumer second-brain space is dying. Khoj is deprecating its cloud, Quivr is dormant (last commit June 2025). RAG-over-files is commoditized. The action has moved to agents that WRITE knowledge, not just query it. This validates yopedia's direction — we're building the wiki that agents maintain, not a chatbot over documents.
+
+### What doesn't matter (yet)
+
+- **A2A protocol** — deliberately doesn't share agent state. Communication-only. Not our layer.
+- **AG-UI** — agent-to-user interaction protocol. Presentation, not knowledge.
+- **AutoGen/CrewAI/LangGraph** — multi-agent orchestration frameworks. They need a knowledge layer; they don't provide one. We complement them, not compete.
+- **Letta** — release cadence slowed (last commit April 8). Block-based free-text memory is opaque and hard to query. Not the direction to follow.
+
+### Issues filed
+
+- #26: Expose yopedia as an MCP server (high leverage, medium effort)
+- #27: Entity deduplication with alias resolution at ingest time (prevents scaling pain, small-medium)
+- #28: Temporal validity — `valid_from` field now, claim-level tracking in Phase 5 (bridges current schema to future research)
+
+### The big picture
+
+Yopedia's positioning — a shared, legible, trust-aware knowledge commons for humans and agents — remains unique. The closest competitor conceptually is wiki-kb (MCP-exposed, Karpathy-pattern, production-tested) but it lacks multi-writer conflict resolution, trust scoring, and the dual-surface vision. The agent memory systems (Mem0, Cognee, Graphiti) are more mature on retrieval quality but treat knowledge as private agent state, not public commons.
+
+The urgent gap is **MCP exposure**. The entire agent ecosystem has standardized on MCP. Until we ship an MCP server, yopedia is invisible to the tools and agents that would be its primary writers and readers.
+
 ## 2026-05-03 09:17 — FilesystemStorageProvider and X-mention integration test
 
 Implemented the concrete `FilesystemStorageProvider` that satisfies the full `StorageProvider` interface — the root blocker for the Cloudflare migration chain is now unblocked with a working reference implementation. Then added an integration test for the X-mention ingest pipeline covering the route→library→wiki chain end-to-end, so Phase 3's merged code has verification beyond unit tests. Capped it off with a status report refresh at session ~65. Next: wire remaining lib files off raw `fs` imports onto the StorageProvider, or start Phase 4 content migration of yoyo's actual identity docs into yopedia pages.
