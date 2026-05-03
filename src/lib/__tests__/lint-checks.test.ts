@@ -15,6 +15,7 @@ import {
   checkLowConfidence,
   checkUnmigratedPages,
   LOW_CONFIDENCE_THRESHOLD,
+  STALE_VERIFICATION_DAYS,
   buildSummary,
 } from "../lint-checks";
 import type { LintIssue } from "../types";
@@ -536,6 +537,73 @@ describe("checkStalePages", () => {
     const issues = await checkStalePages();
     expect(issues).toHaveLength(2);
     expect(issues.map((i) => i.slug).sort()).toEqual(["stale-a", "stale-b"]);
+  });
+
+  it("includes valid_from in message when available on expired page", async () => {
+    await createPageWithIndex("old-verified", "Old Verified", {
+      expiry: "2020-01-01",
+      valid_from: "2019-06-15",
+      created: "2019-01-01",
+    });
+
+    const issues = await checkStalePages();
+    expect(issues).toHaveLength(1);
+    expect(issues[0].severity).toBe("warning");
+    expect(issues[0].message).toContain("2020-01-01");
+    expect(issues[0].message).toContain("last verified 2019-06-15");
+  });
+
+  it("flags page with very old valid_from even if expiry is in the future", async () => {
+    // valid_from is over STALE_VERIFICATION_DAYS ago
+    const oldDate = new Date();
+    oldDate.setDate(oldDate.getDate() - (STALE_VERIFICATION_DAYS + 10));
+    const oldDateStr = oldDate.toISOString().slice(0, 10);
+
+    await createPageWithIndex("old-verification", "Old Verification", {
+      expiry: "2099-12-31",
+      valid_from: oldDateStr,
+      created: "2025-01-01",
+    });
+
+    const issues = await checkStalePages();
+    expect(issues).toHaveLength(1);
+    expect(issues[0].type).toBe("stale-page");
+    expect(issues[0].slug).toBe("old-verification");
+    expect(issues[0].severity).toBe("info");
+    expect(issues[0].message).toContain(oldDateStr);
+    expect(issues[0].message).toContain(`over ${STALE_VERIFICATION_DAYS} days ago`);
+  });
+
+  it("does NOT flag page with recent valid_from and future expiry", async () => {
+    const recentDate = new Date();
+    recentDate.setDate(recentDate.getDate() - 10);
+    const recentDateStr = recentDate.toISOString().slice(0, 10);
+
+    await createPageWithIndex("recently-verified", "Recently Verified", {
+      expiry: "2099-12-31",
+      valid_from: recentDateStr,
+      created: "2025-01-01",
+    });
+
+    const issues = await checkStalePages();
+    expect(issues).toHaveLength(0);
+  });
+
+  it("does not double-flag when both expiry passed and valid_from old", async () => {
+    const oldDate = new Date();
+    oldDate.setDate(oldDate.getDate() - (STALE_VERIFICATION_DAYS + 10));
+    const oldDateStr = oldDate.toISOString().slice(0, 10);
+
+    await createPageWithIndex("double-stale", "Double Stale", {
+      expiry: "2020-01-01",
+      valid_from: oldDateStr,
+      created: "2019-01-01",
+    });
+
+    const issues = await checkStalePages();
+    // Should get exactly 1 issue (warning for expired), not 2
+    expect(issues).toHaveLength(1);
+    expect(issues[0].severity).toBe("warning");
   });
 });
 

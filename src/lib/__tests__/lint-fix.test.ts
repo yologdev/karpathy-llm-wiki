@@ -623,12 +623,13 @@ describe("fixStalePage", () => {
 
     expect(result.success).toBe(true);
     expect(result.slug).toBe("stale");
-    expect(result.message).toMatch(/^Expiry extended to \d{4}-\d{2}-\d{2}$/);
+    expect(result.message).toMatch(/^Expiry extended to \d{4}-\d{2}-\d{2}, verified as of \d{4}-\d{2}-\d{2}$/);
     expect(mockedWriteWikiPage).toHaveBeenCalledOnce();
 
-    // Verify the written content includes the new expiry
+    // Verify the written content includes both new expiry and valid_from
     const writtenContent = mockedWriteWikiPage.mock.calls[0][1];
     expect(writtenContent).toContain("expiry:");
+    expect(writtenContent).toContain("valid_from:");
     expect(writtenContent).toContain("# Stale Page");
   });
 });
@@ -675,6 +676,7 @@ describe("fixUnmigratedPage", () => {
     expect(result.message).toContain("authors");
     expect(result.message).toContain("contributors");
     expect(result.message).toContain("disputed");
+    expect(result.message).toContain("valid_from");
     expect(mockedWriteWikiPage).toHaveBeenCalledOnce();
 
     // Verify the frontmatter passed to serializeFrontmatter
@@ -688,6 +690,8 @@ describe("fixUnmigratedPage", () => {
     expect(written).toContain("system");
     expect(written).toContain("disputed");
     expect(written).toContain("false");
+    // valid_from should be derived from the page's created date
+    expect(written).toContain("valid_from: 2025-01-01");
   });
 
   it("does NOT overwrite existing fields", async () => {
@@ -707,6 +711,7 @@ describe("fixUnmigratedPage", () => {
     expect(result.message).toContain("expiry");
     expect(result.message).toContain("contributors");
     expect(result.message).toContain("disputed");
+    expect(result.message).toContain("valid_from");
     // Should NOT mention fields that already existed
     expect(result.message).not.toContain("confidence");
     expect(result.message).not.toContain("authors");
@@ -725,6 +730,7 @@ describe("fixUnmigratedPage", () => {
         expiry: "2026-12-01",
         contributors: [],
         disputed: false,
+        valid_from: "2026-06-01",
       },
       body: "# Complete\n\nContent.",
     });
@@ -855,17 +861,21 @@ describe("fixLintIssue", () => {
 
     expect(result.success).toBe(true);
     expect(result.slug).toBe("old-topic");
-    expect(result.message).toMatch(/^Expiry extended to \d{4}-\d{2}-\d{2}$/);
+    expect(result.message).toMatch(/^Expiry extended to \d{4}-\d{2}-\d{2}, verified as of \d{4}-\d{2}-\d{2}$/);
     expect(mockedWriteWikiPage).toHaveBeenCalledOnce();
 
     // Verify the expiry is approximately 90 days from now
-    const dateMatch = result.message.match(/(\d{4}-\d{2}-\d{2})$/);
+    const dateMatch = result.message.match(/Expiry extended to (\d{4}-\d{2}-\d{2}), verified as of (\d{4}-\d{2}-\d{2})$/);
     expect(dateMatch).not.toBeNull();
     const newExpiry = new Date(dateMatch![1]);
+    const validFrom = new Date(dateMatch![2]);
     const now = new Date();
     const diffDays = (newExpiry.getTime() - now.getTime()) / (1000 * 60 * 60 * 24);
     expect(diffDays).toBeGreaterThan(88);
     expect(diffDays).toBeLessThan(92);
+    // valid_from should be today
+    const validDiff = Math.abs(validFrom.getTime() - now.getTime()) / (1000 * 60 * 60 * 24);
+    expect(validDiff).toBeLessThan(1);
   });
 
   it("throws FixNotFoundError for stale-page with missing page", async () => {

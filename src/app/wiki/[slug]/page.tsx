@@ -20,6 +20,18 @@ function formatDate(value: string): string {
   return value.slice(0, 10);
 }
 
+const MONTH_NAMES = [
+  "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+];
+
+/** Format a YYYY-MM-DD string as "May 2026". Returns the raw date on failure. */
+function formatMonthYear(value: string): string {
+  const d = new Date(value);
+  if (isNaN(d.getTime())) return value.slice(0, 10);
+  return `${MONTH_NAMES[d.getUTCMonth()]} ${d.getUTCFullYear()}`;
+}
+
 /** Map a numeric confidence score to a human-readable label + color class. */
 function confidenceDisplay(value: number): {
   label: string;
@@ -255,6 +267,13 @@ function PageMetadata({ frontmatter, discussionStats }: { frontmatter: Frontmatt
   const isExpired =
     expiryDate !== null && !isNaN(expiryDate.getTime()) && expiryDate < new Date();
 
+  // Temporal validity: when the page's content was last verified as accurate.
+  const validFromRaw = frontmatter.valid_from;
+  const validFromStr =
+    typeof validFromRaw === "string" && validFromRaw.length >= 10
+      ? validFromRaw
+      : null;
+
   // Authors
   const authors = Array.isArray(frontmatter.authors)
     ? frontmatter.authors.filter(
@@ -295,6 +314,7 @@ function PageMetadata({ frontmatter, discussionStats }: { frontmatter: Frontmatt
   const hasYopedia =
     confidence !== null ||
     expiryStr !== null ||
+    validFromStr !== null ||
     authors.length > 0 ||
     disputed ||
     aliases.length > 0 ||
@@ -350,16 +370,24 @@ function PageMetadata({ frontmatter, discussionStats }: { frontmatter: Frontmatt
         <AuthorBadges authors={authors} contributors={contributors} />
       )}
 
-      {/* Row 4: expiry / staleness */}
-      {expiryStr && expiryDate && !isNaN(expiryDate.getTime()) && (
+      {/* Row 4: temporal validity — verified date + expiry */}
+      {(validFromStr || (expiryStr && expiryDate && !isNaN(expiryDate.getTime()))) && (
         <div className="text-sm">
           {isExpired ? (
             <span className="text-amber-600 dark:text-amber-400">
-              ⚠ Expired {formatDate(expiryStr)} — may be outdated
+              ⚠{validFromStr ? ` Verified ${formatMonthYear(validFromStr)} ·` : ""} Expired {formatDate(expiryStr!)} — may be outdated
+            </span>
+          ) : validFromStr && expiryStr ? (
+            <span className="text-gray-400 dark:text-gray-500">
+              Verified {formatMonthYear(validFromStr)} · Review by {formatMonthYear(expiryStr)}
+            </span>
+          ) : validFromStr ? (
+            <span className="text-gray-400 dark:text-gray-500">
+              Verified {formatMonthYear(validFromStr)}
             </span>
           ) : (
             <span className="text-gray-400 dark:text-gray-500">
-              Expires {formatDate(expiryStr)}
+              Review by {formatMonthYear(expiryStr!)}
             </span>
           )}
         </div>

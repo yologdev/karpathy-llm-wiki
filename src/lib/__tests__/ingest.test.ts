@@ -329,6 +329,14 @@ describe("ingest — Phase 1 frontmatter fields", () => {
     expect(page!.frontmatter.supersedes).toBe("");
     expect(page!.frontmatter.aliases).toEqual([]);
 
+    // valid_from should be today's date (YYYY-MM-DD)
+    const validFrom = page!.frontmatter.valid_from as string;
+    expect(validFrom).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    const validFromDate = new Date(validFrom);
+    const today = new Date();
+    const validFromDiff = Math.abs(validFromDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24);
+    expect(validFromDiff).toBeLessThan(1);
+
     // expiry should be a YYYY-MM-DD string ~90 days from now
     const expiry = page!.frontmatter.expiry as string;
     expect(expiry).toMatch(/^\d{4}-\d{2}-\d{2}$/);
@@ -376,6 +384,13 @@ describe("ingest — Phase 1 frontmatter fields", () => {
     const diffDays = (expiryDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24);
     expect(diffDays).toBeGreaterThan(85);
     expect(diffDays).toBeLessThan(95);
+
+    // valid_from should reset to today (not preserved from old page)
+    const validFrom = page!.frontmatter.valid_from as string;
+    expect(validFrom).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    const validFromDate = new Date(validFrom);
+    const validFromDiff = Math.abs(validFromDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24);
+    expect(validFromDiff).toBeLessThan(1);
   });
 
   it("re-ingest does not duplicate system in contributors", async () => {

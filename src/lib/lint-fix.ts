@@ -426,9 +426,11 @@ export async function fixBrokenLink(
 }
 
 /**
- * Fix a stale-page lint issue by bumping the expiry date forward by 90 days.
+ * Fix a stale-page lint issue by bumping the expiry date forward by 90 days
+ * and refreshing the `valid_from` timestamp to today.
  *
- * Reads the page, updates the `expiry` frontmatter field, and writes back.
+ * Reads the page, updates the `expiry` and `valid_from` frontmatter fields,
+ * and writes back.
  */
 export async function fixStalePage(slug: string): Promise<FixResult> {
   if (!slug) {
@@ -443,15 +445,17 @@ export async function fixStalePage(slug: string): Promise<FixResult> {
   const now = new Date();
   const newExpiry = new Date(now.getTime() + 90 * 24 * 60 * 60 * 1000);
   const expiryStr = newExpiry.toISOString().split("T")[0];
+  const validFromStr = now.toISOString().split("T")[0];
 
   page.frontmatter.expiry = expiryStr;
+  page.frontmatter.valid_from = validFromStr;
 
   await writeWikiPage(slug, serializeFrontmatter(page.frontmatter, page.body));
 
   return {
     success: true,
     slug,
-    message: `Expiry extended to ${expiryStr}`,
+    message: `Expiry extended to ${expiryStr}, verified as of ${validFromStr}`,
   };
 }
 
@@ -510,6 +514,20 @@ export async function fixUnmigratedPage(slug: string): Promise<FixResult> {
   if (!("disputed" in fm)) {
     fm.disputed = false;
     added.push("disputed");
+  }
+  if (!("valid_from" in fm)) {
+    // For unmigrated pages, use the page's created/updated date as a best guess
+    // for when the content was last verified. Falls back to today.
+    const createdRaw = fm.created;
+    const updatedRaw = fm.updated;
+    const bestGuess =
+      typeof updatedRaw === "string" && updatedRaw.length >= 10
+        ? updatedRaw.slice(0, 10)
+        : typeof createdRaw === "string" && createdRaw.length >= 10
+          ? createdRaw.slice(0, 10)
+          : now.toISOString().split("T")[0];
+    fm.valid_from = bestGuess;
+    added.push("valid_from");
   }
 
   await writeWikiPage(slug, serializeFrontmatter(fm, page.body));
