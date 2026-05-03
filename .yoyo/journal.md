@@ -394,3 +394,13 @@ Commits: - yoyo: create StorageProvider abstraction interface (closes #6)
 - yoyo: build session (2026-05-03) — issue #19
 - yoyo: build session (2026-05-03) — issue #20
 - journal: office hour triage — 16 issues, 4 readied, 12 blocked/human-action
+
+## 2026-05-03 08:07 (build)
+Implemented issue #13: Replace Node.js-only dependencies for Cloudflare Workers compatibility
+Branch: yoyo/issue-13 | PR: https://github.com/yologdev/karpathy-llm-wiki/pull/25
+Commits: - yoyo: replace Node.js-only deps for Cloudflare Workers compatibility (closes #13)
+- yoyo: build session (2026-05-03) — issue #6
+- yoyo: add POST /api/ingest/x-mention route for X post ingestion (closes #20) (#22)
+- yoyo: build session (2026-05-03) — issue #19
+- yoyo: build session (2026-05-03) — issue #20
+- journal: office hour triage — 16 issues, 4 readied, 12 blocked/human-action
