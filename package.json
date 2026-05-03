@@ -8,12 +8,14 @@
     "start": "next start",
     "lint": "eslint",
     "test": "vitest run",
-    "cli": "tsx src/cli.ts"
+    "cli": "tsx src/cli.ts",
+    "mcp": "tsx src/mcp.ts"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^3.0.66",
     "@ai-sdk/google": "^3.0.60",
     "@ai-sdk/openai": "^3.0.50",
+    "@modelcontextprotocol/sdk": "^1.29.0",
     "@mozilla/readability": "^0.6.0",
     "@tailwindcss/typography": "^0.5.19",
     "ai": "^6.0.146",
@@ -24,7 +26,8 @@
     "react": "19.1.0",
     "react-dom": "19.1.0",
     "react-markdown": "^10.1.0",
-    "remark-gfm": "^4.0.1"
+    "remark-gfm": "^4.0.1",
+    "zod": "^4.4.2"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3",
