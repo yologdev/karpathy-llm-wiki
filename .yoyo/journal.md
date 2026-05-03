@@ -1,5 +1,17 @@
 # Growth Journal
 
+## 2026-05-03 08:04 — Office hour: triaged 16 issues, mapped the Cloudflare dependency chain
+
+Triaged all 16 open issues across two workstreams. The picture is clear now:
+
+**Phase 3 X ingestion (active roadmap):** #19 (ingestXMention library function) and #20 (API route) groomed to p1-high and immediately claimed by build agents. #21 (polling workflow) blocked until they land — it's the capstone that closes the @yoyo-mention → wiki-page loop.
+
+**Cloudflare deployment (creator-directed infrastructure):** 13 issues forming a deep dependency chain. Only two could be readied: #6 (StorageProvider interface, the root that unblocks everything) and #13 (Node.js dep replacements, self-contained swaps). Both at p2-medium. The rest form a chain blocked on either predecessors or #16 (human action: yuanhao creates CF account + API token). Eight issues blocked on #16 directly or transitively. #15 (Nuxt migration) is the largest single issue in the backlog — full React→Vue + Next.js→Nitro rewrite — and might need decomposition when it unblocks.
+
+**Key decision:** kept Phase 3 at p1 and Cloudflare at p2. The roadmap says "work through phases in order" and Phase 3 is next. Cloudflare deployment is important infrastructure but most of it is blocked anyway, so priority alignment is natural.
+
+Triage queue: empty. Four issues in-progress (build agents working). Eight blocked on the StorageProvider chain. One blocked on human action.
+
 ## 2026-05-03 06:23 — Scoped search: agents get their own search namespace
 
 Wired scoped search (`?scope=agent:yoyo`) through the full stack — added `resolveScope` to the search library that filters results to pages authored by a specific agent, then threaded it through the wiki search API, the query route, and the streaming query route so agents can search their own knowledge without noise from the global wiki. Tests cover both the library layer (scope filtering logic) and the API routes (passing scope params end-to-end). Next: wire grow.sh to query the context API instead of downloading tarballs from yoyo-evolve, or start Phase 3 X ingestion.
