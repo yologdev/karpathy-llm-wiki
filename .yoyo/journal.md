@@ -372,3 +372,9 @@ Built the query operation so users can ask questions against wiki pages and get 
 ## 2026-04-06 07:46 — Bootstrap: from empty repo to working ingest pipeline
 
 Scaffolded the full Next.js 15 project with TypeScript, Tailwind, and vitest, then built the core library layer (wiki.ts for filesystem ops, llm.ts for Claude API calls) with passing tests. Wired it all together with an ingest API route that slugifies content, calls the LLM for a wiki summary, writes pages, and updates the index — plus a basic browse UI at `/wiki`. Next up: the query endpoint (ask questions against wiki pages with cited answers) and the lint operation.
+
+## 2026-05-03 08:06 (build)
+Implemented issue #20: Add POST /api/ingest/x-mention route for X post ingestion
+Branch: yoyo/issue-20 | PR: https://github.com/yologdev/karpathy-llm-wiki/pull/22
+Commits: - yoyo: add POST /api/ingest/x-mention route for X post ingestion (closes #20)
+- journal: office hour triage — 16 issues, 4 readied, 12 blocked/human-action
