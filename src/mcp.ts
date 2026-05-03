@@ -1,11 +1,13 @@
 #!/usr/bin/env node
 /**
- * yopedia MCP server — exposes read-only wiki tools over stdio transport.
+ * yopedia MCP server — exposes wiki tools over stdio transport.
  *
  * Tools:
  *   search_wiki  — Search wiki pages by query string
  *   read_page    — Read a single wiki page by slug
  *   list_pages   — List all wiki pages with optional sort/limit
+ *   create_page  — Create a new wiki page
+ *   update_page  — Update an existing wiki page
  *
  * Usage:
  *   pnpm mcp          # starts the stdio server
@@ -17,9 +19,15 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import * as z from "zod/v4";
 import {
   searchWikiContent,
+  readWikiPage,
   readWikiPageWithFrontmatter,
   listWikiPages,
+  validateSlug,
+  serializeFrontmatter,
+  writeWikiPageWithSideEffects,
+  type Frontmatter,
 } from "./lib/wiki";
+import { extractSummary } from "./lib/ingest";
 import type { ContentSearchResult } from "./lib/search";
 
 // ---------------------------------------------------------------------------
@@ -110,6 +118,94 @@ export async function handleListPages(args: {
     ...(e.tags && e.tags.length > 0 ? { tags: e.tags } : {}),
     ...(e.updated ? { updated: e.updated } : {}),
   }));
+}
+
+// ---------------------------------------------------------------------------
+// Write tool handlers
+// ---------------------------------------------------------------------------
+
+/**
+ * Extract title from the first `# Heading` in markdown content.
+ * Falls back to the provided fallback string.
+ */
+function extractTitle(content: string, fallback: string): string {
+  const match = content.match(/^#\s+(.+)$/m);
+  return match ? match[1].trim() : fallback;
+}
+
+export async function handleCreatePage(args: {
+  slug: string;
+  content: string;
+}): Promise<{ slug: string; title: string; created: true }> {
+  validateSlug(args.slug);
+
+  // Check for conflicts
+  const existing = await readWikiPage(args.slug);
+  if (existing) {
+    throw new Error(`Page already exists: ${args.slug}`);
+  }
+
+  const title = extractTitle(args.content, args.slug);
+  const summary = extractSummary(args.content);
+  const today = new Date().toISOString().slice(0, 10);
+
+  const frontmatter: Frontmatter = {
+    title,
+    created: today,
+    updated: today,
+  };
+
+  const fullContent = serializeFrontmatter(frontmatter, args.content);
+
+  await writeWikiPageWithSideEffects({
+    slug: args.slug,
+    title,
+    content: fullContent,
+    summary,
+    logOp: "ingest",
+    crossRefSource: null, // skip cross-ref for MCP writes
+  });
+
+  return { slug: args.slug, title, created: true };
+}
+
+export async function handleUpdatePage(args: {
+  slug: string;
+  content: string;
+  author?: string;
+}): Promise<{ slug: string; title: string; updated: true }> {
+  const existingPage = await readWikiPageWithFrontmatter(args.slug);
+  if (!existingPage) {
+    throw new Error(`Page not found: ${args.slug}`);
+  }
+
+  const title = extractTitle(args.content, existingPage.title);
+  const summary = extractSummary(args.content);
+  const today = new Date().toISOString().slice(0, 10);
+
+  // Merge frontmatter: preserve existing fields, bump updated, backfill created
+  const merged: Frontmatter = {
+    ...existingPage.frontmatter,
+    title,
+    updated: today,
+  };
+  if (!merged.created) {
+    merged.created = today;
+  }
+
+  const fullContent = serializeFrontmatter(merged, args.content);
+
+  await writeWikiPageWithSideEffects({
+    slug: args.slug,
+    title,
+    content: fullContent,
+    summary,
+    logOp: "edit",
+    author: args.author,
+    crossRefSource: null, // skip cross-ref for MCP writes
+  });
+
+  return { slug: args.slug, title, updated: true };
 }
 
 // ---------------------------------------------------------------------------
@@ -210,6 +306,77 @@ export function createMcpServer(): McpServer {
         },
       ],
     };
+  });
+
+  // create_page — Create a new wiki page
+  server.registerTool("create_page", {
+    description: "Create a new yopedia wiki page with the given slug and markdown content",
+    inputSchema: {
+      slug: z.string().describe("URL-safe page slug (e.g. 'neural-networks')"),
+      content: z.string().describe("Markdown body for the new page (include a # Heading for the title)"),
+    },
+    annotations: {
+      readOnlyHint: false,
+      openWorldHint: false,
+    },
+  }, async (args) => {
+    try {
+      const result = await handleCreatePage(args);
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: JSON.stringify(result, null, 2),
+          },
+        ],
+      };
+    } catch (err) {
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: (err as Error).message,
+          },
+        ],
+        isError: true,
+      };
+    }
+  });
+
+  // update_page — Update an existing wiki page
+  server.registerTool("update_page", {
+    description: "Update an existing yopedia wiki page with new markdown content",
+    inputSchema: {
+      slug: z.string().describe("Slug of the page to update"),
+      content: z.string().describe("New markdown body for the page"),
+      author: z.string().optional().describe("Author handle for attribution"),
+    },
+    annotations: {
+      readOnlyHint: false,
+      openWorldHint: false,
+    },
+  }, async (args) => {
+    try {
+      const result = await handleUpdatePage(args);
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: JSON.stringify(result, null, 2),
+          },
+        ],
+      };
+    } catch (err) {
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: (err as Error).message,
+          },
+        ],
+        isError: true,
+      };
+    }
   });
 
   return server;

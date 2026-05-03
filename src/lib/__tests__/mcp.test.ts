@@ -6,6 +6,8 @@ import {
   handleSearchWiki,
   handleReadPage,
   handleListPages,
+  handleCreatePage,
+  handleUpdatePage,
 } from "../../mcp";
 
 let tmpDir: string;
@@ -196,5 +198,142 @@ describe("list_pages", () => {
   it("returns empty array when no pages exist", async () => {
     const result = await handleListPages({});
     expect(result).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// MCP write tools tests
+// ---------------------------------------------------------------------------
+
+describe("MCP write tools", () => {
+  describe("create_page", () => {
+    it("creates a new page", async () => {
+      const result = await handleCreatePage({
+        slug: "test-create",
+        content: "# Test\n\nBody text here.",
+      });
+
+      expect(result.slug).toBe("test-create");
+      expect(result.title).toBe("Test");
+      expect(result.created).toBe(true);
+
+      // Verify file exists on disk with frontmatter
+      const filePath = path.join(tmpDir, "wiki", "test-create.md");
+      const fileContent = await fs.readFile(filePath, "utf-8");
+      expect(fileContent).toContain("---");
+      expect(fileContent).toContain("title: Test");
+      expect(fileContent).toContain("# Test");
+      expect(fileContent).toContain("Body text here.");
+    });
+
+    it("rejects duplicate slug", async () => {
+      await handleCreatePage({
+        slug: "dup-page",
+        content: "# Duplicate\n\nFirst version.",
+      });
+
+      await expect(
+        handleCreatePage({
+          slug: "dup-page",
+          content: "# Duplicate\n\nSecond version.",
+        }),
+      ).rejects.toThrow("Page already exists: dup-page");
+    });
+
+    it("rejects invalid slug", async () => {
+      await expect(
+        handleCreatePage({
+          slug: "",
+          content: "# Empty Slug\n\nBody.",
+        }),
+      ).rejects.toThrow();
+
+      await expect(
+        handleCreatePage({
+          slug: "INVALID SLUG!",
+          content: "# Bad\n\nBody.",
+        }),
+      ).rejects.toThrow();
+    });
+  });
+
+  describe("update_page", () => {
+    it("updates existing page", async () => {
+      // Create first
+      await handleCreatePage({
+        slug: "update-me",
+        content: "# Original\n\nOriginal body.",
+      });
+
+      const result = await handleUpdatePage({
+        slug: "update-me",
+        content: "# Updated\n\nNew body content.",
+      });
+
+      expect(result.slug).toBe("update-me");
+      expect(result.title).toBe("Updated");
+      expect(result.updated).toBe(true);
+
+      // Verify file on disk has new content
+      const filePath = path.join(tmpDir, "wiki", "update-me.md");
+      const fileContent = await fs.readFile(filePath, "utf-8");
+      expect(fileContent).toContain("# Updated");
+      expect(fileContent).toContain("New body content.");
+    });
+
+    it("404 on missing page", async () => {
+      await expect(
+        handleUpdatePage({
+          slug: "nonexistent-page",
+          content: "# Ghost\n\nBody.",
+        }),
+      ).rejects.toThrow("Page not found: nonexistent-page");
+    });
+
+    it("preserves frontmatter", async () => {
+      // Create a page with specific frontmatter
+      await writeTestPage(
+        "preserve-fm",
+        "---\ntitle: Preserve\ntags: [science, ai]\ncreated: '2025-01-15'\nconfidence: 0.8\n---\n# Preserve\n\nOriginal body.",
+      );
+
+      const result = await handleUpdatePage({
+        slug: "preserve-fm",
+        content: "# Preserve Updated\n\nNew body.",
+      });
+
+      expect(result.updated).toBe(true);
+
+      // Verify original frontmatter fields preserved
+      const filePath = path.join(tmpDir, "wiki", "preserve-fm.md");
+      const fileContent = await fs.readFile(filePath, "utf-8");
+      expect(fileContent).toContain("tags: [science, ai]");
+      expect(fileContent).toContain("confidence: 0.8");
+      // The serializer outputs date strings without quotes
+      expect(fileContent).toContain("created: 2025-01-15");
+      // updated should be bumped to today
+      const today = new Date().toISOString().slice(0, 10);
+      expect(fileContent).toContain(`updated: ${today}`);
+    });
+
+    it("author attribution", async () => {
+      await handleCreatePage({
+        slug: "author-test",
+        content: "# Author Test\n\nBody.",
+      });
+
+      const result = await handleUpdatePage({
+        slug: "author-test",
+        content: "# Author Test\n\nUpdated body.",
+        author: "agent-alpha",
+      });
+
+      expect(result.slug).toBe("author-test");
+      expect(result.updated).toBe(true);
+      // The author flows through to writeWikiPageWithSideEffects
+      // which stores it in the revision sidecar. We verify the call
+      // succeeded without error — deeper attribution is tested in
+      // lifecycle/revision tests.
+    });
   });
 });
