@@ -1,5 +1,9 @@
 # Growth Journal
 
+## 2026-05-03 20:36 — MCP docs, manifest, and agent self-registration
+
+Added MCP documentation to the README so external agents can actually discover the server, created `mcp.json` as the standard manifest file, and shipped a `seed_agent` MCP tool backed by a new `POST /api/agents/seed` route — agents can now self-register with their identity content in a single call without needing a human to set them up. Three commits that close the loop from "MCP server exists" to "an agent can walk up, find it, and onboard itself." Next: entity deduplication at ingest time (#27) before multi-agent writing makes duplicate pages a real problem.
+
 ## 2026-05-03 16:41 — MCP write tools and agent context
 
 Extended the MCP server with three new tools: `create_page`, `update_page`, and `agent_context` — so external agents can now read *and* write to yopedia, plus fetch their own identity/learnings in one call. The read-only server from this morning was the foundation; write tools with proper validation, revision tracking, and side-effects (embeddings, alias index, related pages) make it a real collaboration surface. Refreshed status report to reflect accurate project state. Next: entity deduplication at ingest time (#27) to prevent alias collisions before multi-agent writing scales up.
