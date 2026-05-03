@@ -8,18 +8,22 @@ import {
   handleListPages,
   handleCreatePage,
   handleUpdatePage,
+  handleAgentContext,
 } from "../../mcp";
 
 let tmpDir: string;
 let originalWikiDir: string | undefined;
 let originalRawDir: string | undefined;
+let originalDataDir: string | undefined;
 
 beforeEach(async () => {
   tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "mcp-test-"));
   originalWikiDir = process.env.WIKI_DIR;
   originalRawDir = process.env.RAW_DIR;
+  originalDataDir = process.env.DATA_DIR;
   process.env.WIKI_DIR = path.join(tmpDir, "wiki");
   process.env.RAW_DIR = path.join(tmpDir, "raw");
+  process.env.DATA_DIR = tmpDir;
   await fs.mkdir(path.join(tmpDir, "wiki"), { recursive: true });
   await fs.mkdir(path.join(tmpDir, "raw"), { recursive: true });
 });
@@ -34,6 +38,11 @@ afterEach(async () => {
     delete process.env.RAW_DIR;
   } else {
     process.env.RAW_DIR = originalRawDir;
+  }
+  if (originalDataDir === undefined) {
+    delete process.env.DATA_DIR;
+  } else {
+    process.env.DATA_DIR = originalDataDir;
   }
   await fs.rm(tmpDir, { recursive: true, force: true });
 });
@@ -335,5 +344,92 @@ describe("MCP write tools", () => {
       // succeeded without error — deeper attribution is tested in
       // lifecycle/revision tests.
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// agent_context tool tests
+// ---------------------------------------------------------------------------
+
+describe("agent_context tool", () => {
+  /** Helper — write an agent profile JSON to the agents directory. */
+  async function writeAgentProfile(profile: {
+    id: string;
+    name: string;
+    description: string;
+    identityPages: string[];
+    learningPages: string[];
+    socialPages: string[];
+  }): Promise<void> {
+    const agentsDir = path.join(tmpDir, "agents");
+    await fs.mkdir(agentsDir, { recursive: true });
+    const full = {
+      ...profile,
+      registered: "2026-05-03",
+      lastUpdated: "2026-05-03",
+    };
+    await fs.writeFile(
+      path.join(agentsDir, `${profile.id}.json`),
+      JSON.stringify(full),
+      "utf-8",
+    );
+  }
+
+  it("returns agent context with page content", async () => {
+    await writeAgentProfile({
+      id: "test-agent",
+      name: "Test Agent",
+      description: "An agent for testing",
+      identityPages: ["identity-page"],
+      learningPages: ["learnings-page"],
+      socialPages: ["social-page"],
+    });
+
+    await writeTestPage("identity-page", "# Identity\n\nI am a test agent.");
+    await writeTestPage("learnings-page", "# Learnings\n\nI learned things.");
+    await writeTestPage("social-page", "# Social\n\nPeople are interesting.");
+
+    const result = await handleAgentContext({ agent_id: "test-agent" });
+
+    // Verify agent info
+    expect(result.agent.id).toBe("test-agent");
+    expect(result.agent.name).toBe("Test Agent");
+    expect(result.agent.description).toBe("An agent for testing");
+
+    // Verify context sections contain page content
+    expect(result.context.identity).toContain("I am a test agent.");
+    expect(result.context.learnings).toContain("I learned things.");
+    expect(result.context.socialWisdom).toContain("People are interesting.");
+
+    // Verify meta
+    expect(result.meta.pageCount).toBe(3);
+    expect(result.meta.totalChars).toBeGreaterThan(0);
+  });
+
+  it("throws for unknown agent", async () => {
+    await expect(
+      handleAgentContext({ agent_id: "nonexistent-agent" }),
+    ).rejects.toThrow("Agent not found");
+  });
+
+  it("handles missing wiki pages gracefully", async () => {
+    await writeAgentProfile({
+      id: "sparse-agent",
+      name: "Sparse Agent",
+      description: "Agent with missing pages",
+      identityPages: ["missing-identity"],
+      learningPages: ["missing-learnings"],
+      socialPages: ["missing-social"],
+    });
+
+    const result = await handleAgentContext({ agent_id: "sparse-agent" });
+
+    // Should return successfully with empty content, not crash
+    expect(result.agent.id).toBe("sparse-agent");
+    expect(result.context.identity).toBe("");
+    expect(result.context.learnings).toBe("");
+    expect(result.context.socialWisdom).toBe("");
+    expect(result.meta.pageCount).toBe(0);
+    expect(result.meta.totalChars).toBe(0);
   });
 });

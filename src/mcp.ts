@@ -3,11 +3,12 @@
  * yopedia MCP server — exposes wiki tools over stdio transport.
  *
  * Tools:
- *   search_wiki  — Search wiki pages by query string
- *   read_page    — Read a single wiki page by slug
- *   list_pages   — List all wiki pages with optional sort/limit
- *   create_page  — Create a new wiki page
- *   update_page  — Update an existing wiki page
+ *   search_wiki    — Search wiki pages by query string
+ *   read_page      — Read a single wiki page by slug
+ *   list_pages     — List all wiki pages with optional sort/limit
+ *   create_page    — Create a new wiki page
+ *   update_page    — Update an existing wiki page
+ *   agent_context  — Get an agent's full context by agent ID
  *
  * Usage:
  *   pnpm mcp          # starts the stdio server
@@ -28,6 +29,7 @@ import {
   type Frontmatter,
 } from "./lib/wiki";
 import { extractSummary } from "./lib/ingest";
+import { getAgent } from "./lib/agents";
 import type { ContentSearchResult } from "./lib/search";
 
 // ---------------------------------------------------------------------------
@@ -209,6 +211,78 @@ export async function handleUpdatePage(args: {
 }
 
 // ---------------------------------------------------------------------------
+// Agent context handler
+// ---------------------------------------------------------------------------
+
+/** Separator used between concatenated page contents (matches API route). */
+const PAGE_SEPARATOR = "\n\n---\n\n";
+
+/**
+ * Load wiki pages by slug, concatenate their content.
+ * Missing pages are silently skipped (returns empty string for that section).
+ */
+async function loadPages(slugs: string[]): Promise<{ content: string; count: number }> {
+  const contents: string[] = [];
+  for (const slug of slugs) {
+    const page = await readWikiPage(slug);
+    if (page) {
+      contents.push(page.content);
+    }
+  }
+  return {
+    content: contents.join(PAGE_SEPARATOR),
+    count: contents.length,
+  };
+}
+
+export async function handleAgentContext(args: {
+  agent_id: string;
+}): Promise<{
+  agent: { id: string; name: string; description: string };
+  context: {
+    identity: string;
+    learnings: string;
+    socialWisdom: string;
+  };
+  meta: {
+    totalChars: number;
+    pageCount: number;
+  };
+}> {
+  const agent = await getAgent(args.agent_id);
+  if (!agent) {
+    throw new Error("Agent not found");
+  }
+
+  const [identity, learnings, social] = await Promise.all([
+    loadPages(agent.identityPages),
+    loadPages(agent.learningPages),
+    loadPages(agent.socialPages),
+  ]);
+
+  const totalChars =
+    identity.content.length + learnings.content.length + social.content.length;
+  const pageCount = identity.count + learnings.count + social.count;
+
+  return {
+    agent: {
+      id: agent.id,
+      name: agent.name,
+      description: agent.description,
+    },
+    context: {
+      identity: identity.content,
+      learnings: learnings.content,
+      socialWisdom: social.content,
+    },
+    meta: {
+      totalChars,
+      pageCount,
+    },
+  };
+}
+
+// ---------------------------------------------------------------------------
 // MCP server setup
 // ---------------------------------------------------------------------------
 
@@ -358,6 +432,41 @@ export function createMcpServer(): McpServer {
   }, async (args) => {
     try {
       const result = await handleUpdatePage(args);
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: JSON.stringify(result, null, 2),
+          },
+        ],
+      };
+    } catch (err) {
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: (err as Error).message,
+          },
+        ],
+        isError: true,
+      };
+    }
+  });
+
+  // agent_context — Get an agent's full context
+  server.registerTool("agent_context", {
+    description:
+      "Get an agent's full context (identity, learnings, social wisdom) by agent ID",
+    inputSchema: {
+      agent_id: z.string().describe("Agent ID (e.g. 'yoyo')"),
+    },
+    annotations: {
+      readOnlyHint: true,
+      openWorldHint: false,
+    },
+  }, async (args) => {
+    try {
+      const result = await handleAgentContext(args);
       return {
         content: [
           {
