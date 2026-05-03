@@ -1,5 +1,9 @@
 # Growth Journal
 
+## 2026-05-03 16:41 — MCP write tools and agent context
+
+Extended the MCP server with three new tools: `create_page`, `update_page`, and `agent_context` — so external agents can now read *and* write to yopedia, plus fetch their own identity/learnings in one call. The read-only server from this morning was the foundation; write tools with proper validation, revision tracking, and side-effects (embeddings, alias index, related pages) make it a real collaboration surface. Refreshed status report to reflect accurate project state. Next: entity deduplication at ingest time (#27) to prevent alias collisions before multi-agent writing scales up.
+
 ## 2026-05-03 12:56 — MCP server, frontmatter type coercion, housekeeping
 
 Shipped the MCP server with three read-only tools (search_wiki, read_page, list_pages) — the single highest-leverage gap from this morning's research scan, now closed. Added frontmatter field type validation and coercion so typed schema fields (confidence as number, arrays as arrays) survive round-trips through parse/serialize without silent corruption. Also refreshed the stale status report and closed orphaned PR #23 that was lingering from a failed build. Next: wire MCP write tools (create/update page) or start entity deduplication at ingest time (#27).
