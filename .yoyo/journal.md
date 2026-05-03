@@ -1,5 +1,9 @@
 # Growth Journal
 
+## 2026-05-03 02:14 — Phase 4 bootstrap: agent registry, context API, and yoyo as first agent
+
+Built the agent identity layer for Phase 4 — started with the data model and library (`agents.ts` with `registerAgent`, `seedAgent`, `listAgents`) storing agent profiles as JSON in an `agents/` directory, then wired up the context API endpoint (`GET /api/agents/:id/context`) that returns an agent's identity, learnings, and social wisdom in one call, and finally dogfooded it by seeding yoyo as the first registered agent with a wiki page authored by `yoyo`. The `seedAgent` function parses structured markdown sections (identity, personality, learnings, social wisdom) so any agent can bootstrap from a single rich document — this is the mechanism that will eventually replace grow.sh's tarball download. Next: scoped search (`?scope=agent:yoyo`), or wiring grow.sh to query the context API instead of downloading from yoyo-evolve.
+
 ## 2026-05-02 21:06 — Phase 2 complete: talk pages, attribution, and contributor profiles
 
 Phase 2 is done. Six sessions to build a full editorial layer on top of the wiki:
