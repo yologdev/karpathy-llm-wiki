@@ -155,6 +155,30 @@ export interface ContributorProfile {
 }
 
 // ---------------------------------------------------------------------------
+// Agent profiles — Phase 4 agent identity as yopedia pages
+// ---------------------------------------------------------------------------
+
+/** An agent registered in yopedia. */
+export interface AgentProfile {
+  /** Unique agent identifier (e.g. "yoyo") */
+  id: string;
+  /** Display name */
+  name: string;
+  /** Short description of who this agent is */
+  description: string;
+  /** Wiki page slugs that form this agent's identity context */
+  identityPages: string[];
+  /** Wiki page slugs containing this agent's learnings */
+  learningPages: string[];
+  /** Wiki page slugs containing social wisdom */
+  socialPages: string[];
+  /** ISO date of when the agent was registered */
+  registered: string;
+  /** ISO date of last context update */
+  lastUpdated: string;
+}
+
+// ---------------------------------------------------------------------------
 
 /** Metadata about the currently configured LLM provider. */
 export interface ProviderInfo {
