@@ -21,6 +21,7 @@ import {
 import { slugify } from "./slugify";
 import { loadPageConventions } from "./schema";
 import { getRawDir } from "./config";
+import { resolveAlias, updateAliasIndexForPage } from "./alias-index";
 
 
 /**
@@ -352,13 +353,19 @@ export async function ingest(
   content: string,
   options?: IngestOptions,
 ): Promise<IngestResult> {
-  const slug = slugify(title);
+  const rawSlug = slugify(title);
 
-  if (slug === "") {
+  if (rawSlug === "") {
     throw new Error(
       "Cannot ingest: title produces an empty slug",
     );
   }
+
+  // --- Alias resolution: check if title matches an existing page's aliases ---
+  // This prevents duplicate pages when the same concept appears under different
+  // names (e.g. "React.js" vs a page with aliases: ["React.js"]).
+  const resolvedSlug = await resolveAlias(title);
+  const slug = resolvedSlug ?? rawSlug;
 
   const isPreview = options?.preview === true;
   const preGeneratedContent = options?.generatedContent;
@@ -555,6 +562,10 @@ export async function ingest(
     logDetails: ({ updatedSlugs }) =>
       `slug: ${slug} · updated ${updatedSlugs.length} related page(s)`,
   });
+
+  // 6. Update the alias index so future ingests can resolve this page's aliases.
+  const aliases = Array.isArray(frontmatter.aliases) ? frontmatter.aliases as string[] : [];
+  updateAliasIndexForPage(slug, title, aliases);
 
   return {
     rawPath,

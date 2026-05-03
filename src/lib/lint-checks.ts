@@ -5,6 +5,7 @@ import { loadPageConventions } from "./schema";
 import { extractWikiLinks } from "./links";
 import type { LintIssue } from "./types";
 import { logger } from "./logger";
+import { findDuplicateEntities } from "./alias-index";
 
 /** All known lint check types. */
 export const ALL_CHECK_TYPES: LintIssue["type"][] = [
@@ -18,6 +19,7 @@ export const ALL_CHECK_TYPES: LintIssue["type"][] = [
   "stale-page",
   "low-confidence",
   "unmigrated-page",
+  "duplicate-entity",
 ];
 
 // Files that are part of the wiki infrastructure, not content pages.
@@ -676,5 +678,34 @@ export async function checkUnmigratedPages(): Promise<LintIssue[]> {
       });
     }
   }
+  return issues;
+}
+
+// ---------------------------------------------------------------------------
+// Duplicate-entity check — finds pages whose titles/aliases overlap.
+// ---------------------------------------------------------------------------
+
+/**
+ * Check for duplicate entities — pages whose titles or aliases overlap,
+ * suggesting they may be about the same concept and should be merged.
+ *
+ * Uses the alias index's `findDuplicateEntities()` to detect overlap between
+ * page titles, slugs, and alias arrays.
+ */
+export async function checkDuplicateEntities(): Promise<LintIssue[]> {
+  const duplicates = await findDuplicateEntities();
+  const issues: LintIssue[] = [];
+
+  for (const dup of duplicates) {
+    issues.push({
+      type: "duplicate-entity",
+      slug: dup.slugA,
+      target: dup.slugB,
+      message: `Potential duplicate: "${dup.slugA}" and "${dup.slugB}" share the name "${dup.overlappingName}" — consider merging`,
+      severity: "warning",
+      suggestion: `Review both pages and merge content into one, adding the other's title to aliases[]`,
+    });
+  }
+
   return issues;
 }
