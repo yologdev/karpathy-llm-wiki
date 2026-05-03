@@ -14,6 +14,8 @@
 // Anything else — block scalars, nested objects, anchors, multi-line strings,
 // block arrays — throws. This is by design.
 
+import { logger } from "@/lib/logger";
+
 /** A parsed frontmatter object. Values are strings, string arrays, numbers, or booleans. */
 export interface Frontmatter {
   [key: string]: string | string[] | number | boolean;
@@ -66,6 +68,92 @@ function coerceScalar(value: string): string | number | boolean {
   // Number coercion: must match an integer or decimal (possibly negative)
   if (/^-?\d+(\.\d+)?$/.test(value)) return Number(value);
   return value;
+}
+
+// ---------------------------------------------------------------------------
+// Schema-aware type normalization
+// ---------------------------------------------------------------------------
+//
+// LLMs sometimes produce quoted numbers/booleans in YAML frontmatter, e.g.
+// `confidence: "0.7"`. The generic parser intentionally keeps quoted values as
+// strings (correct for arbitrary keys). But for *known schema fields* with
+// defined types, we need to coerce to the correct type so downstream code that
+// does `typeof confidence === "number"` gets the right answer.
+
+/** ISO date pattern: YYYY-MM-DD */
+const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+/**
+ * Normalize known schema fields to their expected types after parsing.
+ * Mutates `data` in place. Fields that can't be coerced are deleted
+ * (absent is safer than wrong-type for downstream consumers).
+ */
+export function normalizeTypedFields(data: Frontmatter): void {
+  // --- confidence: number 0-1 ---
+  if ("confidence" in data) {
+    const raw = data.confidence;
+    const n = typeof raw === "number" ? raw : Number(raw);
+    if (isNaN(n)) {
+      logger.warn("frontmatter", `Removing non-numeric confidence: ${JSON.stringify(raw)}`);
+      delete data.confidence;
+    } else {
+      data.confidence = Math.max(0, Math.min(1, n));
+    }
+  }
+
+  // --- disputed: boolean ---
+  if ("disputed" in data) {
+    const raw = data.disputed;
+    if (typeof raw === "boolean") {
+      // already correct
+    } else if (raw === "true" || raw === "1") {
+      data.disputed = true;
+    } else if (raw === "false" || raw === "0" || raw === "") {
+      data.disputed = false;
+    } else {
+      logger.warn("frontmatter", `Removing non-boolean disputed: ${JSON.stringify(raw)}`);
+      delete data.disputed;
+    }
+  }
+
+  // --- expiry: string in ISO date format ---
+  if ("expiry" in data) {
+    const raw = String(data.expiry);
+    if (ISO_DATE_RE.test(raw)) {
+      data.expiry = raw;
+    } else {
+      logger.warn("frontmatter", `Removing invalid expiry date: ${JSON.stringify(data.expiry)}`);
+      delete data.expiry;
+    }
+  }
+
+  // --- valid_from: string in ISO date format ---
+  if ("valid_from" in data) {
+    const raw = String(data.valid_from);
+    if (ISO_DATE_RE.test(raw)) {
+      data.valid_from = raw;
+    } else {
+      logger.warn("frontmatter", `Removing invalid valid_from date: ${JSON.stringify(data.valid_from)}`);
+      delete data.valid_from;
+    }
+  }
+
+  // --- array fields: authors, contributors, aliases → string[] ---
+  for (const key of ["authors", "contributors", "aliases"] as const) {
+    if (!(key in data)) continue;
+    const raw = data[key];
+    if (Array.isArray(raw)) {
+      // already an array — keep it
+    } else if (typeof raw === "string" && raw !== "") {
+      data[key] = [raw];
+    } else if (typeof raw === "string" && raw === "") {
+      // empty string → empty array
+      data[key] = [];
+    } else {
+      // unexpected type (number, boolean) — wrap string representation
+      data[key] = [String(raw)];
+    }
+  }
 }
 
 /**
@@ -224,6 +312,8 @@ export function parseFrontmatter(content: string): ParsedPage {
       data[key] = coerceScalar(unquoteScalar(valueRaw));
     }
   }
+
+  normalizeTypedFields(data);
 
   return { data, body };
 }

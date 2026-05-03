@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parseFrontmatter, serializeFrontmatter } from "../frontmatter";
+import { parseFrontmatter, serializeFrontmatter, normalizeTypedFields } from "../frontmatter";
 
 // ---------------------------------------------------------------------------
 // parseFrontmatter
@@ -493,18 +493,18 @@ describe("number and boolean values", () => {
     expect(typeof data.disputed).toBe("boolean");
   });
 
-  it("keeps quoted number as string", () => {
+  it("coerces quoted confidence to number (schema normalization)", () => {
     const text = '---\nconfidence: "0.85"\n---\nBody';
     const { data } = parseFrontmatter(text);
-    expect(data.confidence).toBe("0.85");
-    expect(typeof data.confidence).toBe("string");
+    expect(data.confidence).toBe(0.85);
+    expect(typeof data.confidence).toBe("number");
   });
 
-  it("keeps quoted boolean as string", () => {
+  it("coerces quoted disputed to boolean (schema normalization)", () => {
     const text = '---\ndisputed: "true"\n---\nBody';
     const { data } = parseFrontmatter(text);
-    expect(data.disputed).toBe("true");
-    expect(typeof data.disputed).toBe("string");
+    expect(data.disputed).toBe(true);
+    expect(typeof data.disputed).toBe("boolean");
   });
 
   it("parses negative number", () => {
@@ -560,5 +560,238 @@ describe("number and boolean values", () => {
     const serialized = serializeFrontmatter({ disputed: true }, "Body");
     expect(serialized).toContain("disputed: true");
     expect(serialized).not.toContain('"true"');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// normalizeTypedFields — schema-aware type coercion
+// ---------------------------------------------------------------------------
+describe("normalizeTypedFields", () => {
+  // --- confidence (number 0-1) ---
+  describe("confidence field", () => {
+    it('coerces quoted "0.7" to number 0.7', () => {
+      const text = '---\nconfidence: "0.7"\n---\nBody';
+      const { data } = parseFrontmatter(text);
+      expect(data.confidence).toBe(0.7);
+      expect(typeof data.confidence).toBe("number");
+    });
+
+    it("keeps unquoted 0.7 as number", () => {
+      const text = "---\nconfidence: 0.7\n---\nBody";
+      const { data } = parseFrontmatter(text);
+      expect(data.confidence).toBe(0.7);
+      expect(typeof data.confidence).toBe("number");
+    });
+
+    it("clamps 1.5 to 1.0", () => {
+      const text = "---\nconfidence: 1.5\n---\nBody";
+      const { data } = parseFrontmatter(text);
+      expect(data.confidence).toBe(1.0);
+    });
+
+    it("clamps -0.1 to 0.0", () => {
+      const text = "---\nconfidence: -0.1\n---\nBody";
+      const { data } = parseFrontmatter(text);
+      expect(data.confidence).toBe(0.0);
+    });
+
+    it('removes non-numeric "banana"', () => {
+      const text = '---\nconfidence: "banana"\n---\nBody';
+      const { data } = parseFrontmatter(text);
+      expect(data).not.toHaveProperty("confidence");
+    });
+
+    it("removes unquoted non-numeric value", () => {
+      const data = { confidence: "not-a-number" as unknown as number };
+      normalizeTypedFields(data);
+      expect(data).not.toHaveProperty("confidence");
+    });
+
+    it("clamps boundary value 0 correctly", () => {
+      const text = "---\nconfidence: 0\n---\nBody";
+      const { data } = parseFrontmatter(text);
+      expect(data.confidence).toBe(0);
+    });
+
+    it("clamps boundary value 1 correctly", () => {
+      const text = "---\nconfidence: 1\n---\nBody";
+      const { data } = parseFrontmatter(text);
+      expect(data.confidence).toBe(1);
+    });
+  });
+
+  // --- disputed (boolean) ---
+  describe("disputed field", () => {
+    it('coerces quoted "true" to boolean true', () => {
+      const text = '---\ndisputed: "true"\n---\nBody';
+      const { data } = parseFrontmatter(text);
+      expect(data.disputed).toBe(true);
+      expect(typeof data.disputed).toBe("boolean");
+    });
+
+    it('coerces quoted "false" to boolean false', () => {
+      const text = '---\ndisputed: "false"\n---\nBody';
+      const { data } = parseFrontmatter(text);
+      expect(data.disputed).toBe(false);
+      expect(typeof data.disputed).toBe("boolean");
+    });
+
+    it("keeps unquoted true as boolean", () => {
+      const text = "---\ndisputed: true\n---\nBody";
+      const { data } = parseFrontmatter(text);
+      expect(data.disputed).toBe(true);
+      expect(typeof data.disputed).toBe("boolean");
+    });
+
+    it("keeps unquoted false as boolean", () => {
+      const text = "---\ndisputed: false\n---\nBody";
+      const { data } = parseFrontmatter(text);
+      expect(data.disputed).toBe(false);
+      expect(typeof data.disputed).toBe("boolean");
+    });
+
+    it('removes non-boolean "banana"', () => {
+      const data = { disputed: "banana" as unknown as boolean };
+      normalizeTypedFields(data);
+      expect(data).not.toHaveProperty("disputed");
+    });
+  });
+
+  // --- expiry (ISO date string) ---
+  describe("expiry field", () => {
+    it("keeps valid ISO date", () => {
+      const text = "---\nexpiry: 2026-01-01\n---\nBody";
+      const { data } = parseFrontmatter(text);
+      expect(data.expiry).toBe("2026-01-01");
+      expect(typeof data.expiry).toBe("string");
+    });
+
+    it("keeps quoted valid ISO date", () => {
+      const text = '---\nexpiry: "2026-01-01"\n---\nBody';
+      const { data } = parseFrontmatter(text);
+      expect(data.expiry).toBe("2026-01-01");
+    });
+
+    it('removes "not-a-date"', () => {
+      const text = '---\nexpiry: "not-a-date"\n---\nBody';
+      const { data } = parseFrontmatter(text);
+      expect(data).not.toHaveProperty("expiry");
+    });
+
+    it("removes partial date", () => {
+      const text = "---\nexpiry: 2026-01\n---\nBody";
+      const { data } = parseFrontmatter(text);
+      expect(data).not.toHaveProperty("expiry");
+    });
+  });
+
+  // --- valid_from (ISO date string) ---
+  describe("valid_from field", () => {
+    it("keeps valid ISO date", () => {
+      const text = "---\nvalid_from: 2026-01-01\n---\nBody";
+      const { data } = parseFrontmatter(text);
+      expect(data.valid_from).toBe("2026-01-01");
+      expect(typeof data.valid_from).toBe("string");
+    });
+
+    it('removes "not-a-date"', () => {
+      const text = '---\nvalid_from: "not-a-date"\n---\nBody';
+      const { data } = parseFrontmatter(text);
+      expect(data).not.toHaveProperty("valid_from");
+    });
+  });
+
+  // --- array fields: authors, contributors, aliases ---
+  describe("array fields", () => {
+    it("wraps bare string authors in array", () => {
+      const text = "---\nauthors: yoyo\n---\nBody";
+      const { data } = parseFrontmatter(text);
+      expect(data.authors).toEqual(["yoyo"]);
+    });
+
+    it("keeps array authors as array", () => {
+      const text = "---\nauthors: [yoyo, human]\n---\nBody";
+      const { data } = parseFrontmatter(text);
+      expect(data.authors).toEqual(["yoyo", "human"]);
+    });
+
+    it("wraps bare string contributors in array", () => {
+      const text = "---\ncontributors: alice\n---\nBody";
+      const { data } = parseFrontmatter(text);
+      expect(data.contributors).toEqual(["alice"]);
+    });
+
+    it("wraps bare string aliases in array", () => {
+      const text = "---\naliases: alt-name\n---\nBody";
+      const { data } = parseFrontmatter(text);
+      expect(data.aliases).toEqual(["alt-name"]);
+    });
+
+    it("converts empty string to empty array", () => {
+      const data = { authors: "" as unknown as string[] };
+      normalizeTypedFields(data);
+      expect(data.authors).toEqual([]);
+    });
+
+    it("wraps unexpected number in array", () => {
+      const data = { authors: 42 as unknown as string[] };
+      normalizeTypedFields(data);
+      expect(data.authors).toEqual(["42"]);
+    });
+  });
+
+  // --- non-schema fields are untouched ---
+  describe("non-schema fields", () => {
+    it("does not coerce a non-schema quoted number", () => {
+      const text = '---\ncustom_score: "42"\n---\nBody';
+      const { data } = parseFrontmatter(text);
+      // custom_score is not a schema field — stays as string
+      expect(data.custom_score).toBe("42");
+      expect(typeof data.custom_score).toBe("string");
+    });
+
+    it("does not coerce a non-schema quoted boolean", () => {
+      const text = '---\nis_cool: "true"\n---\nBody';
+      const { data } = parseFrontmatter(text);
+      expect(data.is_cool).toBe("true");
+      expect(typeof data.is_cool).toBe("string");
+    });
+  });
+
+  // --- round-trip preservation ---
+  describe("round-trip", () => {
+    it("parse → serialize → parse preserves normalized types", () => {
+      const text = [
+        "---",
+        'confidence: "0.7"',
+        'disputed: "true"',
+        "expiry: 2026-06-15",
+        "authors: yoyo",
+        "contributors: [alice, bob]",
+        "aliases: [alt1]",
+        "title: Test Page",
+        "---",
+        "",
+        "Body content",
+      ].join("\n");
+
+      const first = parseFrontmatter(text);
+      expect(first.data.confidence).toBe(0.7);
+      expect(first.data.disputed).toBe(true);
+      expect(first.data.authors).toEqual(["yoyo"]);
+
+      const serialized = serializeFrontmatter(first.data, first.body);
+      const second = parseFrontmatter(serialized);
+
+      expect(second.data.confidence).toBe(0.7);
+      expect(typeof second.data.confidence).toBe("number");
+      expect(second.data.disputed).toBe(true);
+      expect(typeof second.data.disputed).toBe("boolean");
+      expect(second.data.expiry).toBe("2026-06-15");
+      expect(second.data.authors).toEqual(["yoyo"]);
+      expect(second.data.contributors).toEqual(["alice", "bob"]);
+      expect(second.data.aliases).toEqual(["alt1"]);
+      expect(second.body).toBe(first.body);
+    });
   });
 });
