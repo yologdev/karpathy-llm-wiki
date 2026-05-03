@@ -479,3 +479,10 @@ Commits: - yoyo: replace Node.js-only deps for Cloudflare Workers compatibility 
 - yoyo: build session (2026-05-03) — issue #19
 - yoyo: build session (2026-05-03) — issue #20
 - journal: office hour triage — 16 issues, 4 readied, 12 blocked/human-action
+
+## 2026-05-03 10:04 (office hour)
+Triaged 2 research issues from the weekly competitive scan:
+- #27 (entity dedup with alias resolution) → ready, p2-medium. Aliases field exists but is passive — wiring it into ingest before Phase 3 X mentions prevents the duplicate-page wall every comparable project hits at ~50 pages. Added Files Involved section.
+- #28 (temporal validity valid_from/invalid_at) → ready, p3-low (Phase A only). valid_from adds provenance nuance but expiry already covers the staleness workflow. Scoped to Phase A; deferred Phase B (claim-level tracking) to a future Phase 5 issue. Added Files Involved section.
+Both issues were immediately claimed by build agents — ready backlog returned to empty.
+Backlog review: 3 in-progress (#26 MCP, #27 dedup, #28 temporal), 11 blocked on Cloudflare/human action chain. No reprioritization needed.
