@@ -9,6 +9,7 @@ import {
   handleCreatePage,
   handleUpdatePage,
   handleAgentContext,
+  handleSeedAgent,
 } from "../../mcp";
 
 let tmpDir: string;
@@ -431,5 +432,124 @@ describe("agent_context tool", () => {
     expect(result.context.socialWisdom).toBe("");
     expect(result.meta.pageCount).toBe(0);
     expect(result.meta.totalChars).toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// seed_agent tool tests
+// ---------------------------------------------------------------------------
+
+describe("seed_agent tool", () => {
+  it("creates agent and returns profile", async () => {
+    const result = await handleSeedAgent({
+      agent_id: "new-agent",
+      name: "New Agent",
+      description: "A freshly seeded agent",
+      sections: [
+        {
+          slug: "new-agent-identity",
+          title: "New Agent Identity",
+          type: "identity",
+          content: "I am a new agent.",
+        },
+        {
+          slug: "new-agent-learnings",
+          title: "New Agent Learnings",
+          type: "learnings",
+          content: "I have learned nothing yet.",
+        },
+        {
+          slug: "new-agent-social",
+          title: "New Agent Social",
+          type: "social",
+          content: "No social wisdom yet.",
+        },
+      ],
+    });
+
+    // Returns AgentProfile
+    expect(result.id).toBe("new-agent");
+    expect(result.name).toBe("New Agent");
+    expect(result.description).toBe("A freshly seeded agent");
+    expect(result.identityPages).toEqual(["new-agent-identity"]);
+    expect(result.learningPages).toEqual(["new-agent-learnings"]);
+    expect(result.socialPages).toEqual(["new-agent-social"]);
+    expect(result.registered).toBeDefined();
+    expect(result.lastUpdated).toBeDefined();
+
+    // Verify wiki pages were created
+    const identityPage = await fs.readFile(
+      path.join(tmpDir, "wiki", "new-agent-identity.md"),
+      "utf-8",
+    );
+    expect(identityPage).toContain("I am a new agent.");
+
+    // Verify agent profile JSON was created
+    const profileJson = await fs.readFile(
+      path.join(tmpDir, "agents", "new-agent.json"),
+      "utf-8",
+    );
+    const profile = JSON.parse(profileJson);
+    expect(profile.id).toBe("new-agent");
+  });
+
+  it("throws with missing required field", async () => {
+    await expect(
+      handleSeedAgent({
+        agent_id: "bad-agent",
+        name: "",
+        description: "Has no name",
+        sections: [],
+      }),
+    ).rejects.toThrow();
+  });
+
+  it("is idempotent — re-seeding updates existing pages", async () => {
+    // First seed
+    const first = await handleSeedAgent({
+      agent_id: "idempotent-agent",
+      name: "Idempotent Agent",
+      description: "Will be seeded twice",
+      sections: [
+        {
+          slug: "idempotent-identity",
+          title: "Identity",
+          type: "identity",
+          content: "Version 1 content.",
+        },
+      ],
+    });
+
+    expect(first.id).toBe("idempotent-agent");
+    const firstRegistered = first.registered;
+
+    // Re-seed with updated content
+    const second = await handleSeedAgent({
+      agent_id: "idempotent-agent",
+      name: "Idempotent Agent v2",
+      description: "Updated description",
+      sections: [
+        {
+          slug: "idempotent-identity",
+          title: "Identity v2",
+          type: "identity",
+          content: "Version 2 content.",
+        },
+      ],
+    });
+
+    // Should preserve original registration date
+    expect(second.registered).toBe(firstRegistered);
+    // But update the name and description
+    expect(second.name).toBe("Idempotent Agent v2");
+    expect(second.description).toBe("Updated description");
+
+    // Wiki page should have updated content
+    const pageContent = await fs.readFile(
+      path.join(tmpDir, "wiki", "idempotent-identity.md"),
+      "utf-8",
+    );
+    expect(pageContent).toContain("Version 2 content.");
+    expect(pageContent).not.toContain("Version 1 content.");
   });
 });

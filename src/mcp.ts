@@ -9,6 +9,7 @@
  *   create_page    — Create a new wiki page
  *   update_page    — Update an existing wiki page
  *   agent_context  — Get an agent's full context by agent ID
+ *   seed_agent     — Register an agent and create its wiki pages
  *
  * Usage:
  *   pnpm mcp          # starts the stdio server
@@ -29,7 +30,9 @@ import {
   type Frontmatter,
 } from "./lib/wiki";
 import { extractSummary } from "./lib/ingest";
-import { getAgent } from "./lib/agents";
+import { getAgent, seedAgent } from "./lib/agents";
+import type { SeedAgentSection } from "./lib/agents";
+import type { AgentProfile } from "./lib/types";
 import type { ContentSearchResult } from "./lib/search";
 
 // ---------------------------------------------------------------------------
@@ -283,6 +286,36 @@ export async function handleAgentContext(args: {
 }
 
 // ---------------------------------------------------------------------------
+// Seed agent handler
+// ---------------------------------------------------------------------------
+
+export async function handleSeedAgent(args: {
+  agent_id: string;
+  name: string;
+  description: string;
+  sections: {
+    slug: string;
+    title: string;
+    type: "identity" | "learnings" | "social";
+    content: string;
+  }[];
+}): Promise<AgentProfile> {
+  const sections: SeedAgentSection[] = args.sections.map((s) => ({
+    slug: s.slug,
+    title: s.title,
+    type: s.type,
+    content: s.content,
+  }));
+
+  return seedAgent({
+    id: args.agent_id,
+    name: args.name,
+    description: args.description,
+    sections,
+  });
+}
+
+// ---------------------------------------------------------------------------
 // MCP server setup
 // ---------------------------------------------------------------------------
 
@@ -467,6 +500,49 @@ export function createMcpServer(): McpServer {
   }, async (args) => {
     try {
       const result = await handleAgentContext(args);
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: JSON.stringify(result, null, 2),
+          },
+        ],
+      };
+    } catch (err) {
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: (err as Error).message,
+          },
+        ],
+        isError: true,
+      };
+    }
+  });
+
+  // seed_agent — Register an agent and create its wiki pages
+  server.registerTool("seed_agent", {
+    description:
+      "Register an agent and create its wiki pages (identity, learnings, social wisdom). Idempotent — re-seeding updates existing pages.",
+    inputSchema: {
+      agent_id: z.string().describe("Agent ID (lowercase alphanumeric + hyphens)"),
+      name: z.string().describe("Agent display name"),
+      description: z.string().describe("Short description of the agent"),
+      sections: z.array(z.object({
+        slug: z.string().describe("Wiki page slug for this section"),
+        title: z.string().describe("Page title"),
+        type: z.enum(["identity", "learnings", "social"]).describe("Section type"),
+        content: z.string().describe("Markdown content for this section"),
+      })).describe("Content sections to create as wiki pages"),
+    },
+    annotations: {
+      readOnlyHint: false,
+      openWorldHint: false,
+    },
+  }, async (args) => {
+    try {
+      const result = await handleSeedAgent(args);
       return {
         content: [
           {
