@@ -64,6 +64,25 @@ export async function reingest(slug: string): Promise<IngestResult> {
   return ingest(title, content, { sourceUrl });
 }
 
+/**
+ * Ingest an X (Twitter) post into the wiki.
+ *
+ * Fetches the post content via URL, then delegates to the standard ingest
+ * pipeline with `x-mention` provenance so the source is correctly attributed.
+ *
+ * @param url         - Full URL to the X/Twitter post.
+ * @param triggeredBy - Handle of the user or agent that triggered the ingest.
+ */
+export async function ingestXMention(
+  url: string,
+  triggeredBy: string,
+): Promise<IngestResult> {
+  return ingestUrl(url, {
+    sourceType: "x-mention",
+    triggeredBy,
+  });
+}
+
 // ---------------------------------------------------------------------------
 // Fallback stub (no API key)
 // ---------------------------------------------------------------------------
@@ -299,6 +318,17 @@ export interface IngestOptions {
    * persisted in the wiki page's frontmatter as `source_url`.
    */
   sourceUrl?: string;
+  /**
+   * Provenance type override. When set, this type is used instead of the
+   * default `"url"` / `"text"` heuristic when building the `sources[]` entry.
+   * Used by `ingestXMention()` to set `"x-mention"` provenance.
+   */
+  sourceType?: "url" | "text" | "x-mention";
+  /**
+   * Who triggered the ingest (user handle or agent ID). Defaults to `"system"`.
+   * Passed through to the `triggered_by` field on the `SourceEntry`.
+   */
+  triggeredBy?: string;
 }
 
 /**
@@ -417,9 +447,10 @@ export async function ingest(
   }
 
   // Build the structured sources[] provenance entry for this ingest.
-  const sourceEntry = options?.sourceUrl
-    ? buildSourceEntry(options.sourceUrl, "url")
-    : buildSourceEntry("text-paste", "text");
+  const sourceType = options?.sourceType
+    ?? (options?.sourceUrl ? "url" : "text");
+  const sourceUrl = options?.sourceUrl ?? "text-paste";
+  const sourceEntry = buildSourceEntry(sourceUrl, sourceType, options?.triggeredBy);
   frontmatter.sources = serializeSources([sourceEntry]);
 
   const existing = await readWikiPageWithFrontmatter(slug);
