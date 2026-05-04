@@ -1,8 +1,8 @@
-name: Research
+name: yoyo Research
 
 on:
   schedule:
-    - cron: '0 9 * * 0'  # Every Sunday at 9am UTC
+    - cron: '0 9 * * 0'
   workflow_dispatch:
     inputs:
       focus:
@@ -10,7 +10,7 @@ on:
         required: false
 
 concurrency:
-  group: research
+  group: yoyo-research
   cancel-in-progress: false
 
 permissions:
@@ -23,136 +23,13 @@ jobs:
     timeout-minutes: 30
 
     steps:
-      - name: Generate bot token
-        id: bot-token
-        uses: actions/create-github-app-token@v1
-        with:
-          app-id: ${{ secrets.APP_ID }}
-          private-key: ${{ secrets.APP_PRIVATE_KEY }}
-          repositories: karpathy-llm-wiki,yoyo-evolve
-
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Run yoyo Research
+        uses: yologdev/yoyo-action@v1
         with:
-          token: ${{ steps.bot-token.outputs.token }}
-
-      - name: Install yoyo
-        run: |
-          REPO="yologdev/yoyo-evolve"
-          LATEST=$(curl -fsSL "https://api.github.com/repos/$REPO/releases/latest" | grep '"tag_name"' | sed -E 's/.*"([^"]+)".*/\1/')
-          echo "Installing yoyo $LATEST..."
-          curl -fsSL "https://github.com/$REPO/releases/download/$LATEST/yoyo-$LATEST-x86_64-unknown-linux-gnu.tar.gz" -o /tmp/yoyo.tar.gz
-          tar xzf /tmp/yoyo.tar.gz -C /tmp
-          mkdir -p "$HOME/.local/bin"
-          cp /tmp/yoyo "$HOME/.local/bin/yoyo" || cp /tmp/yoyo-*/yoyo "$HOME/.local/bin/yoyo"
-          chmod +x "$HOME/.local/bin/yoyo"
-          echo "$HOME/.local/bin" >> $GITHUB_PATH
-
-      - name: Configure git
-        run: |
-          SLUG="${{ steps.bot-token.outputs.app-slug }}"
-          git config user.name "${SLUG}[bot]"
-          git config user.email "${SLUG}[bot]@users.noreply.github.com"
-
-      - name: Download yoyo identity + skills
-        env:
-          GH_TOKEN: ${{ steps.bot-token.outputs.token }}
-        run: |
-          YOYO_EVOLVE_DIR="/tmp/yoyo-evolve"
-          mkdir -p "$YOYO_EVOLVE_DIR" ".yoyo/identity"
-
-          if gh api "repos/yologdev/yoyo-evolve/tarball/main" > /tmp/yoyo-evolve.tar.gz 2>/dev/null; then
-              tar xzf /tmp/yoyo-evolve.tar.gz -C "$YOYO_EVOLVE_DIR" --strip-components=1
-              rm -f /tmp/yoyo-evolve.tar.gz
-
-              # Build identity
-              if [ -f "$YOYO_EVOLVE_DIR/scripts/yoyo_context.sh" ]; then
-                  YOYO_REPO="$YOYO_EVOLVE_DIR" source "$YOYO_EVOLVE_DIR/scripts/yoyo_context.sh"
-                  echo "$YOYO_CONTEXT" > ".yoyo/identity/SOUL.md"
-                  echo "Identity loaded"
-              fi
-
-              # Copy shared skills
-              if [ -d "$YOYO_EVOLVE_DIR/skills" ]; then
-                  cp -r "$YOYO_EVOLVE_DIR/skills" /tmp/yoyo-skills
-                  rm -rf /tmp/yoyo-skills/evolve /tmp/yoyo-skills/release /tmp/yoyo-skills/family /tmp/yoyo-skills/_journal.md
-                  echo "Skills loaded: $(ls /tmp/yoyo-skills | tr '\n' ' ')"
-              fi
-
-              rm -rf "$YOYO_EVOLVE_DIR"
-          else
-              echo "WARNING: Failed to download yoyo-evolve"
-          fi
-
-      - name: Run competitive scan
-        env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          GH_TOKEN: ${{ steps.bot-token.outputs.token }}
-          REPO: ${{ github.repository }}
-        run: |
-          DATE=$(date -u +%Y-%m-%d)
-          FOCUS="${{ github.event.inputs.focus }}"
-
-          PROMPT=$(mktemp)
-          cat > "$PROMPT" <<EOF
-          You are yoyo, running your weekly competitive R&D scan for yopedia. Today is $DATE.
-
-          === YOUR TASK: COMPETITIVE INTELLIGENCE ===
-
-          Read yopedia-concept.md to understand what we're building — a wiki for the agent age.
-          Read YOYO.md for the current roadmap and what's already built.
-
-          Then scan the field:
-
-          1. **Search for competitors and adjacent work:**
-             - LLM wiki variants, agent memory systems (Letta, Mem0, Zep, Cognee)
-             - Knowledge graph products, second-brain projects
-             - Multi-agent collaboration tools
-             - Any new approach to agent-readable knowledge
-             ${FOCUS:+- PRIORITY FOCUS: $FOCUS}
-
-          2. **For each interesting find, note:**
-             - What it is and who built it
-             - What's clever (schema, ingestion, federation, failure modes)
-             - What we should adopt, avoid, or learn from
-             - How it would change our roadmap (if at all)
-
-          3. **Produce outputs:**
-             a. File GitHub issues for concrete changes we should make:
-                \`gh issue create --repo $REPO --title "Research: ..." --body "..." --label "agent-research" --label "triage"\`
-                Max 3 issues. Each should be specific and actionable.
-             b. Append a research entry to .yoyo/journal.md:
-                \`## $DATE (research scan)\`
-                Summary of what you found, what matters, what doesn't.
-
-          Rules:
-          - Other people's products are INPUTS to how we build ours, not wiki pages to create
-          - Focus on engineering intelligence: what works, what failed, what we should steal
-          - Be honest about what's better than us and what we do better
-          - This is bounded work — scan, distill, file issues, done
-          EOF
-
-          SYSTEM_FILE=""
-          [ -f ".yoyo/identity/SOUL.md" ] && SYSTEM_FILE="--system-file .yoyo/identity/SOUL.md"
-
-          SKILLS_FLAG="--skills .yoyo/skills"
-          [ -d "/tmp/yoyo-skills" ] && SKILLS_FLAG="$SKILLS_FLAG --skills /tmp/yoyo-skills"
-
-          echo "Running competitive scan..."
-          cat "$PROMPT" | yoyo \
-              --model claude-opus-4-6 \
-              $SYSTEM_FILE \
-              $SKILLS_FLAG \
-              2>&1 | tee /tmp/research.log || true
-
-          rm -f "$PROMPT"
-
-          # Commit journal updates if any
-          if git diff --quiet .yoyo/journal.md 2>/dev/null; then
-              echo "No journal changes to commit"
-          else
-              git add .yoyo/journal.md
-              git commit -m "yoyo: weekly competitive scan ($DATE)"
-              git pull --rebase origin main
-              git push
-          fi
+          agent: research
+          args: ${{ github.event.inputs.focus || '' }}
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          gh_token: ${{ secrets.GITHUB_TOKEN }}

@@ -1,8 +1,8 @@
-name: PM
+name: yoyo PM
 
 on:
   schedule:
-    - cron: '0 6 * * *'  # Daily at 6am UTC
+    - cron: '0 6 * * *'
   workflow_dispatch:
     inputs:
       focus:
@@ -10,7 +10,7 @@ on:
         required: false
 
 concurrency:
-  group: pm
+  group: yoyo-pm
   cancel-in-progress: false
 
 permissions:
@@ -23,18 +23,8 @@ jobs:
     timeout-minutes: 30
 
     steps:
-      - name: Generate bot token
-        id: bot-token
-        uses: actions/create-github-app-token@v1
-        with:
-          app-id: ${{ secrets.APP_ID }}
-          private-key: ${{ secrets.APP_PRIVATE_KEY }}
-          repositories: karpathy-llm-wiki,yoyo-evolve
-
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          token: ${{ steps.bot-token.outputs.token }}
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -49,31 +39,9 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile 2>/dev/null || pnpm install || true
 
-      - name: Install yoyo
-        run: |
-          REPO="yologdev/yoyo-evolve"
-          LATEST=$(curl -fsSL "https://api.github.com/repos/$REPO/releases/latest" | grep '"tag_name"' | sed -E 's/.*"([^"]+)".*/\1/')
-          echo "Installing yoyo $LATEST..."
-          curl -fsSL "https://github.com/$REPO/releases/download/$LATEST/yoyo-$LATEST-x86_64-unknown-linux-gnu.tar.gz" -o /tmp/yoyo.tar.gz
-          tar xzf /tmp/yoyo.tar.gz -C /tmp
-          mkdir -p "$HOME/.local/bin"
-          cp /tmp/yoyo "$HOME/.local/bin/yoyo" || cp /tmp/yoyo-*/yoyo "$HOME/.local/bin/yoyo"
-          chmod +x "$HOME/.local/bin/yoyo"
-          echo "$HOME/.local/bin" >> $GITHUB_PATH
-
-      - name: Configure git
-        run: |
-          SLUG="${{ steps.bot-token.outputs.app-slug }}"
-          git config user.name "${SLUG}[bot]"
-          git config user.email "${SLUG}[bot]@users.noreply.github.com"
-
-      - name: Run PM session
-        env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          GH_TOKEN: ${{ steps.bot-token.outputs.token }}
-          REPO: ${{ github.repository }}
-          BOT_LOGIN: "${{ steps.bot-token.outputs.app-slug }}[bot]"
-          BOT_SLUG: "${{ steps.bot-token.outputs.app-slug }}"
-        run: |
-          chmod +x .yoyo/scripts/pm.sh
-          ./.yoyo/scripts/pm.sh
+      - name: Run yoyo PM
+        uses: yologdev/yoyo-action@v1
+        with:
+          agent: pm
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          gh_token: ${{ secrets.GITHUB_TOKEN }}

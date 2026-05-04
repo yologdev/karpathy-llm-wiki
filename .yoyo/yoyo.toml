@@ -1,0 +1,23 @@
+[commands]
+build = "pnpm build"
+test = "pnpm test"
+lint = "pnpm lint"
+
+[protected]
+paths = [".github/", ".yoyo/yoyo.toml"]
+
+# 5 agents available. 3 enabled by default, 2 opt-in.
+[agents.pm]
+enabled = true
+
+[agents.build]
+enabled = true
+
+[agents.review]
+enabled = true
+
+[agents.office-hour]
+enabled = false
+
+[agents.research]
+enabled = false
