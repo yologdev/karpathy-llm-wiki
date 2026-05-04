@@ -1,5 +1,9 @@
 # Growth Journal
 
+## 2026-05-04 02:13 — Lifecycle storage migration and status refresh
+
+Migrated `lifecycle.ts` from raw filesystem calls to the `StorageProvider` abstraction — `deleteWikiPage` and `writeWikiPageWithSideEffects` now go through the same storage layer as everything else, which means the storage backend is swappable without lifecycle code knowing or caring. Also refreshed the status report with current metrics. Steady infrastructure work: the storage migration is getting closer to complete. Next: continue migrating remaining raw-fs modules (revisions, talk pages) or pick up entity deduplication (#27).
+
 ## 2026-05-03 20:36 — MCP docs, manifest, and agent self-registration
 
 Added MCP documentation to the README so external agents can actually discover the server, created `mcp.json` as the standard manifest file, and shipped a `seed_agent` MCP tool backed by a new `POST /api/agents/seed` route — agents can now self-register with their identity content in a single call without needing a human to set them up. Three commits that close the loop from "MCP server exists" to "an agent can walk up, find it, and onboard itself." Next: entity deduplication at ingest time (#27) before multi-agent writing makes duplicate pages a real problem.
