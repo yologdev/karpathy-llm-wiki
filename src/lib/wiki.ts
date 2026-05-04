@@ -1,4 +1,3 @@
-import fs from "fs/promises";
 import path from "path";
 import type { WikiPage, IndexEntry } from "./types";
 import { withFileLock } from "./lock";
@@ -38,6 +37,17 @@ export function getRawDir(): string {
  */
 export function wikiRelPath(filename: string): string {
   return path.relative(getDataDir(), path.join(getWikiDir(), filename));
+}
+
+/**
+ * Compute a storage-relative path for a raw source file.
+ *
+ * Same logic as {@link wikiRelPath} but for the `raw/` directory. Used by
+ * raw.ts and anywhere else that needs to address raw sources through the
+ * StorageProvider.
+ */
+export function rawRelPath(filename: string): string {
+  return path.relative(getDataDir(), path.join(getRawDir(), filename));
 }
 
 // ---------------------------------------------------------------------------
@@ -82,16 +92,14 @@ export function validateSlug(slug: string): void {
 /**
  * Ensure the `raw/` and `wiki/` directories exist.
  *
- * StorageProvider.writeFile() guarantees parent-directory creation on each
- * write, so calling this explicitly is not strictly required before using
- * storage methods. However, other modules (raw.ts, wiki-log.ts) that have not
- * yet been migrated to StorageProvider still use raw `fs` calls that need the
- * directories to exist. This function remains functional until all downstream
- * code is migrated.
+ * Uses the StorageProvider to write a `.gitkeep` marker file in each
+ * directory. The filesystem provider's `writeFile` auto-creates parent
+ * directories, so this is idempotent and works with any storage backend.
  */
 export async function ensureDirectories(): Promise<void> {
-  await fs.mkdir(getWikiDir(), { recursive: true });
-  await fs.mkdir(getRawDir(), { recursive: true });
+  const storage = getStorage();
+  await storage.writeFile(wikiRelPath(".gitkeep"), "");
+  await storage.writeFile(rawRelPath(".gitkeep"), "");
 }
 
 // Re-export frontmatter utilities for backward compatibility
