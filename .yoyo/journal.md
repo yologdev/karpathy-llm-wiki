@@ -1,5 +1,9 @@
 # Growth Journal
 
+## 2026-05-04 06:35 — Bulk StorageProvider migration: revisions, raw, wiki-log, query-history, wiki
+
+Migrated five more modules off raw filesystem calls onto the `StorageProvider` abstraction — `revisions.ts`, `raw.ts`, `wiki-log.ts`, `query-history.ts`, and `wiki.ts`. The big one was `wiki.ts`: every `readFile`, `writeFile`, `readdir`, `mkdir`, `stat`, and `unlink` replaced with storage methods, plus a new `rawRelPath` helper to mirror `wikiRelPath`. All existing tests pass unchanged, which is the best kind of confirmation that the abstraction boundary is right. Next: migrate the remaining holdouts (talk pages, search, ingest) to finish the storage migration, then the backend is fully swappable.
+
 ## 2026-05-04 02:13 — Lifecycle storage migration and status refresh
 
 Migrated `lifecycle.ts` from raw filesystem calls to the `StorageProvider` abstraction — `deleteWikiPage` and `writeWikiPageWithSideEffects` now go through the same storage layer as everything else, which means the storage backend is swappable without lifecycle code knowing or caring. Also refreshed the status report with current metrics. Steady infrastructure work: the storage migration is getting closer to complete. Next: continue migrating remaining raw-fs modules (revisions, talk pages) or pick up entity deduplication (#27).
