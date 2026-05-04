@@ -1,5 +1,5 @@
-import fs from "fs/promises";
-import { getWikiDir, validateSlug } from "./wiki";
+import { getWikiDir, wikiRelPath, validateSlug } from "./wiki";
+import { getStorage } from "./storage";
 import { isEnoent } from "./errors";
 import { logger } from "./logger";
 
@@ -42,6 +42,16 @@ export function getRevisionsDir(slug: string): string {
   return `${getWikiDir()}/${REVISIONS_DIR_NAME}/${slug}`;
 }
 
+/**
+ * Compute a storage-relative path for a revision file.
+ *
+ * All revision files live under `wiki/.revisions/<slug>/`. This helper
+ * builds the relative path that the StorageProvider expects.
+ */
+function revisionsRelPath(...segments: string[]): string {
+  return wikiRelPath([REVISIONS_DIR_NAME, ...segments].join("/"));
+}
+
 // ---------------------------------------------------------------------------
 // Monotonic timestamp — ensures unique filenames even when multiple
 // revisions are saved within the same millisecond.
@@ -77,19 +87,19 @@ export async function saveRevision(
   reason?: string,
 ): Promise<void> {
   validateSlug(slug);
-  const dir = getRevisionsDir(slug);
-  await fs.mkdir(dir, { recursive: true });
+  const storage = getStorage();
   const timestamp = uniqueTimestamp();
-  const filePath = `${dir}/${timestamp}.md`;
-  await fs.writeFile(filePath, content, "utf-8");
+  await storage.writeFile(revisionsRelPath(slug, `${timestamp}.md`), content);
 
   // Write attribution/reason as a JSON sidecar when provided.
   if (author !== undefined || reason !== undefined) {
-    const metaPath = `${dir}/${timestamp}.meta.json`;
     const meta: Record<string, string> = {};
     if (author !== undefined) meta.author = author;
     if (reason !== undefined) meta.reason = reason;
-    await fs.writeFile(metaPath, JSON.stringify(meta), "utf-8");
+    await storage.writeFile(
+      revisionsRelPath(slug, `${timestamp}.meta.json`),
+      JSON.stringify(meta),
+    );
   }
 }
 
@@ -100,11 +110,12 @@ export async function saveRevision(
  */
 export async function listRevisions(slug: string): Promise<Revision[]> {
   validateSlug(slug);
-  const dir = getRevisionsDir(slug);
+  const storage = getStorage();
+  const dirPath = revisionsRelPath(slug);
 
-  let entries: string[];
+  let entries: { name: string; isDirectory: boolean }[];
   try {
-    entries = await fs.readdir(dir);
+    entries = await storage.listFiles(dirPath);
   } catch (err) {
     // Directory doesn't exist → no revisions.
     if (!isEnoent(err)) {
@@ -116,22 +127,20 @@ export async function listRevisions(slug: string): Promise<Revision[]> {
   const revisions: Revision[] = [];
 
   for (const entry of entries) {
-    if (!entry.endsWith(".md")) continue;
-    const stem = entry.slice(0, -3); // strip ".md"
+    if (entry.isDirectory) continue;
+    if (!entry.name.endsWith(".md")) continue;
+    const stem = entry.name.slice(0, -3); // strip ".md"
     const timestamp = Number(stem);
     if (Number.isNaN(timestamp) || timestamp <= 0) continue;
 
-    // Stat the file to get size.
-    const filePath = `${dir}/${entry}`;
     try {
-      const stat = await fs.stat(filePath);
+      const stat = await storage.stat(revisionsRelPath(slug, entry.name));
 
       // Read the optional author/reason sidecar.
       let author: string | undefined;
       let reason: string | undefined;
-      const metaPath = `${dir}/${stem}.meta.json`;
       try {
-        const metaRaw = await fs.readFile(metaPath, "utf-8");
+        const metaRaw = await storage.readFile(revisionsRelPath(slug, `${stem}.meta.json`));
         const meta = JSON.parse(metaRaw) as { author?: string; reason?: string };
         if (typeof meta.author === "string") {
           author = meta.author;
@@ -152,9 +161,9 @@ export async function listRevisions(slug: string): Promise<Revision[]> {
         ...(reason !== undefined && { reason }),
       });
     } catch (err) {
-      // File disappeared between readdir and stat — skip.
+      // File disappeared between listFiles and stat — skip.
       if (!isEnoent(err)) {
-        logger.warn("revisions", `unexpected error stating revision file "${filePath}":`, err);
+        logger.warn("revisions", `unexpected error stating revision file "${entry.name}":`, err);
       }
     }
   }
@@ -174,9 +183,8 @@ export async function readRevision(
   timestamp: number,
 ): Promise<string | null> {
   validateSlug(slug);
-  const filePath = `${getRevisionsDir(slug)}/${timestamp}.md`;
   try {
-    return await fs.readFile(filePath, "utf-8");
+    return await getStorage().readFile(revisionsRelPath(slug, `${timestamp}.md`));
   } catch (err) {
     if (!isEnoent(err)) {
       logger.warn("revisions", `unexpected error reading revision "${slug}@${timestamp}":`, err);
@@ -193,9 +201,8 @@ export async function readRevision(
  */
 export async function deleteRevisions(slug: string): Promise<void> {
   validateSlug(slug);
-  const dir = getRevisionsDir(slug);
   try {
-    await fs.rm(dir, { recursive: true, force: true });
+    await getStorage().deleteDirectory(revisionsRelPath(slug));
   } catch (err) {
     // Already gone — nothing to do.
     if (!isEnoent(err)) {
