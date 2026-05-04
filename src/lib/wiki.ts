@@ -1,12 +1,15 @@
 import fs from "fs/promises";
+import path from "path";
 import type { WikiPage, IndexEntry } from "./types";
 import { withFileLock } from "./lock";
 import { logger } from "./logger";
 import { saveRevision } from "./revisions";
 import { isEnoent } from "./errors";
+import { getStorage } from "./storage";
 import {
   getWikiDir as _getWikiDir,
   getRawDir as _getRawDir,
+  getDataDir,
 } from "./config";
 
 // ---------------------------------------------------------------------------
@@ -19,6 +22,22 @@ export function getWikiDir(): string {
 
 export function getRawDir(): string {
   return _getRawDir();
+}
+
+// ---------------------------------------------------------------------------
+// Storage path helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Compute a storage-relative path for a wiki file.
+ *
+ * The StorageProvider resolves paths relative to `getDataDir()`. This helper
+ * computes `path.relative(getDataDir(), absoluteWikiPath)` so that it works
+ * regardless of whether WIKI_DIR is overridden (e.g. in tests) or uses the
+ * default `{dataDir}/wiki`.
+ */
+export function wikiRelPath(filename: string): string {
+  return path.relative(getDataDir(), path.join(getWikiDir(), filename));
 }
 
 // ---------------------------------------------------------------------------
@@ -60,7 +79,16 @@ export function validateSlug(slug: string): void {
 // Directory helpers
 // ---------------------------------------------------------------------------
 
-/** Create the `raw/` and `wiki/` directories if they don't already exist. */
+/**
+ * Ensure the `raw/` and `wiki/` directories exist.
+ *
+ * StorageProvider.writeFile() guarantees parent-directory creation on each
+ * write, so calling this explicitly is not strictly required before using
+ * storage methods. However, other modules (raw.ts, wiki-log.ts) that have not
+ * yet been migrated to StorageProvider still use raw `fs` calls that need the
+ * directories to exist. This function remains functional until all downstream
+ * code is migrated.
+ */
 export async function ensureDirectories(): Promise<void> {
   await fs.mkdir(getWikiDir(), { recursive: true });
   await fs.mkdir(getRawDir(), { recursive: true });
@@ -143,9 +171,10 @@ export async function readWikiPage(slug: string): Promise<WikiPage | null> {
     return pageCache.get(slug) ?? null;
   }
 
+  const storagePath = wikiRelPath(`${slug}.md`);
   const filePath = `${getWikiDir()}/${slug}.md`;
   try {
-    const content = await fs.readFile(filePath, "utf-8");
+    const content = await getStorage().readFile(storagePath);
     // Derive title from the first markdown heading, falling back to the slug.
     const titleMatch = content.match(/^#\s+(.+)$/m);
     const title = titleMatch ? titleMatch[1].trim() : slug;
@@ -202,14 +231,14 @@ export async function writeWikiPage(
   reason?: string,
 ): Promise<void> {
   validateSlug(slug);
-  await ensureDirectories();
-  const filePath = `${getWikiDir()}/${slug}.md`;
+  const storagePath = wikiRelPath(`${slug}.md`);
+  const storage = getStorage();
 
   // Snapshot the current content as a revision before overwriting.
   // Only save a revision if the file already exists (new pages don't have
   // a previous version to save).
   try {
-    const existing = await fs.readFile(filePath, "utf-8");
+    const existing = await storage.readFile(storagePath);
     await saveRevision(slug, existing, author, reason);
   } catch (err) {
     // File doesn't exist yet — first write, no revision needed.
@@ -218,7 +247,7 @@ export async function writeWikiPage(
     }
   }
 
-  await fs.writeFile(filePath, content, "utf-8");
+  await storage.writeFile(storagePath, content);
 
   // Invalidate cache entry so next read fetches fresh data
   if (pageCache !== null) {
@@ -238,10 +267,10 @@ export async function writeWikiPage(
  *   - [Title](slug.md) — summary
  */
 export async function listWikiPages(): Promise<IndexEntry[]> {
-  const indexPath = `${getWikiDir()}/index.md`;
+  const storagePath = wikiRelPath("index.md");
   let raw: string;
   try {
-    raw = await fs.readFile(indexPath, "utf-8");
+    raw = await getStorage().readFile(storagePath);
   } catch (err: unknown) {
     if (!isEnoent(err)) {
       logger.warn("wiki", "listWikiPages failed to read index.md:", err);
@@ -340,19 +369,17 @@ export async function updateIndex(entries: IndexEntry[]): Promise<void> {
  *
  * This exists so that callers who already hold the lock (e.g.
  * `runPageLifecycleOp` in `lifecycle.ts`) can perform a read → mutate → write
- * cycle atomically without double-locking.
  *
  * **Do not call from outside a `withFileLock("index.md", …)` block** — use
  * {@link updateIndex} instead.
  */
 export async function updateIndexUnsafe(entries: IndexEntry[]): Promise<void> {
-  await ensureDirectories();
   const lines = entries.map(
     (e) => `- [${e.title}](${e.slug}.md) — ${e.summary}`,
   );
   const content = `# Wiki Index\n\n${lines.join("\n")}\n`;
-  const indexPath = `${getWikiDir()}/index.md`;
-  await fs.writeFile(indexPath, content, "utf-8");
+  const storagePath = wikiRelPath("index.md");
+  await getStorage().writeFile(storagePath, content);
 }
 
 // Re-export raw source utilities for backward compatibility

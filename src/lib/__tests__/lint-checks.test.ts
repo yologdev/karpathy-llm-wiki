@@ -24,6 +24,7 @@ import type { LintIssue } from "../types";
 import { writeWikiPage, updateIndex, ensureDirectories } from "../wiki";
 import { serializeFrontmatter } from "../frontmatter";
 import type { IndexEntry } from "../types";
+import { _resetStorage } from "../storage";
 
 let tmpDir: string;
 let originalWikiDir: string | undefined;
@@ -36,6 +37,7 @@ beforeEach(async () => {
   process.env.WIKI_DIR = path.join(tmpDir, "wiki");
   process.env.RAW_DIR = path.join(tmpDir, "raw");
   await ensureDirectories();
+  _resetStorage();
 });
 
 afterEach(async () => {
@@ -49,6 +51,7 @@ afterEach(async () => {
   } else {
     process.env.RAW_DIR = originalRawDir;
   }
+  _resetStorage();
   await fs.rm(tmpDir, { recursive: true, force: true });
 });
 

@@ -5,6 +5,7 @@ import path from "path";
 import { searchIndex, buildContext, query, saveAnswerToWiki, buildCorpusStats, bm25Score, extractCitedSlugs, reciprocalRankFusion, buildQuerySystemPrompt, TABLE_FORMAT_INSTRUCTION, extractBestSnippet, selectPagesForQuery } from "../query";
 import { writeWikiPage, updateIndex, ensureDirectories, readWikiPage, readWikiPageWithFrontmatter, listWikiPages } from "../wiki";
 import { registerAgent } from "../agents";
+import { _resetStorage } from "../storage";
 import type { AgentProfile } from "../types";
 import type { IndexEntry } from "../types";
 
@@ -46,6 +47,7 @@ beforeEach(async () => {
   process.env.WIKI_DIR = path.join(tmpDir, "wiki");
   process.env.RAW_DIR = path.join(tmpDir, "raw");
   process.env.DATA_DIR = tmpDir;
+  _resetStorage();
 
   // Reset mocks
   mockedHasLLMKey.mockReturnValue(false);
@@ -70,6 +72,7 @@ afterEach(async () => {
   } else {
     process.env.DATA_DIR = originalDataDir;
   }
+  _resetStorage();
   await fs.rm(tmpDir, { recursive: true, force: true });
 });
 

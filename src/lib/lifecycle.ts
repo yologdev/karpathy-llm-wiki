@@ -1,4 +1,3 @@
-import fs from "fs/promises";
 import type { IndexEntry } from "./types";
 import { upsertEmbedding, removeEmbedding } from "./embeddings";
 import { deleteRevisions } from "./revisions";
@@ -12,8 +11,9 @@ import {
   findRelatedPages,
   updateRelatedPages,
   appendToLog,
-  getWikiDir,
+  wikiRelPath,
 } from "./wiki";
+import { getStorage } from "./storage";
 import { withFileLock } from "./lock";
 import { escapeRegex } from "./links";
 import { getErrorMessage } from "./errors";
@@ -182,9 +182,8 @@ async function runPageLifecycleOp(
   if (op.kind === "write") {
     await writeWikiPage(slug, op.content, op.author);
   } else {
-    const filePath = `${getWikiDir()}/${slug}.md`;
     try {
-      await fs.unlink(filePath);
+      await getStorage().deleteFile(wikiRelPath(`${slug}.md`));
     } catch (err: unknown) {
       // If the file is already gone (concurrent delete), that's fine — treat as success.
       if (!(err instanceof Error && 'code' in err && (err as NodeJS.ErrnoException).code === 'ENOENT')) {

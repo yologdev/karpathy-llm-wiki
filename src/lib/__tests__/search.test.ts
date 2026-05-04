@@ -28,6 +28,7 @@ import {
 import type { SearchScope } from "../search";
 import { registerAgent, ensureAgentsDir } from "../agents";
 import type { AgentProfile } from "../types";
+import { _resetStorage } from "../storage";
 
 let tmpDir: string;
 let originalWikiDir: string | undefined;
@@ -42,6 +43,7 @@ beforeEach(async () => {
   process.env.WIKI_DIR = path.join(tmpDir, "wiki");
   process.env.RAW_DIR = path.join(tmpDir, "raw");
   process.env.DATA_DIR = tmpDir;
+  _resetStorage();
 });
 
 afterEach(async () => {
@@ -60,6 +62,7 @@ afterEach(async () => {
   } else {
     process.env.DATA_DIR = originalDataDir;
   }
+  _resetStorage();
   await fs.rm(tmpDir, { recursive: true, force: true });
 });
 

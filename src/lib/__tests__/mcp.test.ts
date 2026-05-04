@@ -11,6 +11,7 @@ import {
   handleAgentContext,
   handleSeedAgent,
 } from "../../mcp";
+import { _resetStorage } from "../storage";
 
 let tmpDir: string;
 let originalWikiDir: string | undefined;
@@ -27,6 +28,7 @@ beforeEach(async () => {
   process.env.DATA_DIR = tmpDir;
   await fs.mkdir(path.join(tmpDir, "wiki"), { recursive: true });
   await fs.mkdir(path.join(tmpDir, "raw"), { recursive: true });
+  _resetStorage();
 });
 
 afterEach(async () => {
@@ -45,6 +47,7 @@ afterEach(async () => {
   } else {
     process.env.DATA_DIR = originalDataDir;
   }
+  _resetStorage();
   await fs.rm(tmpDir, { recursive: true, force: true });
 });
 

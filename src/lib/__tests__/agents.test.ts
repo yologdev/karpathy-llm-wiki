@@ -13,6 +13,7 @@ import {
 } from "../agents";
 import { readWikiPage, readWikiPageWithFrontmatter } from "../wiki";
 import type { AgentProfile } from "../types";
+import { _resetStorage } from "../storage";
 
 // ---------------------------------------------------------------------------
 // Test setup — temp directory with DATA_DIR override
@@ -30,6 +31,7 @@ beforeEach(async () => {
   // Point WIKI_DIR to tmpDir/wiki so readWikiPage finds our test pages
   process.env.WIKI_DIR = path.join(tmpDir, "wiki");
   await fs.mkdir(path.join(tmpDir, "wiki"), { recursive: true });
+  _resetStorage();
 });
 
 afterEach(async () => {
@@ -43,6 +45,7 @@ afterEach(async () => {
   } else {
     process.env.WIKI_DIR = originalWikiDir;
   }
+  _resetStorage();
   await fs.rm(tmpDir, { recursive: true, force: true });
 });
 
