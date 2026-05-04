@@ -23,8 +23,17 @@ jobs:
     timeout-minutes: 30
 
     steps:
+      - name: Generate bot token
+        id: bot-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.APP_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          token: ${{ steps.bot-token.outputs.token }}
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -39,9 +48,16 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile 2>/dev/null || pnpm install || true
 
+      - name: Configure git
+        run: |
+          SLUG="${{ steps.bot-token.outputs.app-slug }}"
+          git config user.name "${SLUG}[bot]"
+          git config user.email "${SLUG}[bot]@users.noreply.github.com"
+
       - name: Run yoyo PM
         uses: yologdev/yoyo-action@v1
         with:
           agent: pm
+          args: ${{ github.event.inputs.focus || '' }}
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
-          gh_token: ${{ secrets.GITHUB_TOKEN }}
+          gh_token: ${{ steps.bot-token.outputs.token }}

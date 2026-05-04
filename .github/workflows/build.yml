@@ -26,9 +26,17 @@ jobs:
       github.event.label.name == 'ready'
 
     steps:
+      - name: Generate bot token
+        id: bot-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.APP_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+
       - name: Checkout
         uses: actions/checkout@v4
         with:
+          token: ${{ steps.bot-token.outputs.token }}
           fetch-depth: 0
 
       - name: Setup Node.js
@@ -46,18 +54,23 @@ jobs:
 
       - name: Configure git
         run: |
-          git config user.name "yoyo[bot]"
-          git config user.email "yoyo[bot]@users.noreply.github.com"
+          SLUG="${{ steps.bot-token.outputs.app-slug }}"
+          git config user.name "${SLUG}[bot]"
+          git config user.email "${SLUG}[bot]@users.noreply.github.com"
 
       - name: Determine issue number
         id: issue
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_ISSUE: ${{ github.event.issue.number }}
+          INPUT_ISSUE: ${{ github.event.inputs.issue }}
         run: |
-          if [ "${{ github.event_name }}" = "issues" ]; then
-            echo "number=${{ github.event.issue.number }}" >> $GITHUB_OUTPUT
-          elif [ -n "${{ github.event.inputs.issue }}" ]; then
-            echo "number=${{ github.event.inputs.issue }}" >> $GITHUB_OUTPUT
+          if [ "$EVENT_NAME" = "issues" ]; then
+            echo "number=$EVENT_ISSUE" >> "$GITHUB_OUTPUT"
+          elif [ -n "$INPUT_ISSUE" ]; then
+            echo "number=$INPUT_ISSUE" >> "$GITHUB_OUTPUT"
           else
-            echo "number=" >> $GITHUB_OUTPUT
+            echo "number=" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Run yoyo Build
@@ -66,4 +79,4 @@ jobs:
           agent: build
           args: ${{ steps.issue.outputs.number }}
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
-          gh_token: ${{ secrets.GITHUB_TOKEN }}
+          gh_token: ${{ steps.bot-token.outputs.token }}

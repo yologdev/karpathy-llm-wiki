@@ -18,12 +18,23 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
-    if: startsWith(github.event.pull_request.head.ref, 'yoyo/')
+    # Only review yoyo's own PRs from this repo (not forks)
+    if: >
+      startsWith(github.event.pull_request.head.ref, 'yoyo/') &&
+      github.event.pull_request.head.repo.full_name == github.repository
 
     steps:
+      - name: Generate bot token
+        id: bot-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.APP_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+
       - name: Checkout
         uses: actions/checkout@v4
         with:
+          token: ${{ steps.bot-token.outputs.token }}
           fetch-depth: 0
 
       - name: Setup Node.js
@@ -41,8 +52,9 @@ jobs:
 
       - name: Configure git
         run: |
-          git config user.name "yoyo[bot]"
-          git config user.email "yoyo[bot]@users.noreply.github.com"
+          SLUG="${{ steps.bot-token.outputs.app-slug }}"
+          git config user.name "${SLUG}[bot]"
+          git config user.email "${SLUG}[bot]@users.noreply.github.com"
 
       - name: Run yoyo Review
         uses: yologdev/yoyo-action@v1
@@ -50,4 +62,4 @@ jobs:
           agent: review
           args: ${{ github.event.pull_request.number }}
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
-          gh_token: ${{ secrets.GITHUB_TOKEN }}
+          gh_token: ${{ steps.bot-token.outputs.token }}

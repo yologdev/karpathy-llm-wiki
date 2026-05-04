@@ -21,12 +21,21 @@ jobs:
     timeout-minutes: 20
 
     steps:
+      - name: Generate bot token
+        id: bot-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.APP_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          token: ${{ steps.bot-token.outputs.token }}
 
       - name: Run yoyo Office Hour
         uses: yologdev/yoyo-action@v1
         with:
           agent: office-hour
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
-          gh_token: ${{ secrets.GITHUB_TOKEN }}
+          gh_token: ${{ steps.bot-token.outputs.token }}
