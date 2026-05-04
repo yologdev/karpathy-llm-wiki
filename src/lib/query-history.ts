@@ -1,5 +1,5 @@
-import fs from "fs/promises";
-import { getWikiDir, ensureDirectories } from "./wiki";
+import { wikiRelPath, ensureDirectories } from "./wiki";
+import { getStorage } from "./storage";
 import { withFileLock } from "./lock";
 import { isEnoent } from "./errors";
 import { logger } from "./logger";
@@ -33,8 +33,8 @@ export interface QueryHistoryEntry {
 // Helpers
 // ---------------------------------------------------------------------------
 
-function historyPath(): string {
-  return `${getWikiDir()}/query-history.json`;
+function historyRelPath(): string {
+  return wikiRelPath("query-history.json");
 }
 
 function generateId(): string {
@@ -46,7 +46,7 @@ function generateId(): string {
 
 async function readHistory(): Promise<QueryHistoryEntry[]> {
   try {
-    const raw = await fs.readFile(historyPath(), "utf-8");
+    const raw = await getStorage().readFile(historyRelPath());
     const parsed = JSON.parse(raw);
     if (!Array.isArray(parsed)) return [];
     return parsed as QueryHistoryEntry[];
@@ -60,7 +60,7 @@ async function readHistory(): Promise<QueryHistoryEntry[]> {
 
 async function writeHistory(entries: QueryHistoryEntry[]): Promise<void> {
   await ensureDirectories();
-  await fs.writeFile(historyPath(), JSON.stringify(entries, null, 2), "utf-8");
+  await getStorage().writeFile(historyRelPath(), JSON.stringify(entries, null, 2));
 }
 
 // ---------------------------------------------------------------------------

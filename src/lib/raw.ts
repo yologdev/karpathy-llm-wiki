@@ -1,5 +1,5 @@
-import fs from "fs/promises";
-import { getRawDir, validateSlug, ensureDirectories } from "./wiki";
+import { getRawDir, rawRelPath, validateSlug, ensureDirectories } from "./wiki";
+import { getStorage } from "./storage";
 
 // ---------------------------------------------------------------------------
 // Raw source storage
@@ -12,9 +12,8 @@ export async function saveRawSource(
 ): Promise<string> {
   validateSlug(id);
   await ensureDirectories();
-  const filePath = `${getRawDir()}/${id}.md`;
-  await fs.writeFile(filePath, content, "utf-8");
-  return filePath;
+  await getStorage().writeFile(rawRelPath(id + ".md"), content);
+  return `${getRawDir()}/${id}.md`;
 }
 
 // ---------------------------------------------------------------------------
@@ -63,10 +62,10 @@ function stripExtension(filename: string): string {
  *   so a fresh checkout with no ingested sources renders cleanly.
  */
 export async function listRawSources(): Promise<RawSource[]> {
-  const rawDir = getRawDir();
-  let entries: import("fs").Dirent[];
+  const storage = getStorage();
+  let entries: import("./storage").FileEntry[];
   try {
-    entries = await fs.readdir(rawDir, { withFileTypes: true });
+    entries = await storage.listFiles(rawRelPath(""));
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code === "ENOENT") return [];
     throw err;
@@ -74,16 +73,15 @@ export async function listRawSources(): Promise<RawSource[]> {
 
   const sources: RawSource[] = [];
   for (const entry of entries) {
-    if (!entry.isFile()) continue;
+    if (entry.isDirectory) continue;
     if (entry.name.startsWith(".")) continue;
 
-    const filePath = `${rawDir}/${entry.name}`;
-    const stat = await fs.stat(filePath);
+    const stat = await storage.stat(rawRelPath(entry.name));
     sources.push({
       slug: stripExtension(entry.name),
       filename: entry.name,
       size: stat.size,
-      modified: stat.mtime.toISOString(),
+      modified: stat.lastModified.toISOString(),
     });
   }
 
@@ -117,8 +115,7 @@ export async function readRawSource(
     throw new Error(`raw source not found: ${slug}`);
   }
 
-  const filePath = `${getRawDir()}/${match.filename}`;
-  const content = await fs.readFile(filePath, "utf-8");
+  const content = await getStorage().readFile(rawRelPath(match.filename));
 
   return { ...match, content };
 }
