@@ -1,0 +1,33 @@
+# yopedia — Cloudflare deployment config
+#
+# This file is generated/updated by scripts/setup-cloudflare.sh
+# Run that script to provision resources and fill in real IDs.
+#
+# Manual verification:
+#   npx wrangler kv namespace list
+#   npx wrangler r2 bucket list
+#   npx wrangler vectorize list
+
+name = "yopedia"
+compatibility_date = "2025-01-01"
+pages_build_output_dir = ".output/public"
+
+# --- R2: Primary storage (wiki markdown files) ---
+[[r2_buckets]]
+binding = "R2"
+bucket_name = "yopedia-raw"
+
+# --- KV: Config and metadata cache ---
+[[kv_namespaces]]
+binding = "YOPEDIA_CONFIG"
+id = "<YOPEDIA_CONFIG_NAMESPACE_ID>"
+
+# --- KV: Search index (BM25 tokens, derived data) ---
+[[kv_namespaces]]
+binding = "YOPEDIA_SEARCH"
+id = "<YOPEDIA_SEARCH_NAMESPACE_ID>"
+
+# --- Vectorize: Semantic search embeddings ---
+[[vectorize]]
+binding = "VECTORIZE"
+index_name = "yopedia-embeddings"
