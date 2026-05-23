@@ -640,6 +640,301 @@ sessions should pick from this list:
   Falls back to showing flat `source_url` for legacy pages without
   structured `sources`.
 
+## Provenance depth evaluation
+
+This section evaluates three primitives that independent agent-wiki builders
+converged on (see [#139](https://github.com/yologdev/yopedia/issues/139) and
+[reference gist](https://gist.github.com/kiluazen/727948f9517eacd665d21199e8318da1)):
+claim-level citation anchoring, an ingest ledger, and post-ingest completeness
+checks. For each primitive, we assess what yopedia has today, what the
+proposed primitive adds, and whether to adopt, watch, or ignore it.
+
+### Primitive 1: Hybrid raw anchors (claim-level citation anchoring)
+
+**What we have today.** Provenance is page-level. The `sources[]` array on
+each wiki page records `{type, url, fetched, triggered_by}` — which source
+contributed to the page, but not which passage in the source supports which
+statement on the page. The `uncited-claims` lint check flags pages that lack
+any source or inline citation pattern, but doesn't verify that citations
+actually resolve to specific passages.
+
+**What the primitive adds.** Each source record carries an `anchors[]` array
+where each anchor has `{raw_offset, text_offset, quote_hash, claim_id}`.
+Each compiled wiki claim has `{claim_id, page, span, source_id, anchor_id}`.
+This lets a verifier check that every statement on a wiki page traces back to
+a specific passage in a specific source, and that the raw bytes still match.
+
+**Assessment: adopt (phased).**
+
+The convergence signal is real — three independent teams landed on the same
+shape. Claim-level anchoring is the structural prerequisite for yopedia's
+load-bearing promise ("every claim has a citation"). Without it, we have
+source-level attribution but not claim-level provenance.
+
+However, the full `raw_offset + quote_hash + text_offset` model requires
+changes to the ingest pipeline (the LLM must output structured claim
+boundaries, not just markdown), the storage layer (a claims sidecar file per
+page), and the lint system (a verifier that re-resolves anchors). This is
+too large for a single issue.
+
+**Adoption path:**
+
+1. **Phase A — Extend SourceEntry with optional anchors.** Add an optional
+   `anchors` field to `SourceEntry`:
+
+   ```typescript
+   interface SourceAnchor {
+     /** Unique anchor ID (e.g. "anc_" + nanoid) */
+     anchor_id: string;
+     /** Byte offset range in the raw source file */
+     raw_offset?: { start: number; end: number };
+     /** Character offset range in the extracted text */
+     text_offset?: { start: number; end: number };
+     /** SHA-256 hash of the quoted passage (for drift detection) */
+     quote_hash: string;
+     /** The quoted text itself (for human readability) */
+     quote_preview?: string;
+   }
+
+   // Extended SourceEntry (backward-compatible — anchors is optional)
+   interface SourceEntry {
+     type: "url" | "text" | "x-mention";
+     url: string;
+     fetched: string;
+     triggered_by: string;
+     anchors?: SourceAnchor[];
+   }
+   ```
+
+   This is backward-compatible — existing pages with no anchors continue to
+   work. `parseSources()` already silently drops unknown fields, so old
+   readers ignore anchors and new readers use them when present.
+
+2. **Phase B — Claims sidecar.** Add `claims/<slug>.json` alongside wiki
+   pages, each containing an array of compiled claims:
+
+   ```typescript
+   interface CompiledClaim {
+     claim_id: string;
+     /** Line range in the wiki page (more stable than char offsets) */
+     page_lines: { start: number; end: number };
+     source_id: string;
+     anchor_id: string;
+     created_by_ingest?: string;
+   }
+   ```
+
+   The wiki page remains human-readable markdown. The claims file is the
+   machine-readable provenance layer. This separation keeps the human
+   surface clean while giving agents a structured claim graph.
+
+3. **Phase C — Anchor verifier lint check.** A new `stale-anchor` lint check
+   re-resolves `quote_hash` against current raw source bytes and flags
+   claims whose anchors no longer match (source was updated, re-extracted
+   differently, etc).
+
+**Migration:** No migration needed — anchors and claims files are additive.
+Existing pages without them are valid; they just have weaker provenance.
+New ingests can start populating anchors incrementally.
+
+### Primitive 2: Commit-keyed ingest ledger
+
+**What we have today.** The `log.md` file is an append-only chronological
+log that records ingest events with slug, timestamp, and a short description.
+The `sources[]` array on each page records which sources contributed. There
+is no cross-cutting ledger that maps a single ingest operation to all the
+pages it touched, the sources it consumed, and the claims it produced.
+
+**What the primitive adds.** A separate `ingest-ledger.json` (or
+`ledger/<ingest-id>.json`) where each entry records:
+
+```typescript
+interface IngestLedgerEntry {
+  ingest_id: string;
+  /** ISO timestamp */
+  started_at: string;
+  finished_at: string;
+  status: "completed" | "failed" | "partial";
+  /** Source IDs consumed */
+  inputs: string[];
+  /** Wiki pages created or updated */
+  pages_touched: string[];
+  /** Claim IDs produced */
+  claims_produced?: string[];
+  /** Who triggered the ingest */
+  triggered_by: string;
+}
+```
+
+This gives an auditable, queryable record of what each ingest did — useful
+for debugging ("which ingest introduced this claim?"), rollback ("undo
+everything from ingest X"), and completeness checking ("did ingest X cover
+all the material in the source?").
+
+**Assessment: adopt.**
+
+The ledger is low-cost to implement (one JSON append per ingest), requires
+no schema changes to existing pages, and directly enables the completeness
+and staleness checks in Primitive 3. It also fills a real gap: `log.md` is
+human-readable but not machine-queryable.
+
+**Adoption path:**
+
+1. Add a `ledger/` directory alongside `wiki/` and `raw/`.
+2. Each ingest appends a `IngestLedgerEntry` to `ledger/ingest-log.json`
+   (single append-only file, simpler than one-file-per-ingest for small
+   wikis).
+3. The `ingest()` function in `src/lib/ingest.ts` already returns
+   `IngestResult` with `primarySlug`, `relatedUpdated`, `sourceUrl` — the
+   ledger entry can be built from this return value plus timing data.
+4. The `IngestResult` type gains an optional `ingest_id` field so callers
+   can reference the ledger entry.
+5. A new `ledger.ts` module handles read/append/query operations.
+
+**Migration:** None needed — the ledger starts empty and grows forward.
+Existing ingests are already recorded in `log.md`; retroactive ledger
+entries are not necessary but could be backfilled from log.md if desired.
+
+### Primitive 3: Post-ingest completeness and staleness checks
+
+**What we have today.** Two related lint checks exist:
+
+- `stale-page`: flags pages whose `expiry` date has passed or whose
+  `valid_from` is more than 180 days old. This is a **calendar-based**
+  staleness model — the page decays on a fixed schedule regardless of
+  whether the upstream source changed.
+- `uncited-claims`: flags pages with no sources and no inline citation
+  patterns. This is a **binary** check — the page either has citations or
+  it doesn't.
+
+Neither check answers "did the ingest capture everything important from the
+source?" (completeness) or "did the upstream source change since we last
+ingested?" (upstream staleness).
+
+**What the primitive adds.** Two new checks:
+
+- **Completeness check:** After ingest, compare the source material against
+  the wiki page to find important claims in the source that didn't make it
+  into the wiki. This is the "coverage" dimension — not "is this claim
+  true?" but "did we miss anything?"
+- **Upstream staleness check:** Re-fetch the source URL, compare against
+  the stored raw content (or its hash), and flag pages whose sources have
+  materially changed since last ingest.
+
+**Assessment: adopt (completeness as lint, upstream staleness as lint).**
+
+Both checks are natural extensions of the existing lint system. They don't
+require schema changes — they require the ingest ledger (Primitive 2) and
+access to raw source content.
+
+**Adoption path:**
+
+1. **Upstream staleness lint check (`stale-source`):** For pages with a
+   `source_url`, re-fetch the URL, hash the content, compare against the
+   stored raw source hash. Flag pages where the upstream has materially
+   changed. This complements the calendar-based `stale-page` check with
+   an evidence-based signal. Implementation: a new check in
+   `src/lib/lint-checks.ts` that optionally re-fetches URLs (expensive,
+   so gated behind an opt-in flag or run on a schedule rather than every
+   lint pass).
+
+2. **Completeness lint check (`incomplete-ingest`):** After an ingest,
+   compare source chunks against the wiki page content using the LLM to
+   identify important claims that were dropped. This is expensive (requires
+   an LLM call per check) so it should run as an optional post-ingest
+   verification step, not on every lint pass. Implementation: a new check
+   function that takes a slug, reads the raw source and wiki page, and
+   asks the LLM "what important claims in the source are missing from the
+   wiki page?"
+
+**Migration:** None — these are new lint checks that produce new issue types.
+The `LintIssue["type"]` union gets two new members: `"stale-source"` and
+`"incomplete-ingest"`.
+
+### Staleness model: calendar expiry vs half-life vs upstream detection
+
+yopedia's current staleness model uses calendar-based expiry (`expiry` date)
+plus verification age (`valid_from`). The alternatives raised in #139 are:
+
+- **Numeric half-life:** Confidence decays exponentially over time. A page
+  about "current JavaScript frameworks" decays faster than one about
+  "binary search algorithm."
+- **Upstream change detection:** Re-fetch the source URL and compare
+  content hashes to detect when the source has changed.
+
+**Assessment:** These are complementary, not competing. Calendar expiry is
+the simple, zero-cost baseline (no network calls, no computation). Upstream
+change detection adds evidence-based staleness for URL-sourced pages (requires
+re-fetching). Numeric half-life adds domain-aware decay (requires per-page
+or per-topic decay rates, which adds schema complexity for uncertain benefit).
+
+**Decision:** Keep calendar expiry as the baseline. Adopt upstream change
+detection as the `stale-source` lint check (Primitive 3). Watch numeric
+half-life — it's interesting but adds schema complexity (a `decay_rate`
+field) without clear demand yet. If a future use case needs it (e.g.,
+agent-facing surfaces that need to weight recency), we can add it then.
+
+### Talk page structure: free-form vs structured claims
+
+yopedia's talk pages are JSON-structured objects (`TalkThread` with
+`TalkComment[]`), with threading (`parentId`), resolution status
+(`open`/`resolved`/`wontfix`), and author attribution. They are **not**
+free-form markdown — they are structured data stored as JSON in
+`discuss/<slug>.json`.
+
+However, the _content_ of each comment (`body` field) is free-form markdown.
+The alternative raised in #139 is to make comments themselves structured:
+each comment references specific claims on the page, with claim IDs linking
+back to the claims sidecar.
+
+**Assessment:** Watch. The current structure (structured threads, free-form
+comment bodies) is the right level of structure for Phase 2. Adding claim
+references to comments depends on the claims sidecar (Primitive 1, Phase B)
+existing first. Once claims exist as addressable objects, extending
+`TalkComment` with an optional `claim_refs: string[]` field is
+straightforward:
+
+```typescript
+interface TalkComment {
+  id: string;
+  author: string;
+  created: string;
+  body: string;
+  parentId: string | null;
+  /** Optional references to claim IDs this comment is about */
+  claim_refs?: string[];
+}
+```
+
+This makes talk page discussions about specific claims machine-resolvable
+without losing the human readability of free-form markdown bodies. But it
+depends on Primitive 1, Phase B, so it waits.
+
+### Summary table
+
+| Primitive | Decision | Depends on | Next step |
+|-----------|----------|------------|-----------|
+| Claim-level anchors (Phase A — SourceEntry.anchors) | **Adopt** | Nothing | Extend `SourceEntry` type, update `parseSources`/`serializeSources` |
+| Claim-level anchors (Phase B — claims sidecar) | **Adopt** | Phase A | New `claims/` directory + `CompiledClaim` type |
+| Claim-level anchors (Phase C — anchor verifier) | **Adopt** | Phase B | New `stale-anchor` lint check |
+| Ingest ledger | **Adopt** | Nothing | New `ledger.ts` module, wire into `ingest()` |
+| Completeness check | **Adopt** | Ingest ledger | New `incomplete-ingest` lint check (LLM-gated) |
+| Upstream staleness check | **Adopt** | Nothing | New `stale-source` lint check (opt-in) |
+| Numeric half-life decay | **Watch** | — | Revisit when agent surface needs recency weighting |
+| Structured claim refs in talk comments | **Watch** | Claims sidecar | Revisit after Phase B lands |
+
+### Implementation sequencing
+
+The recommended order for implementation issues:
+
+1. **Ingest ledger** (standalone, no dependencies, enables Primitive 3)
+2. **Upstream staleness lint check** (standalone, uses existing `source_url`)
+3. **SourceEntry anchors extension** (backward-compatible type change)
+4. **Claims sidecar** (depends on anchors)
+5. **Completeness lint check** (depends on ingest ledger)
+6. **Anchor verifier lint check** (depends on claims sidecar)
+7. **Talk comment claim refs** (depends on claims sidecar)
+
 ## Planned evolution
 
 Phase 1 (schema evolution) and Phase 2 (talk pages + attribution) are complete.
@@ -650,6 +945,10 @@ content into yopedia pages, scoped search, and grow.sh integration.
 The schema will continue to evolve toward the full yopedia model defined in
 [`yopedia-concept.md`](yopedia-concept.md). See YOYO.md for the phased roadmap.
 Next up: Phase 3 (X ingestion loop) and Phase 5 (agent surface research).
+Provenance depth work (claim-level anchoring, ingest ledger, completeness
+checks) can proceed in parallel with the existing phase roadmap — see
+[Provenance depth evaluation](#provenance-depth-evaluation) above for
+sequencing.
 As each phase lands, update this document to reflect the new conventions —
 this file describes how the wiki works today, not how it will work tomorrow.
 
