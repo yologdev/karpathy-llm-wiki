@@ -24,6 +24,7 @@ export type ParsedCommand =
   | { command: "ingest-url"; url: string }
   | { command: "ingest-text" }
   | { command: "reingest"; slug: string }
+  | { command: "update"; slug: string; title?: string; tags?: string[] }
   | { command: "query"; question: string }
   | { command: "search"; query: string; fuzzy: boolean; scope?: string; limit: number }
   | { command: "read"; slug: string }
@@ -57,6 +58,22 @@ export function parseArgs(argv: string[]): ParsedCommand {
         return { command: "error", message: "Usage: pnpm cli reingest <slug>" };
       }
       return { command: "reingest", slug };
+    }
+    case "update": {
+      const titleIdx = rest.indexOf("--title");
+      const tagsIdx = rest.indexOf("--tags");
+      // Collect skip indices for flag values
+      const updateSkipIndices = new Set<number>();
+      if (titleIdx !== -1) { updateSkipIndices.add(titleIdx); updateSkipIndices.add(titleIdx + 1); }
+      if (tagsIdx !== -1) { updateSkipIndices.add(tagsIdx); updateSkipIndices.add(tagsIdx + 1); }
+      const slug = rest.find((a, i) => !a.startsWith("-") && !updateSkipIndices.has(i));
+      if (!slug) {
+        return { command: "error", message: "Usage: pnpm cli update <slug> [--title <title>] [--tags tag1,tag2]" };
+      }
+      const title = titleIdx !== -1 ? rest[titleIdx + 1] : undefined;
+      const tagsRaw = tagsIdx !== -1 ? rest[tagsIdx + 1] : undefined;
+      const tags = tagsRaw ? tagsRaw.split(",").map((t) => t.trim()).filter(Boolean) : undefined;
+      return { command: "update", slug, title, tags };
     }
     case "query": {
       const question = rest.filter((a) => !a.startsWith("-")).join(" ");
@@ -118,6 +135,7 @@ Commands:
   ingest <url>         Ingest a URL into the wiki
   ingest --text        Ingest text from stdin (pipe or type, then Ctrl-D)
   reingest <slug>      Re-fetch and update a page from its original source URL
+  update <slug>        Update a wiki page with new content from stdin
   query <question>     Query the wiki
   search <query>       Search wiki pages by content
   read <slug>          Read a wiki page by slug
@@ -128,6 +146,10 @@ Commands:
   status               Show wiki health summary
   help                 Show this help
 
+Update flags:
+  --title <title>      Set a new title (preserves existing if omitted)
+  --tags tag1,tag2     Set tags (preserves existing if omitted)
+
 Search flags:
   --fuzzy              Enable typo-tolerant fuzzy matching
   --scope agent:<id>   Restrict results to an agent's pages
@@ -137,6 +159,9 @@ Examples:
   pnpm cli ingest https://example.com/article
   echo "Some text" | pnpm cli ingest --text
   pnpm cli reingest attention-mechanisms
+  echo "new content" | pnpm cli update my-page
+  echo "new content" | pnpm cli update my-page --title "New Title"
+  echo "new content" | pnpm cli update my-page --tags ai,transformers
   pnpm cli query "What is attention in transformers?"
   pnpm cli search "attention mechanism"
   pnpm cli search "atention" --fuzzy
@@ -213,6 +238,70 @@ export async function runReingest(slug: string): Promise<void> {
   if (expiry) {
     console.log(`  Expiry: ${expiry}`);
   }
+}
+
+export async function runUpdate(
+  slug: string,
+  titleOverride?: string,
+  tagsOverride?: string[],
+): Promise<void> {
+  const { readWikiPageWithFrontmatter } = await import("./lib/wiki");
+  const { writeWikiPageWithSideEffects } = await import("./lib/lifecycle");
+  const { extractSummary } = await import("./lib/ingest");
+  const { serializeFrontmatter } = await import("./lib/frontmatter");
+
+  // Validate slug exists
+  const existingPage = await readWikiPageWithFrontmatter(slug);
+  if (!existingPage) {
+    console.error(`Error: page "${slug}" not found.\nRun "pnpm cli list" to see available pages.`);
+    process.exit(1);
+    return; // unreachable but satisfies linting
+  }
+
+  // Read new content from stdin
+  const content = await readStdin();
+  if (!content.trim()) {
+    console.error("Error: no content received on stdin");
+    process.exit(1);
+    return; // unreachable but satisfies linting
+  }
+
+  // Determine title: explicit flag > heading in content > existing title
+  const headingMatch = content.match(/^#\s+(.+)$/m);
+  const title = titleOverride ?? (headingMatch ? headingMatch[1].trim() : existingPage.title);
+
+  // Determine tags: explicit flag > existing tags
+  const tags = tagsOverride ?? (Array.isArray(existingPage.frontmatter.tags) ? existingPage.frontmatter.tags as string[] : undefined);
+
+  const summary = extractSummary(content);
+  const today = new Date().toISOString().slice(0, 10);
+
+  // Merge frontmatter: preserve existing fields, update title/tags/updated
+  const merged: Record<string, string | string[] | number | boolean> = {
+    ...existingPage.frontmatter,
+    title,
+    updated: today,
+  };
+  if (tags) {
+    merged.tags = tags;
+  }
+  if (!merged.created) {
+    merged.created = today;
+  }
+
+  const fullContent = serializeFrontmatter(merged, content);
+
+  await writeWikiPageWithSideEffects({
+    slug,
+    title,
+    content: fullContent,
+    summary,
+    logOp: "edit",
+    crossRefSource: null, // skip cross-ref for CLI updates
+  });
+
+  console.log(`Updated: ${slug}`);
+  console.log(`  Title: ${title}`);
 }
 
 export async function runQuery(question: string): Promise<void> {
@@ -385,6 +474,9 @@ async function main(): Promise<void> {
       return;
     case "reingest":
       await runReingest(parsed.slug);
+      return;
+    case "update":
+      await runUpdate(parsed.slug, parsed.title, parsed.tags);
       return;
     case "query":
       await runQuery(parsed.question);

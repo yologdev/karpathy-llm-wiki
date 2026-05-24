@@ -144,6 +144,44 @@ describe("CLI argument parsing", () => {
     });
   });
 
+  describe("update command", () => {
+    it("parses update with slug", () => {
+      const result = parseArgs(["update", "my-page"]);
+      expect(result).toEqual({ command: "update", slug: "my-page", title: undefined, tags: undefined });
+    });
+
+    it("parses update with --title flag", () => {
+      const result = parseArgs(["update", "my-page", "--title", "New Title"]);
+      expect(result).toEqual({ command: "update", slug: "my-page", title: "New Title", tags: undefined });
+    });
+
+    it("parses update with --tags flag", () => {
+      const result = parseArgs(["update", "my-page", "--tags", "ai,transformers"]);
+      expect(result).toEqual({ command: "update", slug: "my-page", title: undefined, tags: ["ai", "transformers"] });
+    });
+
+    it("parses update with both --title and --tags flags", () => {
+      const result = parseArgs(["update", "my-page", "--title", "New Title", "--tags", "ai,ml"]);
+      expect(result).toEqual({ command: "update", slug: "my-page", title: "New Title", tags: ["ai", "ml"] });
+    });
+
+    it("returns error when update has no slug", () => {
+      const result = parseArgs(["update"]);
+      expect(result.command).toBe("error");
+      if (result.command === "error") {
+        expect(result.message).toContain("Usage");
+      }
+    });
+
+    it("returns error when update has only flags and no slug", () => {
+      const result = parseArgs(["update", "--title", "Title"]);
+      expect(result.command).toBe("error");
+      if (result.command === "error") {
+        expect(result.message).toContain("Usage");
+      }
+    });
+  });
+
   describe("help command", () => {
     it("parses help", () => {
       const result = parseArgs(["help"]);
@@ -230,6 +268,7 @@ vi.mock("../ingest", () => ({
   ingestUrl: vi.fn(),
   ingest: vi.fn(),
   reingest: vi.fn(),
+  extractSummary: vi.fn(),
 }));
 
 vi.mock("../lint-fix", () => ({
@@ -240,6 +279,14 @@ vi.mock("../search", () => ({
   searchWikiContent: vi.fn(),
   fuzzySearchWikiContent: vi.fn(),
   resolveScope: vi.fn(),
+}));
+
+vi.mock("../lifecycle", () => ({
+  writeWikiPageWithSideEffects: vi.fn(),
+}));
+
+vi.mock("../frontmatter", () => ({
+  serializeFrontmatter: vi.fn(),
 }));
 
 describe("CLI command execution", () => {
@@ -690,6 +737,169 @@ describe("CLI command execution", () => {
     const { runReingest } = await import("../../cli");
     await expect(runReingest("no-source")).rejects.toThrow(
       "Cannot re-ingest: no source URL recorded",
+    );
+  });
+
+  it("runUpdate() updates a page preserving existing metadata", async () => {
+    const { readWikiPageWithFrontmatter } = await import("../wiki");
+    const { writeWikiPageWithSideEffects } = await import("../lifecycle");
+    const { extractSummary } = await import("../ingest");
+    const { serializeFrontmatter } = await import("../frontmatter");
+
+    vi.mocked(readWikiPageWithFrontmatter).mockResolvedValueOnce({
+      slug: "my-page",
+      title: "My Page",
+      content: "---\ntitle: My Page\ntags: [existing]\n---\n\nOld content",
+      path: "/wiki/my-page.md",
+      frontmatter: { title: "My Page", tags: ["existing"] },
+      body: "Old content",
+    });
+    vi.mocked(extractSummary).mockReturnValueOnce("New summary");
+    vi.mocked(serializeFrontmatter).mockReturnValueOnce("---\ntitle: My Page\ntags: [existing]\nupdated: 2025-01-01\n---\n\nNew content");
+    vi.mocked(writeWikiPageWithSideEffects).mockResolvedValueOnce({
+      slug: "my-page",
+      updatedSlugs: [],
+    });
+
+    // Mock process.stdin to emit data then end
+    const originalOn = process.stdin.on;
+    const stdinMock = vi.spyOn(process.stdin, "on").mockImplementation(
+      function (this: NodeJS.ReadStream, event: string, listener: (...args: unknown[]) => void) {
+        if (event === "data") {
+          setTimeout(() => listener(Buffer.from("New content")), 0);
+        } else if (event === "end") {
+          setTimeout(() => (listener as () => void)(), 5);
+        }
+        return this;
+      } as never,
+    );
+
+    const { runUpdate } = await import("../../cli");
+    await runUpdate("my-page");
+
+    expect(writeWikiPageWithSideEffects).toHaveBeenCalledWith(
+      expect.objectContaining({
+        slug: "my-page",
+        title: "My Page",
+        logOp: "edit",
+      }),
+    );
+    expect(logSpy).toHaveBeenCalledWith("Updated: my-page");
+    expect(logSpy).toHaveBeenCalledWith("  Title: My Page");
+
+    stdinMock.mockRestore();
+    process.stdin.on = originalOn;
+  });
+
+  it("runUpdate() uses --title flag when provided", async () => {
+    const { readWikiPageWithFrontmatter } = await import("../wiki");
+    const { writeWikiPageWithSideEffects } = await import("../lifecycle");
+    const { extractSummary } = await import("../ingest");
+    const { serializeFrontmatter } = await import("../frontmatter");
+
+    vi.mocked(readWikiPageWithFrontmatter).mockResolvedValueOnce({
+      slug: "my-page",
+      title: "My Page",
+      content: "---\ntitle: My Page\n---\n\nOld content",
+      path: "/wiki/my-page.md",
+      frontmatter: { title: "My Page" },
+      body: "Old content",
+    });
+    vi.mocked(extractSummary).mockReturnValueOnce("Summary");
+    vi.mocked(serializeFrontmatter).mockReturnValueOnce("---\ntitle: New Title\n---\n\nNew content");
+    vi.mocked(writeWikiPageWithSideEffects).mockResolvedValueOnce({
+      slug: "my-page",
+      updatedSlugs: [],
+    });
+
+    const originalOn = process.stdin.on;
+    const stdinMock = vi.spyOn(process.stdin, "on").mockImplementation(
+      function (this: NodeJS.ReadStream, event: string, listener: (...args: unknown[]) => void) {
+        if (event === "data") {
+          setTimeout(() => listener(Buffer.from("New content")), 0);
+        } else if (event === "end") {
+          setTimeout(() => (listener as () => void)(), 5);
+        }
+        return this;
+      } as never,
+    );
+
+    const { runUpdate } = await import("../../cli");
+    await runUpdate("my-page", "New Title");
+
+    expect(writeWikiPageWithSideEffects).toHaveBeenCalledWith(
+      expect.objectContaining({
+        slug: "my-page",
+        title: "New Title",
+      }),
+    );
+    expect(logSpy).toHaveBeenCalledWith("  Title: New Title");
+
+    stdinMock.mockRestore();
+    process.stdin.on = originalOn;
+  });
+
+  it("runUpdate() uses --tags flag when provided", async () => {
+    const { readWikiPageWithFrontmatter } = await import("../wiki");
+    const { writeWikiPageWithSideEffects } = await import("../lifecycle");
+    const { extractSummary } = await import("../ingest");
+    const { serializeFrontmatter } = await import("../frontmatter");
+
+    vi.mocked(readWikiPageWithFrontmatter).mockResolvedValueOnce({
+      slug: "my-page",
+      title: "My Page",
+      content: "---\ntitle: My Page\ntags: [old-tag]\n---\n\nOld content",
+      path: "/wiki/my-page.md",
+      frontmatter: { title: "My Page", tags: ["old-tag"] },
+      body: "Old content",
+    });
+    vi.mocked(extractSummary).mockReturnValueOnce("Summary");
+    vi.mocked(serializeFrontmatter).mockImplementationOnce((data) => {
+      return `---\ntitle: ${data.title}\ntags: [${(data.tags as string[])?.join(",")}]\n---\n\nNew content`;
+    });
+    vi.mocked(writeWikiPageWithSideEffects).mockResolvedValueOnce({
+      slug: "my-page",
+      updatedSlugs: [],
+    });
+
+    const originalOn = process.stdin.on;
+    const stdinMock = vi.spyOn(process.stdin, "on").mockImplementation(
+      function (this: NodeJS.ReadStream, event: string, listener: (...args: unknown[]) => void) {
+        if (event === "data") {
+          setTimeout(() => listener(Buffer.from("New content")), 0);
+        } else if (event === "end") {
+          setTimeout(() => (listener as () => void)(), 5);
+        }
+        return this;
+      } as never,
+    );
+
+    const { runUpdate } = await import("../../cli");
+    await runUpdate("my-page", undefined, ["ai", "ml"]);
+
+    // serializeFrontmatter should be called with merged frontmatter containing new tags
+    expect(serializeFrontmatter).toHaveBeenCalledWith(
+      expect.objectContaining({
+        tags: ["ai", "ml"],
+      }),
+      "New content",
+    );
+
+    stdinMock.mockRestore();
+    process.stdin.on = originalOn;
+  });
+
+  it("runUpdate() exits with error for nonexistent slug", async () => {
+    const { readWikiPageWithFrontmatter } = await import("../wiki");
+
+    vi.mocked(readWikiPageWithFrontmatter).mockResolvedValueOnce(null);
+
+    const { runUpdate } = await import("../../cli");
+    await expect(runUpdate("nonexistent")).rejects.toThrow("process.exit");
+
+    expect(exitSpy).toHaveBeenCalledWith(1);
+    expect(errorSpy).toHaveBeenCalledWith(
+      expect.stringContaining('page "nonexistent" not found'),
     );
   });
 });
