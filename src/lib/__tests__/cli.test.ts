@@ -129,6 +129,42 @@ describe("CLI argument parsing", () => {
     });
   });
 
+  describe("create command", () => {
+    it("parses create with slug and title", () => {
+      const result = parseArgs(["create", "my-page", "--title", "My Page"]);
+      expect(result).toEqual({ command: "create", slug: "my-page", title: "My Page", tags: [] });
+    });
+
+    it("parses create with tags", () => {
+      const result = parseArgs(["create", "my-page", "--title", "My Page", "--tags", "ml,nlp"]);
+      expect(result).toEqual({ command: "create", slug: "my-page", title: "My Page", tags: ["ml", "nlp"] });
+    });
+
+    it("returns error when create has no slug", () => {
+      const result = parseArgs(["create"]);
+      expect(result.command).toBe("error");
+      if (result.command === "error") {
+        expect(result.message).toContain("Usage");
+      }
+    });
+
+    it("returns error when create has no --title", () => {
+      const result = parseArgs(["create", "my-page"]);
+      expect(result.command).toBe("error");
+      if (result.command === "error") {
+        expect(result.message).toContain("Usage");
+      }
+    });
+
+    it("returns error when --title has no value", () => {
+      const result = parseArgs(["create", "my-page", "--title"]);
+      expect(result.command).toBe("error");
+      if (result.command === "error") {
+        expect(result.message).toContain("Usage");
+      }
+    });
+  });
+
   describe("help command", () => {
     it("parses help", () => {
       const result = parseArgs(["help"]);
@@ -193,6 +229,8 @@ describe("CLI argument parsing", () => {
 vi.mock("../wiki", () => ({
   listWikiPages: vi.fn(),
   readWikiPageWithFrontmatter: vi.fn(),
+  readWikiPage: vi.fn(),
+  validateSlug: vi.fn(),
 }));
 
 vi.mock("../raw", () => ({
@@ -214,6 +252,7 @@ vi.mock("../lint", () => ({
 vi.mock("../ingest", () => ({
   ingestUrl: vi.fn(),
   ingest: vi.fn(),
+  extractSummary: vi.fn(),
 }));
 
 vi.mock("../lint-fix", () => ({
@@ -224,6 +263,14 @@ vi.mock("../search", () => ({
   searchWikiContent: vi.fn(),
   fuzzySearchWikiContent: vi.fn(),
   resolveScope: vi.fn(),
+}));
+
+vi.mock("../frontmatter", () => ({
+  serializeFrontmatter: vi.fn(),
+}));
+
+vi.mock("../lifecycle", () => ({
+  writeWikiPageWithSideEffects: vi.fn(),
 }));
 
 describe("CLI command execution", () => {
@@ -592,5 +639,85 @@ describe("CLI command execution", () => {
     expect(headerCall).not.toContain("Tags:");
     expect(headerCall).not.toContain("Authors:");
     expect(headerCall).not.toContain("Expiry:");
+  });
+
+  it("runCreate() creates a page and prints slug + summary", async () => {
+    const { readWikiPage, validateSlug } = await import("../wiki");
+    const { serializeFrontmatter } = await import("../frontmatter");
+    const { writeWikiPageWithSideEffects } = await import("../lifecycle");
+    const { extractSummary } = await import("../ingest");
+
+    vi.mocked(validateSlug).mockImplementation(() => {});
+    vi.mocked(readWikiPage).mockResolvedValueOnce(null);
+    vi.mocked(serializeFrontmatter).mockReturnValueOnce("---\ntitle: My Page\n---\n\nPage content");
+    vi.mocked(extractSummary).mockReturnValueOnce("Page content");
+    vi.mocked(writeWikiPageWithSideEffects).mockResolvedValueOnce({
+      slug: "my-page",
+      updatedSlugs: [],
+    });
+
+    // Mock process.stdin to emit data then end
+    const originalOn = process.stdin.on;
+    const stdinMock = vi.spyOn(process.stdin, "on").mockImplementation(
+      function (this: NodeJS.ReadStream, event: string, listener: (...args: unknown[]) => void) {
+        if (event === "data") {
+          setTimeout(() => listener(Buffer.from("Page content")), 0);
+        } else if (event === "end") {
+          setTimeout(() => (listener as () => void)(), 5);
+        }
+        return this;
+      } as never,
+    );
+
+    const { runCreate } = await import("../../cli");
+    await runCreate("my-page", "My Page", []);
+
+    expect(validateSlug).toHaveBeenCalledWith("my-page");
+    expect(readWikiPage).toHaveBeenCalledWith("my-page");
+    expect(writeWikiPageWithSideEffects).toHaveBeenCalledWith(
+      expect.objectContaining({
+        slug: "my-page",
+        title: "My Page",
+        logOp: "ingest",
+        author: "cli",
+      }),
+    );
+    expect(logSpy).toHaveBeenCalledWith("Created: my-page");
+    expect(logSpy).toHaveBeenCalledWith("Summary: Page content");
+
+    stdinMock.mockRestore();
+    process.stdin.on = originalOn;
+  });
+
+  it("runCreate() exits with error for existing page", async () => {
+    const { readWikiPage, validateSlug } = await import("../wiki");
+
+    vi.mocked(validateSlug).mockImplementation(() => {});
+    vi.mocked(readWikiPage).mockResolvedValueOnce({
+      slug: "existing-page",
+      title: "Existing",
+      content: "content",
+      path: "/wiki/existing-page.md",
+    });
+
+    const { runCreate } = await import("../../cli");
+    await expect(runCreate("existing-page", "Existing", [])).rejects.toThrow("process.exit");
+
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('page "existing-page" already exists'));
+    expect(exitSpy).toHaveBeenCalledWith(1);
+  });
+
+  it("runCreate() exits with error for invalid slug", async () => {
+    const { validateSlug } = await import("../wiki");
+
+    vi.mocked(validateSlug).mockImplementation(() => {
+      throw new Error('Invalid slug: "BAD SLUG" does not match the safe pattern');
+    });
+
+    const { runCreate } = await import("../../cli");
+    await expect(runCreate("BAD SLUG", "Bad", [])).rejects.toThrow("process.exit");
+
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining("Invalid slug"));
+    expect(exitSpy).toHaveBeenCalledWith(1);
   });
 });
