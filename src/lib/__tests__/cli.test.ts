@@ -195,6 +195,36 @@ describe("CLI argument parsing", () => {
     });
   });
 
+  describe("update command", () => {
+    it("parses update with slug only", () => {
+      const result = parseArgs(["update", "my-page"]);
+      expect(result).toEqual({ command: "update", slug: "my-page" });
+    });
+
+    it("parses update with --title", () => {
+      const result = parseArgs(["update", "my-page", "--title", "New Title"]);
+      expect(result).toEqual({ command: "update", slug: "my-page", title: "New Title" });
+    });
+
+    it("parses update with --tags", () => {
+      const result = parseArgs(["update", "my-page", "--tags", "ai,ml"]);
+      expect(result).toEqual({ command: "update", slug: "my-page", tags: ["ai", "ml"] });
+    });
+
+    it("parses update with --title and --tags", () => {
+      const result = parseArgs(["update", "my-page", "--title", "New Title", "--tags", "ai,ml"]);
+      expect(result).toEqual({ command: "update", slug: "my-page", title: "New Title", tags: ["ai", "ml"] });
+    });
+
+    it("returns error when update has no slug", () => {
+      const result = parseArgs(["update"]);
+      expect(result.command).toBe("error");
+      if (result.command === "error") {
+        expect(result.message).toContain("Usage");
+      }
+    });
+  });
+
   describe("help command", () => {
     it("parses help", () => {
       const result = parseArgs(["help"]);
@@ -872,6 +902,224 @@ describe("CLI command execution", () => {
       "Content",
     );
     expect(logSpy).toHaveBeenCalledWith("Created: tagged-page");
+  });
+
+  // -------------------------------------------------------------------------
+  // update command
+  // -------------------------------------------------------------------------
+
+  it("runUpdate() updates a page and prints result", async () => {
+    const { readWikiPageWithFrontmatter, validateSlug } = await import("../wiki");
+    vi.mocked(validateSlug).mockImplementation(() => {});
+    vi.mocked(readWikiPageWithFrontmatter).mockResolvedValueOnce({
+      slug: "test-page",
+      title: "Old Title",
+      content: "---\ntitle: Old Title\n---\nOld content",
+      path: "/wiki/test-page.md",
+      frontmatter: { title: "Old Title", tags: ["existing"], confidence: 0.7, updated: "2025-01-01" },
+      body: "Old content",
+    });
+
+    const { serializeFrontmatter } = await import("../frontmatter");
+    vi.mocked(serializeFrontmatter).mockReturnValueOnce("---\ntitle: New Title\n---\nNew content");
+
+    const { extractSummary } = await import("../ingest");
+    vi.mocked(extractSummary).mockReturnValueOnce("New content");
+
+    const { writeWikiPageWithSideEffects } = await import("../lifecycle");
+    vi.mocked(writeWikiPageWithSideEffects).mockResolvedValueOnce({
+      slug: "test-page",
+      updatedSlugs: ["related-page"],
+    });
+
+    // Mock stdin
+    const originalStdin = process.stdin;
+    const mockStdin = new (await import("stream")).Readable();
+    mockStdin.push("New content");
+    mockStdin.push(null);
+    Object.defineProperty(process, "stdin", { value: mockStdin, writable: true });
+
+    const { runUpdate } = await import("../../cli");
+    await runUpdate("test-page", "New Title");
+
+    Object.defineProperty(process, "stdin", { value: originalStdin, writable: true });
+
+    expect(logSpy).toHaveBeenCalledWith("Updated: test-page");
+    expect(logSpy).toHaveBeenCalledWith("  Title: New Title");
+    expect(logSpy).toHaveBeenCalledWith("  Cross-referenced: related-page");
+  });
+
+  it("runUpdate() preserves existing title when --title omitted", async () => {
+    const { readWikiPageWithFrontmatter, validateSlug } = await import("../wiki");
+    vi.mocked(validateSlug).mockImplementation(() => {});
+    vi.mocked(readWikiPageWithFrontmatter).mockResolvedValueOnce({
+      slug: "test-page",
+      title: "Existing Title",
+      content: "---\ntitle: Existing Title\n---\nOld content",
+      path: "/wiki/test-page.md",
+      frontmatter: { title: "Existing Title", tags: ["tag1"], confidence: 0.5 },
+      body: "Old content",
+    });
+
+    const { serializeFrontmatter } = await import("../frontmatter");
+    vi.mocked(serializeFrontmatter).mockReturnValueOnce("---\ntitle: Existing Title\n---\nUpdated body");
+
+    const { extractSummary } = await import("../ingest");
+    vi.mocked(extractSummary).mockReturnValueOnce("Updated body");
+
+    const { writeWikiPageWithSideEffects } = await import("../lifecycle");
+    vi.mocked(writeWikiPageWithSideEffects).mockResolvedValueOnce({
+      slug: "test-page",
+      updatedSlugs: [],
+    });
+
+    // Mock stdin
+    const originalStdin = process.stdin;
+    const mockStdin = new (await import("stream")).Readable();
+    mockStdin.push("Updated body");
+    mockStdin.push(null);
+    Object.defineProperty(process, "stdin", { value: mockStdin, writable: true });
+
+    const { runUpdate } = await import("../../cli");
+    await runUpdate("test-page");
+
+    Object.defineProperty(process, "stdin", { value: originalStdin, writable: true });
+
+    expect(logSpy).toHaveBeenCalledWith("Updated: test-page");
+    expect(logSpy).toHaveBeenCalledWith("  Title: Existing Title");
+    // Verify frontmatter was called preserving existing tags
+    expect(serializeFrontmatter).toHaveBeenCalledWith(
+      expect.objectContaining({ title: "Existing Title", tags: ["tag1"] }),
+      "Updated body",
+    );
+  });
+
+  it("runUpdate() preserves existing tags when --tags omitted", async () => {
+    const { readWikiPageWithFrontmatter, validateSlug } = await import("../wiki");
+    vi.mocked(validateSlug).mockImplementation(() => {});
+    vi.mocked(readWikiPageWithFrontmatter).mockResolvedValueOnce({
+      slug: "test-page",
+      title: "Page",
+      content: "---\ntitle: Page\n---\nContent",
+      path: "/wiki/test-page.md",
+      frontmatter: { title: "Page", tags: ["keep-me", "also-me"] },
+      body: "Content",
+    });
+
+    const { serializeFrontmatter } = await import("../frontmatter");
+    vi.mocked(serializeFrontmatter).mockReturnValueOnce("---\ntitle: New Title\n---\nNew body");
+
+    const { extractSummary } = await import("../ingest");
+    vi.mocked(extractSummary).mockReturnValueOnce("New body");
+
+    const { writeWikiPageWithSideEffects } = await import("../lifecycle");
+    vi.mocked(writeWikiPageWithSideEffects).mockResolvedValueOnce({
+      slug: "test-page",
+      updatedSlugs: [],
+    });
+
+    // Mock stdin
+    const originalStdin = process.stdin;
+    const mockStdin = new (await import("stream")).Readable();
+    mockStdin.push("New body");
+    mockStdin.push(null);
+    Object.defineProperty(process, "stdin", { value: mockStdin, writable: true });
+
+    const { runUpdate } = await import("../../cli");
+    await runUpdate("test-page", "New Title");
+
+    Object.defineProperty(process, "stdin", { value: originalStdin, writable: true });
+
+    // Verify frontmatter was called preserving existing tags
+    expect(serializeFrontmatter).toHaveBeenCalledWith(
+      expect.objectContaining({ tags: ["keep-me", "also-me"] }),
+      "New body",
+    );
+  });
+
+  it("runUpdate() uses provided --tags over existing", async () => {
+    const { readWikiPageWithFrontmatter, validateSlug } = await import("../wiki");
+    vi.mocked(validateSlug).mockImplementation(() => {});
+    vi.mocked(readWikiPageWithFrontmatter).mockResolvedValueOnce({
+      slug: "test-page",
+      title: "Page",
+      content: "---\ntitle: Page\n---\nContent",
+      path: "/wiki/test-page.md",
+      frontmatter: { title: "Page", tags: ["old-tag"] },
+      body: "Content",
+    });
+
+    const { serializeFrontmatter } = await import("../frontmatter");
+    vi.mocked(serializeFrontmatter).mockReturnValueOnce("---\ntitle: Page\n---\nNew body");
+
+    const { extractSummary } = await import("../ingest");
+    vi.mocked(extractSummary).mockReturnValueOnce("New body");
+
+    const { writeWikiPageWithSideEffects } = await import("../lifecycle");
+    vi.mocked(writeWikiPageWithSideEffects).mockResolvedValueOnce({
+      slug: "test-page",
+      updatedSlugs: [],
+    });
+
+    // Mock stdin
+    const originalStdin = process.stdin;
+    const mockStdin = new (await import("stream")).Readable();
+    mockStdin.push("New body");
+    mockStdin.push(null);
+    Object.defineProperty(process, "stdin", { value: mockStdin, writable: true });
+
+    const { runUpdate } = await import("../../cli");
+    await runUpdate("test-page", undefined, ["new-tag", "another"]);
+
+    Object.defineProperty(process, "stdin", { value: originalStdin, writable: true });
+
+    // Verify frontmatter was called with new tags, not old
+    expect(serializeFrontmatter).toHaveBeenCalledWith(
+      expect.objectContaining({ tags: ["new-tag", "another"] }),
+      "New body",
+    );
+  });
+
+  it("runUpdate() exits with error when page not found", async () => {
+    const { readWikiPageWithFrontmatter, validateSlug } = await import("../wiki");
+    vi.mocked(validateSlug).mockImplementation(() => {});
+    vi.mocked(readWikiPageWithFrontmatter).mockResolvedValueOnce(null);
+
+    const { runUpdate } = await import("../../cli");
+    await expect(runUpdate("nonexistent-slug")).rejects.toThrow("process.exit");
+
+    expect(errorSpy).toHaveBeenCalledWith(
+      expect.stringContaining('page "nonexistent-slug" not found'),
+    );
+    expect(exitSpy).toHaveBeenCalledWith(1);
+  });
+
+  it("runUpdate() exits with error when stdin is empty", async () => {
+    const { readWikiPageWithFrontmatter, validateSlug } = await import("../wiki");
+    vi.mocked(validateSlug).mockImplementation(() => {});
+    vi.mocked(readWikiPageWithFrontmatter).mockResolvedValueOnce({
+      slug: "test-page",
+      title: "Page",
+      content: "---\ntitle: Page\n---\nContent",
+      path: "/wiki/test-page.md",
+      frontmatter: { title: "Page" },
+      body: "Content",
+    });
+
+    // Mock empty stdin
+    const originalStdin = process.stdin;
+    const mockStdin = new (await import("stream")).Readable();
+    mockStdin.push("");
+    mockStdin.push(null);
+    Object.defineProperty(process, "stdin", { value: mockStdin, writable: true });
+
+    const { runUpdate } = await import("../../cli");
+    await expect(runUpdate("test-page")).rejects.toThrow("process.exit");
+
+    Object.defineProperty(process, "stdin", { value: originalStdin, writable: true });
+
+    expect(errorSpy).toHaveBeenCalledWith("Error: no content received on stdin");
+    expect(exitSpy).toHaveBeenCalledWith(1);
   });
 
   it("runDelete() prints deletion result with backlinks", async () => {
