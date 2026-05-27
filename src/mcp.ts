@@ -28,6 +28,8 @@
  *   dataview_query     — Query wiki pages by frontmatter fields
  *   list_revisions     — List revision history for a wiki page
  *   read_revision      — Read a specific revision's content
+ *   list_contributors  — List all contributors with trust scores
+ *   get_contributor    — Get a specific contributor's trust profile
  *
  * Usage:
  *   pnpm mcp          # starts the stdio server
@@ -52,8 +54,9 @@ import { extractSummary, ingest, ingestUrl, reingest } from "./lib/ingest";
 import { query, saveAnswerToWiki, type QueryFormat } from "./lib/query";
 import { isUrl } from "./lib/fetch";
 import { getAgent, listAgents, updateAgent, deleteAgent, seedAgent } from "./lib/agents";
+import { listContributors, buildContributorProfile } from "./lib/contributors";
 import type { SeedAgentSection, UpdateAgentOptions } from "./lib/agents";
-import type { AgentProfile, IngestResult, QueryResult, LintResult, LintIssue } from "./lib/types";
+import type { AgentProfile, ContributorProfile, IngestResult, QueryResult, LintResult, LintIssue } from "./lib/types";
 import type { DeletePageResult } from "./lib/lifecycle";
 import { resolveScope, type ContentSearchResult } from "./lib/search";
 import { lint, ALL_CHECK_TYPES } from "./lib/lint";
@@ -547,6 +550,33 @@ export async function handleDeleteAgent(args: {
     throw new Error(`Agent not found: ${args.agent_id}`);
   }
   return { deleted: true, agent_id: args.agent_id };
+}
+
+// ---------------------------------------------------------------------------
+// Contributor handlers
+// ---------------------------------------------------------------------------
+
+export async function handleListContributors(): Promise<{
+  contributors: ContributorProfile[];
+}> {
+  const contributors = await listContributors();
+  return { contributors };
+}
+
+export async function handleGetContributor(args: {
+  handle: string;
+}): Promise<ContributorProfile> {
+  const profile = await buildContributorProfile(args.handle);
+  // buildContributorProfile returns a zeroed-out profile for unknown handles.
+  // Treat zero activity as "not found" for agent consumers.
+  if (
+    profile.editCount === 0 &&
+    profile.commentCount === 0 &&
+    profile.threadsCreated === 0
+  ) {
+    throw new Error(`No activity found for contributor: ${args.handle}`);
+  }
+  return profile;
 }
 
 // ---------------------------------------------------------------------------
@@ -1875,6 +1905,80 @@ export function createMcpServer(): McpServer {
   }, async (args) => {
     try {
       const result = await handleReadRevision(args);
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: JSON.stringify(result, null, 2),
+          },
+        ],
+      };
+    } catch (err) {
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: (err as Error).message,
+          },
+        ],
+        isError: true,
+      };
+    }
+  });
+
+  // list_contributors — List all contributors with trust scores
+  server.registerTool("list_contributors", {
+    description:
+      "List all contributors who have edited wiki pages or participated in discussions. " +
+      "Returns trust scores, edit counts, revert rates, and activity dates for each contributor.",
+    inputSchema: {},
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+  }, async () => {
+    try {
+      const result = await handleListContributors();
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: JSON.stringify(result, null, 2),
+          },
+        ],
+      };
+    } catch (err) {
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: (err as Error).message,
+          },
+        ],
+        isError: true,
+      };
+    }
+  });
+
+  // get_contributor — Get a single contributor's profile
+  server.registerTool("get_contributor", {
+    description:
+      "Get the trust profile for a specific contributor by handle. " +
+      "Returns edit count, pages edited, comment count, revert rate, trust score, and activity dates.",
+    inputSchema: {
+      handle: z.string().describe("Contributor handle to look up"),
+    },
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+  }, async (args) => {
+    try {
+      const result = await handleGetContributor(args);
       return {
         content: [
           {
