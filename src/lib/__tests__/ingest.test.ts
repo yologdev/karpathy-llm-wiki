@@ -2019,7 +2019,7 @@ describe("reingest", () => {
 // Ingest ledger persistence
 // ---------------------------------------------------------------------------
 
-import { getLedgerPath, persistToLedger, type LedgerEntry } from "../ingest";
+import { getLedgerPath, persistToLedger, readLedger, type LedgerEntry } from "../ingest";
 
 describe("ingest ledger", () => {
   let tmpDir: string;
@@ -2163,5 +2163,103 @@ describe("ingest ledger", () => {
     // Now the data/ dir and ledger file should exist
     const stat = await fs.stat(dataSubDir);
     expect(stat.isDirectory()).toBe(true);
+  });
+
+  // -------------------------------------------------------------------------
+  // readLedger
+  // -------------------------------------------------------------------------
+
+  it("readLedger returns empty array when ledger file does not exist", async () => {
+    const entries = await readLedger();
+    expect(entries).toEqual([]);
+  });
+
+  it("readLedger returns entries most-recent-first", async () => {
+    const entry1: LedgerEntry = {
+      ingest_id: "2026-01-01T00:00:00.000Z/first",
+      source_type: "text",
+      source_url: "text-paste",
+      primary_slug: "first",
+      related_slugs: [],
+      started_at: "2026-01-01T00:00:00.000Z",
+      finished_at: "2026-01-01T00:00:01.000Z",
+      status: "completed",
+    };
+    const entry2: LedgerEntry = {
+      ingest_id: "2026-01-02T00:00:00.000Z/second",
+      source_type: "url",
+      source_url: "https://example.com",
+      primary_slug: "second",
+      related_slugs: ["first"],
+      started_at: "2026-01-02T00:00:00.000Z",
+      finished_at: "2026-01-02T00:00:05.000Z",
+      status: "completed",
+    };
+
+    await persistToLedger(entry1);
+    await persistToLedger(entry2);
+
+    const entries = await readLedger();
+    expect(entries.length).toBe(2);
+    // Most recent (entry2) should come first
+    expect(entries[0].primary_slug).toBe("second");
+    expect(entries[1].primary_slug).toBe("first");
+  });
+
+  it("readLedger respects limit parameter", async () => {
+    for (let i = 0; i < 5; i++) {
+      await persistToLedger({
+        ingest_id: `2026-01-0${i + 1}T00:00:00.000Z/entry-${i}`,
+        source_type: "text",
+        source_url: "text-paste",
+        primary_slug: `entry-${i}`,
+        related_slugs: [],
+        started_at: `2026-01-0${i + 1}T00:00:00.000Z`,
+        finished_at: `2026-01-0${i + 1}T00:00:01.000Z`,
+        status: "completed",
+      });
+    }
+
+    const entries = await readLedger(3);
+    expect(entries.length).toBe(3);
+    // Should be newest first
+    expect(entries[0].primary_slug).toBe("entry-4");
+    expect(entries[2].primary_slug).toBe("entry-2");
+  });
+
+  it("readLedger skips malformed JSONL lines without throwing", async () => {
+    const ledgerPath = getLedgerPath();
+    await fs.mkdir(path.dirname(ledgerPath), { recursive: true });
+
+    const validEntry = JSON.stringify({
+      ingest_id: "2026-01-01T00:00:00.000Z/valid",
+      source_type: "text",
+      source_url: "text-paste",
+      primary_slug: "valid",
+      related_slugs: [],
+      started_at: "2026-01-01T00:00:00.000Z",
+      finished_at: "2026-01-01T00:00:01.000Z",
+      status: "completed",
+    });
+
+    // Write a mix of valid and malformed lines
+    await fs.writeFile(
+      ledgerPath,
+      `${validEntry}\n{not valid json\n${validEntry.replace("valid", "also-valid")}\n`,
+      "utf-8",
+    );
+
+    const entries = await readLedger();
+    expect(entries.length).toBe(2);
+    // Malformed line was silently skipped
+  });
+
+  it("readLedger returns empty array for empty file", async () => {
+    const ledgerPath = getLedgerPath();
+    await fs.mkdir(path.dirname(ledgerPath), { recursive: true });
+    await fs.writeFile(ledgerPath, "", "utf-8");
+
+    const entries = await readLedger();
+    expect(entries).toEqual([]);
   });
 });

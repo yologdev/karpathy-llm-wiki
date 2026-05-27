@@ -114,6 +114,23 @@ describe("CLI argument parsing", () => {
     });
   });
 
+  describe("history command", () => {
+    it("parses history without flags (default limit 20)", () => {
+      const result = parseArgs(["history"]);
+      expect(result).toEqual({ command: "history", limit: 20 });
+    });
+
+    it("parses history with --limit flag", () => {
+      const result = parseArgs(["history", "--limit", "10"]);
+      expect(result).toEqual({ command: "history", limit: 10 });
+    });
+
+    it("defaults limit to 20 for invalid --limit value", () => {
+      const result = parseArgs(["history", "--limit", "abc"]);
+      expect(result).toEqual({ command: "history", limit: 20 });
+    });
+  });
+
   describe("read command", () => {
     it("parses read with slug", () => {
       const result = parseArgs(["read", "attention-mechanisms"]);

@@ -51,6 +51,43 @@ export function getLedgerPath(): string {
 }
 
 /**
+ * Read the ingest ledger, returning entries most-recent-first.
+ *
+ * Gracefully returns an empty array if the file doesn't exist.
+ * Malformed JSONL lines are silently skipped.
+ *
+ * @param limit  Maximum number of entries to return (default: all)
+ */
+export async function readLedger(limit?: number): Promise<LedgerEntry[]> {
+  const ledgerPath = getLedgerPath();
+  let raw: string;
+  try {
+    raw = await fs.readFile(ledgerPath, "utf-8");
+  } catch {
+    // File doesn't exist or is unreadable — return empty
+    return [];
+  }
+
+  const lines = raw.trim().split("\n").filter(Boolean);
+  const entries: LedgerEntry[] = [];
+  for (const line of lines) {
+    try {
+      entries.push(JSON.parse(line) as LedgerEntry);
+    } catch {
+      // Skip malformed lines
+    }
+  }
+
+  // Most recent first (ledger is append-only, so reverse)
+  entries.reverse();
+
+  if (limit !== undefined && limit > 0) {
+    return entries.slice(0, limit);
+  }
+  return entries;
+}
+
+/**
  * Append a single ledger entry to data/ingest-ledger.jsonl.
  *
  * Creates the `data/` directory if it doesn't exist. Errors are caught

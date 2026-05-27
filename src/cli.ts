@@ -15,6 +15,7 @@
  *   pnpm cli list                 List all wiki pages
  *   pnpm cli list --raw           List raw sources
  *   pnpm cli delete <slug>        Delete a wiki page and clean up side effects
+ *   pnpm cli history              Show recent ingest history
  *   pnpm cli status               Show wiki health summary
  *   pnpm cli help                 Show this help
  */
@@ -35,6 +36,7 @@ export type ParsedCommand =
   | { command: "lint"; fix: boolean }
   | { command: "list"; raw: boolean }
   | { command: "delete"; slug: string }
+  | { command: "history"; limit: number }
   | { command: "status" }
   | { command: "help" }
   | { command: "error"; message: string };
@@ -140,6 +142,12 @@ export function parseArgs(argv: string[]): ParsedCommand {
       const raw = rest.includes("--raw");
       return { command: "list", raw };
     }
+    case "history": {
+      const limitIdx = rest.indexOf("--limit");
+      const limitRaw = limitIdx !== -1 ? rest[limitIdx + 1] : undefined;
+      const limit = limitRaw ? parseInt(limitRaw, 10) : 20;
+      return { command: "history", limit: isNaN(limit) ? 20 : limit };
+    }
     case "status":
       return { command: "status" };
     default:
@@ -170,6 +178,7 @@ Commands:
   lint --fix           Run lint and auto-fix issues
   list                 List all wiki pages (slug + title)
   list --raw           List raw sources instead of wiki pages
+  history              Show recent ingest history
   status               Show wiki health summary
   help                 Show this help
 
@@ -185,6 +194,9 @@ Create flags:
 Update flags:
   --title <title>      New page title (optional — preserves existing if omitted)
   --tags tag1,tag2     Comma-separated tags (optional — preserves existing if omitted)
+
+History flags:
+  --limit N            Max entries to show (default: 20)
 
 Examples:
   pnpm cli ingest https://example.com/article
@@ -205,6 +217,8 @@ Examples:
   pnpm cli lint --fix
   pnpm cli list
   pnpm cli list --raw
+  pnpm cli history
+  pnpm cli history --limit 10
   pnpm cli status
 `.trim();
 
@@ -552,6 +566,40 @@ export async function runStatus(): Promise<void> {
   console.log(`Embeddings:\t${settings.embeddingSupport ? "available" : "not available"}`);
 }
 
+export async function runHistory(limit: number): Promise<void> {
+  const { readLedger } = await import("./lib/ingest");
+  const entries = await readLedger(limit);
+
+  if (entries.length === 0) {
+    console.log("No ingest history found.");
+    return;
+  }
+
+  // Print header
+  console.log(
+    "Timestamp".padEnd(25) +
+    "Slug".padEnd(30) +
+    "Source".padEnd(40) +
+    "Status",
+  );
+  console.log("-".repeat(100));
+
+  for (const entry of entries) {
+    const ts = entry.finished_at || entry.started_at || "";
+    const shortTs = ts.slice(0, 19).replace("T", " ");
+    const slug = entry.primary_slug || "";
+    const source = entry.source_url || "";
+    const status = entry.status || "";
+
+    console.log(
+      shortTs.padEnd(25) +
+      slug.slice(0, 28).padEnd(30) +
+      source.slice(0, 38).padEnd(40) +
+      status,
+    );
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Main
 // ---------------------------------------------------------------------------
@@ -604,6 +652,9 @@ async function main(): Promise<void> {
       return;
     case "status":
       await runStatus();
+      return;
+    case "history":
+      await runHistory(parsed.limit);
       return;
   }
 }
