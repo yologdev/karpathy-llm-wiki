@@ -9,6 +9,7 @@ import { logger } from "./logger";
 import { findDuplicateEntities } from "./alias-index";
 import { parseSources } from "./sources";
 import { getDiscussionStatsForSlugs, getDiscussionStats } from "./talk";
+import { listRawSources, readRawSource } from "./raw";
 
 /** All known lint check types. */
 export const ALL_CHECK_TYPES: LintIssue["type"][] = [
@@ -27,6 +28,7 @@ export const ALL_CHECK_TYPES: LintIssue["type"][] = [
   "unresolved-discussions",
   "disputed-page",
   "supersedes-dangling",
+  "incomplete-coverage",
 ];
 
 // Files that are part of the wiki infrastructure, not content pages.
@@ -847,6 +849,130 @@ export async function checkSupersededDangling(
         severity: "warning",
         suggestion: `Create the page "${supersedes}" so the supersession chain is valid, or remove the supersedes field from "${slug}" if the old page was already deleted.`,
       });
+    }
+  }
+
+  return issues;
+}
+
+// ---------------------------------------------------------------------------
+// Incomplete coverage — raw source content missing from wiki page
+// ---------------------------------------------------------------------------
+
+const INCOMPLETE_COVERAGE_SYSTEM_PROMPT = `You are a wiki coverage auditor. You will be given two documents:
+1. A "raw source" — the original ingested material.
+2. A "wiki page" — the wiki's distillation of that source.
+
+Your job: identify significant information present in the raw source that is absent from or poorly represented in the wiki page. Ignore formatting differences, reorganization, and minor wording changes — focus on substantive facts, claims, data, or concepts that a reader of the wiki page would miss.
+
+Return a JSON array of objects: [{"gap": "Brief description of missing information", "importance": "high" | "medium"}]
+
+Only include gaps that a knowledgeable reader would consider important. Omit trivial details, boilerplate, and navigation text.
+If the wiki page adequately covers the raw source, return an empty array: []
+
+Respond ONLY with the JSON array — no additional text, no markdown code fences.`;
+
+/**
+ * Parse the LLM response for incomplete-coverage detection.
+ * Returns structured gap data or an empty array on malformed responses.
+ */
+export function parseIncompleteCoverageResponse(
+  response: string,
+): { gap: string; importance: string }[] {
+  return parseLLMJsonArray(response, (item: unknown) => {
+    const obj = item as Record<string, unknown>;
+    if (
+      obj &&
+      typeof obj.gap === "string" &&
+      obj.gap.length > 0 &&
+      typeof obj.importance === "string" &&
+      (obj.importance === "high" || obj.importance === "medium")
+    ) {
+      return {
+        gap: obj.gap,
+        importance: obj.importance,
+      };
+    }
+    return null;
+  });
+}
+
+/**
+ * Check for incomplete coverage — raw source content that is missing from the
+ * corresponding wiki page. For each wiki page that has a matching raw source,
+ * calls the LLM to compare the two and report significant gaps.
+ *
+ * Uses the same skip-when-no-LLM-key pattern as checkContradictions.
+ */
+export async function checkIncompleteCoverage(
+  diskSlugs: string[],
+): Promise<LintIssue[]> {
+  if (!hasLLMKey()) {
+    return [
+      {
+        type: "incomplete-coverage",
+        slug: "",
+        message:
+          "Incomplete coverage detection skipped — no LLM API key configured",
+        severity: "info",
+      },
+    ];
+  }
+
+  // Find which disk slugs have corresponding raw sources
+  let rawSources: { slug: string }[];
+  try {
+    rawSources = await listRawSources();
+  } catch {
+    return [];
+  }
+
+  const rawSlugsOnDisk = new Set(rawSources.map((r) => r.slug));
+  const slugsWithRaw = diskSlugs.filter((s) => rawSlugsOnDisk.has(s));
+
+  if (slugsWithRaw.length === 0) {
+    return [];
+  }
+
+  const issues: LintIssue[] = [];
+  const MAX_RAW_CHARS = 8000;
+  const MAX_WIKI_CHARS = 8000;
+
+  for (const slug of slugsWithRaw) {
+    const wikiPage = await readWikiPage(slug);
+    if (!wikiPage) continue;
+
+    let rawContent: string;
+    try {
+      const raw = await readRawSource(slug);
+      rawContent = raw.content;
+    } catch {
+      continue; // Raw source unreadable, skip
+    }
+
+    const rawSnippet = rawContent.slice(0, MAX_RAW_CHARS);
+    const wikiSnippet = wikiPage.content.slice(0, MAX_WIKI_CHARS);
+
+    const userMessage = `--- Raw Source: ${slug} ---\n${rawSnippet}\n\n--- Wiki Page: ${slug} ---\n${wikiSnippet}`;
+
+    try {
+      const response = await callLLM(
+        INCOMPLETE_COVERAGE_SYSTEM_PROMPT,
+        userMessage,
+      );
+      const gaps = parseIncompleteCoverageResponse(response);
+
+      for (const g of gaps) {
+        issues.push({
+          type: "incomplete-coverage",
+          slug,
+          message: `Raw source for "${slug}" contains information not in wiki page: ${g.gap}`,
+          severity: "info",
+          suggestion: `Re-ingest the source for "${slug}" or manually add the missing information: ${g.gap}`,
+        });
+      }
+    } catch (err) {
+      logger.warn("lint", `LLM incomplete-coverage check failed for ${slug}:`, err);
     }
   }
 

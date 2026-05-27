@@ -11,6 +11,7 @@ import {
   checkMissingCrossRefs,
   checkContradictions,
   checkMissingConceptPages,
+  checkIncompleteCoverage,
   checkStalePages,
   checkLowConfidence,
   checkUnmigratedPages,
@@ -25,6 +26,7 @@ import {
   buildClusters,
   parseContradictionResponse,
   parseMissingConceptResponse,
+  parseIncompleteCoverageResponse,
 } from "./lint-checks";
 
 /** Severity ordering from most to least severe. */
@@ -44,6 +46,8 @@ export {
   checkContradictions,
   parseMissingConceptResponse,
   checkMissingConceptPages,
+  parseIncompleteCoverageResponse,
+  checkIncompleteCoverage,
   checkBrokenLinks,
   checkStalePages,
   checkLowConfidence,
@@ -130,18 +134,21 @@ export async function lint(options?: LintOptions): Promise<LintResult> {
         : [],
     ]);
 
-    // Contradiction + missing-concept detection both require LLM calls but are
-    // independent read-only checks, so run them in parallel to halve wall-clock time.
-    const [contradictions, missingConcepts] = await Promise.all([
+    // Contradiction + missing-concept + incomplete-coverage detection all require
+    // LLM calls but are independent read-only checks, so run them in parallel.
+    const [contradictions, missingConcepts, incompleteCoverage] = await Promise.all([
       enabledChecks.has("contradiction")
         ? checkContradictions(diskSlugs)
         : [],
       enabledChecks.has("missing-concept-page")
         ? checkMissingConceptPages(diskSlugs)
         : [],
+      enabledChecks.has("incomplete-coverage")
+        ? checkIncompleteCoverage(diskSlugs)
+        : [],
     ]);
 
-    let issues = [...orphans, ...stale, ...empty, ...crossRefs, ...brokenLinks, ...stalePages, ...lowConfidence, ...unmigratedPages, ...duplicateEntities, ...uncitedClaims, ...unresolvedDiscussions, ...disputedPages, ...supersedesDangling, ...contradictions, ...missingConcepts];
+    let issues = [...orphans, ...stale, ...empty, ...crossRefs, ...brokenLinks, ...stalePages, ...lowConfidence, ...unmigratedPages, ...duplicateEntities, ...uncitedClaims, ...unresolvedDiscussions, ...disputedPages, ...supersedesDangling, ...contradictions, ...missingConcepts, ...incompleteCoverage];
 
     // Filter by minimum severity
     if (minSeverityRank > 0) {

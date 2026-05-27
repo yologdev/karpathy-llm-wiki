@@ -30,8 +30,11 @@ import {
   checkContradictions,
   parseMissingConceptResponse,
   checkMissingConceptPages,
+  parseIncompleteCoverageResponse,
+  checkIncompleteCoverage,
   checkBrokenLinks,
 } from "../lint";
+import { saveRawSource } from "../raw";
 
 let tmpDir: string;
 let originalWikiDir: string | undefined;
@@ -81,7 +84,7 @@ describe("lint", () => {
     // Only the contradiction-skipped and missing-concept-page-skipped info issues (no LLM key)
     // Also filter unmigrated-page and uncited-claims — the test page has no yopedia frontmatter/sources by design
     const nonLLMSkipped = result.issues.filter(
-      (i) => i.type !== "contradiction" && i.type !== "missing-concept-page" && i.type !== "unmigrated-page" && i.type !== "uncited-claims" && i.type !== "unresolved-discussions",
+      (i) => i.type !== "contradiction" && i.type !== "missing-concept-page" && i.type !== "incomplete-coverage" && i.type !== "unmigrated-page" && i.type !== "uncited-claims" && i.type !== "unresolved-discussions",
     );
     expect(nonLLMSkipped).toHaveLength(0);
     expect(result.checkedAt).toBeTruthy();
@@ -216,9 +219,9 @@ describe("lint", () => {
 
     const result = await lint();
 
-    // Only the LLM-skipped info issues (contradiction + missing-concept-page)
+    // Only the LLM-skipped info issues (contradiction + missing-concept-page + incomplete-coverage)
     const nonLLMSkipped = result.issues.filter(
-      (i) => i.type !== "contradiction" && i.type !== "missing-concept-page",
+      (i) => i.type !== "contradiction" && i.type !== "missing-concept-page" && i.type !== "incomplete-coverage",
     );
     expect(nonLLMSkipped).toHaveLength(0);
   });
@@ -1189,5 +1192,126 @@ describe("lint with LintOptions", () => {
     const result = await lint({ checks: [] });
     // No checks enabled → no issues
     expect(result.issues).toHaveLength(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// checkIncompleteCoverage
+// ---------------------------------------------------------------------------
+
+describe("checkIncompleteCoverage", () => {
+  it("returns info issue when no LLM key is configured", async () => {
+    mockedHasLLMKey.mockReturnValue(false);
+    await ensureDirectories();
+
+    const issues = await checkIncompleteCoverage(["some-slug"]);
+
+    expect(issues).toHaveLength(1);
+    expect(issues[0].type).toBe("incomplete-coverage");
+    expect(issues[0].severity).toBe("info");
+    expect(issues[0].message).toContain("skipped");
+    expect(issues[0].message).toContain("no LLM API key");
+  });
+
+  it("returns no issues when slug has no raw source", async () => {
+    mockedHasLLMKey.mockReturnValue(true);
+
+    await writeWikiPage(
+      "no-raw",
+      "# No Raw\n\nThis page has no corresponding raw source file.",
+    );
+    await updateIndex([
+      { slug: "no-raw", title: "No Raw", summary: "Page without raw source" },
+    ]);
+
+    const issues = await checkIncompleteCoverage(["no-raw"]);
+
+    expect(issues).toHaveLength(0);
+  });
+
+  it("reports issues when LLM finds gaps between raw source and wiki page", async () => {
+    mockedHasLLMKey.mockReturnValue(true);
+
+    // Create a wiki page and its corresponding raw source
+    await writeWikiPage(
+      "test-topic",
+      "# Test Topic\n\nBasic overview of the topic.",
+    );
+    await updateIndex([
+      { slug: "test-topic", title: "Test Topic", summary: "A topic" },
+    ]);
+    await saveRawSource(
+      "test-topic",
+      "# Test Topic\n\nBasic overview of the topic.\n\n## Advanced Details\n\nImportant statistics: 42% of users prefer X. There is also a historical context section.",
+    );
+
+    mockedCallLLM.mockResolvedValueOnce(
+      '[{"gap": "Advanced statistics (42% of users prefer X) missing from wiki", "importance": "high"}]',
+    );
+
+    const issues = await checkIncompleteCoverage(["test-topic"]);
+
+    expect(issues).toHaveLength(1);
+    expect(issues[0].type).toBe("incomplete-coverage");
+    expect(issues[0].severity).toBe("info");
+    expect(issues[0].slug).toBe("test-topic");
+    expect(issues[0].message).toContain("test-topic");
+    expect(issues[0].message).toContain("42%");
+    expect(issues[0].suggestion).toBeTruthy();
+  });
+
+  it("returns no issues when LLM finds no gaps", async () => {
+    mockedHasLLMKey.mockReturnValue(true);
+
+    await writeWikiPage(
+      "complete-page",
+      "# Complete Page\n\nAll information from the source is well covered here.",
+    );
+    await updateIndex([
+      { slug: "complete-page", title: "Complete Page", summary: "Well covered" },
+    ]);
+    await saveRawSource(
+      "complete-page",
+      "# Complete Page\n\nAll information from the source is well covered here.",
+    );
+
+    mockedCallLLM.mockResolvedValueOnce("[]");
+
+    const issues = await checkIncompleteCoverage(["complete-page"]);
+
+    expect(issues).toHaveLength(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// parseIncompleteCoverageResponse
+// ---------------------------------------------------------------------------
+
+describe("parseIncompleteCoverageResponse", () => {
+  it("parses valid gap objects", () => {
+    const result = parseIncompleteCoverageResponse(
+      '[{"gap": "Missing statistics", "importance": "high"}, {"gap": "Missing context", "importance": "medium"}]',
+    );
+    expect(result).toHaveLength(2);
+    expect(result[0].gap).toBe("Missing statistics");
+    expect(result[0].importance).toBe("high");
+    expect(result[1].importance).toBe("medium");
+  });
+
+  it("rejects items with invalid importance", () => {
+    const result = parseIncompleteCoverageResponse(
+      '[{"gap": "Something", "importance": "low"}]',
+    );
+    expect(result).toHaveLength(0);
+  });
+
+  it("returns empty array for malformed response", () => {
+    const result = parseIncompleteCoverageResponse("This is not JSON");
+    expect(result).toHaveLength(0);
+  });
+
+  it("returns empty array for empty array response", () => {
+    const result = parseIncompleteCoverageResponse("[]");
+    expect(result).toHaveLength(0);
   });
 });
