@@ -839,6 +839,8 @@ export function createMcpServer(): McpServer {
     },
     annotations: {
       readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
       openWorldHint: false,
     },
   }, async (args) => {
@@ -873,6 +875,8 @@ export function createMcpServer(): McpServer {
     },
     annotations: {
       readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
       openWorldHint: false,
     },
   }, async (args) => {
@@ -915,6 +919,8 @@ export function createMcpServer(): McpServer {
     },
     annotations: {
       readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
       openWorldHint: false,
     },
   }, async (args) => {
@@ -951,6 +957,8 @@ export function createMcpServer(): McpServer {
     },
     annotations: {
       readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: false,
       openWorldHint: false,
     },
   }, async (args) => {
@@ -987,6 +995,8 @@ export function createMcpServer(): McpServer {
     },
     annotations: {
       readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: false,
       openWorldHint: false,
     },
   }, async (args) => {
@@ -1021,6 +1031,8 @@ export function createMcpServer(): McpServer {
     },
     annotations: {
       readOnlyHint: false,
+      destructiveHint: true,
+      idempotentHint: false,
       openWorldHint: false,
     },
   }, async (args) => {
@@ -1060,6 +1072,8 @@ export function createMcpServer(): McpServer {
     },
     annotations: {
       readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: false,
       openWorldHint: true,
     },
   }, async (args) => {
@@ -1103,6 +1117,8 @@ export function createMcpServer(): McpServer {
     },
     annotations: {
       readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: false,
       openWorldHint: false,
     },
   }, async (args) => {
@@ -1146,6 +1162,8 @@ export function createMcpServer(): McpServer {
     },
     annotations: {
       readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
       openWorldHint: false,
     },
   }, async (args) => {
@@ -1194,6 +1212,8 @@ export function createMcpServer(): McpServer {
     },
     annotations: {
       readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: false,
       openWorldHint: false,
     },
   }, async (args) => {
@@ -1229,6 +1249,8 @@ export function createMcpServer(): McpServer {
     },
     annotations: {
       readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
       openWorldHint: false,
     },
   }, async (args) => {
@@ -1272,6 +1294,8 @@ export function createMcpServer(): McpServer {
     },
     annotations: {
       readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: true,
       openWorldHint: false,
     },
   }, async (args) => {
@@ -1305,6 +1329,8 @@ export function createMcpServer(): McpServer {
     inputSchema: {},
     annotations: {
       readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
       openWorldHint: false,
     },
   }, async () => {
@@ -1349,6 +1375,8 @@ export function createMcpServer(): McpServer {
     },
     annotations: {
       readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: false,
       openWorldHint: false,
     },
   }, async (args) => {
@@ -1384,6 +1412,8 @@ export function createMcpServer(): McpServer {
     },
     annotations: {
       readOnlyHint: false,
+      destructiveHint: true,
+      idempotentHint: false,
       openWorldHint: false,
     },
   }, async (args) => {
@@ -1428,6 +1458,8 @@ export function createMcpServer(): McpServer {
     },
     annotations: {
       readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
       openWorldHint: false,
     },
   }, async (args) => {
@@ -1472,6 +1504,8 @@ export function createMcpServer(): McpServer {
     },
     annotations: {
       readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: false,
       openWorldHint: false,
     },
   }, async (args) => {
@@ -1509,6 +1543,8 @@ export function createMcpServer(): McpServer {
     },
     annotations: {
       readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
       openWorldHint: false,
     },
   }, async (args) => {
@@ -1553,6 +1589,8 @@ export function createMcpServer(): McpServer {
     },
     annotations: {
       readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: false,
       openWorldHint: false,
     },
   }, async (args) => {
@@ -1596,6 +1634,8 @@ export function createMcpServer(): McpServer {
     },
     annotations: {
       readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: false,
       openWorldHint: false,
     },
   }, async (args) => {
@@ -1647,6 +1687,8 @@ export function createMcpServer(): McpServer {
     },
     annotations: {
       readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: false,
       openWorldHint: false,
     },
   }, async (args) => {
@@ -1684,6 +1726,8 @@ export function createMcpServer(): McpServer {
     },
     annotations: {
       readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: false,
       openWorldHint: false,
     },
   }, async (args) => {
@@ -1741,6 +1785,8 @@ export function createMcpServer(): McpServer {
     },
     annotations: {
       readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
       openWorldHint: false,
     },
   }, async (args) => {
@@ -1779,6 +1825,8 @@ export function createMcpServer(): McpServer {
     },
     annotations: {
       readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
       openWorldHint: false,
     },
   }, async (args) => {
@@ -1820,6 +1868,8 @@ export function createMcpServer(): McpServer {
     },
     annotations: {
       readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
       openWorldHint: false,
     },
   }, async (args) => {
