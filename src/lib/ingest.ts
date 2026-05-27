@@ -22,7 +22,50 @@ import { slugify } from "./slugify";
 import { loadPageConventions } from "./schema";
 import { getRawDir } from "./config";
 import { resolveAlias } from "./alias-index";
+import { getDataDir } from "./paths";
+import fs from "fs/promises";
+import path from "path";
 
+// ---------------------------------------------------------------------------
+// Ingest ledger — append-only JSONL record of each ingest operation
+// ---------------------------------------------------------------------------
+
+/** A single entry in the ingest ledger (data/ingest-ledger.jsonl). */
+export interface LedgerEntry {
+  ingest_id: string;
+  source_type: string;
+  source_url: string;
+  primary_slug: string;
+  related_slugs: string[];
+  started_at: string;
+  finished_at: string;
+  status: string;
+}
+
+/**
+ * Returns the absolute path to the ingest ledger JSONL file.
+ * Exported for testing.
+ */
+export function getLedgerPath(): string {
+  return path.join(getDataDir(), "data", "ingest-ledger.jsonl");
+}
+
+/**
+ * Append a single ledger entry to data/ingest-ledger.jsonl.
+ *
+ * Creates the `data/` directory if it doesn't exist. Errors are caught
+ * and logged so a ledger I/O failure never breaks the ingest pipeline.
+ */
+export async function persistToLedger(entry: LedgerEntry): Promise<void> {
+  try {
+    const ledgerPath = getLedgerPath();
+    await fs.mkdir(path.dirname(ledgerPath), { recursive: true });
+    await fs.appendFile(ledgerPath, JSON.stringify(entry) + "\n", "utf-8");
+  } catch {
+    // Ledger writes must not fail the ingest — silently swallow I/O errors.
+    // In a future iteration we may log this via the logger module.
+  }
+}
 
 /**
  * Ingest a URL into the wiki.
@@ -358,6 +401,7 @@ export async function ingest(
   content: string,
   options?: IngestOptions,
 ): Promise<IngestResult> {
+  const startedAt = new Date().toISOString();
   const rawSlug = slugify(title);
 
   if (rawSlug === "") {
@@ -583,7 +627,7 @@ export async function ingest(
   //    (writeWikiPageWithSideEffects → runPageLifecycleOp) — no caller-side
   //    call needed.
 
-  return {
+  const result: IngestResult = {
     rawPath,
     primarySlug: slug,
     relatedUpdated: updatedSlugs,
@@ -591,4 +635,18 @@ export async function ingest(
     indexUpdated: true,
     ...(options?.sourceUrl ? { sourceUrl: options.sourceUrl } : {}),
   };
+
+  // 7. Persist a ledger entry recording this ingest operation.
+  await persistToLedger({
+    ingest_id: `${startedAt}/${slug}`,
+    source_type: sourceType,
+    source_url: sourceUrl,
+    primary_slug: slug,
+    related_slugs: updatedSlugs,
+    started_at: startedAt,
+    finished_at: new Date().toISOString(),
+    status: "completed",
+  });
+
+  return result;
 }
