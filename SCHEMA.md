@@ -598,7 +598,7 @@ Current checks performed by `lint()` in `src/lib/lint.ts`:
   `missing-concept-page`. Only runs for pages that have a corresponding raw
   source on disk. Requires an LLM key; skipped when no key is configured.
   No auto-fix — requires re-ingesting with an updated prompt or manually
-  adding the missing content. *(Planned — not yet implemented.)*
+  adding the missing content.
 
 ## Provider configuration
 
