@@ -591,6 +591,14 @@ Current checks performed by `lint()` in `src/lib/lint.ts`:
   pointing to a slug that doesn't exist on disk. The supersession chain is
   broken. No auto-fix — create the target page or remove the `supersedes`
   field.
+- **`incomplete-coverage`** (info) — LLM comparison of raw source content
+  (`raw/<slug>.md`) against the corresponding wiki page (`wiki/<slug>.md`)
+  flags cases where significant information from the source is absent from
+  the wiki. Uses the same LLM-powered approach as `contradiction` and
+  `missing-concept-page`. Only runs for pages that have a corresponding raw
+  source on disk. Requires an LLM key; skipped when no key is configured.
+  No auto-fix — requires re-ingesting with an updated prompt or manually
+  adding the missing content. *(Planned — not yet implemented.)*
 
 ## Provider configuration
 
@@ -674,6 +682,136 @@ identity content into yopedia pages and grow.sh integration.
 The schema will continue to evolve toward the full yopedia model defined in
 [`yopedia-concept.md`](yopedia-concept.md). See YOYO.md for the phased roadmap.
 Next up: Phase 5 (agent surface research).
+
+**Provenance depth (evaluated in #140):** Three primitives proposed by external
+agent-wiki builders were evaluated against yopedia's architecture:
+
+- **Hybrid raw anchors (claim-level citation)** — WATCH. Requires new claims
+  data model, LLM ingest prompt restructuring, and offset tracking. The
+  `SourceEntry` type will gain optional `anchor` fields for forward
+  compatibility when ready.
+- **Ingest ledger** — ADOPT. Append-only `data/ingest-ledger.jsonl` recording
+  each ingest operation's inputs, outputs, and timing. Implementation tracked
+  separately.
+- **Post-ingest completeness check** — ADOPT. New `incomplete-coverage` lint
+  check comparing raw source content against wiki page content via LLM.
+  Implementation tracked separately.
+
+### Provenance depth evaluation
+
+Three independent agent-wiki builders (OmegaWiki, SwarmVault, and
+[@kiluazen](https://github.com/kiluazen)) converged on three v0 schema choices
+that yopedia hadn't shipped. Issue #139 reported the convergence with a
+[reference gist](https://gist.github.com/kiluazen/727948f9517eacd665d21199e8318da1)
+containing field-level schemas. Each primitive was evaluated for adopt/watch/ignore.
+
+#### Primitive 1: Hybrid raw anchors → WATCH
+
+**What it is:** Claim-level citation anchoring via
+`{raw_offset, quote_hash, text_offset, claim_id}` that links specific passages
+in raw sources to specific statements on wiki pages.
+
+**Current state:** `SourceEntry` in `src/lib/types.ts` stores page-level
+provenance: `{type, url, fetched, triggered_by}`. Raw sources in `raw/` are
+immutable but have no offset tracking. Wiki citations use `](slug.md)` wikilinks
+between wiki pages, not back to raw source passages. The `uncited-claims` lint
+check (`src/lib/lint-checks.ts`) checks presence/absence of citations but not
+their granularity.
+
+**Why watch, not adopt:**
+- Requires a new `claims` data model (structured JSON or sidecar files, not
+  frontmatter — our frontmatter parser intentionally rejects nested objects)
+- Requires the LLM ingest prompt to produce structured claim-source mappings —
+  a fundamental change to the ingest pipeline's output format
+- Requires raw source content hashing and offset tracking in `saveRawSource()`
+  (`src/lib/raw.ts`)
+- The convergence signal is real but the implementation cost is high and the
+  schema is not yet stable across projects (the gist itself asks "is
+  `raw_offset + quote_hash + optional text_offset` enough?")
+
+**Preparatory step (future issue):** Extend `SourceEntry` with optional anchor
+fields so the type is forward-compatible:
+
+```typescript
+export interface SourceEntry {
+  type: "url" | "text" | "x-mention" | "wiki-ref";
+  url: string;
+  fetched: string;
+  triggered_by: string;
+  // Future: claim-level anchoring (optional, not yet populated)
+  anchor?: {
+    raw_offset?: { start: number; end: number };
+    text_offset?: { start: number; end: number };
+    quote_hash?: string;
+  };
+}
+```
+
+This extends the type without breaking existing code (all fields optional).
+Implementation deferred until the ingest pipeline can produce these values.
+
+#### Primitive 2: Ingest ledger → ADOPT
+
+**What it is:** An append-only record of which ingest wrote which pages from
+which source, separate from the wiki pages themselves. The gist proposes
+`{ingest_id, commit, inputs[], wiki_pages_touched[], started_at, finished_at, status}`.
+
+**Current state:** `log.md` (`src/lib/wiki-log.ts`) is an append-only activity
+log but stores human-readable lines, not structured data. `IngestResult`
+(`src/lib/types.ts`) already returns `{primarySlug, relatedUpdated, wikiPages}`
+— the data exists transiently but is not persisted in a machine-readable form.
+Revisions (`src/lib/revisions.ts`) track per-page snapshots but don't link back
+to the triggering ingest.
+
+**Why adopt:**
+- Low implementation cost: append a JSON line to `data/ingest-ledger.jsonl`
+  after each successful ingest in `src/lib/ingest.ts`
+- Enables future verifier checks without changing existing code
+- The data already exists in `IngestResult` — we just need to persist it
+
+**Schema:**
+
+Location: `data/ingest-ledger.jsonl` (append-only, one JSON object per line)
+
+Each entry records a completed ingest operation:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `ingest_id` | string | Unique identifier (ISO timestamp + slug, e.g. `2026-05-14T00:01:24Z/retrieval`) |
+| `source_type` | string | `"url"`, `"text"`, or `"x-mention"` |
+| `source_url` | string | The URL or identifier of the ingested source |
+| `primary_slug` | string | The main wiki page created or updated |
+| `related_slugs` | string[] | Other wiki pages updated during this ingest |
+| `started_at` | string | ISO timestamp when ingest began |
+| `finished_at` | string | ISO timestamp when ingest completed |
+| `status` | string | `"completed"` or `"failed"` |
+
+The ledger is machine-readable but not exposed in the UI (yet). It is the
+substrate for future verifier checks (did every source produce a page? which
+ingests touched a given page?).
+
+#### Primitive 3: Post-ingest completeness check → ADOPT
+
+**What it is:** A lint check that compares raw source content against wiki page
+content and asks "did anything important from the source fail to make it into
+the wiki?"
+
+**Current state:** `checkStalePages()` (`src/lib/lint-checks.ts`) uses `expiry`
+dates (90 days from ingest) and `valid_from` (verification date).
+`checkUncitedClaims()` checks for presence of citations but not whether the wiki
+adequately covers the source. No existing check compares source content to wiki
+content.
+
+**Why adopt:**
+- Fits cleanly into the existing lint architecture as a new LLM-powered check
+  (same pattern as `checkContradictions()` and `checkMissingConceptPages()`)
+- Directly addresses the gap @kiluazen identified: "did anything important from
+  the source fail to make it into the wiki"
+- Addresses a real gap: the current model trusts the LLM's ingest output
+  without verification
+
+**Schema:** New `incomplete-coverage` lint check. See the lint checks section
+above for the full description.
 
 **Trigger/notification system:** A research evaluation of trigger patterns for
 wiki change events is documented in [`DESIGN-triggers.md`](DESIGN-triggers.md).
