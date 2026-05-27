@@ -842,15 +842,27 @@ export function createMcpServer(): McpServer {
       openWorldHint: false,
     },
   }, async (args) => {
-    const results = await handleSearchWiki(args);
-    return {
-      content: [
-        {
-          type: "text" as const,
-          text: JSON.stringify(results, null, 2),
-        },
-      ],
-    };
+    try {
+      const results = await handleSearchWiki(args);
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: JSON.stringify(results, null, 2),
+          },
+        ],
+      };
+    } catch (err) {
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: (err as Error).message,
+          },
+        ],
+        isError: true,
+      };
+    }
   });
 
   // read_page — Read a single wiki page
@@ -906,15 +918,27 @@ export function createMcpServer(): McpServer {
       openWorldHint: false,
     },
   }, async (args) => {
-    const pages = await handleListPages(args);
-    return {
-      content: [
-        {
-          type: "text" as const,
-          text: JSON.stringify(pages, null, 2),
-        },
-      ],
-    };
+    try {
+      const pages = await handleListPages(args);
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: JSON.stringify(pages, null, 2),
+          },
+        ],
+      };
+    } catch (err) {
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: (err as Error).message,
+          },
+        ],
+        isError: true,
+      };
+    }
   });
 
   // create_page — Create a new wiki page
