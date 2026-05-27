@@ -8,6 +8,7 @@
  *   pnpm cli query <question>     Query the wiki
  *   pnpm cli search <query>       Search wiki pages by content
  *   pnpm cli read <slug>          Read a wiki page by slug
+ *   pnpm cli create <slug>        Create a new wiki page (body from stdin)
  *   pnpm cli lint                 Run wiki lint checks
  *   pnpm cli lint --fix           Run lint and auto-fix issues
  *   pnpm cli list                 List all wiki pages
@@ -28,6 +29,7 @@ export type ParsedCommand =
   | { command: "query"; question: string }
   | { command: "search"; query: string; fuzzy: boolean; scope?: string; limit: number }
   | { command: "read"; slug: string }
+  | { command: "create"; slug: string; title: string; tags?: string[] }
   | { command: "lint"; fix: boolean }
   | { command: "list"; raw: boolean }
   | { command: "delete"; slug: string }
@@ -92,6 +94,22 @@ export function parseArgs(argv: string[]): ParsedCommand {
       }
       return { command: "read", slug };
     }
+    case "create": {
+      const slug = rest.find((a) => !a.startsWith("-"));
+      if (!slug) {
+        return { command: "error", message: 'Usage: pnpm cli create <slug> --title "Page Title"' };
+      }
+      const titleIdx = rest.indexOf("--title");
+      if (titleIdx === -1 || !rest[titleIdx + 1]) {
+        return { command: "error", message: 'Usage: pnpm cli create <slug> --title "Page Title"' };
+      }
+      const title = rest[titleIdx + 1];
+      const tagsIdx = rest.indexOf("--tags");
+      const tags = tagsIdx !== -1 && rest[tagsIdx + 1]
+        ? rest[tagsIdx + 1].split(",").map((t) => t.trim()).filter(Boolean)
+        : undefined;
+      return { command: "create", slug, title, tags };
+    }
     case "delete": {
       const slug = rest.find((a) => !a.startsWith("-"));
       if (!slug) {
@@ -130,6 +148,7 @@ Commands:
   query <question>     Query the wiki
   search <query>       Search wiki pages by content
   read <slug>          Read a wiki page by slug
+  create <slug>        Create a new wiki page (reads body from stdin)
   delete <slug>        Delete a wiki page and clean up side effects
   lint                 Run wiki lint checks
   lint --fix           Run lint and auto-fix issues
@@ -143,6 +162,10 @@ Search flags:
   --scope agent:<id>   Restrict results to an agent's pages
   --limit N            Max results (default: 10)
 
+Create flags:
+  --title <title>      Page title (required)
+  --tags tag1,tag2     Comma-separated tags (optional)
+
 Examples:
   pnpm cli ingest https://example.com/article
   echo "Some text" | pnpm cli ingest --text
@@ -153,6 +176,8 @@ Examples:
   pnpm cli search "identity" --scope agent:yoyo --limit 5
   pnpm cli read attention-mechanisms
   pnpm cli delete attention-mechanisms
+  echo "Page body content" | pnpm cli create my-page --title "My Page"
+  echo "Tagged page" | pnpm cli create my-page --title "My Page" --tags ai,ml
   pnpm cli lint
   pnpm cli lint --fix
   pnpm cli list
@@ -291,6 +316,69 @@ export async function runRead(slug: string): Promise<void> {
   console.log(page.body.trim());
 }
 
+export async function runCreate(slug: string, title: string, tags?: string[]): Promise<void> {
+  const { validateSlug, readWikiPage } = await import("./lib/wiki");
+  const { writeWikiPageWithSideEffects } = await import("./lib/lifecycle");
+  const { serializeFrontmatter } = await import("./lib/frontmatter");
+  const { extractSummary } = await import("./lib/ingest");
+
+  // Validate slug format
+  validateSlug(slug);
+
+  // Check for existing page
+  const existing = await readWikiPage(slug);
+  if (existing) {
+    console.error(`Error: page "${slug}" already exists.`);
+    process.exit(1);
+    return; // unreachable but satisfies linting
+  }
+
+  // Read body from stdin
+  const body = await readStdin();
+  if (!body.trim()) {
+    console.error("Error: no content received on stdin");
+    process.exit(1);
+    return; // unreachable but satisfies linting
+  }
+
+  const today = new Date().toISOString().slice(0, 10);
+  const expiry = new Date();
+  expiry.setDate(expiry.getDate() + 90);
+  const expiryDate = expiry.toISOString().slice(0, 10);
+
+  const frontmatter = {
+    title,
+    created: today,
+    updated: today,
+    confidence: 0.5,
+    expiry: expiryDate,
+    authors: ["cli"],
+    valid_from: today,
+    disputed: false,
+    contributors: [],
+    aliases: [],
+    tags: tags ?? [],
+  };
+
+  const fullContent = serializeFrontmatter(frontmatter, body.trim());
+  const summary = extractSummary(body.trim());
+
+  const result = await writeWikiPageWithSideEffects({
+    slug,
+    title,
+    content: fullContent,
+    summary,
+    logOp: "ingest",
+    crossRefSource: body.trim(),
+  });
+
+  console.log(`Created: ${result.slug}`);
+  console.log(`  Title: ${title}`);
+  if (result.updatedSlugs.length > 0) {
+    console.log(`  Cross-referenced: ${result.updatedSlugs.join(", ")}`);
+  }
+}
+
 export async function runDelete(slug: string): Promise<void> {
   const { deleteWikiPage } = await import("./lib/lifecycle");
 
@@ -419,6 +507,9 @@ async function main(): Promise<void> {
       return;
     case "read":
       await runRead(parsed.slug);
+      return;
+    case "create":
+      await runCreate(parsed.slug, parsed.title, parsed.tags);
       return;
     case "delete":
       await runDelete(parsed.slug);
