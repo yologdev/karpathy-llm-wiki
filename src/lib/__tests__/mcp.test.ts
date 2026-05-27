@@ -28,6 +28,7 @@ import {
   handleDataviewQuery,
   handleListRevisions,
   handleReadRevision,
+  createMcpServer,
 } from "../../mcp";
 import { _resetStorage } from "../storage";
 import { _resetConfigCache } from "../config";
@@ -2291,5 +2292,54 @@ describe("read_revision", () => {
     await expect(
       handleReadRevision({ slug: "test-page", timestamp: 0 }),
     ).rejects.toThrow("timestamp must be a positive number");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// mcp.json manifest ↔ server drift test
+// ---------------------------------------------------------------------------
+
+describe("mcp.json manifest sync", () => {
+  it("manifest tools match exactly the tools registered by createMcpServer()", async () => {
+    // Read the manifest
+    const manifestPath = path.resolve(__dirname, "../../../mcp.json");
+    const manifestRaw = await fs.readFile(manifestPath, "utf-8");
+    const manifest = JSON.parse(manifestRaw);
+    const manifestTools: string[] = manifest.tools;
+
+    // Get registered tools from the server
+    // _registeredTools is private in TypeScript but accessible at runtime
+    const server = createMcpServer();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const registeredTools = Object.keys((server as any)._registeredTools);
+
+    const manifestSet = new Set(manifestTools);
+    const serverSet = new Set(registeredTools);
+
+    // Tools in server but missing from manifest
+    const missingFromManifest = registeredTools.filter(
+      (t) => !manifestSet.has(t),
+    );
+    // Tools in manifest but not registered in server
+    const extraInManifest = manifestTools.filter((t) => !serverSet.has(t));
+
+    if (missingFromManifest.length > 0) {
+      throw new Error(
+        `Server registers tools not in mcp.json (manifest is missing): ${missingFromManifest.join(", ")}`,
+      );
+    }
+
+    if (extraInManifest.length > 0) {
+      throw new Error(
+        `mcp.json lists tools not registered by server (manifest has extras): ${extraInManifest.join(", ")}`,
+      );
+    }
+
+    // Also check for duplicates in the manifest
+    expect(manifestTools.length).toBe(
+      manifestSet.size,
+    );
+
+    expect(manifestTools.sort()).toEqual(registeredTools.sort());
   });
 });
