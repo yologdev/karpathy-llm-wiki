@@ -425,7 +425,7 @@ async function loadPages(slugs: string[]): Promise<{ content: string; count: num
 export async function handleAgentContext(args: {
   agent_id: string;
 }): Promise<{
-  agent: { id: string; name: string; description: string };
+  agent: AgentProfile;
   context: {
     identity: string;
     learnings: string;
@@ -452,11 +452,7 @@ export async function handleAgentContext(args: {
   const pageCount = identity.count + learnings.count + social.count;
 
   return {
-    agent: {
-      id: agent.id,
-      name: agent.name,
-      description: agent.description,
-    },
+    agent,
     context: {
       identity: identity.content,
       learnings: learnings.content,

@@ -585,10 +585,15 @@ describe("agent_context tool", () => {
 
     const result = await handleAgentContext({ agent_id: "test-agent" });
 
-    // Verify agent info
+    // Verify full agent profile (matches HTTP API shape)
     expect(result.agent.id).toBe("test-agent");
     expect(result.agent.name).toBe("Test Agent");
     expect(result.agent.description).toBe("An agent for testing");
+    expect(result.agent.identityPages).toEqual(["identity-page"]);
+    expect(result.agent.learningPages).toEqual(["learnings-page"]);
+    expect(result.agent.socialPages).toEqual(["social-page"]);
+    expect(result.agent.registered).toBe("2026-05-03");
+    expect(result.agent.lastUpdated).toBe("2026-05-03");
 
     // Verify context sections contain page content
     expect(result.context.identity).toContain("I am a test agent.");
