@@ -2020,6 +2020,7 @@ describe("reingest", () => {
 // ---------------------------------------------------------------------------
 
 import { getLedgerPath, persistToLedger, readLedger, type LedgerEntry } from "../ingest";
+import { _resetStorage, getStorage } from "../storage";
 
 describe("ingest ledger", () => {
   let tmpDir: string;
@@ -2028,6 +2029,7 @@ describe("ingest ledger", () => {
   let originalRawDir: string | undefined;
 
   beforeEach(async () => {
+    _resetStorage();
     tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "ledger-test-"));
     originalDataDir = process.env.DATA_DIR;
     originalWikiDir = process.env.WIKI_DIR;
@@ -2038,6 +2040,7 @@ describe("ingest ledger", () => {
   });
 
   afterEach(async () => {
+    _resetStorage();
     if (originalDataDir === undefined) delete process.env.DATA_DIR;
     else process.env.DATA_DIR = originalDataDir;
     if (originalWikiDir === undefined) delete process.env.WIKI_DIR;
@@ -2050,11 +2053,9 @@ describe("ingest ledger", () => {
   it("creates the ledger file after an ingest", async () => {
     await ingest("Ledger Test One", "Content about ledger testing. Some details.");
 
-    const ledgerPath = getLedgerPath();
-    const stat = await fs.stat(ledgerPath);
-    expect(stat.isFile()).toBe(true);
-
-    const lines = (await fs.readFile(ledgerPath, "utf-8")).trim().split("\n");
+    const ledgerRelPath = getLedgerPath();
+    const raw = await getStorage().readFile(ledgerRelPath);
+    const lines = raw.trim().split("\n");
     expect(lines.length).toBe(1);
 
     const entry: LedgerEntry = JSON.parse(lines[0]);
@@ -2071,8 +2072,8 @@ describe("ingest ledger", () => {
   it("each entry has all 8 required fields", async () => {
     await ingest("Schema Check", "Verifying schema compliance. Details follow.");
 
-    const ledgerPath = getLedgerPath();
-    const lines = (await fs.readFile(ledgerPath, "utf-8")).trim().split("\n");
+    const raw = await getStorage().readFile(getLedgerPath());
+    const lines = raw.trim().split("\n");
     const entry = JSON.parse(lines[0]);
 
     const requiredFields = [
@@ -2094,8 +2095,8 @@ describe("ingest ledger", () => {
     await ingest("Ledger Append A", "First entry about appending. Details here.");
     await ingest("Ledger Append B", "Second entry about appending. More details.");
 
-    const ledgerPath = getLedgerPath();
-    const lines = (await fs.readFile(ledgerPath, "utf-8")).trim().split("\n");
+    const raw = await getStorage().readFile(getLedgerPath());
+    const lines = raw.trim().split("\n");
     expect(lines.length).toBe(2);
 
     const first: LedgerEntry = JSON.parse(lines[0]);
@@ -2109,8 +2110,8 @@ describe("ingest ledger", () => {
       sourceUrl: "https://example.com/article",
     });
 
-    const ledgerPath = getLedgerPath();
-    const lines = (await fs.readFile(ledgerPath, "utf-8")).trim().split("\n");
+    const raw = await getStorage().readFile(getLedgerPath());
+    const lines = raw.trim().split("\n");
     const entry: LedgerEntry = JSON.parse(lines[0]);
     expect(entry.source_type).toBe("url");
     expect(entry.source_url).toBe("https://example.com/article");
@@ -2120,6 +2121,7 @@ describe("ingest ledger", () => {
     // Make the data directory unwritable by pointing DATA_DIR to a file
     const blockingFile = path.join(tmpDir, "data");
     await fs.writeFile(blockingFile, "not-a-directory");
+    _resetStorage();
 
     // The ingest should still succeed despite the ledger being unwritable
     const result = await ingest("Failure Safe", "Content that should still ingest. Details.");
@@ -2130,8 +2132,8 @@ describe("ingest ledger", () => {
   it("ingest_id follows ISO-timestamp/slug format", async () => {
     await ingest("Id Format", "Testing the ID format. Extra content here.");
 
-    const ledgerPath = getLedgerPath();
-    const lines = (await fs.readFile(ledgerPath, "utf-8")).trim().split("\n");
+    const raw = await getStorage().readFile(getLedgerPath());
+    const lines = raw.trim().split("\n");
     const entry: LedgerEntry = JSON.parse(lines[0]);
 
     // ingest_id should be ISO timestamp + "/" + slug
@@ -2228,9 +2230,6 @@ describe("ingest ledger", () => {
   });
 
   it("readLedger skips malformed JSONL lines without throwing", async () => {
-    const ledgerPath = getLedgerPath();
-    await fs.mkdir(path.dirname(ledgerPath), { recursive: true });
-
     const validEntry = JSON.stringify({
       ingest_id: "2026-01-01T00:00:00.000Z/valid",
       source_type: "text",
@@ -2242,11 +2241,10 @@ describe("ingest ledger", () => {
       status: "completed",
     });
 
-    // Write a mix of valid and malformed lines
-    await fs.writeFile(
-      ledgerPath,
+    // Write a mix of valid and malformed lines via StorageProvider
+    await getStorage().writeFile(
+      getLedgerPath(),
       `${validEntry}\n{not valid json\n${validEntry.replace("valid", "also-valid")}\n`,
-      "utf-8",
     );
 
     const entries = await readLedger();
@@ -2255,9 +2253,7 @@ describe("ingest ledger", () => {
   });
 
   it("readLedger returns empty array for empty file", async () => {
-    const ledgerPath = getLedgerPath();
-    await fs.mkdir(path.dirname(ledgerPath), { recursive: true });
-    await fs.writeFile(ledgerPath, "", "utf-8");
+    await getStorage().writeFile(getLedgerPath(), "");
 
     const entries = await readLedger();
     expect(entries).toEqual([]);

@@ -22,9 +22,8 @@ import { slugify } from "./slugify";
 import { loadPageConventions } from "./schema";
 import { getRawDir } from "./config";
 import { resolveAlias } from "./alias-index";
-import { getDataDir } from "./paths";
-import fs from "fs/promises";
-import path from "path";
+import { getStorage } from "./storage";
+import { logger } from "./logger";
 
 // ---------------------------------------------------------------------------
 // Ingest ledger — append-only JSONL record of each ingest operation
@@ -42,12 +41,15 @@ export interface LedgerEntry {
   status: string;
 }
 
+/** Relative path to the ingest ledger within the StorageProvider root. */
+const LEDGER_REL_PATH = "data/ingest-ledger.jsonl";
+
 /**
- * Returns the absolute path to the ingest ledger JSONL file.
+ * Returns the relative storage path to the ingest ledger JSONL file.
  * Exported for testing.
  */
 export function getLedgerPath(): string {
-  return path.join(getDataDir(), "data", "ingest-ledger.jsonl");
+  return LEDGER_REL_PATH;
 }
 
 /**
@@ -59,10 +61,9 @@ export function getLedgerPath(): string {
  * @param limit  Maximum number of entries to return (default: all)
  */
 export async function readLedger(limit?: number): Promise<LedgerEntry[]> {
-  const ledgerPath = getLedgerPath();
   let raw: string;
   try {
-    raw = await fs.readFile(ledgerPath, "utf-8");
+    raw = await getStorage().readFile(LEDGER_REL_PATH);
   } catch {
     // File doesn't exist or is unreadable — return empty
     return [];
@@ -90,17 +91,15 @@ export async function readLedger(limit?: number): Promise<LedgerEntry[]> {
 /**
  * Append a single ledger entry to data/ingest-ledger.jsonl.
  *
- * Creates the `data/` directory if it doesn't exist. Errors are caught
- * and logged so a ledger I/O failure never breaks the ingest pipeline.
+ * StorageProvider.appendFile creates parent directories as needed.
+ * Errors are caught and logged so a ledger I/O failure never breaks
+ * the ingest pipeline.
  */
 export async function persistToLedger(entry: LedgerEntry): Promise<void> {
   try {
-    const ledgerPath = getLedgerPath();
-    await fs.mkdir(path.dirname(ledgerPath), { recursive: true });
-    await fs.appendFile(ledgerPath, JSON.stringify(entry) + "\n", "utf-8");
-  } catch {
-    // Ledger writes must not fail the ingest — silently swallow I/O errors.
-    // In a future iteration we may log this via the logger module.
+    await getStorage().appendFile(LEDGER_REL_PATH, JSON.stringify(entry) + "\n");
+  } catch (err) {
+    logger.error("ingest", "Failed to write ledger entry:", err);
   }
 }
 
