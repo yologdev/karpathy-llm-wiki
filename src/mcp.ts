@@ -214,7 +214,7 @@ export async function handleCreatePage(args: {
     summary,
     logOp: "ingest",
     author: args.author,
-    crossRefSource: null, // skip cross-ref for MCP writes
+    crossRefSource: args.content,
   });
 
   return { slug: args.slug, title, created: true };
@@ -263,7 +263,7 @@ export async function handleUpdatePage(args: {
     summary,
     logOp: "edit",
     author: args.author,
-    crossRefSource: null, // skip cross-ref for MCP writes
+    crossRefSource: args.content,
   });
 
   return { slug: args.slug, title, updated: true };

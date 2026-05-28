@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import fs from "fs/promises";
 import os from "os";
 import path from "path";
@@ -466,6 +466,78 @@ describe("MCP write tools", () => {
       // succeeded without error — deeper attribution is tested in
       // lifecycle/revision tests.
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// MCP cross-referencing tests
+// ---------------------------------------------------------------------------
+
+describe("MCP cross-referencing", () => {
+  it("create_page triggers cross-ref update on related pages", async () => {
+    // Create an existing page that the cross-ref pipeline can find
+    await handleCreatePage({
+      slug: "existing-topic",
+      content: "# Existing Topic\n\nSome content about an existing topic.",
+    });
+
+    // Mock findRelatedPages to return the existing page as related
+    const searchModule = await import("../search");
+    const spy = vi.spyOn(searchModule, "findRelatedPages").mockResolvedValueOnce(["existing-topic"]);
+
+    // Create a new page — cross-ref should wire up a backlink on existing-topic
+    await handleCreatePage({
+      slug: "new-topic",
+      content: "# New Topic\n\nContent that relates to existing topic.",
+    });
+
+    // findRelatedPages should have been called (cross-ref pipeline entered)
+    expect(spy).toHaveBeenCalled();
+
+    // The existing page should now contain a "See also" link to new-topic
+    const existingContent = await fs.readFile(
+      path.join(tmpDir, "wiki", "existing-topic.md"),
+      "utf-8",
+    );
+    expect(existingContent).toContain("See also:");
+    expect(existingContent).toContain("new-topic.md");
+
+    spy.mockRestore();
+  });
+
+  it("update_page triggers cross-ref update on related pages", async () => {
+    // Create two pages
+    await handleCreatePage({
+      slug: "related-page",
+      content: "# Related Page\n\nSome related content.",
+    });
+    await handleCreatePage({
+      slug: "page-to-update",
+      content: "# Page To Update\n\nOriginal body.",
+    });
+
+    // Mock findRelatedPages to return related-page as related
+    const searchModule = await import("../search");
+    const spy = vi.spyOn(searchModule, "findRelatedPages").mockResolvedValueOnce(["related-page"]);
+
+    // Update the page — cross-ref should wire up a backlink on related-page
+    await handleUpdatePage({
+      slug: "page-to-update",
+      content: "# Page To Update\n\nUpdated body referencing related topics.",
+    });
+
+    // findRelatedPages should have been called (cross-ref pipeline entered)
+    expect(spy).toHaveBeenCalled();
+
+    // The related page should now contain a "See also" link to page-to-update
+    const relatedContent = await fs.readFile(
+      path.join(tmpDir, "wiki", "related-page.md"),
+      "utf-8",
+    );
+    expect(relatedContent).toContain("See also:");
+    expect(relatedContent).toContain("page-to-update.md");
+
+    spy.mockRestore();
   });
 });
 
