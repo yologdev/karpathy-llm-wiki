@@ -25,6 +25,7 @@ import {
   handleResolveDiscussion,
   handleAddComment,
   handleReingest,
+  handleIngestHistory,
   handleDataviewQuery,
   handleListRevisions,
   handleReadRevision,
@@ -1730,6 +1731,112 @@ describe("reingest", () => {
     await expect(
       handleReingest({ slug: "no-source" }),
     ).rejects.toThrow("no source URL recorded");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// ingest_history
+// ---------------------------------------------------------------------------
+
+describe("ingest_history", () => {
+  it("returns empty array when no ledger file exists", async () => {
+    const result = await handleIngestHistory({});
+    expect(result).toEqual({ entries: [] });
+  });
+
+  it("returns empty array with explicit limit", async () => {
+    const result = await handleIngestHistory({ limit: 10 });
+    expect(result).toEqual({ entries: [] });
+  });
+
+  it("returns ledger entries when ledger exists", async () => {
+    // Write a ledger file with two entries
+    const dataDir = path.join(tmpDir, "data");
+    await fs.mkdir(dataDir, { recursive: true });
+    const ledgerPath = path.join(dataDir, "ingest-ledger.jsonl");
+    const entry1 = {
+      ingest_id: "test-1",
+      source_type: "url",
+      source_url: "https://example.com/a",
+      primary_slug: "example-a",
+      related_slugs: [],
+      started_at: "2025-01-01T00:00:00Z",
+      finished_at: "2025-01-01T00:01:00Z",
+      status: "ok",
+    };
+    const entry2 = {
+      ingest_id: "test-2",
+      source_type: "text",
+      source_url: "",
+      primary_slug: "pasted-text",
+      related_slugs: ["related-page"],
+      started_at: "2025-01-02T00:00:00Z",
+      finished_at: "2025-01-02T00:01:00Z",
+      status: "ok",
+    };
+    await fs.writeFile(
+      ledgerPath,
+      JSON.stringify(entry1) + "\n" + JSON.stringify(entry2) + "\n",
+    );
+
+    const result = await handleIngestHistory({});
+    expect(result.entries).toHaveLength(2);
+    // Most recent first
+    expect(result.entries[0].ingest_id).toBe("test-2");
+    expect(result.entries[1].ingest_id).toBe("test-1");
+  });
+
+  it("respects limit parameter", async () => {
+    const dataDir = path.join(tmpDir, "data");
+    await fs.mkdir(dataDir, { recursive: true });
+    const ledgerPath = path.join(dataDir, "ingest-ledger.jsonl");
+    const lines: string[] = [];
+    for (let i = 0; i < 5; i++) {
+      lines.push(
+        JSON.stringify({
+          ingest_id: `test-${i}`,
+          source_type: "url",
+          source_url: `https://example.com/${i}`,
+          primary_slug: `page-${i}`,
+          related_slugs: [],
+          started_at: `2025-01-0${i + 1}T00:00:00Z`,
+          finished_at: `2025-01-0${i + 1}T00:01:00Z`,
+          status: "ok",
+        }),
+      );
+    }
+    await fs.writeFile(ledgerPath, lines.join("\n") + "\n");
+
+    const result = await handleIngestHistory({ limit: 2 });
+    expect(result.entries).toHaveLength(2);
+    // Most recent first — last entry should come first
+    expect(result.entries[0].ingest_id).toBe("test-4");
+    expect(result.entries[1].ingest_id).toBe("test-3");
+  });
+
+  it("defaults to limit 50 when not specified", async () => {
+    const dataDir = path.join(tmpDir, "data");
+    await fs.mkdir(dataDir, { recursive: true });
+    const ledgerPath = path.join(dataDir, "ingest-ledger.jsonl");
+    const lines: string[] = [];
+    for (let i = 0; i < 60; i++) {
+      lines.push(
+        JSON.stringify({
+          ingest_id: `test-${i}`,
+          source_type: "url",
+          source_url: `https://example.com/${i}`,
+          primary_slug: `page-${i}`,
+          related_slugs: [],
+          started_at: "2025-01-01T00:00:00Z",
+          finished_at: "2025-01-01T00:01:00Z",
+          status: "ok",
+        }),
+      );
+    }
+    await fs.writeFile(ledgerPath, lines.join("\n") + "\n");
+
+    const result = await handleIngestHistory({});
+    expect(result.entries).toHaveLength(50);
   });
 });
 

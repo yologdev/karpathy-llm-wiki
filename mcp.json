@@ -30,6 +30,7 @@
     "resolve_discussion",
     "add_comment",
     "reingest",
+    "ingest_history",
     "dataview_query",
     "list_revisions",
     "read_revision"

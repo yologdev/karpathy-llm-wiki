@@ -25,6 +25,7 @@
  *   add_comment        — Add a comment to a discussion thread
  *   resolve_discussion — Resolve a discussion thread
  *   reingest           — Re-ingest a wiki page from its original source URL
+ *   ingest_history     — View ingest ledger entries for provenance auditing
  *   dataview_query     — Query wiki pages by frontmatter fields
  *   list_revisions     — List revision history for a wiki page
  *   read_revision      — Read a specific revision's content
@@ -50,7 +51,7 @@ import {
   deleteWikiPage,
   type Frontmatter,
 } from "./lib/wiki";
-import { extractSummary, ingest, ingestUrl, reingest } from "./lib/ingest";
+import { extractSummary, ingest, ingestUrl, reingest, readLedger, type LedgerEntry } from "./lib/ingest";
 import { query, saveAnswerToWiki, type QueryFormat } from "./lib/query";
 import { isUrl } from "./lib/fetch";
 import { getAgent, listAgents, updateAgent, deleteAgent, seedAgent } from "./lib/agents";
@@ -729,6 +730,18 @@ export async function handleReingest(args: {
     throw new Error("slug is required");
   }
   return reingest(args.slug);
+}
+
+// ---------------------------------------------------------------------------
+// Ingest history handler
+// ---------------------------------------------------------------------------
+
+export async function handleIngestHistory(args: {
+  limit?: number | undefined;
+}): Promise<{ entries: LedgerEntry[] }> {
+  const limit = args.limit ?? 50;
+  const entries = await readLedger(limit);
+  return { entries };
 }
 
 export async function handleDataviewQuery(args: {
@@ -1763,6 +1776,50 @@ export function createMcpServer(): McpServer {
   }, async (args) => {
     try {
       const result = await handleReingest(args);
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: JSON.stringify(result, null, 2),
+          },
+        ],
+      };
+    } catch (err) {
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: (err as Error).message,
+          },
+        ],
+        isError: true,
+      };
+    }
+  });
+
+  // ingest_history — View ingest ledger entries for provenance auditing
+  server.registerTool("ingest_history", {
+    description:
+      "View ingest ledger entries for provenance auditing. " +
+      "Returns structured JSON array of past ingest operations, most recent first. " +
+      "Each entry includes ingest_id, source_type, source_url, primary_slug, related_slugs, timestamps, and status.",
+    inputSchema: {
+      limit: z
+        .number()
+        .int()
+        .positive()
+        .optional()
+        .describe("Maximum number of entries to return (default: 50)"),
+    },
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+  }, async (args) => {
+    try {
+      const result = await handleIngestHistory(args);
       return {
         content: [
           {
