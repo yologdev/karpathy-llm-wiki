@@ -1489,7 +1489,7 @@ export function createMcpServer(): McpServer {
       "Run quality checks on the yopedia wiki. Returns an array of issues with type, severity, slug, and message. Optionally scope to specific check types or minimum severity.",
     inputSchema: {
       checks: z
-        .array(z.string())
+        .array(z.enum(ALL_CHECK_TYPES))
         .optional()
         .describe(
           `Check types to run (default: all). Valid: ${ALL_CHECK_TYPES.join(", ")}`,
@@ -1534,7 +1534,7 @@ export function createMcpServer(): McpServer {
     description:
       "Auto-fix a lint issue found by lint_wiki. Takes the issue type, slug, and optional target/message. Not all issue types are auto-fixable.",
     inputSchema: {
-      type: z.string().describe("Lint issue type (e.g. 'orphan-page', 'stale-index', 'empty-page')"),
+      type: z.enum(ALL_CHECK_TYPES).describe("Lint issue type (e.g. 'orphan-page', 'stale-index', 'empty-page')"),
       slug: z.string().describe("Slug of the affected page"),
       target: z
         .string()

@@ -11,8 +11,8 @@ import { parseSources } from "./sources";
 import { getDiscussionStatsForSlugs, getDiscussionStats } from "./talk";
 import { listRawSources, readRawSource } from "./raw";
 
-/** All known lint check types. */
-export const ALL_CHECK_TYPES: LintIssue["type"][] = [
+/** All known lint check types (const tuple for Zod enum compatibility). */
+export const ALL_CHECK_TYPES = [
   "orphan-page",
   "stale-index",
   "empty-page",
@@ -29,7 +29,7 @@ export const ALL_CHECK_TYPES: LintIssue["type"][] = [
   "disputed-page",
   "supersedes-dangling",
   "incomplete-coverage",
-];
+] as const satisfies readonly LintIssue["type"][];
 
 // Files that are part of the wiki infrastructure, not content pages.
 export const INFRASTRUCTURE_FILES = new Set(["index.md", "log.md"]);
