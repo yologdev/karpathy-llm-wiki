@@ -56,12 +56,12 @@ These were added in Phase 1 of the yopedia pivot.
 
 | Field | Type | Default | Set when | Consumed by |
 |-------|------|---------|----------|-------------|
-| `confidence` | number (0–1) | `0.7` | Initial ingest (deterministic default); preserved on re-ingest if existing value is higher | `low-confidence` lint check (flags pages below 0.3); future UI badge |
+| `confidence` | number (0–1) | `0.7` | Initial ingest (deterministic default); preserved on re-ingest if existing value is higher | `low-confidence` lint check (flags pages below 0.3); wiki page view color-coded confidence badge |
 | `expiry` | ISO date string (YYYY-MM-DD) | 90 days from ingest | Initial ingest and re-ingest (always resets to 90 days from now) | `stale-page` lint check (flags pages past expiry); page view temporal range |
 | `valid_from` | ISO date string (YYYY-MM-DD) | Today (ingest date) | Initial ingest and re-ingest (always resets to today — the content is re-verified) | `stale-page` lint check (flags pages verified over 180 days ago); page view temporal range ("Verified May 2026 · Review by Oct 2026") |
-| `authors` | string array | `["system"]` | Initial ingest; preserved on re-ingest (never reset) | Future contributor profiles, attribution UI |
-| `contributors` | string array | `[]` | Re-ingest appends `"system"` if not already present; manual edits should append the editor's handle | Future contributor profiles |
-| `disputed` | boolean | `false` | Set manually or by future contradiction resolution; preserved on re-ingest | Future talk-page system, UI warning badge |
+| `authors` | string array | `["system"]` | Initial ingest; preserved on re-ingest (never reset) | `/wiki/contributors` page, `ContributorBadge` component, contributor profiles API |
+| `contributors` | string array | `[]` | Re-ingest appends `"system"` if not already present; manual edits should append the editor's handle | `/wiki/contributors` page, `ContributorBadge` component, contributor profiles API |
+| `disputed` | boolean | `false` | Set manually or by future contradiction resolution; preserved on re-ingest | `disputed-page` lint check; talk page system (`discuss/` directory); wiki page view warning badge |
 | `supersedes` | string (slug) | `""` (empty) | Set manually when a page replaces another; preserved on re-ingest | Future redirect system |
 | `aliases` | string array | `[]` | Set manually for alternative names; preserved on re-ingest | Alias index for entity deduplication at ingest time; `duplicate-entity` lint check; search resolution |
 | `sources` | JSON string (SourceEntry[]) | `"[]"` | Ingest appends a new entry; re-ingest appends if the source URL is new | Wiki page view provenance section; parseSources() in `src/lib/sources.ts` |
@@ -675,10 +675,11 @@ Phase 3 (X ingestion loop) library and API work is complete — `ingestXMention(
 `POST /api/ingest/x-mention`, and MCP tool support are implemented. The remaining
 piece is the GitHub Actions polling workflow (#21), which is blocked on deployment
 architecture.
-Phase 4 (agent identity as yopedia pages) is **in progress** — the agent
-registry, context API, `seedAgent()` utility, `agent-identity` page type, and
-scoped search are implemented. Remaining Phase 4 work: migrating yoyo's actual
-identity content into yopedia pages and grow.sh integration.
+Phase 4 (agent identity as yopedia pages) is **substantially complete** — the agent
+registry, context API, `seedAgent()` utility, `agent-identity` page type, scoped
+search, MCP tools (`seed-agent`, `list-agents`, `update-agent`, `delete-agent`,
+`agent-context`), and contributor profiles are implemented. Remaining Phase 4 work:
+migrating yoyo's actual identity content into yopedia pages and `grow.sh` integration.
 The schema will continue to evolve toward the full yopedia model defined in
 [`yopedia-concept.md`](yopedia-concept.md). See YOYO.md for the phased roadmap.
 Next up: Phase 5 (agent surface research).
