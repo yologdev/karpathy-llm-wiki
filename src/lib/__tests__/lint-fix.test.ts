@@ -927,6 +927,15 @@ describe("fixLintIssue", () => {
     );
   });
 
+  it("throws helpful FixValidationError for incomplete-coverage type", async () => {
+    await expect(fixLintIssue("incomplete-coverage", "some-slug")).rejects.toThrow(
+      FixValidationError,
+    );
+    await expect(fixLintIssue("incomplete-coverage", "some-slug")).rejects.toThrow(
+      "Incomplete coverage cannot be auto-fixed. Re-ingest the source URL to refresh the page content.",
+    );
+  });
+
   it("dispatches unmigrated-page to fixUnmigratedPage", async () => {
     mockedReadWikiPageWithFrontmatter.mockResolvedValue({
       slug: "old-page",

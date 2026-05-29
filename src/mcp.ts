@@ -758,7 +758,7 @@ export async function handleAddComment(args: {
     throw new Error("threadIndex is required");
   }
   if (!args.content || !args.content.trim()) {
-    throw new Error("body must be a non-empty string");
+    throw new Error("content must be a non-empty string");
   }
   const author = args.author && args.author.trim() ? args.author.trim() : "anonymous";
   return addComment(args.pageSlug, args.threadIndex, author, args.content.trim(), args.parentId);

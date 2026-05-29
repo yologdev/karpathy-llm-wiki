@@ -1860,7 +1860,7 @@ describe("add_comment", () => {
         threadIndex: 0,
         content: "",
       }),
-    ).rejects.toThrow("body must be a non-empty string");
+    ).rejects.toThrow("content must be a non-empty string");
   });
 
   it("throws for invalid threadIndex", async () => {

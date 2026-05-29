@@ -631,6 +631,10 @@ export async function fixLintIssue(
       throw new FixValidationError(
         "Supersedes-dangling pages require manual review. Update the supersedes field to point to a valid page or remove it.",
       );
+    case "incomplete-coverage":
+      throw new FixValidationError(
+        "Incomplete coverage cannot be auto-fixed. Re-ingest the source URL to refresh the page content.",
+      );
     default:
       throw new FixValidationError(
         "Auto-fix not supported for this issue type",
