@@ -10,6 +10,7 @@
  *   update_page    — Update an existing wiki page
  *   delete_page    — Delete a wiki page by slug
  *   ingest_url     — Ingest a URL into the wiki (fetch → chunk → summarize → write)
+ *   batch_ingest_urls — Batch ingest multiple URLs with upfront validation
  *   ingest_text    — Ingest raw text content into the wiki (chunk → summarize → write)
  *   ingest_x_mention — Ingest an X/Twitter post into the wiki with mention provenance
  *   query_wiki     — Ask the wiki a question with LLM synthesis
@@ -55,6 +56,8 @@ import {
 import { extractSummary, ingest, ingestUrl, ingestXMention, reingest, readLedger, type LedgerEntry } from "./lib/ingest";
 import { query, saveAnswerToWiki, type QueryFormat } from "./lib/query";
 import { isUrl } from "./lib/fetch";
+import { MAX_BATCH_URLS } from "./lib/constants";
+import { getErrorMessage } from "./lib/errors";
 import { getAgent, listAgents, updateAgent, deleteAgent, seedAgent } from "./lib/agents";
 import { listContributors, buildContributorProfile } from "./lib/contributors";
 import type { SeedAgentSection, UpdateAgentOptions } from "./lib/agents";
@@ -316,6 +319,69 @@ export async function handleIngestUrl(args: {
     summary,
     sourceUrl: args.url,
   };
+}
+
+// ---------------------------------------------------------------------------
+// Batch ingest handler
+// ---------------------------------------------------------------------------
+
+export interface BatchIngestResult {
+  url: string;
+  slug?: string;
+  error?: string;
+}
+
+export async function handleBatchIngest(args: {
+  urls: string[];
+  tags?: string[] | undefined;
+}): Promise<{
+  total: number;
+  succeeded: number;
+  failed: number;
+  results: BatchIngestResult[];
+}> {
+  const { urls, tags } = args;
+
+  // Enforce batch size limit
+  if (urls.length > MAX_BATCH_URLS) {
+    throw new Error(
+      `Too many URLs: ${urls.length} exceeds the maximum batch size of ${MAX_BATCH_URLS}`,
+    );
+  }
+
+  // Validate all URLs upfront — reject the whole batch if any are malformed
+  const malformed: { index: number; url: string }[] = [];
+  for (let i = 0; i < urls.length; i++) {
+    if (!isUrl(urls[i])) {
+      malformed.push({ index: i, url: urls[i] });
+    }
+  }
+
+  if (malformed.length > 0) {
+    throw new Error(
+      `Malformed URLs at indices ${malformed.map((m) => m.index).join(", ")}: ${malformed.map((m) => `"${m.url}"`).join(", ")}. Fix them and retry the entire batch.`,
+    );
+  }
+
+  // Ingest each URL sequentially, collecting per-URL results
+  const results: BatchIngestResult[] = [];
+  let succeeded = 0;
+  let failed = 0;
+
+  for (const url of urls) {
+    try {
+      const result: IngestResult = await ingestUrl(url, {
+        ...(tags && tags.length > 0 ? { tags } : {}),
+      });
+      results.push({ url, slug: result.primarySlug });
+      succeeded++;
+    } catch (err) {
+      results.push({ url, error: getErrorMessage(err) });
+      failed++;
+    }
+  }
+
+  return { total: urls.length, succeeded, failed, results };
 }
 
 // ---------------------------------------------------------------------------
@@ -1167,6 +1233,49 @@ export function createMcpServer(): McpServer {
   }, async (args) => {
     try {
       const result = await handleIngestUrl(args);
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: JSON.stringify(result, null, 2),
+          },
+        ],
+      };
+    } catch (err) {
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: (err as Error).message,
+          },
+        ],
+        isError: true,
+      };
+    }
+  });
+
+  // batch_ingest_urls — Batch ingest multiple URLs into the wiki
+  server.registerTool("batch_ingest_urls", {
+    description:
+      "Batch ingest multiple URLs into the wiki — validates all URLs upfront (rejects the batch if any are malformed), then ingests each sequentially. Returns per-URL results with slugs for successes and errors for failures. Use this instead of calling ingest_url N times for multi-source workflows.",
+    inputSchema: {
+      urls: z
+        .array(z.string())
+        .describe("Array of URLs to ingest (each must start with http:// or https://)"),
+      tags: z
+        .array(z.string())
+        .optional()
+        .describe("Optional tags to apply to all created pages"),
+    },
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: false,
+      openWorldHint: true,
+    },
+  }, async (args) => {
+    try {
+      const result = await handleBatchIngest(args);
       return {
         content: [
           {

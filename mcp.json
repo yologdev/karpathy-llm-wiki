@@ -13,6 +13,7 @@
     "update_page",
     "delete_page",
     "ingest_url",
+    "batch_ingest_urls",
     "ingest_text",
     "ingest_x_mention",
     "query_wiki",

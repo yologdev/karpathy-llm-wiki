@@ -10,6 +10,7 @@ import {
   handleUpdatePage,
   handleDeletePage,
   handleIngestUrl,
+  handleBatchIngest,
   handleIngestText,
   handleIngestXMention,
   handleQueryWiki,
@@ -874,6 +875,74 @@ describe("ingest_url", () => {
     await expect(
       handleIngestUrl({ url: "" }),
     ).rejects.toThrow("Invalid URL");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// batch_ingest_urls tests
+// ---------------------------------------------------------------------------
+
+describe("batch_ingest_urls", () => {
+  it("rejects malformed URLs upfront", async () => {
+    await expect(
+      handleBatchIngest({ urls: ["https://example.com", "not-a-url", "also-bad"] }),
+    ).rejects.toThrow("Malformed URLs at indices 1, 2");
+  });
+
+  it("rejects a single malformed URL in a batch", async () => {
+    await expect(
+      handleBatchIngest({ urls: ["ftp://bad.com"] }),
+    ).rejects.toThrow("Malformed URLs");
+  });
+
+  it("enforces MAX_BATCH_URLS limit", async () => {
+    // Create an array of 21 valid URLs (MAX_BATCH_URLS is 20)
+    const urls = Array.from({ length: 21 }, (_, i) => `https://example.com/page-${i}`);
+    await expect(
+      handleBatchIngest({ urls }),
+    ).rejects.toThrow("exceeds the maximum batch size of 20");
+  });
+
+  it("ingests valid URLs and returns per-URL results", async () => {
+    // Unset LLM keys so ingest uses the fallback (no-LLM) path
+    const savedKey = process.env.ANTHROPIC_API_KEY;
+    delete process.env.ANTHROPIC_API_KEY;
+    _resetConfigCache();
+    try {
+      // Use ingest_text-style approach: we can't actually fetch URLs in tests,
+      // but we can verify that the handler correctly processes the batch.
+      // For a real integration test we'd mock fetch, but the validation logic
+      // is the core of this tool. The URL fetch will fail, giving us partial
+      // failure results.
+      const result = await handleBatchIngest({
+        urls: ["https://httpbin.org/status/404", "https://httpbin.org/status/500"],
+      });
+
+      expect(result.total).toBe(2);
+      expect(result.succeeded + result.failed).toBe(2);
+      expect(result.results).toHaveLength(2);
+      // Each result should have a url field
+      expect(result.results[0].url).toBe("https://httpbin.org/status/404");
+      expect(result.results[1].url).toBe("https://httpbin.org/status/500");
+      // Each result should have either slug (success) or error (failure)
+      for (const r of result.results) {
+        expect(r.slug !== undefined || r.error !== undefined).toBe(true);
+      }
+    } finally {
+      if (savedKey !== undefined) {
+        process.env.ANTHROPIC_API_KEY = savedKey;
+      }
+      _resetConfigCache();
+    }
+  });
+
+  it("returns empty results for empty URL array", async () => {
+    // An empty array is technically valid (0 URLs, nothing to do)
+    const result = await handleBatchIngest({ urls: [] });
+    expect(result.total).toBe(0);
+    expect(result.succeeded).toBe(0);
+    expect(result.failed).toBe(0);
+    expect(result.results).toEqual([]);
   });
 });
 
