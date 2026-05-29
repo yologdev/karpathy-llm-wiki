@@ -11,6 +11,7 @@ import {
   handleDeletePage,
   handleIngestUrl,
   handleIngestText,
+  handleIngestXMention,
   handleQueryWiki,
   handleSaveQueryAnswer,
   handleAgentContext,
@@ -934,6 +935,106 @@ describe("ingest_text", () => {
       expect(result.slug).toBeTruthy();
       expect(result.title).toBeTruthy();
       expect(result.sourceUrl).toBe("");
+    } finally {
+      if (savedKey !== undefined) {
+        process.env.ANTHROPIC_API_KEY = savedKey;
+      }
+      _resetConfigCache();
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// ingest_x_mention tests
+// ---------------------------------------------------------------------------
+
+describe("ingest_x_mention", () => {
+  it("rejects empty URL", async () => {
+    await expect(
+      handleIngestXMention({ url: "", triggered_by: "@yoyo" }),
+    ).rejects.toThrow("url is required and must be a non-empty string");
+  });
+
+  it("rejects non-X URLs", async () => {
+    await expect(
+      handleIngestXMention({ url: "https://example.com/post", triggered_by: "@yoyo" }),
+    ).rejects.toThrow("url must be an x.com or twitter.com URL");
+  });
+
+  it("rejects http non-X domain", async () => {
+    await expect(
+      handleIngestXMention({ url: "https://facebook.com/post/123", triggered_by: "@user" }),
+    ).rejects.toThrow("url must be an x.com or twitter.com URL");
+  });
+
+  it("rejects empty triggered_by", async () => {
+    await expect(
+      handleIngestXMention({ url: "https://x.com/user/status/123", triggered_by: "" }),
+    ).rejects.toThrow("triggered_by is required and must be a non-empty string");
+  });
+
+  it("rejects whitespace-only triggered_by", async () => {
+    await expect(
+      handleIngestXMention({ url: "https://x.com/user/status/123", triggered_by: "   " }),
+    ).rejects.toThrow("triggered_by is required and must be a non-empty string");
+  });
+
+  it("accepts valid x.com URL and returns result shape", async () => {
+    // Use no-LLM fallback path
+    const savedKey = process.env.ANTHROPIC_API_KEY;
+    delete process.env.ANTHROPIC_API_KEY;
+    _resetConfigCache();
+    try {
+      const result = await handleIngestXMention({
+        url: "https://x.com/user/status/123",
+        triggered_by: "@yoyo",
+      });
+      expect(result.slug).toBeTruthy();
+      expect(result.title).toBeTruthy();
+      expect(typeof result.summary).toBe("string");
+      expect(result.sourceUrl).toBe("https://x.com/user/status/123");
+    } finally {
+      if (savedKey !== undefined) {
+        process.env.ANTHROPIC_API_KEY = savedKey;
+      }
+      _resetConfigCache();
+    }
+  });
+
+  it("accepts valid twitter.com URL and returns result shape", async () => {
+    const savedKey = process.env.ANTHROPIC_API_KEY;
+    delete process.env.ANTHROPIC_API_KEY;
+    _resetConfigCache();
+    try {
+      const result = await handleIngestXMention({
+        url: "https://twitter.com/user/status/456",
+        triggered_by: "@someone",
+      });
+      expect(result.slug).toBeTruthy();
+      expect(result.title).toBeTruthy();
+      expect(typeof result.summary).toBe("string");
+      expect(result.sourceUrl).toBe("https://twitter.com/user/status/456");
+    } finally {
+      if (savedKey !== undefined) {
+        process.env.ANTHROPIC_API_KEY = savedKey;
+      }
+      _resetConfigCache();
+    }
+  });
+
+  it("accepts www.x.com URL and returns result shape", async () => {
+    const savedKey = process.env.ANTHROPIC_API_KEY;
+    delete process.env.ANTHROPIC_API_KEY;
+    _resetConfigCache();
+    try {
+      const result = await handleIngestXMention({
+        url: "https://www.x.com/user/status/789",
+        triggered_by: "@agent",
+      });
+      expect(result.slug).toBeTruthy();
+      expect(result.title).toBeTruthy();
+      expect(typeof result.summary).toBe("string");
+      expect(result.sourceUrl).toBe("https://www.x.com/user/status/789");
     } finally {
       if (savedKey !== undefined) {
         process.env.ANTHROPIC_API_KEY = savedKey;

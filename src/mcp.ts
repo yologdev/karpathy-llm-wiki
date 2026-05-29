@@ -11,6 +11,7 @@
  *   delete_page    — Delete a wiki page by slug
  *   ingest_url     — Ingest a URL into the wiki (fetch → chunk → summarize → write)
  *   ingest_text    — Ingest raw text content into the wiki (chunk → summarize → write)
+ *   ingest_x_mention — Ingest an X/Twitter post into the wiki with mention provenance
  *   query_wiki     — Ask the wiki a question with LLM synthesis
  *   save_query_answer — Save a query answer as a durable wiki page
  *   agent_context  — Get an agent's full context by agent ID
@@ -51,7 +52,7 @@ import {
   deleteWikiPage,
   type Frontmatter,
 } from "./lib/wiki";
-import { extractSummary, ingest, ingestUrl, reingest, readLedger, type LedgerEntry } from "./lib/ingest";
+import { extractSummary, ingest, ingestUrl, ingestXMention, reingest, readLedger, type LedgerEntry } from "./lib/ingest";
 import { query, saveAnswerToWiki, type QueryFormat } from "./lib/query";
 import { isUrl } from "./lib/fetch";
 import { getAgent, listAgents, updateAgent, deleteAgent, seedAgent } from "./lib/agents";
@@ -354,6 +355,54 @@ export async function handleIngestText(args: {
     title: pageTitle,
     summary,
     sourceUrl: "",
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Ingest X mention handler
+// ---------------------------------------------------------------------------
+
+/** Pattern matching x.com or twitter.com post URLs. */
+const X_URL_PATTERN = /^https?:\/\/(www\.)?(x\.com|twitter\.com)\//i;
+
+export async function handleIngestXMention(args: {
+  url: string;
+  triggered_by: string;
+}): Promise<{
+  slug: string;
+  title: string;
+  summary: string;
+  sourceUrl: string;
+}> {
+  if (!args.url || args.url.trim().length === 0) {
+    throw new Error("url is required and must be a non-empty string");
+  }
+
+  if (!X_URL_PATTERN.test(args.url.trim())) {
+    throw new Error("url must be an x.com or twitter.com URL");
+  }
+
+  if (!args.triggered_by || args.triggered_by.trim().length === 0) {
+    throw new Error("triggered_by is required and must be a non-empty string");
+  }
+
+  const result: IngestResult = await ingestXMention(
+    args.url.trim(),
+    args.triggered_by.trim(),
+  );
+
+  // Read the written page to extract title and summary for the response
+  const page = await readWikiPageWithFrontmatter(result.primarySlug);
+  const title = page?.title ?? result.primarySlug;
+  const summary = page
+    ? extractSummary(page.body)
+    : `Ingested from ${args.url}`;
+
+  return {
+    slug: result.primarySlug,
+    title,
+    summary,
+    sourceUrl: args.url.trim(),
   };
 }
 
@@ -1163,6 +1212,44 @@ export function createMcpServer(): McpServer {
   }, async (args) => {
     try {
       const result = await handleIngestText(args);
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: JSON.stringify(result, null, 2),
+          },
+        ],
+      };
+    } catch (err) {
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: (err as Error).message,
+          },
+        ],
+        isError: true,
+      };
+    }
+  });
+
+  // ingest_x_mention — Ingest an X/Twitter post into the wiki with mention provenance
+  server.registerTool("ingest_x_mention", {
+    description:
+      "Ingest an X (Twitter) post into the wiki — fetches the post content, processes it, and creates/updates a wiki page with x-mention provenance tracking. Use this when responding to @mentions or ingesting social media content.",
+    inputSchema: {
+      url: z.string().describe("X/Twitter URL to ingest (must be an x.com or twitter.com URL)"),
+      triggered_by: z.string().describe("Handle of the user who triggered the mention (e.g. '@username')"),
+    },
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: false,
+      openWorldHint: true,
+    },
+  }, async (args) => {
+    try {
+      const result = await handleIngestXMention(args);
       return {
         content: [
           {

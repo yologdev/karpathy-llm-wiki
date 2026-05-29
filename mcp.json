@@ -14,6 +14,7 @@
     "delete_page",
     "ingest_url",
     "ingest_text",
+    "ingest_x_mention",
     "query_wiki",
     "save_query_answer",
     "agent_context",
