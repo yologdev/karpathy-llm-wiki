@@ -56,7 +56,7 @@ These were added in Phase 1 of the yopedia pivot.
 
 | Field | Type | Default | Set when | Consumed by |
 |-------|------|---------|----------|-------------|
-| `confidence` | number (0–1) | `0.7` | Initial ingest (deterministic default); preserved on re-ingest if existing value is higher | `low-confidence` lint check (flags pages below 0.3); wiki page view color-coded confidence badge |
+| `confidence` | number (0–1) | `0.7` (ingest) / `0.5` (create) | Initial ingest (deterministic default); preserved on re-ingest if existing value is higher | `low-confidence` lint check (flags pages below 0.3); wiki page view color-coded confidence badge |
 | `expiry` | ISO date string (YYYY-MM-DD) | 90 days from ingest | Initial ingest and re-ingest (always resets to 90 days from now) | `stale-page` lint check (flags pages past expiry); page view temporal range |
 | `valid_from` | ISO date string (YYYY-MM-DD) | Today (ingest date) | Initial ingest and re-ingest (always resets to today — the content is re-verified) | `stale-page` lint check (flags pages verified over 180 days ago); page view temporal range ("Verified May 2026 · Review by Oct 2026") |
 | `authors` | string array | `["system"]` | Initial ingest; preserved on re-ingest (never reset) | `/wiki/contributors` page, `ContributorBadge` component, contributor profiles API |
@@ -65,6 +65,12 @@ These were added in Phase 1 of the yopedia pivot.
 | `supersedes` | string (slug) | `""` (empty) | Set manually when a page replaces another; preserved on re-ingest | Future redirect system |
 | `aliases` | string array | `[]` | Set manually for alternative names; preserved on re-ingest | Alias index for entity deduplication at ingest time; `duplicate-entity` lint check; search resolution |
 | `sources` | JSON string (SourceEntry[]) | `"[]"` | Ingest appends a new entry; re-ingest appends if the source URL is new | Wiki page view provenance section; parseSources() in `src/lib/sources.ts` |
+
+**Confidence defaults:** Pages created via `ingest` default to confidence 0.7
+because the LLM ingest pipeline synthesizes content from a verified source.
+Pages created via `create_page` (MCP tool or CLI) default to 0.5 because
+manually-created pages haven't been through the ingest pipeline and may lack
+source verification.
 
 **Re-ingest behavior:** On re-ingest, `authors`, `contributors`, `disputed`,
 `supersedes`, and `aliases` are preserved from the existing page. `expiry`
@@ -630,7 +636,7 @@ sessions should pick from this list:
   via RRF. Batch rebuild of the full vector index is available via the Settings
   page (`/api/settings/rebuild-embeddings`).
   Anthropic-only users see no regression (pure BM25 fallback).
-- Lint auto-fix handles nine of fifteen checks (`orphan-page`, `stale-index`,
+- Lint auto-fix handles nine of sixteen checks (`orphan-page`, `stale-index`,
   `empty-page`, `broken-link`, `missing-crossref`, `contradiction`,
   `missing-concept-page`, `stale-page`, `unmigrated-page`) via
   `POST /api/lint/fix`.
@@ -641,13 +647,15 @@ sessions should pick from this list:
   refreshes `valid_from` to today.
   The `unmigrated-page` fix adds sensible yopedia defaults (confidence 0.5,
   expiry 90 days out, authors `["system"]`).
-  The six exceptions without auto-fix are: `low-confidence` (requires
+  The seven exceptions without auto-fix are: `low-confidence` (requires
   ingesting additional sources), `duplicate-entity` (requires human judgment
   to merge), `uncited-claims` (requires adding citations or ingesting
   sources), `unresolved-discussions` (requires reviewing and resolving
   open threads on the talk page), `disputed-page` (requires resolving
-  the dispute through discussion), and `supersedes-dangling` (requires
-  creating the target page or removing the supersedes field).
+  the dispute through discussion), `supersedes-dangling` (requires
+  creating the target page or removing the supersedes field), and
+  `incomplete-coverage` (requires ingesting additional sources to
+  improve topic coverage).
 - Long documents are chunked at ingest time (12K chars per chunk ≈ 3K
   tokens) so they fit within provider context windows. Token counting is
   character-based (not tokenizer-exact), which is conservative but not
@@ -671,10 +679,10 @@ sessions should pick from this list:
 ## Planned evolution
 
 Phase 1 (schema evolution) and Phase 2 (talk pages + attribution) are complete.
-Phase 3 (X ingestion loop) library and API work is complete — `ingestXMention()`,
-`POST /api/ingest/x-mention`, and MCP tool support are implemented. The remaining
-piece is the GitHub Actions polling workflow (#21), which is blocked on deployment
-architecture.
+Phase 3 (X ingestion loop) library and API work is complete — `ingestXMention()`
+and `POST /api/ingest/x-mention` are implemented. The remaining pieces are the
+MCP tool for x-mention ingest and the GitHub Actions polling workflow (#21),
+which is blocked on deployment architecture.
 Phase 4 (agent identity as yopedia pages) is **substantially complete** — the agent
 registry, context API, `seedAgent()` utility, `agent-identity` page type, scoped
 search, MCP tools (`seed-agent`, `list-agents`, `update-agent`, `delete-agent`,
