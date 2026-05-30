@@ -38,6 +38,26 @@ import { _resetConfigCache } from "../config";
 import { parseFrontmatter } from "../frontmatter";
 import { registerAgent } from "../agents";
 
+// ---------------------------------------------------------------------------
+// Mock fetchUrlContent and downloadImages so no test makes real HTTP calls.
+// All other exports from ../fetch (isUrl, validateUrlSafety, etc.) are kept.
+// ---------------------------------------------------------------------------
+vi.mock("../fetch", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../fetch")>();
+  return {
+    ...actual,
+    fetchUrlContent: vi.fn(async (url: string) => ({
+      title: `Mocked page for ${url}`,
+      content: `Mocked content fetched from ${url}`,
+    })),
+    downloadImages: vi.fn(async (markdown: string) => markdown),
+  };
+});
+
+import { fetchUrlContent, downloadImages } from "../fetch";
+const mockedFetchUrlContent = vi.mocked(fetchUrlContent);
+const mockedDownloadImages = vi.mocked(downloadImages);
+
 let tmpDir: string;
 let originalWikiDir: string | undefined;
 let originalRawDir: string | undefined;
@@ -54,6 +74,12 @@ beforeEach(async () => {
   await fs.mkdir(path.join(tmpDir, "wiki"), { recursive: true });
   await fs.mkdir(path.join(tmpDir, "raw"), { recursive: true });
   _resetStorage();
+  // Reset fetch mocks to default deterministic behaviour
+  mockedFetchUrlContent.mockImplementation(async (url: string) => ({
+    title: `Mocked page for ${url}`,
+    content: `Mocked content fetched from ${url}`,
+  }));
+  mockedDownloadImages.mockImplementation(async (markdown: string) => markdown);
 });
 
 afterEach(async () => {
@@ -909,25 +935,28 @@ describe("batch_ingest_urls", () => {
     delete process.env.ANTHROPIC_API_KEY;
     _resetConfigCache();
     try {
-      // Use ingest_text-style approach: we can't actually fetch URLs in tests,
-      // but we can verify that the handler correctly processes the batch.
-      // For a real integration test we'd mock fetch, but the validation logic
-      // is the core of this tool. The URL fetch will fail, giving us partial
-      // failure results.
+      // fetchUrlContent is mocked — no real HTTP calls are made.
+      // The mock returns deterministic { title, content } for each URL.
       const result = await handleBatchIngest({
-        urls: ["https://httpbin.org/status/404", "https://httpbin.org/status/500"],
+        urls: ["https://example.com/page-a", "https://example.com/page-b"],
       });
 
       expect(result.total).toBe(2);
       expect(result.succeeded + result.failed).toBe(2);
       expect(result.results).toHaveLength(2);
       // Each result should have a url field
-      expect(result.results[0].url).toBe("https://httpbin.org/status/404");
-      expect(result.results[1].url).toBe("https://httpbin.org/status/500");
-      // Each result should have either slug (success) or error (failure)
+      expect(result.results[0].url).toBe("https://example.com/page-a");
+      expect(result.results[1].url).toBe("https://example.com/page-b");
+      // With the mock returning valid content, both should succeed
+      expect(result.succeeded).toBe(2);
       for (const r of result.results) {
-        expect(r.slug !== undefined || r.error !== undefined).toBe(true);
+        expect(r.slug).toBeTruthy();
+        expect(r.error).toBeUndefined();
       }
+      // Verify the mock was called for each URL
+      expect(mockedFetchUrlContent).toHaveBeenCalledTimes(2);
+      expect(mockedFetchUrlContent).toHaveBeenCalledWith("https://example.com/page-a");
+      expect(mockedFetchUrlContent).toHaveBeenCalledWith("https://example.com/page-b");
     } finally {
       if (savedKey !== undefined) {
         process.env.ANTHROPIC_API_KEY = savedKey;
@@ -1049,7 +1078,7 @@ describe("ingest_x_mention", () => {
   });
 
   it("accepts valid x.com URL and returns result shape", async () => {
-    // Use no-LLM fallback path
+    // Use no-LLM fallback path; fetchUrlContent is mocked (no real HTTP)
     const savedKey = process.env.ANTHROPIC_API_KEY;
     delete process.env.ANTHROPIC_API_KEY;
     _resetConfigCache();
@@ -1062,6 +1091,7 @@ describe("ingest_x_mention", () => {
       expect(result.title).toBeTruthy();
       expect(typeof result.summary).toBe("string");
       expect(result.sourceUrl).toBe("https://x.com/user/status/123");
+      expect(mockedFetchUrlContent).toHaveBeenCalledWith("https://x.com/user/status/123");
     } finally {
       if (savedKey !== undefined) {
         process.env.ANTHROPIC_API_KEY = savedKey;
@@ -1071,6 +1101,7 @@ describe("ingest_x_mention", () => {
   });
 
   it("accepts valid twitter.com URL and returns result shape", async () => {
+    // fetchUrlContent is mocked — no real HTTP calls to twitter.com
     const savedKey = process.env.ANTHROPIC_API_KEY;
     delete process.env.ANTHROPIC_API_KEY;
     _resetConfigCache();
@@ -1083,6 +1114,7 @@ describe("ingest_x_mention", () => {
       expect(result.title).toBeTruthy();
       expect(typeof result.summary).toBe("string");
       expect(result.sourceUrl).toBe("https://twitter.com/user/status/456");
+      expect(mockedFetchUrlContent).toHaveBeenCalledWith("https://twitter.com/user/status/456");
     } finally {
       if (savedKey !== undefined) {
         process.env.ANTHROPIC_API_KEY = savedKey;
@@ -1092,6 +1124,7 @@ describe("ingest_x_mention", () => {
   });
 
   it("accepts www.x.com URL and returns result shape", async () => {
+    // fetchUrlContent is mocked — no real HTTP calls to x.com
     const savedKey = process.env.ANTHROPIC_API_KEY;
     delete process.env.ANTHROPIC_API_KEY;
     _resetConfigCache();
@@ -1104,6 +1137,7 @@ describe("ingest_x_mention", () => {
       expect(result.title).toBeTruthy();
       expect(typeof result.summary).toBe("string");
       expect(result.sourceUrl).toBe("https://www.x.com/user/status/789");
+      expect(mockedFetchUrlContent).toHaveBeenCalledWith("https://www.x.com/user/status/789");
     } finally {
       if (savedKey !== undefined) {
         process.env.ANTHROPIC_API_KEY = savedKey;
