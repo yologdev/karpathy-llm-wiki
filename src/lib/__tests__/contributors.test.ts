@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import fs from "fs/promises";
 import os from "os";
 import path from "path";
-import { buildContributorProfile, listContributors } from "../contributors";
+import { buildContributorProfile, buildContributorProfiles, listContributors, computeScanData } from "../contributors";
 import { ensureDirectories, writeWikiPage } from "../wiki";
 import { saveRevision } from "../revisions";
 import { createThread, addComment, _resetTimestamp } from "../talk";
@@ -314,6 +314,118 @@ describe("contributors data layer", () => {
       expect(alice!.revertCount).toBe(1);
       expect(bob).toBeDefined();
       expect(bob!.revertCount).toBe(0);
+    });
+  });
+
+  describe("batch lookup — buildContributorProfiles", () => {
+    it("returns profiles for multiple handles in one call", async () => {
+      await createPage("page-batch", "Batch", "# Batch\n\nContent.");
+
+      await saveRevision("page-batch", "# Batch\n\nv1", "alice");
+      await saveRevision("page-batch", "# Batch\n\nv2", "alice");
+      await saveRevision("page-batch", "# Batch\n\nv3", "bob");
+
+      const profiles = await buildContributorProfiles(["alice", "bob"]);
+      expect(profiles).toHaveLength(2);
+      expect(profiles[0].handle).toBe("alice");
+      expect(profiles[0].editCount).toBe(2);
+      expect(profiles[1].handle).toBe("bob");
+      expect(profiles[1].editCount).toBe(1);
+    });
+
+    it("returns zeroed-out profile for unknown handles in batch", async () => {
+      await ensureDirectories();
+
+      const profiles = await buildContributorProfiles(["ghost", "phantom"]);
+      expect(profiles).toHaveLength(2);
+      expect(profiles[0].handle).toBe("ghost");
+      expect(profiles[0].editCount).toBe(0);
+      expect(profiles[0].trustScore).toBe(0);
+      expect(profiles[1].handle).toBe("phantom");
+      expect(profiles[1].editCount).toBe(0);
+    });
+
+    it("mixes known and unknown handles correctly", async () => {
+      await createPage("page-mix", "Mix", "# Mix\n\nContent.");
+      await saveRevision("page-mix", "# Mix\n\nv1", "alice");
+
+      const profiles = await buildContributorProfiles(["alice", "nobody"]);
+      expect(profiles).toHaveLength(2);
+      expect(profiles[0].handle).toBe("alice");
+      expect(profiles[0].editCount).toBe(1);
+      expect(profiles[1].handle).toBe("nobody");
+      expect(profiles[1].editCount).toBe(0);
+    });
+
+    it("preserves order matching input handles", async () => {
+      await createPage("page-order", "Order", "# Order\n\nContent.");
+      await saveRevision("page-order", "# Order\n\nv1", "zara");
+      await saveRevision("page-order", "# Order\n\nv2", "alice");
+
+      const profiles = await buildContributorProfiles(["zara", "alice"]);
+      expect(profiles[0].handle).toBe("zara");
+      expect(profiles[1].handle).toBe("alice");
+    });
+  });
+
+  describe("shared scan data — computeScanData", () => {
+    it("computes scan data that can be shared across multiple profile builds", async () => {
+      await createPage("page-shared", "Shared", "# Shared\n\nContent.");
+      await saveRevision("page-shared", "# Shared\n\nv1", "alice");
+      await saveRevision("page-shared", "# Shared\n\nv2", "bob");
+
+      // Compute scan data once
+      const scanData = await computeScanData();
+
+      // Build profiles using the shared scan data
+      const aliceProfile = await buildContributorProfile("alice", scanData);
+      const bobProfile = await buildContributorProfile("bob", scanData);
+
+      expect(aliceProfile.handle).toBe("alice");
+      expect(aliceProfile.editCount).toBe(1);
+      expect(bobProfile.handle).toBe("bob");
+      expect(bobProfile.editCount).toBe(1);
+    });
+
+    it("shared scan data includes talk activity", async () => {
+      await ensureDirectories();
+      await createThread("discuss-page", "Thread", "alice", "Post");
+      await addComment("discuss-page", 0, "bob", "Reply");
+
+      const scanData = await computeScanData();
+      const aliceProfile = await buildContributorProfile("alice", scanData);
+      const bobProfile = await buildContributorProfile("bob", scanData);
+
+      expect(aliceProfile.commentCount).toBe(1);
+      expect(aliceProfile.threadsCreated).toBe(1);
+      expect(bobProfile.commentCount).toBe(1);
+      expect(bobProfile.threadsCreated).toBe(0);
+    });
+
+    it("shared scan data includes revert detection", async () => {
+      await createPage("page-scan-revert", "Scan Revert", "# Scan\n\nContent.");
+      await saveRevision("page-scan-revert", "# Scan\n\n" + "x".repeat(1000), "alice");
+      await saveRevision("page-scan-revert", "# Scan\n\nShort.", "bob");
+
+      const scanData = await computeScanData();
+      const aliceProfile = await buildContributorProfile("alice", scanData);
+
+      expect(aliceProfile.revertCount).toBe(1);
+    });
+
+    it("batch profiles with shared scan data match individual builds", async () => {
+      await createPage("page-match", "Match", "# Match\n\nContent.");
+      await saveRevision("page-match", "# Match\n\nv1", "alice");
+      await saveRevision("page-match", "# Match\n\nv2", "bob");
+
+      const scanData = await computeScanData();
+
+      const batch = await buildContributorProfiles(["alice", "bob"], scanData);
+      const aliceSingle = await buildContributorProfile("alice", scanData);
+      const bobSingle = await buildContributorProfile("bob", scanData);
+
+      expect(batch[0]).toEqual(aliceSingle);
+      expect(batch[1]).toEqual(bobSingle);
     });
   });
 });

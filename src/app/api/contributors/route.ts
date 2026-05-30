@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { listContributors, buildContributorProfile } from "@/lib/contributors";
+import { listContributors, buildContributorProfile, buildContributorProfiles } from "@/lib/contributors";
 import { getErrorMessage } from "@/lib/errors";
 
 /**
@@ -7,12 +7,34 @@ import { getErrorMessage } from "@/lib/errors";
  *
  * Returns all contributor profiles sorted by editCount descending.
  * Optionally pass `?handle=alice` to get a single profile (convenience).
+ * Optionally pass `?handles=alice,bob` to batch-fetch multiple profiles
+ * in a single wiki-wide scan.
  */
 export async function GET(req: Request) {
   try {
     const url = new URL(req.url);
     const handle = url.searchParams.get("handle");
+    const handles = url.searchParams.get("handles");
 
+    // Batch lookup: ?handles=alice,bob,charlie
+    if (handles) {
+      const handleList = handles
+        .split(",")
+        .map((h) => h.trim())
+        .filter((h) => h.length > 0);
+
+      if (handleList.length === 0) {
+        return NextResponse.json(
+          { error: "handles parameter must contain at least one non-empty handle" },
+          { status: 400 },
+        );
+      }
+
+      const profiles = await buildContributorProfiles(handleList);
+      return NextResponse.json({ contributors: profiles });
+    }
+
+    // Single-handle lookup: ?handle=alice
     if (handle) {
       const profile = await buildContributorProfile(handle);
       // 404 if handle has zero activity
@@ -25,6 +47,7 @@ export async function GET(req: Request) {
       return NextResponse.json(profile);
     }
 
+    // List all contributors
     const contributors = await listContributors();
     return NextResponse.json({ contributors });
   } catch (err) {

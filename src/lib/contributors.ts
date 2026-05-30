@@ -6,8 +6,9 @@
 //   1. Revision history — edits and page counts
 //   2. Talk page discussions — comments and threads created
 //
-// This is an O(pages × revisions) scan. Fine for small wikis.
-// Caching can come later.
+// Scan data (revisions + reverts + threads) can be computed once and shared
+// across multiple profile builds, avoiding the N+1 problem when rendering
+// badges for several authors on a single page.
 // ---------------------------------------------------------------------------
 
 import { getStorage } from "./storage";
@@ -180,6 +181,31 @@ function computeTrustScore(editCount: number, commentCount: number, revertCount:
 }
 
 // ---------------------------------------------------------------------------
+// Shared scan data — compute once, reuse for multiple profile builds
+// ---------------------------------------------------------------------------
+
+/** Pre-computed wiki-wide scan data shared across profile builds. */
+export interface ContributorScanData {
+  /** Revision activity per author handle. */
+  activityMap: Map<string, AuthorActivity>;
+  /** Revert counts per author handle. */
+  revertCounts: Map<string, number>;
+}
+
+/**
+ * Perform a single wiki-wide scan: revision activity, talk threads, and
+ * revert detection. Returns data that can be passed to profile builders
+ * to avoid redundant scans.
+ */
+export async function computeScanData(): Promise<ContributorScanData> {
+  const activityMap = await scanRevisions();
+  const threads = await loadAllThreads();
+  mergeTalkActivity(activityMap, threads);
+  const revertCounts = await detectReverts();
+  return { activityMap, revertCounts };
+}
+
+// ---------------------------------------------------------------------------
 // Profile builder
 // ---------------------------------------------------------------------------
 
@@ -214,26 +240,40 @@ function buildProfileFromActivity(
 /**
  * Build a contributor profile for a specific handle.
  *
+ * When `scanData` is provided, the function skips the expensive wiki-wide
+ * scan and uses the pre-computed data. This is the recommended path when
+ * building profiles for multiple handles (e.g. batch badge rendering).
+ *
  * Returns a zeroed-out profile (not an error) when the handle has no activity.
  */
 export async function buildContributorProfile(
   handle: string,
+  scanData?: ContributorScanData,
 ): Promise<ContributorProfile> {
-  // Scan revisions.
-  const revMap = await scanRevisions();
-  const act = revMap.get(handle) ?? emptyActivity();
-
-  // Merge talk activity.
-  const threads = await loadAllThreads();
-  const talkMap = new Map<string, AuthorActivity>();
-  talkMap.set(handle, act);
-  mergeTalkActivity(talkMap, threads);
-
-  // Detect reverts.
-  const revertCounts = await detectReverts();
-  const revertCount = revertCounts.get(handle) ?? 0;
-
+  const data = scanData ?? await computeScanData();
+  const act = data.activityMap.get(handle) ?? emptyActivity();
+  const revertCount = data.revertCounts.get(handle) ?? 0;
   return buildProfileFromActivity(handle, act, revertCount);
+}
+
+/**
+ * Build contributor profiles for multiple handles in one pass.
+ *
+ * Scans the wiki once, then builds a profile for each requested handle.
+ * Handles with no activity get zeroed-out profiles (included in result).
+ *
+ * When `scanData` is provided, skips the scan entirely.
+ */
+export async function buildContributorProfiles(
+  handles: string[],
+  scanData?: ContributorScanData,
+): Promise<ContributorProfile[]> {
+  const data = scanData ?? await computeScanData();
+  return handles.map((handle) => {
+    const act = data.activityMap.get(handle) ?? emptyActivity();
+    const revertCount = data.revertCounts.get(handle) ?? 0;
+    return buildProfileFromActivity(handle, act, revertCount);
+  });
 }
 
 /**
@@ -242,16 +282,11 @@ export async function buildContributorProfile(
  * Returns profiles sorted by `editCount` descending.
  */
 export async function listContributors(): Promise<ContributorProfile[]> {
-  const map = await scanRevisions();
-  const threads = await loadAllThreads();
-  mergeTalkActivity(map, threads);
-
-  // Detect reverts across all pages.
-  const revertCounts = await detectReverts();
+  const data = await computeScanData();
 
   const profiles: ContributorProfile[] = [];
-  for (const [handle, act] of map) {
-    const revertCount = revertCounts.get(handle) ?? 0;
+  for (const [handle, act] of data.activityMap) {
+    const revertCount = data.revertCounts.get(handle) ?? 0;
     profiles.push(buildProfileFromActivity(handle, act, revertCount));
   }
 
