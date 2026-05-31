@@ -8,7 +8,7 @@ import { logger } from "@/lib/logger";
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { urls } = body;
+    const { urls, tags } = body;
 
     // --- Validate input ------------------------------------------------
     if (!Array.isArray(urls) || urls.length === 0) {
@@ -16,6 +16,16 @@ export async function POST(request: NextRequest) {
         { error: "urls is required and must be a non-empty array of strings" },
         { status: 400 },
       );
+    }
+
+    // Validate tags if provided
+    if (tags !== undefined) {
+      if (!Array.isArray(tags) || !tags.every((t: unknown) => typeof t === "string")) {
+        return NextResponse.json(
+          { error: "tags must be an array of strings if provided" },
+          { status: 400 },
+        );
+      }
     }
 
     if (urls.length > MAX_BATCH_URLS) {
@@ -46,6 +56,7 @@ export async function POST(request: NextRequest) {
 
     // --- Stream NDJSON results as each URL completes --------------------
     const encoder = new TextEncoder();
+    const ingestOptions = Array.isArray(tags) && tags.length > 0 ? { tags } : undefined;
 
     const stream = new ReadableStream({
       async start(controller) {
@@ -54,7 +65,7 @@ export async function POST(request: NextRequest) {
           let line: string;
 
           try {
-            const result = await ingestUrl(url);
+            const result = await ingestUrl(url, ingestOptions);
             line = JSON.stringify({ index: i, url, success: true, result });
           } catch (err) {
             const message = getErrorMessage(err, "Unknown error");

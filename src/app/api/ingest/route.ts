@@ -9,7 +9,7 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
 
-    const { url, title, content, preview, generatedContent, triggeredBy } = body;
+    const { url, title, content, preview, generatedContent, triggeredBy, tags } = body;
 
     // Validate triggeredBy if provided
     if (triggeredBy !== undefined && typeof triggeredBy !== "string") {
@@ -17,6 +17,16 @@ export async function POST(request: NextRequest) {
         { error: "triggeredBy must be a string if provided" },
         { status: 400 },
       );
+    }
+
+    // Validate tags if provided
+    if (tags !== undefined) {
+      if (!Array.isArray(tags) || !tags.every((t: unknown) => typeof t === "string")) {
+        return NextResponse.json(
+          { error: "tags must be an array of strings if provided" },
+          { status: 400 },
+        );
+      }
     }
 
     // Build ingest options from the request body
@@ -29,6 +39,9 @@ export async function POST(request: NextRequest) {
     }
     if (typeof triggeredBy === "string" && triggeredBy.length > 0) {
       options.triggeredBy = triggeredBy;
+    }
+    if (Array.isArray(tags) && tags.length > 0) {
+      options.tags = tags;
     }
 
     // URL path takes precedence
