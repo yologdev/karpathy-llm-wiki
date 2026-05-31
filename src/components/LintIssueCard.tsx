@@ -30,6 +30,8 @@ const fixableTypes = new Set([
   "contradiction",
   "missing-concept-page",
   "broken-link",
+  "stale-page",
+  "unmigrated-page",
 ]);
 
 const fixLabel: Record<string, string> = {
@@ -40,6 +42,8 @@ const fixLabel: Record<string, string> = {
   "contradiction": "Resolve",
   "missing-concept-page": "Create page",
   "broken-link": "Remove link",
+  "stale-page": "Extend expiry",
+  "unmigrated-page": "Add defaults",
 };
 
 export interface LintIssueCardProps {

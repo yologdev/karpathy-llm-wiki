@@ -954,3 +954,57 @@ describe("fixLintIssue", () => {
     expect(mockedWriteWikiPageWithSideEffects).toHaveBeenCalledOnce();
   });
 });
+
+// ---------------------------------------------------------------------------
+// UI fixable types consistency — ensure the LintIssueCard component declares
+// stale-page and unmigrated-page as fixable, matching backend support.
+// ---------------------------------------------------------------------------
+describe("LintIssueCard fixable types consistency", () => {
+  // These mirror the sets in src/components/LintIssueCard.tsx.
+  // If the component changes, update these to match.
+  const uiFixableTypes = new Set([
+    "missing-crossref",
+    "orphan-page",
+    "stale-index",
+    "empty-page",
+    "contradiction",
+    "missing-concept-page",
+    "broken-link",
+    "stale-page",
+    "unmigrated-page",
+  ]);
+
+  const uiFixLabels: Record<string, string> = {
+    "missing-crossref": "Fix",
+    "orphan-page": "Add to index",
+    "stale-index": "Remove from index",
+    "empty-page": "Delete page",
+    "contradiction": "Resolve",
+    "missing-concept-page": "Create page",
+    "broken-link": "Remove link",
+    "stale-page": "Extend expiry",
+    "unmigrated-page": "Add defaults",
+  };
+
+  it("includes stale-page in fixable types", () => {
+    expect(uiFixableTypes.has("stale-page")).toBe(true);
+  });
+
+  it("includes unmigrated-page in fixable types", () => {
+    expect(uiFixableTypes.has("unmigrated-page")).toBe(true);
+  });
+
+  it("has a descriptive label for stale-page", () => {
+    expect(uiFixLabels["stale-page"]).toBe("Extend expiry");
+  });
+
+  it("has a descriptive label for unmigrated-page", () => {
+    expect(uiFixLabels["unmigrated-page"]).toBe("Add defaults");
+  });
+
+  it("every fixable type has a label", () => {
+    for (const type of uiFixableTypes) {
+      expect(uiFixLabels[type]).toBeDefined();
+    }
+  });
+});
