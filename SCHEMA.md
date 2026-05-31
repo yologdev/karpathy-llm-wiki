@@ -567,8 +567,8 @@ Current checks performed by `lint()` in `src/lib/lint.ts`:
   fallback).
 - **`stale-page`** (warning) — page's `expiry` frontmatter date is in the
   past, meaning the content may be outdated and should be reviewed or
-  re-ingested. No auto-fix — requires human or agent judgment to refresh
-  or extend the expiry.
+  re-ingested. Auto-fix: extends expiry by 90 days and refreshes
+  `valid_from` to today.
 - **`low-confidence`** (info) — page's `confidence` frontmatter value is
   below 0.3 (`LOW_CONFIDENCE_THRESHOLD` in `src/lib/lint-checks.ts`),
   indicating the page needs more supporting sources. No auto-fix — requires
