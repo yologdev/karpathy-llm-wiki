@@ -95,9 +95,9 @@ export async function POST(req: Request) {
     const summary = extractSummary(bodyForSummary);
 
     const today = new Date().toISOString().slice(0, 10);
-    // Compute a default expiry 6 months from now
+    // Compute a default expiry 90 days from now (matches SCHEMA.md standard)
     const expiryDate = new Date();
-    expiryDate.setMonth(expiryDate.getMonth() + 6);
+    expiryDate.setDate(expiryDate.getDate() + 90);
     const expiry = expiryDate.toISOString().slice(0, 10);
 
     const frontmatter: Frontmatter = {

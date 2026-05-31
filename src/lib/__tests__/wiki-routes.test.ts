@@ -78,12 +78,33 @@ describe("POST /api/wiki — yopedia metadata", () => {
     const today = new Date().toISOString().slice(0, 10);
     expect(fm.created).toBe(today);
 
-    // expiry should be ~6 months from now (YYYY-MM-DD format)
+    // expiry should be ~90 days from now (YYYY-MM-DD format)
     expect(typeof fm.expiry).toBe("string");
     const expiryStr = fm.expiry as string;
     expect(expiryStr).toMatch(/^\d{4}-\d{2}-\d{2}$/);
     // Verify expiry is in the future
     expect(new Date(expiryStr).getTime()).toBeGreaterThan(Date.now());
+  });
+
+  it("sets default expiry to ~90 days from creation date", async () => {
+    const res = await callPost({
+      slug: "expiry-check",
+      content: "# Expiry Check\n\nVerify 90-day default.",
+    });
+    expect(res.status).toBe(201);
+
+    const page = await readWikiPageWithFrontmatter("expiry-check");
+    expect(page).not.toBeNull();
+    const fm = page!.frontmatter;
+
+    const expiryStr = fm.expiry as string;
+    const expiryMs = new Date(expiryStr).getTime();
+    const nowMs = Date.now();
+    const diffDays = (expiryMs - nowMs) / (1000 * 60 * 60 * 24);
+
+    // Should be ~90 days (allow ±1 day for test execution time)
+    expect(diffDays).toBeGreaterThanOrEqual(89);
+    expect(diffDays).toBeLessThanOrEqual(91);
   });
 
   it("uses provided author instead of anonymous", async () => {
