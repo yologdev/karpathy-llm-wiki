@@ -179,6 +179,7 @@ export async function handleCreatePage(args: {
   slug: string;
   content: string;
   author?: string;
+  tags?: string[];
 }): Promise<{ slug: string; title: string; created: true }> {
   validateSlug(args.slug);
 
@@ -189,7 +190,8 @@ export async function handleCreatePage(args: {
   }
 
   const title = extractTitle(args.content, args.slug);
-  const summary = extractSummary(args.content);
+  const bodyForSummary = args.content.replace(/^#\s+.+$/m, "").trim();
+  const summary = extractSummary(bodyForSummary);
   const today = new Date().toISOString().slice(0, 10);
   const expiry = new Date();
   expiry.setDate(expiry.getDate() + 90);
@@ -206,7 +208,7 @@ export async function handleCreatePage(args: {
     disputed: false,
     contributors: [],
     aliases: [],
-    tags: [],
+    tags: Array.isArray(args.tags) ? args.tags : [],
   };
 
   const fullContent = serializeFrontmatter(frontmatter, args.content);
@@ -235,7 +237,8 @@ export async function handleUpdatePage(args: {
   }
 
   const title = extractTitle(args.content, existingPage.title);
-  const summary = extractSummary(args.content);
+  const bodyForSummary = args.content.replace(/^#\s+.+$/m, "").trim();
+  const summary = extractSummary(bodyForSummary);
   const today = new Date().toISOString().slice(0, 10);
 
   // Merge frontmatter: preserve existing fields, bump updated, backfill created
@@ -1108,6 +1111,7 @@ export function createMcpServer(): McpServer {
       slug: z.string().describe("URL-safe page slug (e.g. 'neural-networks')"),
       content: z.string().describe("Markdown body for the new page (include a # Heading for the title)"),
       author: z.string().optional().describe("Author handle for attribution (defaults to 'agent')"),
+      tags: z.array(z.string()).optional().describe("Tags to categorize the page"),
     },
     annotations: {
       readOnlyHint: false,

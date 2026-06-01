@@ -414,6 +414,50 @@ describe("MCP write tools", () => {
         }),
       ).rejects.toThrow();
     });
+
+    it("accepts tags and includes them in frontmatter", async () => {
+      await handleCreatePage({
+        slug: "tagged-page",
+        content: "# Tagged\n\nSome body.",
+        tags: ["science", "ai"],
+      });
+
+      const filePath = path.join(tmpDir, "wiki", "tagged-page.md");
+      const fileContent = await fs.readFile(filePath, "utf-8");
+      const { data: frontmatter } = parseFrontmatter(fileContent);
+      expect(frontmatter.tags).toEqual(["science", "ai"]);
+    });
+
+    it("defaults tags to empty array when not provided", async () => {
+      await handleCreatePage({
+        slug: "no-tags-page",
+        content: "# No Tags\n\nBody.",
+      });
+
+      const filePath = path.join(tmpDir, "wiki", "no-tags-page.md");
+      const fileContent = await fs.readFile(filePath, "utf-8");
+      const { data: frontmatter } = parseFrontmatter(fileContent);
+      expect(frontmatter.tags).toEqual([]);
+    });
+
+    it("strips H1 heading from summary", async () => {
+      await handleCreatePage({
+        slug: "h1-summary-create",
+        content: "# Big Heading\n\nThe actual summary text goes here.",
+      });
+
+      // The summary in the index (after the em dash) should not contain the heading
+      const indexPath = path.join(tmpDir, "wiki", "index.md");
+      const indexContent = await fs.readFile(indexPath, "utf-8");
+      const entryLine = indexContent.split("\n").find((l: string) => l.includes("h1-summary-create"));
+      expect(entryLine).toBeDefined();
+      // Extract summary portion after the em dash
+      const summaryMatch = entryLine!.match(/—\s*(.+)$/);
+      expect(summaryMatch).toBeDefined();
+      const summary = summaryMatch![1];
+      expect(summary).not.toMatch(/Big Heading/);
+      expect(summary).toContain("actual summary text");
+    });
   });
 
   describe("update_page", () => {
@@ -493,6 +537,29 @@ describe("MCP write tools", () => {
       // which stores it in the revision sidecar. We verify the call
       // succeeded without error — deeper attribution is tested in
       // lifecycle/revision tests.
+    });
+
+    it("strips H1 heading from summary on update", async () => {
+      await handleCreatePage({
+        slug: "h1-summary-update",
+        content: "# Original Title\n\nOriginal body.",
+      });
+
+      await handleUpdatePage({
+        slug: "h1-summary-update",
+        content: "# Updated Heading\n\nThe updated summary text goes here.",
+      });
+
+      const indexPath = path.join(tmpDir, "wiki", "index.md");
+      const indexContent = await fs.readFile(indexPath, "utf-8");
+      const entryLine = indexContent.split("\n").find((l: string) => l.includes("h1-summary-update"));
+      expect(entryLine).toBeDefined();
+      // Extract summary portion after the em dash
+      const summaryMatch = entryLine!.match(/—\s*(.+)$/);
+      expect(summaryMatch).toBeDefined();
+      const summary = summaryMatch![1];
+      expect(summary).not.toMatch(/Updated Heading/);
+      expect(summary).toContain("updated summary text");
     });
   });
 });
