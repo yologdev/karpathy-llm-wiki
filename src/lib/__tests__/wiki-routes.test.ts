@@ -297,3 +297,177 @@ describe("PUT /api/wiki/[slug] — contributors and updated", () => {
     expect(page!.frontmatter.contributors).toEqual(["existing"]);
   });
 });
+
+// ---------------------------------------------------------------------------
+// PATCH /api/wiki/[slug] — frontmatter-only metadata updates
+// ---------------------------------------------------------------------------
+
+describe("PATCH /api/wiki/[slug] — metadata updates", () => {
+  async function callPatch(slug: string, body: Record<string, unknown>) {
+    const mod = await import("@/app/api/wiki/[slug]/route");
+    const req = new Request(`http://localhost:3000/api/wiki/${slug}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    return mod.PATCH(req, { params: Promise.resolve({ slug }) });
+  }
+
+  /** Create a page with full yopedia metadata so PATCH has something to edit. */
+  async function seedPage(slug: string, fm: Frontmatter = {}) {
+    const today = new Date().toISOString().slice(0, 10);
+    const defaults: Frontmatter = {
+      created: today,
+      confidence: 0.5,
+      authors: ["original-author"],
+      contributors: [],
+      expiry: "2099-01-01",
+      sources: [],
+      ...fm,
+    };
+    const content = serializeFrontmatter(defaults, `# ${slug}\n\nOriginal content.`);
+    await writeWikiPageWithSideEffects({
+      slug,
+      title: slug,
+      content,
+      summary: "A test page",
+      logOp: "ingest",
+      crossRefSource: null,
+    });
+  }
+
+  it("updates confidence without changing body", async () => {
+    await seedPage("patch-conf");
+
+    const res = await callPatch("patch-conf", {
+      metadata: { confidence: 0.9 },
+    });
+    expect(res.status).toBe(200);
+
+    const page = await readWikiPageWithFrontmatter("patch-conf");
+    expect(page).not.toBeNull();
+    expect(page!.frontmatter.confidence).toBe(0.9);
+    // Body should be unchanged
+    expect(page!.body).toContain("Original content.");
+    // Other metadata preserved
+    expect(page!.frontmatter.authors).toEqual(["original-author"]);
+    expect(page!.frontmatter.expiry).toBe("2099-01-01");
+  });
+
+  it("adds tags to existing page", async () => {
+    await seedPage("patch-tags");
+
+    const res = await callPatch("patch-tags", {
+      metadata: { tags: ["rust"] },
+    });
+    expect(res.status).toBe(200);
+
+    const page = await readWikiPageWithFrontmatter("patch-tags");
+    expect(page).not.toBeNull();
+    expect(page!.frontmatter.tags).toEqual(["rust"]);
+  });
+
+  it("bumps updated timestamp on metadata change", async () => {
+    await seedPage("patch-updated");
+
+    const res = await callPatch("patch-updated", {
+      metadata: { disputed: true },
+    });
+    expect(res.status).toBe(200);
+
+    const page = await readWikiPageWithFrontmatter("patch-updated");
+    expect(page).not.toBeNull();
+    const today = new Date().toISOString().slice(0, 10);
+    expect(page!.frontmatter.updated).toBe(today);
+  });
+
+  it("rejects lifecycle-managed field: created", async () => {
+    await seedPage("patch-reject-created");
+
+    const res = await callPatch("patch-reject-created", {
+      metadata: { created: "2020-01-01" },
+    });
+    expect(res.status).toBe(400);
+    const data = await res.json();
+    expect(data.error).toContain("created");
+  });
+
+  it("rejects lifecycle-managed field: sources", async () => {
+    await seedPage("patch-reject-sources");
+
+    const res = await callPatch("patch-reject-sources", {
+      metadata: { sources: ["http://example.com"] },
+    });
+    expect(res.status).toBe(400);
+    const data = await res.json();
+    expect(data.error).toContain("sources");
+  });
+
+  it("rejects lifecycle-managed field: authors", async () => {
+    await seedPage("patch-reject-authors");
+
+    const res = await callPatch("patch-reject-authors", {
+      metadata: { authors: ["hacker"] },
+    });
+    expect(res.status).toBe(400);
+    const data = await res.json();
+    expect(data.error).toContain("authors");
+  });
+
+  it("returns 404 for missing page", async () => {
+    const res = await callPatch("nonexistent-page-xyz", {
+      metadata: { confidence: 0.9 },
+    });
+    expect(res.status).toBe(404);
+  });
+
+  it("returns 400 when metadata is missing", async () => {
+    await seedPage("patch-no-meta");
+
+    const res = await callPatch("patch-no-meta", { foo: "bar" });
+    expect(res.status).toBe(400);
+  });
+
+  it("returns 400 when metadata is not an object", async () => {
+    await seedPage("patch-bad-meta");
+
+    const res = await callPatch("patch-bad-meta", { metadata: "not-object" });
+    expect(res.status).toBe(400);
+  });
+
+  it("appends author to contributors", async () => {
+    await seedPage("patch-contrib", { contributors: ["alice"] });
+
+    const res = await callPatch("patch-contrib", {
+      metadata: { confidence: 0.8 },
+      author: "bob",
+    });
+    expect(res.status).toBe(200);
+
+    const page = await readWikiPageWithFrontmatter("patch-contrib");
+    expect(page).not.toBeNull();
+    expect(page!.frontmatter.contributors).toEqual(["alice", "bob"]);
+  });
+
+  it("updates multiple metadata fields at once", async () => {
+    await seedPage("patch-multi");
+
+    const res = await callPatch("patch-multi", {
+      metadata: {
+        confidence: 0.95,
+        disputed: true,
+        aliases: ["multi-alias"],
+        supersedes: "old-page",
+      },
+    });
+    expect(res.status).toBe(200);
+
+    const page = await readWikiPageWithFrontmatter("patch-multi");
+    expect(page).not.toBeNull();
+    const fm = page!.frontmatter;
+    expect(fm.confidence).toBe(0.95);
+    expect(fm.disputed).toBe(true);
+    expect(fm.aliases).toEqual(["multi-alias"]);
+    expect(fm.supersedes).toBe("old-page");
+  });
+});
