@@ -68,15 +68,24 @@ describe("POST /api/wiki — yopedia metadata", () => {
     expect(page).not.toBeNull();
     const fm = page!.frontmatter;
 
+    const today = new Date().toISOString().slice(0, 10);
+
     // Core yopedia fields
+    expect(fm.title).toBe("Test Meta");
     expect(fm.confidence).toBe(0.5);
     expect(fm.authors).toEqual(["anonymous"]);
     expect(fm.contributors).toEqual([]);
     expect(fm.sources).toEqual([]);
 
-    // created should be today
-    const today = new Date().toISOString().slice(0, 10);
+    // Date fields
     expect(fm.created).toBe(today);
+    expect(fm.updated).toBe(today);
+    expect(fm.valid_from).toBe(today);
+
+    // Schema defaults
+    expect(fm.disputed).toBe(false);
+    expect(fm.aliases).toEqual([]);
+    expect(fm.tags).toEqual([]);
 
     // expiry should be ~90 days from now (YYYY-MM-DD format)
     expect(typeof fm.expiry).toBe("string");
@@ -131,6 +140,32 @@ describe("POST /api/wiki — yopedia metadata", () => {
     const page = await readWikiPageWithFrontmatter("empty-author");
     expect(page).not.toBeNull();
     expect(page!.frontmatter.authors).toEqual(["anonymous"]);
+  });
+
+  it("accepts optional tags from request body", async () => {
+    const res = await callPost({
+      slug: "tagged-page",
+      content: "# Tagged Page\n\nContent with tags.",
+      tags: ["rust", "agent"],
+    });
+    expect(res.status).toBe(201);
+
+    const page = await readWikiPageWithFrontmatter("tagged-page");
+    expect(page).not.toBeNull();
+    expect(page!.frontmatter.tags).toEqual(["rust", "agent"]);
+  });
+
+  it("ignores non-string-array tags and defaults to empty", async () => {
+    const res = await callPost({
+      slug: "bad-tags",
+      content: "# Bad Tags\n\nContent.",
+      tags: [1, 2, 3],
+    });
+    expect(res.status).toBe(201);
+
+    const page = await readWikiPageWithFrontmatter("bad-tags");
+    expect(page).not.toBeNull();
+    expect(page!.frontmatter.tags).toEqual([]);
   });
 
   it("pages created via POST do not trigger unmigrated-page lint", async () => {

@@ -58,10 +58,18 @@ export async function POST(req: Request) {
       body && typeof body === "object" && "author" in body
         ? (body as { author: unknown }).author
         : undefined;
+    const tags =
+      body && typeof body === "object" && "tags" in body
+        ? (body as { tags: unknown }).tags
+        : undefined;
     const authorStr =
       typeof author === "string" && author.trim().length > 0
         ? author.trim()
         : undefined;
+    const tagsArr: string[] =
+      Array.isArray(tags) && tags.every((t: unknown) => typeof t === "string")
+        ? (tags as string[])
+        : [];
 
     if (typeof slug !== "string" || slug.trim().length === 0) {
       return NextResponse.json(
@@ -101,11 +109,17 @@ export async function POST(req: Request) {
     const expiry = expiryDate.toISOString().slice(0, 10);
 
     const frontmatter: Frontmatter = {
+      title,
       created: today,
+      updated: today,
       confidence: 0.5,
-      authors: [authorStr ?? "anonymous"],
-      contributors: [],
       expiry,
+      authors: [authorStr ?? "anonymous"],
+      valid_from: today,
+      disputed: false,
+      contributors: [],
+      aliases: [],
+      tags: tagsArr,
       sources: [],
     };
     const fullContent = serializeFrontmatter(frontmatter, content);
