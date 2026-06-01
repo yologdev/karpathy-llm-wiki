@@ -505,4 +505,26 @@ describe("PATCH /api/wiki/[slug] — metadata updates", () => {
     expect(fm.aliases).toEqual(["multi-alias"]);
     expect(fm.supersedes).toBe("old-page");
   });
+
+  it("clears a field when null is sent", async () => {
+    await seedPage("patch-clear", {
+      confidence: 0.7,
+      expiry: "2099-06-01",
+      supersedes: "old-slug",
+    });
+
+    const res = await callPatch("patch-clear", {
+      metadata: { confidence: null, expiry: null, supersedes: null },
+    });
+    expect(res.status).toBe(200);
+
+    const page = await readWikiPageWithFrontmatter("patch-clear");
+    expect(page).not.toBeNull();
+    // null values should remove the key from frontmatter
+    expect(page!.frontmatter.confidence).toBeUndefined();
+    expect(page!.frontmatter.expiry).toBeUndefined();
+    expect(page!.frontmatter.supersedes).toBeUndefined();
+    // Other fields preserved
+    expect(page!.frontmatter.authors).toEqual(["original-author"]);
+  });
 });

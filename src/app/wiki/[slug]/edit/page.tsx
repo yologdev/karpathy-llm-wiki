@@ -27,6 +27,18 @@ export default async function EditWikiPage({ params }: EditPageProps) {
     );
   }
 
+  // Extract the 7 patchable metadata fields from frontmatter for the editor.
+  const fm = page.frontmatter;
+  const initialMetadata = {
+    confidence: typeof fm.confidence === "number" ? fm.confidence : null,
+    disputed: fm.disputed === true,
+    tags: Array.isArray(fm.tags) ? (fm.tags as string[]) : [],
+    aliases: Array.isArray(fm.aliases) ? (fm.aliases as string[]) : [],
+    expiry: typeof fm.expiry === "string" ? fm.expiry : "",
+    valid_from: typeof fm.valid_from === "string" ? fm.valid_from : "",
+    supersedes: typeof fm.supersedes === "string" ? fm.supersedes : "",
+  };
+
   return (
     <main className="mx-auto max-w-3xl px-6 py-12">
       <Link
@@ -38,7 +50,11 @@ export default async function EditWikiPage({ params }: EditPageProps) {
       <h1 className="mt-6 text-3xl font-bold tracking-tight">
         Editing: {page.title}
       </h1>
-      <WikiEditor slug={slug} initialContent={page.body} />
+      <WikiEditor
+        slug={slug}
+        initialContent={page.body}
+        initialMetadata={initialMetadata}
+      />
     </main>
   );
 }

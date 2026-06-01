@@ -63,11 +63,16 @@ export async function patchMetadata(
     throw err;
   }
 
-  // Filter to only patchable keys (silently ignore unknown keys).
+  // Separate patchable keys into values to set and keys to clear (null).
   const patch: Frontmatter = {};
+  const clearKeys: string[] = [];
   for (const key of Object.keys(metadata)) {
     if (PATCHABLE_KEYS.has(key)) {
-      patch[key] = metadata[key] as Frontmatter[string];
+      if (metadata[key] === null || metadata[key] === undefined) {
+        clearKeys.push(key);
+      } else {
+        patch[key] = metadata[key] as Frontmatter[string];
+      }
     }
   }
 
@@ -80,12 +85,16 @@ export async function patchMetadata(
   }
 
   // Merge: existing frontmatter + patch + bump updated.
+  // Keys sent as null are removed (allows clearing fields).
   const today = new Date().toISOString().slice(0, 10);
   const mergedFrontmatter: Frontmatter = {
     ...existing.frontmatter,
     ...patch,
     updated: today,
   };
+  for (const key of clearKeys) {
+    delete mergedFrontmatter[key];
+  }
 
   // Append author to contributors (deduplicated).
   const authorStr =
