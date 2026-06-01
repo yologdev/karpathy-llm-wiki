@@ -11,6 +11,7 @@
     "list_pages",
     "create_page",
     "update_page",
+    "update_metadata",
     "delete_page",
     "ingest_url",
     "batch_ingest_urls",

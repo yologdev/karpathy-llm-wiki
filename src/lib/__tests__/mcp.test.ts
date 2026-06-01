@@ -8,6 +8,7 @@ import {
   handleListPages,
   handleCreatePage,
   handleUpdatePage,
+  handleUpdateMetadata,
   handleDeletePage,
   handleIngestUrl,
   handleBatchIngest,
@@ -887,6 +888,161 @@ describe("seed_agent tool", () => {
     );
     expect(pageContent).toContain("Version 2 content.");
     expect(pageContent).not.toContain("Version 1 content.");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// update_metadata tests
+// ---------------------------------------------------------------------------
+
+describe("update_metadata", () => {
+  it("updates frontmatter without changing body", async () => {
+    await handleCreatePage({
+      slug: "meta-test",
+      content: "# Meta Test\n\nOriginal body.",
+    });
+
+    const result = await handleUpdateMetadata({
+      slug: "meta-test",
+      metadata: { confidence: 0.9, tags: ["ai", "test"] },
+    });
+
+    expect(result.slug).toBe("meta-test");
+    expect(result.updated).toBe(true);
+
+    // Verify frontmatter was updated
+    const filePath = path.join(tmpDir, "wiki", "meta-test.md");
+    const fileContent = await fs.readFile(filePath, "utf-8");
+    expect(fileContent).toContain("confidence: 0.9");
+    expect(fileContent).toContain("ai");
+    expect(fileContent).toContain("test");
+
+    // Verify body is unchanged
+    expect(fileContent).toContain("Original body.");
+  });
+
+  it("rejects lifecycle-managed fields", async () => {
+    await handleCreatePage({
+      slug: "meta-lifecycle",
+      content: "# Lifecycle\n\nBody.",
+    });
+
+    await expect(
+      handleUpdateMetadata({
+        slug: "meta-lifecycle",
+        metadata: { created: "2020-01-01" },
+      }),
+    ).rejects.toThrow("cannot update lifecycle-managed fields via PATCH: created");
+
+    await expect(
+      handleUpdateMetadata({
+        slug: "meta-lifecycle",
+        metadata: { authors: ["hacker"] },
+      }),
+    ).rejects.toThrow("cannot update lifecycle-managed fields via PATCH: authors");
+
+    await expect(
+      handleUpdateMetadata({
+        slug: "meta-lifecycle",
+        metadata: { sources: ["http://example.com"] },
+      }),
+    ).rejects.toThrow("cannot update lifecycle-managed fields via PATCH: sources");
+  });
+
+  it("throws on non-existent page", async () => {
+    await expect(
+      handleUpdateMetadata({
+        slug: "does-not-exist",
+        metadata: { confidence: 0.5 },
+      }),
+    ).rejects.toThrow("page not found: does-not-exist");
+  });
+
+  it("silently ignores unknown fields", async () => {
+    await handleCreatePage({
+      slug: "meta-unknown",
+      content: "# Unknown\n\nBody.",
+    });
+
+    const result = await handleUpdateMetadata({
+      slug: "meta-unknown",
+      metadata: { confidence: 0.7, random_field: "ignored" },
+    });
+
+    expect(result.updated).toBe(true);
+
+    const filePath = path.join(tmpDir, "wiki", "meta-unknown.md");
+    const fileContent = await fs.readFile(filePath, "utf-8");
+    expect(fileContent).toContain("confidence: 0.7");
+    expect(fileContent).not.toContain("random_field");
+  });
+
+  it("tracks contributor attribution", async () => {
+    await handleCreatePage({
+      slug: "meta-contrib",
+      content: "# Contrib\n\nBody.",
+      author: "alice",
+    });
+
+    const result = await handleUpdateMetadata({
+      slug: "meta-contrib",
+      metadata: { confidence: 0.8 },
+      author: "bob",
+    });
+
+    expect(result.updated).toBe(true);
+
+    const filePath = path.join(tmpDir, "wiki", "meta-contrib.md");
+    const fileContent = await fs.readFile(filePath, "utf-8");
+    const parsed = parseFrontmatter(fileContent);
+    const contributors = parsed.data.contributors as string[];
+    expect(contributors).toContain("bob");
+  });
+
+  it("bumps updated timestamp", async () => {
+    await writeTestPage(
+      "meta-updated",
+      "---\ntitle: Meta Updated\ncreated: '2025-01-01'\nupdated: '2025-01-01'\n---\n# Meta Updated\n\nBody.",
+    );
+
+    await handleUpdateMetadata({
+      slug: "meta-updated",
+      metadata: { disputed: true },
+    });
+
+    const filePath = path.join(tmpDir, "wiki", "meta-updated.md");
+    const fileContent = await fs.readFile(filePath, "utf-8");
+    const today = new Date().toISOString().slice(0, 10);
+    expect(fileContent).toContain(`updated: ${today}`);
+    expect(fileContent).toContain("disputed: true");
+  });
+
+  it("updates multiple patchable fields at once", async () => {
+    await handleCreatePage({
+      slug: "meta-multi",
+      content: "# Multi\n\nBody.",
+    });
+
+    await handleUpdateMetadata({
+      slug: "meta-multi",
+      metadata: {
+        confidence: 0.6,
+        disputed: true,
+        aliases: ["multi-alias"],
+        expiry: "2026-12-31",
+        valid_from: "2025-01-01",
+        supersedes: "old-multi",
+      },
+    });
+
+    const filePath = path.join(tmpDir, "wiki", "meta-multi.md");
+    const fileContent = await fs.readFile(filePath, "utf-8");
+    expect(fileContent).toContain("confidence: 0.6");
+    expect(fileContent).toContain("disputed: true");
+    expect(fileContent).toContain("multi-alias");
+    expect(fileContent).toContain("expiry: 2026-12-31");
+    expect(fileContent).toContain("valid_from: 2025-01-01");
+    expect(fileContent).toContain("supersedes: old-multi");
   });
 });
 

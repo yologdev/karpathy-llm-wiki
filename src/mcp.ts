@@ -8,6 +8,7 @@
  *   list_pages     — List all wiki pages with optional sort/limit
  *   create_page    — Create a new wiki page
  *   update_page    — Update an existing wiki page
+ *   update_metadata — Update page frontmatter without changing body
  *   delete_page    — Delete a wiki page by slug
  *   ingest_url     — Ingest a URL into the wiki (fetch → chunk → summarize → write)
  *   batch_ingest_urls — Batch ingest multiple URLs with upfront validation
@@ -58,6 +59,7 @@ import { query, saveAnswerToWiki, type QueryFormat } from "./lib/query";
 import { isUrl } from "./lib/fetch";
 import { MAX_BATCH_URLS } from "./lib/constants";
 import { getErrorMessage } from "./lib/errors";
+import { patchMetadata, type PatchMetadataResult } from "./lib/patch-metadata";
 import { getAgent, listAgents, updateAgent, deleteAgent, seedAgent } from "./lib/agents";
 import { listContributors, buildContributorProfile } from "./lib/contributors";
 import type { SeedAgentSection, UpdateAgentOptions } from "./lib/agents";
@@ -274,6 +276,22 @@ export async function handleUpdatePage(args: {
   });
 
   return { slug: args.slug, title, updated: true };
+}
+
+// ---------------------------------------------------------------------------
+// Update metadata (frontmatter-only) handler
+// ---------------------------------------------------------------------------
+
+export async function handleUpdateMetadata(args: {
+  slug: string;
+  metadata: Record<string, unknown>;
+  author?: string;
+}): Promise<PatchMetadataResult> {
+  return patchMetadata({
+    slug: args.slug,
+    metadata: args.metadata,
+    author: args.author,
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -1160,6 +1178,52 @@ export function createMcpServer(): McpServer {
   }, async (args) => {
     try {
       const result = await handleUpdatePage(args);
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: JSON.stringify(result, null, 2),
+          },
+        ],
+      };
+    } catch (err) {
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: (err as Error).message,
+          },
+        ],
+        isError: true,
+      };
+    }
+  });
+
+  // update_metadata — Update page frontmatter without changing body
+  server.registerTool("update_metadata", {
+    description:
+      "Update a wiki page's frontmatter metadata (confidence, disputed, tags, aliases, expiry, valid_from, supersedes) without modifying the page body. Lifecycle-managed fields (created, authors, sources) are rejected.",
+    inputSchema: {
+      slug: z.string().describe("Slug of the page to update"),
+      metadata: z
+        .record(z.string(), z.unknown())
+        .describe(
+          "Object of metadata fields to update. Allowed: confidence, disputed, tags, aliases, expiry, valid_from, supersedes. Unknown keys are ignored.",
+        ),
+      author: z
+        .string()
+        .optional()
+        .describe("Author handle for contributor attribution"),
+    },
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+  }, async (args) => {
+    try {
+      const result = await handleUpdateMetadata(args);
       return {
         content: [
           {
