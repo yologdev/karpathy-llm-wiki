@@ -90,7 +90,8 @@ temporal knowledge management.
 
 **Note:** The `authors` default is `"system"` (not `"yoyo"`) because the
 ingest operation is performed by the system on behalf of the user. Phase 4
-(agent identity) will introduce proper agent attribution.
+(agent identity) introduced proper agent attribution via the agent registry,
+`seedAgent()`, and MCP tools (`seed-agent`, `update-agent`, etc.).
 
 **Sources format:** The `sources` field is a JSON-encoded string (since the
 frontmatter parser rejects nested YAML objects) containing an array of
@@ -680,8 +681,8 @@ sessions should pick from this list:
 
 Phase 1 (schema evolution) and Phase 2 (talk pages + attribution) are complete.
 Phase 3 (X ingestion loop) library and API work is complete — `ingestXMention()`
-and `POST /api/ingest/x-mention` are implemented. The remaining pieces are the
-MCP tool for x-mention ingest and the GitHub Actions polling workflow (#21),
+and `POST /api/ingest/x-mention` are implemented, along with the MCP tool
+`ingest_x_mention`. The remaining piece is the GitHub Actions polling workflow (#21),
 which is blocked on deployment architecture.
 Phase 4 (agent identity as yopedia pages) is **substantially complete** — the agent
 registry, context API, `seedAgent()` utility, `agent-identity` page type, scoped
