@@ -18,6 +18,7 @@
     "@ai-sdk/anthropic": "^3.0.66",
     "@ai-sdk/google": "^3.0.60",
     "@ai-sdk/openai": "^3.0.50",
+    "@clerk/nextjs": "^7.4.2",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "@mozilla/readability": "^0.6.0",
     "@tailwindcss/typography": "^0.5.19",

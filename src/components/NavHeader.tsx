@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState, useEffect } from "react";
+import { Show, SignInButton, SignUpButton, UserButton } from "@clerk/nextjs";
 import { GlobalSearch } from "./GlobalSearch";
 import { ThemeToggle } from "./ThemeToggle";
 
@@ -130,6 +131,26 @@ export function NavHeader() {
           <li>
             <ThemeToggle />
           </li>
+
+          {/* Auth controls */}
+          <li className="mx-1 h-4 w-px bg-foreground/10" aria-hidden="true" />
+          <li className="flex items-center gap-2">
+            <Show when="signed-out">
+              <SignInButton mode="modal">
+                <button className="rounded-md px-3 py-1.5 text-sm text-foreground/60 hover:text-foreground hover:bg-foreground/5 transition-colors">
+                  Sign in
+                </button>
+              </SignInButton>
+              <SignUpButton mode="modal">
+                <button className="rounded-md bg-foreground px-3 py-1.5 text-sm font-medium text-background hover:opacity-90 transition-opacity">
+                  Sign up
+                </button>
+              </SignUpButton>
+            </Show>
+            <Show when="signed-in">
+              <UserButton />
+            </Show>
+          </li>
         </ul>
 
         {/* Hamburger button (mobile only) */}
@@ -216,6 +237,20 @@ export function NavHeader() {
           <div className="px-6 py-2 flex items-center gap-2 text-sm text-foreground/40">
             <ThemeToggle />
             <span>Theme</span>
+          </div>
+          <div className="mx-4 my-1 border-t border-foreground/10" />
+          <div className="px-6 py-2 flex items-center gap-3 text-sm">
+            <Show when="signed-out">
+              <SignInButton mode="modal">
+                <button className="text-foreground/60 hover:text-foreground">Sign in</button>
+              </SignInButton>
+              <SignUpButton mode="modal">
+                <button className="font-medium text-foreground">Sign up</button>
+              </SignUpButton>
+            </Show>
+            <Show when="signed-in">
+              <UserButton />
+            </Show>
           </div>
         </div>
       )}

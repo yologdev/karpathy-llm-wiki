@@ -16,3 +16,4 @@ timelapse.mp4
 generate_video.py
 .yoyo/scripts/__pycache__/
 journal-site/dist/
+.dev.vars
