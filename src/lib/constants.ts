@@ -95,6 +95,12 @@ export const LLM_MAX_OUTPUT_TOKENS = 4096;
  */
 export const INGEST_MAX_OUTPUT_TOKENS = 8192;
 
+/**
+ * Output-token cap for query answers. Higher than the default so multi-section
+ * answers, tables, and longer syntheses aren't truncated mid-response.
+ */
+export const QUERY_MAX_OUTPUT_TOKENS = 8192;
+
 // ---- Graph ----------------------------------------------------------------
 
 /** Default canvas height (px) for the wiki graph visualisation. */

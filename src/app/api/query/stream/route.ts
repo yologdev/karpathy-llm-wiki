@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { hasLLMKey, callLLMStream } from "@/lib/llm";
+import { QUERY_MAX_OUTPUT_TOKENS } from "@/lib/constants";
 import { listWikiPages } from "@/lib/wiki";
 import {
   selectPagesForQuery,
@@ -106,7 +107,9 @@ export async function POST(request: NextRequest) {
     );
 
     // Stream the LLM response
-    const result = callLLMStream(systemPrompt, trimmedQuestion);
+    const result = callLLMStream(systemPrompt, trimmedQuestion, {
+      maxOutputTokens: QUERY_MAX_OUTPUT_TOKENS,
+    });
 
     return result.toTextStreamResponse({
       headers: {

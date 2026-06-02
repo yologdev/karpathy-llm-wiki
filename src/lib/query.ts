@@ -1,4 +1,5 @@
 import { callLLM, hasLLMKey } from "./llm";
+import { QUERY_MAX_OUTPUT_TOKENS } from "./constants";
 import {
   listWikiPages,
   writeWikiPageWithSideEffects,
@@ -222,7 +223,9 @@ export async function query(
       format,
     );
 
-    const answer = await callLLM(systemPrompt, question);
+    const answer = await callLLM(systemPrompt, question, {
+      maxOutputTokens: QUERY_MAX_OUTPUT_TOKENS,
+    });
 
     // All slugs in the wiki are valid citation targets
     const allSlugs = entries.map((e) => e.slug);
