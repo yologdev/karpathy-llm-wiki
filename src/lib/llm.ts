@@ -26,6 +26,10 @@ export type { ProviderInfo } from "./types";
 // Retry helpers
 // ---------------------------------------------------------------------------
 
+/** DeepSeek's OpenAI-compatible API base URL. DeepSeek speaks the OpenAI
+ *  wire format, so we reuse the `@ai-sdk/openai` provider pointed here. */
+const DEEPSEEK_BASE_URL = "https://api.deepseek.com";
+
 /** HTTP status codes that indicate a transient / retryable failure. */
 const RETRYABLE_STATUS_CODES = new Set([429, 500, 502, 503, 504]);
 
@@ -165,6 +169,7 @@ export async function retryWithBackoff<T>(
  *   - Anthropic: ANTHROPIC_API_KEY
  *   - OpenAI:    OPENAI_API_KEY
  *   - Google:    GOOGLE_GENERATIVE_AI_API_KEY
+ *   - DeepSeek:  DEEPSEEK_API_KEY (OpenAI-compatible endpoint)
  *   - Ollama:    OLLAMA_BASE_URL or OLLAMA_MODEL (Ollama is typically keyless;
  *                presence of either env var signals intent to use a local
  *                Ollama server)
@@ -220,8 +225,9 @@ function getModel() {
   if (!creds.provider) {
     throw new Error(
       "No LLM API key found. Set one of ANTHROPIC_API_KEY, OPENAI_API_KEY, " +
-        "GOOGLE_GENERATIVE_AI_API_KEY, or OLLAMA_BASE_URL / OLLAMA_MODEL in " +
-        "your environment, or configure a provider in Settings.",
+        "GOOGLE_GENERATIVE_AI_API_KEY, DEEPSEEK_API_KEY, or " +
+        "OLLAMA_BASE_URL / OLLAMA_MODEL in your environment, or configure a " +
+        "provider in Settings.",
     );
   }
 
@@ -235,6 +241,16 @@ function getModel() {
     case "openai": {
       const openai = createOpenAI({ apiKey: creds.apiKey! });
       return openai(model);
+    }
+    case "deepseek": {
+      // DeepSeek exposes an OpenAI-compatible endpoint, so we reuse the
+      // OpenAI provider with a custom baseURL rather than adding a new
+      // dependency. Default model is deepseek-v4-flash (see DEFAULT_MODELS).
+      const deepseek = createOpenAI({
+        apiKey: creds.apiKey!,
+        baseURL: DEEPSEEK_BASE_URL,
+      });
+      return deepseek(model);
     }
     case "google": {
       const google = createGoogleGenerativeAI({ apiKey: creds.apiKey! });

@@ -35,10 +35,12 @@ const ENV_KEYS = [
   "ANTHROPIC_API_KEY",
   "OPENAI_API_KEY",
   "GOOGLE_GENERATIVE_AI_API_KEY",
+  "DEEPSEEK_API_KEY",
   "OLLAMA_BASE_URL",
   "OLLAMA_MODEL",
   "LLM_MODEL",
   "EMBEDDING_MODEL",
+  "EMBEDDING_PROVIDER",
   "YOPEDIA_READONLY",
   "STORAGE_PROVIDER",
 ];
@@ -56,9 +58,11 @@ beforeEach(async () => {
   delete process.env.ANTHROPIC_API_KEY;
   delete process.env.OPENAI_API_KEY;
   delete process.env.GOOGLE_GENERATIVE_AI_API_KEY;
+  delete process.env.DEEPSEEK_API_KEY;
   delete process.env.OLLAMA_BASE_URL;
   delete process.env.OLLAMA_MODEL;
   delete process.env.LLM_MODEL;
+  delete process.env.EMBEDDING_PROVIDER;
 
   // Point config store at the temp dir
   process.env.DATA_DIR = tmpDir;
@@ -328,6 +332,25 @@ describe("getResolvedCredentials", () => {
     expect(creds.provider).toBe("ollama");
     expect(creds.ollamaBaseUrl).toBe("http://myhost:11434/api");
     expect(creds.apiKey).toBeNull();
+  });
+
+  it("detects deepseek from DEEPSEEK_API_KEY with its default model", () => {
+    process.env.DEEPSEEK_API_KEY = "sk-ds-key";
+
+    const creds = getResolvedCredentials();
+    expect(creds.provider).toBe("deepseek");
+    expect(creds.apiKey).toBe("sk-ds-key");
+    // Falls back to DEFAULT_MODELS["deepseek"] when no override is set.
+    expect(creds.model).toBe("deepseek-v4-flash");
+  });
+
+  it("honors LLM_MODEL override for deepseek (e.g. v4-pro)", () => {
+    process.env.DEEPSEEK_API_KEY = "sk-ds-key";
+    process.env.LLM_MODEL = "deepseek-v4-pro";
+
+    const creds = getResolvedCredentials();
+    expect(creds.provider).toBe("deepseek");
+    expect(creds.model).toBe("deepseek-v4-pro");
   });
 });
 

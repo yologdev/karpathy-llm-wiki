@@ -44,5 +44,10 @@
       "binding": "YOPEDIA_VECTORIZE",
       "index_name": "yopedia-embeddings"
     }
-  ]
+  ],
+
+  // --- Workers AI: serverless embeddings (e.g. @cf/baai/bge-m3 for CJK) ---
+  "ai": {
+    "binding": "AI"
+  }
 }

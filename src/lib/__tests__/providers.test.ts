@@ -11,16 +11,17 @@ import {
 // ---------------------------------------------------------------------------
 
 describe("PROVIDER_INFO", () => {
-  it("has entries for anthropic, openai, google, ollama", () => {
+  it("has entries for anthropic, openai, google, deepseek, ollama", () => {
     const values = PROVIDER_INFO.map((p) => p.value);
     expect(values).toContain("anthropic");
     expect(values).toContain("openai");
     expect(values).toContain("google");
+    expect(values).toContain("deepseek");
     expect(values).toContain("ollama");
   });
 
-  it("has exactly 4 providers", () => {
-    expect(PROVIDER_INFO).toHaveLength(4);
+  it("has exactly 5 providers", () => {
+    expect(PROVIDER_INFO).toHaveLength(5);
   });
 
   it("each entry has value and label properties", () => {
@@ -45,12 +46,13 @@ describe("PROVIDER_INFO", () => {
 // ---------------------------------------------------------------------------
 
 describe("VALID_PROVIDERS", () => {
-  it("is a Set containing exactly the 4 provider values", () => {
+  it("is a Set containing exactly the 5 provider values", () => {
     expect(VALID_PROVIDERS).toBeInstanceOf(Set);
-    expect(VALID_PROVIDERS.size).toBe(4);
+    expect(VALID_PROVIDERS.size).toBe(5);
     expect(VALID_PROVIDERS.has("anthropic")).toBe(true);
     expect(VALID_PROVIDERS.has("openai")).toBe(true);
     expect(VALID_PROVIDERS.has("google")).toBe(true);
+    expect(VALID_PROVIDERS.has("deepseek")).toBe(true);
     expect(VALID_PROVIDERS.has("ollama")).toBe(true);
   });
 
@@ -79,8 +81,12 @@ describe("DEFAULT_MODELS", () => {
     }
   });
 
-  it("has exactly 4 entries", () => {
-    expect(Object.keys(DEFAULT_MODELS)).toHaveLength(4);
+  it("has exactly 5 entries", () => {
+    expect(Object.keys(DEFAULT_MODELS)).toHaveLength(5);
+  });
+
+  it("deepseek default model is deepseek-v4-flash", () => {
+    expect(DEFAULT_MODELS.deepseek).toBe("deepseek-v4-flash");
   });
 
   it("anthropic default model contains claude", () => {
@@ -111,6 +117,10 @@ describe("providerLabel", () => {
 
   it("returns 'Ollama' for 'ollama'", () => {
     expect(providerLabel("ollama")).toBe("Ollama");
+  });
+
+  it("returns 'DeepSeek' for 'deepseek'", () => {
+    expect(providerLabel("deepseek")).toBe("DeepSeek");
   });
 
   it("returns raw string for unknown provider", () => {

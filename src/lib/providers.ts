@@ -13,6 +13,7 @@ export const PROVIDER_INFO = [
   { value: "anthropic", label: "Anthropic" },
   { value: "openai", label: "OpenAI" },
   { value: "google", label: "Google" },
+  { value: "deepseek", label: "DeepSeek" },
   { value: "ollama", label: "Ollama" },
 ] as const;
 
@@ -33,6 +34,7 @@ export const DEFAULT_MODELS: Record<string, string> = {
   anthropic: "claude-sonnet-4-20250514",
   openai: "gpt-4o",
   google: "gemini-2.0-flash",
+  deepseek: "deepseek-v4-flash",
   ollama: "llama3.2",
 };
 

@@ -29,6 +29,15 @@ vi.mock("../wiki", async () => {
   };
 });
 
+// Mock the Cloudflare context. Default throws (no binding) so the suite
+// behaves like a non-Workers runtime; Workers-AI tests opt in by setting a
+// return value. The default is restored in beforeEach (see below).
+vi.mock("@opennextjs/cloudflare", () => ({
+  getCloudflareContext: vi.fn(() => {
+    throw new Error("no cloudflare context");
+  }),
+}));
+
 import { embed, embedMany } from "ai";
 import {
   cosineSimilarity,
@@ -48,6 +57,7 @@ import {
 } from "../embeddings";
 import { loadConfigSync } from "../config";
 import { listWikiPages, readWikiPage } from "../wiki";
+import { getCloudflareContext } from "@opennextjs/cloudflare";
 
 // Cast for convenience
 const mockLoadConfigSync = loadConfigSync as ReturnType<typeof vi.fn>;
@@ -62,9 +72,11 @@ const ENV_KEYS = [
   "ANTHROPIC_API_KEY",
   "OPENAI_API_KEY",
   "GOOGLE_GENERATIVE_AI_API_KEY",
+  "DEEPSEEK_API_KEY",
   "OLLAMA_BASE_URL",
   "OLLAMA_MODEL",
   "EMBEDDING_MODEL",
+  "EMBEDDING_PROVIDER",
   "WIKI_DIR",
 ] as const;
 
@@ -78,6 +90,11 @@ beforeEach(() => {
   vi.clearAllMocks();
   // Default: config returns empty (no config file)
   mockLoadConfigSync.mockReturnValue({});
+  // Default: no Cloudflare context (non-Workers runtime). Workers-AI tests
+  // override this. Re-set each test since clearAllMocks keeps implementations.
+  mockGetCfContext.mockImplementation(() => {
+    throw new Error("no cloudflare context");
+  });
 });
 
 afterEach(() => {
@@ -93,6 +110,14 @@ afterEach(() => {
 // Cast for convenience
 const mockEmbed = embed as ReturnType<typeof vi.fn>;
 const mockEmbedMany = embedMany as ReturnType<typeof vi.fn>;
+const mockGetCfContext = getCloudflareContext as ReturnType<typeof vi.fn>;
+
+/** Build a mock Workers AI binding whose run() returns the given vectors. */
+function mockWorkersAi(vectors: number[][]) {
+  const run = vi.fn().mockResolvedValue({ shape: [vectors.length], data: vectors });
+  mockGetCfContext.mockReturnValue({ env: { AI: { run } } });
+  return run;
+}
 
 // ---------------------------------------------------------------------------
 // cosineSimilarity — pure math
@@ -1116,5 +1141,74 @@ describe("rebuildVectorStore", () => {
     expect(result.total).toBe(2);
     expect(result.embedded).toBe(1);
     expect(result.skipped).toBe(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Workers AI embeddings (@cf/baai/bge-m3) — decoupled from the LLM provider
+// ---------------------------------------------------------------------------
+
+describe("Workers AI embeddings (bge-m3)", () => {
+  it("auto-selects workers-ai when the AI binding is present", () => {
+    mockWorkersAi([[0.1, 0.2]]);
+    // No LLM provider env / config set — binding alone drives selection.
+    expect(getEmbeddingModelName()).toBe("@cf/baai/bge-m3");
+    expect(hasEmbeddingSupport()).toBe(true);
+    // It is not an AI SDK model — generation happens via the binding.
+    expect(getEmbeddingModel()).toBeNull();
+  });
+
+  it("embedText calls the binding with @cf/baai/bge-m3 and returns the vector", async () => {
+    const run = mockWorkersAi([[0.1, 0.2, 0.3]]);
+
+    const vec = await embedText("你好世界");
+
+    expect(vec).toEqual([0.1, 0.2, 0.3]);
+    expect(run).toHaveBeenCalledWith("@cf/baai/bge-m3", { text: ["你好世界"] });
+    // The AI SDK embed() path must not be used for workers-ai.
+    expect(mockEmbed).not.toHaveBeenCalled();
+  });
+
+  it("embedTexts batches all inputs in a single binding call", async () => {
+    const run = mockWorkersAi([
+      [0.1, 0.2],
+      [0.3, 0.4],
+    ]);
+
+    const vecs = await embedTexts(["a", "b"]);
+
+    expect(vecs).toEqual([
+      [0.1, 0.2],
+      [0.3, 0.4],
+    ]);
+    expect(run).toHaveBeenCalledWith("@cf/baai/bge-m3", { text: ["a", "b"] });
+    expect(mockEmbedMany).not.toHaveBeenCalled();
+  });
+
+  it("explicit EMBEDDING_PROVIDER=workers-ai wins over an LLM provider", () => {
+    // An embedding-capable LLM provider is configured...
+    process.env.OPENAI_API_KEY = "sk-openai";
+    // ...but the explicit override forces Workers AI.
+    process.env.EMBEDDING_PROVIDER = "workers-ai";
+
+    expect(getEmbeddingModelName()).toBe("@cf/baai/bge-m3");
+  });
+
+  it("honors EMBEDDING_MODEL override for the workers-ai model name", async () => {
+    process.env.EMBEDDING_PROVIDER = "workers-ai";
+    process.env.EMBEDDING_MODEL = "@cf/baai/bge-large-en-v1.5";
+    const run = mockWorkersAi([[0.5]]);
+
+    await embedText("hi");
+
+    expect(run).toHaveBeenCalledWith("@cf/baai/bge-large-en-v1.5", {
+      text: ["hi"],
+    });
+  });
+
+  it("returns null from embedText when the binding is unavailable", async () => {
+    // Force the workers-ai provider but leave the CF context throwing.
+    process.env.EMBEDDING_PROVIDER = "workers-ai";
+    expect(await embedText("hi")).toBeNull();
   });
 });
