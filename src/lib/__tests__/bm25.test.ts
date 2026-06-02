@@ -62,6 +62,42 @@ describe("tokenize", () => {
     expect(tokens).toContain("section");
     expect(tokens).toContain("100");
   });
+
+  // --- CJK (Chinese) support ---
+
+  it("tokenizes Chinese into word tokens (not dropped)", () => {
+    const tokens = tokenize("中文分词很重要");
+    // ICU word segmentation produces real words...
+    expect(tokens).toContain("中文");
+    expect(tokens).toContain("分词");
+    expect(tokens).toContain("重要");
+    // ...and it is NOT empty (the old tokenizer dropped all CJK).
+    expect(tokens.length).toBeGreaterThan(0);
+  });
+
+  it("emits CJK bigrams as a recall safety net", () => {
+    const tokens = tokenize("知识库");
+    // Bigrams cover the run even if segmentation splits it.
+    expect(tokens).toContain("知识");
+    expect(tokens).toContain("识库");
+  });
+
+  it("indexes a single CJK character as a unigram", () => {
+    expect(tokenize("茶")).toContain("茶");
+  });
+
+  it("a Chinese query shares tokens with matching content (index==query tokenizer)", () => {
+    const docTokens = new Set(tokenize("知识库是共享的第二大脑"));
+    const queryTokens = tokenize("知识库");
+    // At least one query token must appear in the document's tokens.
+    expect(queryTokens.some((t) => docTokens.has(t))).toBe(true);
+  });
+
+  it("handles mixed Latin + Chinese", () => {
+    const tokens = tokenize("DeepSeek 大语言模型");
+    expect(tokens).toContain("deepseek");
+    expect(tokens).toContain("语言");
+  });
 });
 
 // ---------------------------------------------------------------------------

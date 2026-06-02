@@ -26,14 +26,74 @@ const STOP_WORDS = new Set([
 // ---------------------------------------------------------------------------
 
 /**
- * Tokenize a string into lowercase words, filtering out stop words and
- * very short tokens.
+ * Matches runs of CJK characters (Han incl. Ext-A + compatibility, Japanese
+ * kana, Korean hangul). The Latin tokenizer drops these (they aren't a-z0-9),
+ * so they need a dedicated path or Chinese/Japanese/Korean text indexes nothing.
+ */
+const CJK_RUN_RE =
+  /[\u3400-\u9fff\uf900-\ufaff\u3040-\u30ff\uac00-\ud7af]+/g;
+
+/**
+ * Word segmenter for CJK, created once (construction is relatively costly).
+ * `Intl.Segmenter` with Chinese word granularity uses the runtime's ICU
+ * dictionary — the same dictionary-based approach as jieba, but with zero
+ * dependency/bundle cost. Verified available on both Node and Cloudflare
+ * workerd. `null` only on a runtime without Intl.Segmenter (then bigrams alone
+ * carry CJK recall).
+ */
+const cjkSegmenter: Intl.Segmenter | null =
+  typeof Intl !== "undefined" && typeof Intl.Segmenter === "function"
+    ? new Intl.Segmenter("zh", { granularity: "word" })
+    : null;
+
+/**
+ * Tokenize CJK runs into search terms. Emits two complementary token kinds:
+ *   1. **Word tokens** from `Intl.Segmenter` (jieba-class precision).
+ *   2. **Character bigrams** (and a unigram for a 1-char run) — a recall safety
+ *      net that matches substrings even when segmentation mis-splits an
+ *      out-of-vocabulary term (names, new jargon). Bigrams also make
+ *      single-character queries work against multi-char content.
+ */
+function tokenizeCJK(text: string): string[] {
+  const tokens: string[] = [];
+  const runs = text.match(CJK_RUN_RE);
+  if (!runs) return tokens;
+
+  for (const run of runs) {
+    if (cjkSegmenter) {
+      for (const seg of cjkSegmenter.segment(run)) {
+        if (seg.isWordLike) tokens.push(seg.segment);
+      }
+    }
+    const chars = [...run];
+    if (chars.length === 1) {
+      tokens.push(chars[0]);
+    } else {
+      for (let i = 0; i < chars.length - 1; i++) {
+        tokens.push(chars[i] + chars[i + 1]);
+      }
+    }
+  }
+  return tokens;
+}
+
+/**
+ * Tokenize a string into search terms.
+ *
+ * - **Latin/numeric**: lowercase, split on non-alphanumerics, drop stop words
+ *   and 1-char tokens (unchanged behavior).
+ * - **CJK**: word segmentation + character bigrams (see {@link tokenizeCJK}),
+ *   so Chinese/Japanese/Korean text is indexed instead of silently dropped.
+ *
+ * The same tokenizer runs at index time and query time, so tokens align.
  */
 export function tokenize(text: string): string[] {
-  return text
-    .toLowerCase()
+  const lower = text.toLowerCase();
+  const latin = lower
     .split(/[^a-z0-9]+/)
     .filter((w) => w.length >= 2 && !STOP_WORDS.has(w));
+  const cjk = tokenizeCJK(lower);
+  return latin.concat(cjk);
 }
 
 // ---------------------------------------------------------------------------
