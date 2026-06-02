@@ -44,6 +44,13 @@ export interface IngestResult {
   previewContent?: string;
   /** The original source URL, if the ingest was URL-based. */
   sourceUrl?: string;
+  /**
+   * True when this ingest matched an existing canonical page (same source URL
+   * or identical content) and was attached to it instead of re-synthesizing —
+   * no LLM/embedding tokens spent. The UI can say "added to your collection"
+   * rather than "created".
+   */
+  deduped?: boolean;
 }
 
 /** Result from a query against the wiki. */

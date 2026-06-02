@@ -23,6 +23,12 @@ import { slugify } from "./slugify";
 import { loadPageConventions } from "./schema";
 import { getRawDir } from "./config";
 import { resolveAlias } from "./alias-index";
+import {
+  resolveSourceUrl,
+  resolveContentHash,
+  updateSourceIndexForPage,
+} from "./source-index";
+import { contentHash } from "./embeddings";
 import { getStorage } from "./storage";
 import { logger } from "./logger";
 
@@ -114,6 +120,21 @@ export async function ingestUrl(
   url: string,
   options?: IngestOptions,
 ): Promise<IngestResult> {
+  // Dedup: if this URL is already a canonical page, attach the triggerer and
+  // skip the fetch + LLM + embedding entirely. Not for preview / commit-from-
+  // preview (those are explicit content workflows).
+  if (!options?.preview && !options?.generatedContent) {
+    const dupSlug = await resolveSourceUrl(url);
+    if (dupSlug) {
+      const result = await attachIngestTrigger(dupSlug, {
+        url,
+        type: options?.sourceType ?? "url",
+        triggeredBy: options?.triggeredBy,
+      });
+      if (result) return result;
+    }
+  }
+
   const { title, content: rawContent } = await fetchUrlContent(url);
   // Download images referenced in the fetched content to local storage
   const slug = slugify(title);
@@ -424,6 +445,96 @@ export interface IngestOptions {
 }
 
 /**
+ * Attach a new ingest trigger to an existing canonical page **without
+ * re-synthesizing** — the token-saving dedup path. Used when a source (same URL
+ * or identical content) was already ingested: append a provenance entry + the
+ * triggerer, bump `updated`, increment `source_count`, but skip the LLM and (the
+ * body is unchanged) any new embedding. Returns `null` if the page is missing
+ * (stale index) so the caller can fall through to a normal ingest.
+ */
+async function attachIngestTrigger(
+  slug: string,
+  source: {
+    url: string;
+    type: "url" | "text" | "x-mention" | "wiki-ref";
+    triggeredBy?: string;
+  },
+): Promise<IngestResult | null> {
+  const existing = await readWikiPageWithFrontmatter(slug);
+  if (!existing) return null; // index drifted — let the caller ingest normally
+
+  const frontmatter: Frontmatter = { ...existing.frontmatter };
+  frontmatter.updated = new Date().toISOString().slice(0, 10);
+
+  // Merge the new provenance entry into sources[] (update fetched/triggered_by
+  // if the same source already has an entry, else append).
+  const entry = buildSourceEntry(source.url, source.type, source.triggeredBy);
+  const existingSourcesRaw = existing.frontmatter.sources;
+  const sources = parseSources(
+    typeof existingSourcesRaw === "string"
+      ? existingSourcesRaw
+      : Array.isArray(existingSourcesRaw)
+        ? existingSourcesRaw
+        : undefined,
+  );
+  const matchIdx = sources.findIndex(
+    (s) => s.url === entry.url && s.type === entry.type,
+  );
+  if (matchIdx >= 0) {
+    sources[matchIdx] = {
+      ...sources[matchIdx],
+      fetched: entry.fetched,
+      triggered_by: entry.triggered_by,
+    };
+  } else {
+    sources.push(entry);
+  }
+  frontmatter.sources = serializeSources(sources);
+  frontmatter.source_count = String(sources.length);
+
+  // Record the triggerer as a contributor (deduped) — drives the "Mine" lens.
+  const triggeredBy = source.triggeredBy?.trim();
+  if (triggeredBy) {
+    const contribs = Array.isArray(existing.frontmatter.contributors)
+      ? (existing.frontmatter.contributors as string[])
+      : [];
+    if (!contribs.includes(triggeredBy)) {
+      frontmatter.contributors = [...contribs, triggeredBy];
+    }
+  }
+
+  const mergedContent = serializeFrontmatter(frontmatter, existing.body);
+  await writeWikiPageWithSideEffects({
+    slug,
+    title: existing.title,
+    content: mergedContent,
+    summary: extractSummary(existing.body.replace(/^#\s+.+$/m, "").trim()),
+    logOp: "ingest",
+    crossRefSource: null, // skip the cross-ref LLM — pure dedup attach
+    author: triggeredBy,
+    logDetails: () => `dedup: attached trigger to existing page "${slug}"`,
+  });
+
+  const url =
+    typeof frontmatter.source_url === "string" ? frontmatter.source_url : undefined;
+  const hash =
+    typeof frontmatter.content_hash === "string"
+      ? frontmatter.content_hash
+      : undefined;
+  updateSourceIndexForPage(slug, url, hash);
+
+  return {
+    rawPath: "",
+    primarySlug: slug,
+    relatedUpdated: [],
+    wikiPages: [slug],
+    indexUpdated: true,
+    deduped: true,
+    ...(url ? { sourceUrl: url } : {}),
+  };
+}
+
+/**
  * Ingest a source document into the wiki.
  *
  * Supports a two-phase preview workflow:
@@ -461,6 +572,22 @@ export async function ingest(
 
   const isPreview = options?.preview === true;
   const preGeneratedContent = options?.generatedContent;
+
+  // Dedup by content: if identical content was already ingested (any slug),
+  // attach the triggerer and skip the LLM + embedding. Not for preview /
+  // commit-from-preview.
+  const hash = contentHash(content);
+  if (!isPreview && !preGeneratedContent) {
+    const dupSlug = await resolveContentHash(hash);
+    if (dupSlug) {
+      const result = await attachIngestTrigger(dupSlug, {
+        url: options?.sourceUrl ?? "text-paste",
+        type: options?.sourceType ?? (options?.sourceUrl ? "url" : "text"),
+        triggeredBy: options?.triggeredBy,
+      });
+      if (result) return result;
+    }
+  }
 
   // 1. Generate wiki page content (or use pre-generated from preview)
   let wikiContent: string;
@@ -544,6 +671,7 @@ export async function ingest(
     disputed: false,
     supersedes: "",
     aliases: [],
+    content_hash: hash,
   };
 
   // Persist the original source URL when provided (URL-based ingest).
@@ -673,7 +801,13 @@ export async function ingest(
 
   // 6. Alias index is updated automatically by the lifecycle pipeline
   //    (writeWikiPageWithSideEffects → runPageLifecycleOp) — no caller-side
-  //    call needed.
+  //    call needed. The source index (URL/content-hash → slug) is caller-owned,
+  //    so refresh it here for future dedup hits.
+  updateSourceIndexForPage(
+    slug,
+    typeof frontmatter.source_url === "string" ? frontmatter.source_url : undefined,
+    hash,
+  );
 
   const result: IngestResult = {
     rawPath,

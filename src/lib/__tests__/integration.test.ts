@@ -11,11 +11,15 @@ vi.mock("../llm", () => ({
   callLLM: vi.fn(async () => "mocked"),
 }));
 
-vi.mock("../embeddings", () => ({
-  searchByVector: vi.fn(async () => []),
-  upsertEmbedding: vi.fn(async () => {}),
-  removeEmbedding: vi.fn(async () => {}),
-}));
+vi.mock("../embeddings", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../embeddings")>();
+  return {
+    ...actual, // keep the real contentHash (used by ingest dedup)
+    searchByVector: vi.fn(async () => []),
+    upsertEmbedding: vi.fn(async () => {}),
+    removeEmbedding: vi.fn(async () => {}),
+  };
+});
 
 import { hasLLMKey, callLLM } from "../llm";
 import { ingest } from "../ingest";

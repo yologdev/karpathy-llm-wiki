@@ -23,7 +23,9 @@ import {
 import { findRelatedPages, updateRelatedPages } from "../search";
 import { parseSources } from "../sources";
 import { MAX_LLM_INPUT_CHARS } from "../constants";
-import { listWikiPages, readWikiPage, writeWikiPage } from "../wiki";
+import { listWikiPages, readWikiPage, writeWikiPage, readWikiPageWithFrontmatter } from "../wiki";
+import { resetSourceIndex } from "../source-index";
+import { resetAliasIndex } from "../alias-index";
 import type { IndexEntry } from "../types";
 
 // Mock the LLM module so ingest never calls the real API
@@ -2260,5 +2262,62 @@ describe("ingest ledger", () => {
 
     const entries = await readLedger();
     expect(entries).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Ingest dedup (shared canonical page) — token saving
+// ---------------------------------------------------------------------------
+
+describe("ingest dedup", () => {
+  beforeEach(() => {
+    // In-memory indexes are module singletons — reset so each test starts clean
+    // (they rebuild from the fresh temp-dir frontmatter on demand).
+    resetSourceIndex();
+    resetAliasIndex();
+    mockedHasLLMKey.mockReturnValue(true);
+    mockedCallLLM.mockResolvedValue("# Page\n\n## Summary\n\nMocked synthesis.");
+  });
+
+  it("dedups identical content across different titles — no second LLM call", async () => {
+    await ingest("Doc A", "Identical body content for dedup test.");
+    expect(mockedCallLLM).toHaveBeenCalledTimes(1);
+
+    mockedCallLLM.mockClear();
+    // Same content, different title → should attach to the existing canonical
+    // page (by content hash) instead of synthesizing a new one.
+    const result = await ingest("Doc B", "Identical body content for dedup test.");
+
+    expect(result.deduped).toBe(true);
+    expect(result.primarySlug).toBe("doc-a");
+    expect(mockedCallLLM).not.toHaveBeenCalled();
+    expect(await listWikiPages()).toHaveLength(1); // one canonical page, not two
+  });
+
+  it("does NOT dedup different content — both pages created, LLM called twice", async () => {
+    await ingest("Page One", "First distinct content here.");
+    mockedCallLLM.mockClear();
+    const result = await ingest("Page Two", "Completely different content here.");
+
+    expect(result.deduped).toBeFalsy();
+    // Synthesis ran (not deduped). Exact count varies because a cross-ref LLM
+    // call also fires once another page exists — so just assert it was called.
+    expect(mockedCallLLM).toHaveBeenCalled();
+    expect(await listWikiPages()).toHaveLength(2);
+  });
+
+  it("attaches the new triggerer as a contributor on a dedup hit", async () => {
+    await ingest("Trigger Doc", "Body for trigger attribution.", {
+      triggeredBy: "alice",
+    });
+    const result = await ingest("Trigger Doc", "Body for trigger attribution.", {
+      triggeredBy: "bob",
+    });
+
+    expect(result.deduped).toBe(true);
+    const page = await readWikiPageWithFrontmatter("trigger-doc");
+    expect(page).not.toBeNull();
+    // The second triggerer is recorded as a contributor (basis for "Mine").
+    expect(page!.frontmatter.contributors).toContain("bob");
   });
 });

@@ -18,6 +18,7 @@ import { withFileLock } from "./lock";
 import { escapeRegex } from "./links";
 import { getErrorMessage } from "./errors";
 import { removeAliasForPage, updateAliasIndexForPage } from "./alias-index";
+import { removeSourceForPage } from "./source-index";
 import { parseFrontmatter } from "./frontmatter";
 import type { LogOperation } from "./wiki";
 import { logger } from "./logger";
@@ -235,6 +236,8 @@ async function runPageLifecycleOp(
     // 2e. Invalidate alias index entries for the deleted page so that
     //     resolveAlias(deletedTitle) no longer ghost-resolves to this slug.
     removeAliasForPage(slug);
+    // Also drop source-index (URL/content-hash) entries for the deleted page.
+    removeSourceForPage(slug);
   } else {
     // 2e. Update alias index for written page so resolveAlias() finds it
     //     immediately — no server restart needed. Parse the frontmatter to
