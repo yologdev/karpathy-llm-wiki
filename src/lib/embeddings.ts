@@ -8,6 +8,7 @@ import type { Ai } from "./storage/cloudflare-types";
 import { wikiRelPath, listWikiPages, readWikiPage } from "./wiki";
 import { getStorage } from "./storage";
 import { detectEnvProvider, loadConfigSync, getEmbeddingModelOverride, getOllamaBaseUrl } from "./config";
+import { EMBEDDING_PROVIDERS, isEmbeddingProvider, type EmbeddingProvider } from "./providers";
 import { withFileLock } from "./lock";
 import { isEnoent } from "./errors";
 import { MAX_EMBED_CHARS } from "./constants";
@@ -38,7 +39,7 @@ export interface VectorStore {
  * Default embedding models per provider. Can be overridden with the
  * `EMBEDDING_MODEL` env var.
  */
-const DEFAULT_EMBEDDING_MODELS: Record<string, string> = {
+const DEFAULT_EMBEDDING_MODELS: Record<EmbeddingProvider, string> = {
   openai: "text-embedding-3-small",
   google: "gemini-embedding-001",
   ollama: "nomic-embed-text",
@@ -46,28 +47,36 @@ const DEFAULT_EMBEDDING_MODELS: Record<string, string> = {
   "workers-ai": "@cf/baai/bge-m3",
 };
 
-/** Providers that support embeddings (i.e. everything except Anthropic). */
-const EMBEDDING_CAPABLE_PROVIDERS = new Set([
-  "openai",
-  "google",
-  "ollama",
-  "workers-ai",
-]);
+/** Workers AI model ids are namespaced with this prefix (e.g. @cf/baai/...). */
+const WORKERS_AI_MODEL_PREFIX = "@cf/";
 
 /**
  * Return the Cloudflare Workers AI binding if available, else null.
  *
- * Wrapped in try/catch because `getCloudflareContext()` throws when called
- * outside the Workers request scope (e.g. local CLI, Node tests) — in those
- * environments there is no AI binding and we fall back to other providers.
+ * `getCloudflareContext()` throws when called outside the Workers request
+ * scope (local CLI, Node tests) — that case is expected and stays silent. But
+ * being on the Workers runtime with the `AI` binding *unbound* is a
+ * misconfiguration, not "no embeddings", so we surface it with a warning
+ * rather than silently degrading to BM25-only search.
  */
 function getWorkersAiBinding(): Ai | null {
+  let env: { AI?: Ai };
   try {
-    const { env } = getCloudflareContext();
-    return (env as { AI?: Ai }).AI ?? null;
+    ({ env } = getCloudflareContext() as { env: { AI?: Ai } });
   } catch {
+    // Expected off the Workers runtime — silent by design.
     return null;
   }
+  if (!env.AI) {
+    logger.warn(
+      "embeddings",
+      "On the Workers runtime but the AI binding is not bound — embeddings " +
+        "will fall back to the LLM provider or be disabled. Check the `ai` " +
+        "binding in wrangler.jsonc.",
+    );
+    return null;
+  }
+  return env.AI;
 }
 
 /**
@@ -77,16 +86,26 @@ function getWorkersAiBinding(): Ai | null {
  *
  * Priority:
  *   1. Explicit override — `EMBEDDING_PROVIDER` env var, then
- *      `config.embeddingProvider`.
+ *      `config.embeddingProvider`. An override that isn't embedding-capable
+ *      is rejected (returns null) and warned about — it does NOT fall through.
  *   2. Workers AI auto-detect — on the CF runtime with the `AI` binding bound.
- *   3. The LLM provider, if it is embedding-capable (env var, then config).
+ *   3. The LLM provider detected from env vars, if embedding-capable; otherwise
+ *      `config.provider` only when it is `ollama` (the one keyless provider —
+ *      other config providers need an env-var API key, handled by step 3a).
  */
 function resolveEmbeddingProvider(
   cfg: ReturnType<typeof loadConfigSync>,
-): string | null {
+): EmbeddingProvider | null {
   const override = process.env.EMBEDDING_PROVIDER ?? cfg.embeddingProvider;
   if (override) {
-    return EMBEDDING_CAPABLE_PROVIDERS.has(override) ? override : null;
+    if (isEmbeddingProvider(override)) return override;
+    logger.warn(
+      "embeddings",
+      `EMBEDDING_PROVIDER="${override}" is not embedding-capable ` +
+        `(valid: ${EMBEDDING_PROVIDERS.join(", ")}); embeddings are disabled. ` +
+        "Fix the override or unset it to auto-detect.",
+    );
+    return null;
   }
 
   // Auto-select Workers AI when its binding is available.
@@ -94,7 +113,7 @@ function resolveEmbeddingProvider(
 
   // Fall back to the configured LLM provider when it supports embeddings.
   const env = detectEnvProvider();
-  if (env.provider && EMBEDDING_CAPABLE_PROVIDERS.has(env.provider)) {
+  if (env.provider && isEmbeddingProvider(env.provider)) {
     return env.provider;
   }
   if (cfg.provider === "ollama") return "ollama";
@@ -103,7 +122,7 @@ function resolveEmbeddingProvider(
 }
 
 /** Resolve the API key for an embedding provider from its own env var. */
-function embeddingApiKeyFor(provider: string): string | null {
+function embeddingApiKeyFor(provider: EmbeddingProvider): string | null {
   switch (provider) {
     case "openai":
       return process.env.OPENAI_API_KEY ?? null;
@@ -115,19 +134,28 @@ function embeddingApiKeyFor(provider: string): string | null {
 }
 
 /**
- * Resolve the embedding model name using the standard priority chain:
- *   1. `EMBEDDING_MODEL` env var (highest priority)
- *   2. `config.embeddingModel` from config file
- *   3. Provider-specific default from {@link DEFAULT_EMBEDDING_MODELS}
+ * Resolve the embedding model name for a provider.
+ *
+ * Priority: `EMBEDDING_MODEL` env → `config.embeddingModel` → provider default.
+ *
+ * The override is only honored when it belongs to the resolved provider's
+ * namespace — Workers AI ids start with `@cf/`, the AI-SDK providers don't.
+ * This prevents a stale override left over from a previous provider (e.g.
+ * `EMBEDDING_MODEL=text-embedding-3-small`) from leaking into a Workers AI
+ * call (or vice versa) and producing an invalid model id.
  */
 function resolveEmbeddingModelName(
-  provider: string,
+  provider: EmbeddingProvider,
   cfg: ReturnType<typeof loadConfigSync>,
 ): string {
-  const envOverride = getEmbeddingModelOverride();
-  return (
-    envOverride ?? cfg.embeddingModel ?? DEFAULT_EMBEDDING_MODELS[provider] ?? provider
-  );
+  const override = getEmbeddingModelOverride() ?? cfg.embeddingModel;
+  if (override) {
+    const overrideIsWorkersAi = override.startsWith(WORKERS_AI_MODEL_PREFIX);
+    const providerIsWorkersAi = provider === "workers-ai";
+    if (overrideIsWorkersAi === providerIsWorkersAi) return override;
+    // Namespace mismatch — ignore the override and use the provider default.
+  }
+  return DEFAULT_EMBEDDING_MODELS[provider] ?? provider;
 }
 
 /**
@@ -275,8 +303,19 @@ async function runWorkersAiEmbedding(
   if (!ai) return null;
 
   const model = resolveEmbeddingModelName("workers-ai", cfg);
-  const result = await ai.run(model, { text: texts });
-  return Array.isArray(result?.data) ? result.data : null;
+  // `pooling: "cls"` — Cloudflare recommends CLS pooling for bge-m3; the
+  // default ("mean") produces lower-quality embeddings.
+  const result = await ai.run(model, { text: texts, pooling: "cls" });
+  if (!Array.isArray(result?.data)) {
+    logger.warn(
+      "embeddings",
+      `Workers AI embedding (${model}) returned an unexpected response ` +
+        "shape (no data array) — treating as no embedding:",
+      result,
+    );
+    return null;
+  }
+  return result.data;
 }
 
 // ---------------------------------------------------------------------------

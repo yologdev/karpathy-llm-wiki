@@ -2,6 +2,7 @@ import type { ProviderInfo } from "./types";
 import { hasEmbeddingSupport } from "./embeddings";
 import { isEnoent } from "./errors";
 import { VALID_PROVIDERS, DEFAULT_MODELS } from "./providers";
+import type { EmbeddingProvider } from "./providers";
 import { logger } from "./logger";
 import { getDataDir } from "./paths";
 import { getStorage } from "./storage";
@@ -21,8 +22,9 @@ export interface AppConfig {
   embeddingModel?: string;
   /** Override the provider used for embeddings, independent of the LLM
    *  provider. Useful when the generation provider (e.g. deepseek) has no
-   *  embedding models. */
-  embeddingProvider?: string;
+   *  embedding models. One of openai | google | ollama | workers-ai; any
+   *  other value disables embeddings (resolves to null). */
+  embeddingProvider?: EmbeddingProvider;
 }
 
 /** Describes where each setting was resolved from. */

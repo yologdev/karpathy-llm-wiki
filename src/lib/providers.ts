@@ -28,6 +28,27 @@ export const VALID_PROVIDERS: ReadonlySet<string> = new Set(
 );
 
 /**
+ * Providers capable of producing embeddings. This is a different set from the
+ * LLM providers: it adds `workers-ai` (Cloudflare bge-m3) and excludes
+ * `anthropic`/`deepseek` (no embedding models). Kept as a single source of
+ * truth so the runtime check and the config type can't drift.
+ */
+export const EMBEDDING_PROVIDERS = [
+  "openai",
+  "google",
+  "ollama",
+  "workers-ai",
+] as const;
+
+/** Union of valid embedding-provider values. */
+export type EmbeddingProvider = (typeof EMBEDDING_PROVIDERS)[number];
+
+/** Type guard narrowing an arbitrary string to {@link EmbeddingProvider}. */
+export function isEmbeddingProvider(p: string): p is EmbeddingProvider {
+  return (EMBEDDING_PROVIDERS as readonly string[]).includes(p);
+}
+
+/**
  * Default model for each provider.
  */
 export const DEFAULT_MODELS: Record<string, string> = {

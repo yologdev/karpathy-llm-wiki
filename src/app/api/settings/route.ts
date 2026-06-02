@@ -8,6 +8,11 @@ import {
   type AppConfig,
 } from "@/lib/config";
 import { getEffectiveProvider } from "@/lib/config";
+import {
+  PROVIDER_INFO,
+  EMBEDDING_PROVIDERS,
+  isEmbeddingProvider,
+} from "@/lib/providers";
 import { getErrorMessage } from "@/lib/errors";
 
 // ---------------------------------------------------------------------------
@@ -38,8 +43,24 @@ export async function PUT(request: Request) {
     // Validate provider if provided
     if (body.provider !== undefined && body.provider !== null) {
       if (typeof body.provider !== "string" || !isValidProvider(body.provider)) {
+        const valid = PROVIDER_INFO.map((p) => p.value).join(", ");
         return Response.json(
-          { error: `Invalid provider: "${body.provider}". Must be one of: anthropic, openai, google, ollama` },
+          { error: `Invalid provider: "${body.provider}". Must be one of: ${valid}` },
+          { status: 400 },
+        );
+      }
+    }
+
+    // Validate embeddingProvider if provided
+    if (body.embeddingProvider !== undefined && body.embeddingProvider !== null) {
+      if (
+        typeof body.embeddingProvider !== "string" ||
+        !isEmbeddingProvider(body.embeddingProvider)
+      ) {
+        return Response.json(
+          {
+            error: `Invalid embeddingProvider: "${body.embeddingProvider}". Must be one of: ${EMBEDDING_PROVIDERS.join(", ")}`,
+          },
           { status: 400 },
         );
       }
@@ -98,6 +119,14 @@ export async function PUT(request: Request) {
         delete updated.embeddingModel;
       } else {
         updated.embeddingModel = body.embeddingModel;
+      }
+    }
+
+    if (body.embeddingProvider !== undefined) {
+      if (body.embeddingProvider === null) {
+        delete updated.embeddingProvider;
+      } else {
+        updated.embeddingProvider = body.embeddingProvider;
       }
     }
 

@@ -106,12 +106,16 @@ export interface AiEmbeddingResponse {
   data: number[][];
 }
 
+/** Inputs for an embedding model run. `pooling: "cls"` is recommended for
+ *  bge-m3 (the default "mean" yields lower-quality embeddings). */
+export interface AiEmbeddingInputs {
+  text: string | string[];
+  pooling?: "cls" | "mean";
+}
+
 /** Minimal Workers AI binding surface — we only call `run()` for embeddings. */
 export interface Ai {
-  run(
-    model: string,
-    inputs: { text: string | string[] },
-  ): Promise<AiEmbeddingResponse>;
+  run(model: string, inputs: AiEmbeddingInputs): Promise<AiEmbeddingResponse>;
 }
 
 // ---------------------------------------------------------------------------

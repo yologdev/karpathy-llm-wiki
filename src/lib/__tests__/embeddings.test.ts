@@ -1164,7 +1164,11 @@ describe("Workers AI embeddings (bge-m3)", () => {
     const vec = await embedText("你好世界");
 
     expect(vec).toEqual([0.1, 0.2, 0.3]);
-    expect(run).toHaveBeenCalledWith("@cf/baai/bge-m3", { text: ["你好世界"] });
+    // CLS pooling is requested for higher-quality bge-m3 embeddings.
+    expect(run).toHaveBeenCalledWith("@cf/baai/bge-m3", {
+      text: ["你好世界"],
+      pooling: "cls",
+    });
     // The AI SDK embed() path must not be used for workers-ai.
     expect(mockEmbed).not.toHaveBeenCalled();
   });
@@ -1181,7 +1185,10 @@ describe("Workers AI embeddings (bge-m3)", () => {
       [0.1, 0.2],
       [0.3, 0.4],
     ]);
-    expect(run).toHaveBeenCalledWith("@cf/baai/bge-m3", { text: ["a", "b"] });
+    expect(run).toHaveBeenCalledWith("@cf/baai/bge-m3", {
+      text: ["a", "b"],
+      pooling: "cls",
+    });
     expect(mockEmbedMany).not.toHaveBeenCalled();
   });
 
@@ -1194,7 +1201,7 @@ describe("Workers AI embeddings (bge-m3)", () => {
     expect(getEmbeddingModelName()).toBe("@cf/baai/bge-m3");
   });
 
-  it("honors EMBEDDING_MODEL override for the workers-ai model name", async () => {
+  it("honors a workers-ai EMBEDDING_MODEL override (must be a @cf/ id)", async () => {
     process.env.EMBEDDING_PROVIDER = "workers-ai";
     process.env.EMBEDDING_MODEL = "@cf/baai/bge-large-en-v1.5";
     const run = mockWorkersAi([[0.5]]);
@@ -1203,12 +1210,72 @@ describe("Workers AI embeddings (bge-m3)", () => {
 
     expect(run).toHaveBeenCalledWith("@cf/baai/bge-large-en-v1.5", {
       text: ["hi"],
+      pooling: "cls",
     });
+  });
+
+  it("ignores a non-@cf EMBEDDING_MODEL leaking into the workers-ai call", async () => {
+    // A stale override from a previous OpenAI setup must NOT be passed to
+    // ai.run() — it would be an invalid Workers AI model id.
+    process.env.EMBEDDING_PROVIDER = "workers-ai";
+    process.env.EMBEDDING_MODEL = "text-embedding-3-small";
+    const run = mockWorkersAi([[0.5]]);
+
+    expect(getEmbeddingModelName()).toBe("@cf/baai/bge-m3");
+    await embedText("hi");
+    expect(run).toHaveBeenCalledWith("@cf/baai/bge-m3", {
+      text: ["hi"],
+      pooling: "cls",
+    });
+  });
+
+  it("ignores a @cf EMBEDDING_MODEL leaking into a non-workers provider", () => {
+    process.env.OPENAI_API_KEY = "sk-openai";
+    process.env.EMBEDDING_PROVIDER = "openai";
+    process.env.EMBEDDING_MODEL = "@cf/baai/bge-m3";
+    // The @cf id must not leak into OpenAI — falls back to the openai default.
+    expect(getEmbeddingModelName()).toBe("text-embedding-3-small");
   });
 
   it("returns null from embedText when the binding is unavailable", async () => {
     // Force the workers-ai provider but leave the CF context throwing.
     process.env.EMBEDDING_PROVIDER = "workers-ai";
     expect(await embedText("hi")).toBeNull();
+  });
+
+  it("returns null when the binding response lacks a data array", async () => {
+    process.env.EMBEDDING_PROVIDER = "workers-ai";
+    mockGetCfContext.mockReturnValue({
+      env: { AI: { run: vi.fn().mockResolvedValue({ shape: [1] }) } },
+    });
+    expect(await embedText("hi")).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Embedding provider decoupled from the LLM provider
+// ---------------------------------------------------------------------------
+
+describe("embedding/LLM provider decoupling", () => {
+  it("uses the embedding provider's own key when the LLM provider differs", () => {
+    // LLM generation on deepseek (no embeddings), embeddings on openai.
+    process.env.DEEPSEEK_API_KEY = "sk-deepseek";
+    process.env.OPENAI_API_KEY = "sk-openai";
+    process.env.EMBEDDING_PROVIDER = "openai";
+
+    expect(getEmbeddingModelName()).toBe("text-embedding-3-small");
+    // A real AI SDK model is constructed (the openai key path works).
+    expect(getEmbeddingModel()).not.toBeNull();
+  });
+
+  it("rejects an invalid EMBEDDING_PROVIDER override without falling through", () => {
+    // A capable LLM provider is present and would otherwise be selected...
+    process.env.OPENAI_API_KEY = "sk-openai";
+    // ...but an unsupported explicit override disables embeddings entirely.
+    process.env.EMBEDDING_PROVIDER = "anthropic";
+
+    expect(getEmbeddingModelName()).toBeNull();
+    expect(getEmbeddingModel()).toBeNull();
+    expect(hasEmbeddingSupport()).toBe(false);
   });
 });
