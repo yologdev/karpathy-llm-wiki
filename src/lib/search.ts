@@ -6,6 +6,7 @@ import { parseFrontmatter } from "./frontmatter";
 import { logger } from "./logger";
 import {
   readWikiPage,
+  readWikiPageWithFrontmatter,
   writeWikiPage,
   listWikiPages,
   withPageCache,
@@ -508,10 +509,42 @@ export async function fuzzySearchWikiContent(
  * Returns `null` if the scope string format is invalid or the referenced
  * entity doesn't exist.
  */
+/**
+ * Slugs a handle "owns" for the Mine lens: pages where `owner === handle` OR
+ * the handle appears in `contributors`. Scans frontmatter (O(n), small scale).
+ */
+export async function slugsForOwner(handle: string): Promise<string[]> {
+  const pages = await listWikiPages();
+  const out: string[] = [];
+  for (const entry of pages) {
+    if (entry.slug === "index" || entry.slug === "log") continue;
+    const page = await readWikiPageWithFrontmatter(entry.slug);
+    if (!page) continue;
+    const owner =
+      typeof page.frontmatter.owner === "string" ? page.frontmatter.owner : "";
+    const contributors = Array.isArray(page.frontmatter.contributors)
+      ? (page.frontmatter.contributors as string[])
+      : [];
+    if (owner === handle || contributors.includes(handle)) {
+      out.push(entry.slug);
+    }
+  }
+  return out;
+}
+
 export async function resolveScope(
   scopeParam: string,
 ): Promise<SearchScope | null> {
   if (!scopeParam || typeof scopeParam !== "string") return null;
+
+  // owner:<handle> — the personal "Mine" lens (a public view filter, not access
+  // control). Resolves to pages the handle owns OR has contributed to.
+  const ownerMatch = scopeParam.match(/^owner:(.+)$/);
+  if (ownerMatch) {
+    const handle = ownerMatch[1]?.trim();
+    if (!handle) return null;
+    return { agentId: handle, slugs: await slugsForOwner(handle) };
+  }
 
   const match = scopeParam.match(/^agent:(.+)$/);
   if (!match) return null;

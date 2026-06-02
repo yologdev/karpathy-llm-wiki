@@ -701,6 +701,18 @@ describe("resolveScope", () => {
     expect(result).toBeNull();
   });
 
+  it("resolves 'owner:<handle>' to a Mine-lens scope", async () => {
+    await ensureDirectories();
+    const result = await resolveScope("owner:alice");
+    expect(result).not.toBeNull();
+    expect(result!.agentId).toBe("alice");
+    expect(Array.isArray(result!.slugs)).toBe(true);
+  });
+
+  it("returns null for an empty owner handle", async () => {
+    expect(await resolveScope("owner:")).toBeNull();
+  });
+
   it("combines all three page arrays from agent profile", async () => {
     await ensureAgentsDir();
     await registerAgent(
