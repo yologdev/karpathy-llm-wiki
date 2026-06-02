@@ -2321,3 +2321,34 @@ describe("ingest dedup", () => {
     expect(page!.frontmatter.contributors).toContain("bob");
   });
 });
+
+// ---------------------------------------------------------------------------
+// Ingest attribution (owner / visibility / authors)
+// ---------------------------------------------------------------------------
+
+describe("ingest attribution", () => {
+  beforeEach(() => {
+    resetSourceIndex();
+    resetAliasIndex();
+    mockedHasLLMKey.mockReturnValue(true);
+    mockedCallLLM.mockResolvedValue("# Page\n\n## Summary\n\nMocked.");
+  });
+
+  it("sets owner/authors from the author option (not 'system')", async () => {
+    await ingest("Attr Page", "Body content for attribution.", {
+      author: "alice",
+      owner: "alice",
+    });
+    const page = await readWikiPageWithFrontmatter("attr-page");
+    expect(page!.frontmatter.authors).toEqual(["alice"]);
+    expect(page!.frontmatter.owner).toBe("alice");
+    expect(page!.frontmatter.visibility).toBe("public");
+  });
+
+  it("falls back to 'system' when no author is provided (MCP/legacy)", async () => {
+    await ingest("Sys Page", "Different body content here.");
+    const page = await readWikiPageWithFrontmatter("sys-page");
+    expect(page!.frontmatter.authors).toEqual(["system"]);
+    expect(page!.frontmatter.owner).toBe("system");
+  });
+});

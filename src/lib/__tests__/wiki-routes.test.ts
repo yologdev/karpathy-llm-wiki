@@ -1,7 +1,12 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import fs from "fs/promises";
 import os from "os";
 import path from "path";
+
+vi.mock("@/lib/auth", () => ({
+  getPrincipal: vi.fn(async () => ({ id: "test-user", handle: "test-user" })),
+}));
+
 import {
   ensureDirectories,
   readWikiPageWithFrontmatter,
@@ -73,7 +78,10 @@ describe("POST /api/wiki — yopedia metadata", () => {
     // Core yopedia fields
     expect(fm.title).toBe("Test Meta");
     expect(fm.confidence).toBe(0.5);
-    expect(fm.authors).toEqual(["anonymous"]);
+    // Author/owner come from the authenticated session (mocked test-user).
+    expect(fm.authors).toEqual(["test-user"]);
+    expect(fm.owner).toBe("test-user");
+    expect(fm.visibility).toBe("public");
     expect(fm.contributors).toEqual([]);
     expect(fm.sources).toEqual([]);
 
@@ -116,20 +124,21 @@ describe("POST /api/wiki — yopedia metadata", () => {
     expect(diffDays).toBeLessThanOrEqual(91);
   });
 
-  it("uses provided author instead of anonymous", async () => {
+  it("attributes the authenticated principal, ignoring any client-supplied author", async () => {
     const res = await callPost({
       slug: "authored-page",
       content: "# Authored\n\nBy someone.",
-      author: "alice",
+      author: "alice", // spoof attempt — must be ignored in favor of the session
     });
     expect(res.status).toBe(201);
 
     const page = await readWikiPageWithFrontmatter("authored-page");
     expect(page).not.toBeNull();
-    expect(page!.frontmatter.authors).toEqual(["alice"]);
+    expect(page!.frontmatter.authors).toEqual(["test-user"]);
+    expect(page!.frontmatter.owner).toBe("test-user");
   });
 
-  it("ignores empty author string and falls back to anonymous", async () => {
+  it("ignores a client-supplied empty author and uses the session principal", async () => {
     const res = await callPost({
       slug: "empty-author",
       content: "# Empty Author\n\nContent.",
@@ -139,7 +148,7 @@ describe("POST /api/wiki — yopedia metadata", () => {
 
     const page = await readWikiPageWithFrontmatter("empty-author");
     expect(page).not.toBeNull();
-    expect(page!.frontmatter.authors).toEqual(["anonymous"]);
+    expect(page!.frontmatter.authors).toEqual(["test-user"]);
   });
 
   it("accepts optional tags from request body", async () => {
@@ -242,18 +251,18 @@ describe("PUT /api/wiki/[slug] — contributors and updated", () => {
     expect(fm.updated).toBe(today);
   });
 
-  it("appends author to contributors on edit", async () => {
+  it("appends the authenticated editor to contributors on edit", async () => {
     await seedPage("contrib-test");
 
     const res = await callPut("contrib-test", {
       content: "# Contrib Test\n\nEdited.",
-      author: "editor-bob",
+      author: "editor-bob", // ignored — session principal is used
     });
     expect(res.status).toBe(200);
 
     const page = await readWikiPageWithFrontmatter("contrib-test");
     expect(page).not.toBeNull();
-    expect(page!.frontmatter.contributors).toEqual(["editor-bob"]);
+    expect(page!.frontmatter.contributors).toEqual(["test-user"]);
   });
 
   it("does not duplicate contributors on repeated edits", async () => {
@@ -262,13 +271,11 @@ describe("PUT /api/wiki/[slug] — contributors and updated", () => {
     // First edit
     await callPut("no-dup-test", {
       content: "# No Dup Test\n\nFirst edit.",
-      author: "editor-alice",
     });
 
-    // Second edit by the same person
+    // Second edit by the same (session) person
     const res = await callPut("no-dup-test", {
       content: "# No Dup Test\n\nSecond edit.",
-      author: "editor-alice",
     });
     expect(res.status).toBe(200);
 
@@ -276,7 +283,7 @@ describe("PUT /api/wiki/[slug] — contributors and updated", () => {
     expect(page).not.toBeNull();
 
     const contributors = page!.frontmatter.contributors as string[];
-    expect(contributors.filter((c) => c === "editor-alice")).toHaveLength(1);
+    expect(contributors.filter((c) => c === "test-user")).toHaveLength(1);
   });
 
   it("preserves existing contributors when adding new one", async () => {
@@ -284,7 +291,6 @@ describe("PUT /api/wiki/[slug] — contributors and updated", () => {
 
     const res = await callPut("multi-contrib", {
       content: "# Multi Contrib\n\nAnother edit.",
-      author: "second-editor",
     });
     expect(res.status).toBe(200);
 
@@ -292,7 +298,7 @@ describe("PUT /api/wiki/[slug] — contributors and updated", () => {
     expect(page).not.toBeNull();
     expect(page!.frontmatter.contributors).toEqual([
       "first-editor",
-      "second-editor",
+      "test-user",
     ]);
   });
 
@@ -318,18 +324,18 @@ describe("PUT /api/wiki/[slug] — contributors and updated", () => {
     expect(fm.expiry).toBe("2099-06-15");
   });
 
-  it("does not add to contributors when no author provided", async () => {
+  it("adds the authenticated editor to contributors (writes are always authed)", async () => {
     await seedPage("no-author-edit", { contributors: ["existing"] });
 
     const res = await callPut("no-author-edit", {
-      content: "# No Author Edit\n\nAnonymous edit.",
+      content: "# No Author Edit\n\nEdited by the signed-in user.",
     });
     expect(res.status).toBe(200);
 
     const page = await readWikiPageWithFrontmatter("no-author-edit");
     expect(page).not.toBeNull();
-    // contributors should remain unchanged
-    expect(page!.frontmatter.contributors).toEqual(["existing"]);
+    // Writes require auth, so the session principal is appended.
+    expect(page!.frontmatter.contributors).toEqual(["existing", "test-user"]);
   });
 });
 
@@ -475,13 +481,13 @@ describe("PATCH /api/wiki/[slug] — metadata updates", () => {
 
     const res = await callPatch("patch-contrib", {
       metadata: { confidence: 0.8 },
-      author: "bob",
+      author: "bob", // ignored — session principal is used
     });
     expect(res.status).toBe(200);
 
     const page = await readWikiPageWithFrontmatter("patch-contrib");
     expect(page).not.toBeNull();
-    expect(page!.frontmatter.contributors).toEqual(["alice", "bob"]);
+    expect(page!.frontmatter.contributors).toEqual(["alice", "test-user"]);
   });
 
   it("updates multiple metadata fields at once", async () => {

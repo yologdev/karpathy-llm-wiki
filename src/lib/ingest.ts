@@ -150,7 +150,10 @@ export async function ingestUrl(
  *
  * @throws {Error} When the page doesn't exist or has no `source_url` in its frontmatter.
  */
-export async function reingest(slug: string): Promise<IngestResult> {
+export async function reingest(
+  slug: string,
+  opts?: { author?: string; owner?: string; triggeredBy?: string },
+): Promise<IngestResult> {
   const page = await readWikiPageWithFrontmatter(slug);
   if (!page) {
     throw new Error(`Cannot re-ingest: page "${slug}" not found`);
@@ -163,7 +166,7 @@ export async function reingest(slug: string): Promise<IngestResult> {
 
   const { title, content: rawContent } = await fetchUrlContent(sourceUrl);
   const content = await downloadImages(rawContent, slug, getRawDir());
-  return ingest(title, content, { sourceUrl });
+  return ingest(title, content, { sourceUrl, ...opts });
 }
 
 /**
@@ -178,10 +181,12 @@ export async function reingest(slug: string): Promise<IngestResult> {
 export async function ingestXMention(
   url: string,
   triggeredBy: string,
+  opts?: { author?: string; owner?: string },
 ): Promise<IngestResult> {
   return ingestUrl(url, {
     sourceType: "x-mention",
     triggeredBy,
+    ...opts,
   });
 }
 
@@ -442,6 +447,19 @@ export interface IngestOptions {
    * when re-ingesting an existing page.
    */
   tags?: string[];
+  /**
+   * The acting identity that performed this ingest (a user handle, or `yoyo`
+   * when mediated). Becomes `authors` on a new page and is appended to
+   * `contributors` on re-ingest. Set from the authenticated session by the
+   * route — never from client input. Falls back to `"system"`.
+   */
+  author?: string;
+  /**
+   * The principal who owns the resulting page (accountable party). For manual
+   * ingests this equals `author`; for mediated ingests it's the triggering
+   * user. Defaults to `author`.
+   */
+  owner?: string;
 }
 
 /**
@@ -658,6 +676,10 @@ export async function ingest(
   const expiry = new Date();
   expiry.setDate(expiry.getDate() + 90);
   const expiryDate = expiry.toISOString().slice(0, 10);
+  // Acting identity + owner come from the authenticated session (set by the
+  // route), never from client input. Fall back to "system" for legacy/bootstrap.
+  const actor = options?.author?.trim() || "system";
+  const owner = options?.owner?.trim() || actor;
   const frontmatter: Frontmatter = {
     created: now,
     updated: now,
@@ -666,7 +688,9 @@ export async function ingest(
     confidence: 0.7,
     expiry: expiryDate,
     valid_from: now,
-    authors: ["system"],
+    owner,
+    visibility: "public",
+    authors: [actor],
     contributors: [],
     disputed: false,
     supersedes: "",
@@ -747,16 +771,24 @@ export async function ingest(
     frontmatter.sources = serializeSources(existingSources);
 
     // --- Phase 1 fields: preserve on re-ingest ---
-    // Preserve authors from existing page (don't reset to ["system"]).
+    // Preserve authors from existing page (don't reset).
     if (Array.isArray(existing.frontmatter.authors)) {
       frontmatter.authors = existing.frontmatter.authors;
     }
-    // Append "system" to contributors if not already present.
+    // Preserve owner (the original owner stays accountable).
+    if (typeof existing.frontmatter.owner === "string" && existing.frontmatter.owner !== "") {
+      frontmatter.owner = existing.frontmatter.owner;
+    }
+    // Preserve visibility (don't silently re-publish a private page).
+    if (existing.frontmatter.visibility === "private") {
+      frontmatter.visibility = "private";
+    }
+    // Append the acting identity to contributors if not already present.
     const existingContribs = Array.isArray(existing.frontmatter.contributors)
       ? existing.frontmatter.contributors
       : [];
-    if (!existingContribs.includes("system")) {
-      frontmatter.contributors = [...existingContribs, "system"];
+    if (!existingContribs.includes(actor)) {
+      frontmatter.contributors = [...existingContribs, actor];
     } else {
       frontmatter.contributors = existingContribs;
     }
@@ -794,7 +826,7 @@ export async function ingest(
     summary,
     logOp: "ingest",
     crossRefSource: content,
-    author: "system",
+    author: actor,
     logDetails: ({ updatedSlugs }) =>
       `slug: ${slug} · updated ${updatedSlugs.length} related page(s)`,
   });

@@ -12,6 +12,10 @@ vi.mock("@/lib/logger", () => ({
   logger: { error: vi.fn(), info: vi.fn(), debug: vi.fn(), warn: vi.fn() },
 }));
 
+vi.mock("@/lib/auth", () => ({
+  getPrincipal: vi.fn(async () => ({ id: "test-user", handle: "test-user" })),
+}));
+
 import { ingestXMention } from "@/lib/ingest";
 import { POST } from "@/app/api/ingest/x-mention/route";
 import type { IngestResult } from "@/lib/types";
@@ -188,6 +192,7 @@ describe("POST /api/ingest/x-mention", () => {
       expect(mockedIngestXMention).toHaveBeenCalledWith(
         "https://x.com/user/status/999",
         "@someone",
+        { author: "test-user", owner: "test-user" },
       );
     });
   });

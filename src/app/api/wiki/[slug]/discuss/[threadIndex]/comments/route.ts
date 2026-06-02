@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { decodeSlug } from "@/lib/slugify";
 import { addComment } from "@/lib/talk";
+import { getPrincipal } from "@/lib/auth";
 import { getErrorMessage } from "@/lib/errors";
 import { logger } from "@/lib/logger";
 
@@ -42,14 +43,15 @@ export async function POST(req: Request, { params }: RouteParams) {
       );
     }
 
-    const { author, body: commentBody, parentId } = body as Record<string, unknown>;
+    const { body: commentBody, parentId } = body as Record<string, unknown>;
 
-    if (typeof author !== "string" || author.trim().length === 0) {
-      return NextResponse.json(
-        { error: "author must be a non-empty string" },
-        { status: 400 },
-      );
+    // Comment author is the authenticated principal, never the request body.
+    const principal = await getPrincipal();
+    if (!principal) {
+      return NextResponse.json({ error: "Sign in required." }, { status: 401 });
     }
+    const author = principal.handle;
+
     if (typeof commentBody !== "string" || commentBody.trim().length === 0) {
       return NextResponse.json(
         { error: "body must be a non-empty string" },
@@ -66,7 +68,7 @@ export async function POST(req: Request, { params }: RouteParams) {
     const comment = await addComment(
       slug,
       idx,
-      author.trim(),
+      author,
       commentBody.trim(),
       typeof parentId === "string" ? parentId : undefined,
     );

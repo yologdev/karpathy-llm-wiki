@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { decodeSlug } from "@/lib/slugify";
 import { listThreads, createThread } from "@/lib/talk";
+import { getPrincipal } from "@/lib/auth";
 import { getErrorMessage } from "@/lib/errors";
 import { logger } from "@/lib/logger";
 
@@ -55,17 +56,17 @@ export async function POST(req: Request, { params }: RouteParams) {
       );
     }
 
-    const { title, author, body: threadBody } = body as Record<string, unknown>;
+    const { title, body: threadBody } = body as Record<string, unknown>;
+
+    // Thread author is the authenticated principal, never the request body.
+    const principal = await getPrincipal();
+    if (!principal) {
+      return NextResponse.json({ error: "Sign in required." }, { status: 401 });
+    }
 
     if (typeof title !== "string" || title.trim().length === 0) {
       return NextResponse.json(
         { error: "title must be a non-empty string" },
-        { status: 400 },
-      );
-    }
-    if (typeof author !== "string" || author.trim().length === 0) {
-      return NextResponse.json(
-        { error: "author must be a non-empty string" },
         { status: 400 },
       );
     }
@@ -76,7 +77,7 @@ export async function POST(req: Request, { params }: RouteParams) {
       );
     }
 
-    const thread = await createThread(slug, title.trim(), author.trim(), threadBody.trim());
+    const thread = await createThread(slug, title.trim(), principal.handle, threadBody.trim());
     return NextResponse.json({ thread }, { status: 201 });
   } catch (err) {
     logger.error("discuss create failed:", getErrorMessage(err));

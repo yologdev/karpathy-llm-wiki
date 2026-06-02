@@ -2,11 +2,19 @@ import { NextRequest, NextResponse } from "next/server";
 import { ingest, ingestUrl } from "@/lib/ingest";
 import type { IngestOptions } from "@/lib/ingest";
 import { isUrl } from "@/lib/fetch";
+import { getPrincipal } from "@/lib/auth";
 import { getErrorMessage } from "@/lib/errors";
 import { logger } from "@/lib/logger";
 
 export async function POST(request: NextRequest) {
   try {
+    // Writes require an authenticated user (also enforced in middleware). The
+    // acting identity comes from the session — never from the request body.
+    const principal = await getPrincipal();
+    if (!principal) {
+      return NextResponse.json({ error: "Sign in required." }, { status: 401 });
+    }
+
     const body = await request.json();
 
     const { url, title, content, preview, generatedContent, triggeredBy, tags, sourceUrl } = body;
@@ -55,6 +63,11 @@ export async function POST(request: NextRequest) {
     if (typeof sourceUrl === "string" && sourceUrl.trim().length > 0) {
       options.sourceUrl = sourceUrl.trim();
     }
+    // Attribution from the authenticated session (authoritative; overrides any
+    // client-supplied triggeredBy to prevent spoofing).
+    options.author = principal.handle;
+    options.owner = principal.handle;
+    options.triggeredBy = principal.handle;
 
     // URL path takes precedence
     if (url && typeof url === "string" && isUrl(url.trim())) {

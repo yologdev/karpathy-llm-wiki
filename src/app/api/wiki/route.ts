@@ -8,6 +8,7 @@ import {
   type Frontmatter,
 } from "@/lib/wiki";
 import { extractSummary } from "@/lib/ingest";
+import { getPrincipal } from "@/lib/auth";
 import { getErrorMessage } from "@/lib/errors";
 
 /**
@@ -36,6 +37,12 @@ export async function GET() {
  */
 export async function POST(req: Request) {
   try {
+    // Attribution from the authenticated session, never the body.
+    const principal = await getPrincipal();
+    if (!principal) {
+      return NextResponse.json({ error: "Sign in required." }, { status: 401 });
+    }
+
     let body: unknown;
     try {
       body = await req.json();
@@ -54,18 +61,11 @@ export async function POST(req: Request) {
       body && typeof body === "object" && "content" in body
         ? (body as { content: unknown }).content
         : undefined;
-    const author =
-      body && typeof body === "object" && "author" in body
-        ? (body as { author: unknown }).author
-        : undefined;
     const tags =
       body && typeof body === "object" && "tags" in body
         ? (body as { tags: unknown }).tags
         : undefined;
-    const authorStr =
-      typeof author === "string" && author.trim().length > 0
-        ? author.trim()
-        : undefined;
+    const authorStr = principal.handle;
     const tagsArr: string[] =
       Array.isArray(tags) && tags.every((t: unknown) => typeof t === "string")
         ? (tags as string[])
@@ -114,7 +114,9 @@ export async function POST(req: Request) {
       updated: today,
       confidence: 0.5,
       expiry,
-      authors: [authorStr ?? "anonymous"],
+      owner: authorStr,
+      visibility: "public",
+      authors: [authorStr],
       valid_from: today,
       disputed: false,
       contributors: [],

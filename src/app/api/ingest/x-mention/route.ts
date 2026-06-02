@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { ingestXMention } from "@/lib/ingest";
+import { getPrincipal } from "@/lib/auth";
 import { getErrorMessage } from "@/lib/errors";
 import { logger } from "@/lib/logger";
 
@@ -8,6 +9,10 @@ const X_URL_PATTERN = /^https?:\/\/(www\.)?(x\.com|twitter\.com)\//i;
 
 export async function POST(request: NextRequest) {
   try {
+    const principal = await getPrincipal();
+    if (!principal) {
+      return NextResponse.json({ error: "Sign in required." }, { status: 401 });
+    }
     const body = await request.json();
     const { url, triggeredBy } = body;
 
@@ -38,7 +43,13 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const result = await ingestXMention(url.trim(), triggeredBy.trim());
+    // `triggeredBy` (the X handle) stays as source provenance; the page owner
+    // and author are the authenticated principal (Phase 1: the caller is the
+    // logged-in user; the @yoyoevolve service loop is a later phase).
+    const result = await ingestXMention(url.trim(), triggeredBy.trim(), {
+      author: principal.handle,
+      owner: principal.handle,
+    });
     return NextResponse.json(result);
   } catch (error) {
     logger.error("ingest-x-mention", "X mention ingest error", error);

@@ -17,6 +17,10 @@ vi.mock("@/lib/logger", () => ({
   logger: { error: vi.fn(), info: vi.fn(), debug: vi.fn(), warn: vi.fn() },
 }));
 
+vi.mock("@/lib/auth", () => ({
+  getPrincipal: vi.fn(async () => ({ id: "test-user", handle: "test-user" })),
+}));
+
 import { ingest, ingestUrl } from "@/lib/ingest";
 import { POST } from "@/app/api/ingest/route";
 import { POST as POST_BATCH } from "@/app/api/ingest/batch/route";
@@ -119,9 +123,10 @@ describe("POST /api/ingest — tags", () => {
         }),
       );
       expect(res.status).toBe(200);
-      expect(mockedIngestUrl).toHaveBeenCalledWith("https://example.com/page", {
-        tags: ["foo", "bar"],
-      });
+      expect(mockedIngestUrl).toHaveBeenCalledWith(
+        "https://example.com/page",
+        expect.objectContaining({ tags: ["foo", "bar"] }),
+      );
     });
 
     it("does not include tags in options when empty array", async () => {
@@ -132,7 +137,8 @@ describe("POST /api/ingest — tags", () => {
           tags: [],
         }),
       );
-      expect(mockedIngestUrl).toHaveBeenCalledWith("https://example.com/page", {});
+      const opts = mockedIngestUrl.mock.calls[0][1];
+      expect(opts).not.toHaveProperty("tags");
     });
   });
 
@@ -147,9 +153,11 @@ describe("POST /api/ingest — tags", () => {
         }),
       );
       expect(res.status).toBe(200);
-      expect(mockedIngest).toHaveBeenCalledWith("Test Page", "Some content here", {
-        tags: ["alpha"],
-      });
+      expect(mockedIngest).toHaveBeenCalledWith(
+        "Test Page",
+        "Some content here",
+        expect.objectContaining({ tags: ["alpha"] }),
+      );
     });
 
     it("does not include tags in options when not provided", async () => {
@@ -160,7 +168,8 @@ describe("POST /api/ingest — tags", () => {
           content: "Some content here",
         }),
       );
-      expect(mockedIngest).toHaveBeenCalledWith("Test Page", "Some content here", {});
+      const opts = mockedIngest.mock.calls[0][2];
+      expect(opts).not.toHaveProperty("tags");
     });
   });
 });
@@ -227,11 +236,17 @@ describe("POST /api/ingest/batch — tags", () => {
       }
 
       expect(mockedIngestUrl).toHaveBeenCalledTimes(2);
-      expect(mockedIngestUrl).toHaveBeenCalledWith("https://example.com/a", { tags: ["batch-tag"] });
-      expect(mockedIngestUrl).toHaveBeenCalledWith("https://example.com/b", { tags: ["batch-tag"] });
+      expect(mockedIngestUrl).toHaveBeenCalledWith(
+        "https://example.com/a",
+        expect.objectContaining({ tags: ["batch-tag"] }),
+      );
+      expect(mockedIngestUrl).toHaveBeenCalledWith(
+        "https://example.com/b",
+        expect.objectContaining({ tags: ["batch-tag"] }),
+      );
     });
 
-    it("does not pass options when tags is empty", async () => {
+    it("does not pass tags when tags is empty", async () => {
       mockedIngestUrl.mockResolvedValue(fakeResult);
       const res = await POST_BATCH(
         makeRequest("http://localhost:3000/api/ingest/batch", {
@@ -247,10 +262,11 @@ describe("POST /api/ingest/batch — tags", () => {
         if (done) break;
       }
 
-      expect(mockedIngestUrl).toHaveBeenCalledWith("https://example.com/a", undefined);
+      expect(mockedIngestUrl.mock.calls[0][1]).not.toHaveProperty("tags");
+      expect(mockedIngestUrl.mock.calls[0][1]).toMatchObject({ author: "test-user" });
     });
 
-    it("does not pass options when tags is undefined", async () => {
+    it("does not pass tags when tags is undefined", async () => {
       mockedIngestUrl.mockResolvedValue(fakeResult);
       const res = await POST_BATCH(
         makeRequest("http://localhost:3000/api/ingest/batch", {
@@ -265,7 +281,8 @@ describe("POST /api/ingest/batch — tags", () => {
         if (done) break;
       }
 
-      expect(mockedIngestUrl).toHaveBeenCalledWith("https://example.com/a", undefined);
+      expect(mockedIngestUrl.mock.calls[0][1]).not.toHaveProperty("tags");
+      expect(mockedIngestUrl.mock.calls[0][1]).toMatchObject({ author: "test-user" });
     });
   });
 });

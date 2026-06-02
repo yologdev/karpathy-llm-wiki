@@ -1,11 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import { reingest } from "@/lib/ingest";
 import { readWikiPageWithFrontmatter } from "@/lib/wiki";
+import { getPrincipal } from "@/lib/auth";
 import { getErrorMessage } from "@/lib/errors";
 import { logger } from "@/lib/logger";
 
 export async function POST(request: NextRequest) {
   try {
+    const principal = await getPrincipal();
+    if (!principal) {
+      return NextResponse.json({ error: "Sign in required." }, { status: 401 });
+    }
     const body = await request.json();
     const { slug } = body;
 
@@ -36,7 +41,10 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const result = await reingest(trimmedSlug);
+    const result = await reingest(trimmedSlug, {
+      author: principal.handle,
+      triggeredBy: principal.handle,
+    });
     return NextResponse.json(result);
   } catch (error) {
     logger.error("ingest", "Re-ingest error", error);

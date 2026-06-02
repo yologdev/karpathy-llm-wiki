@@ -8,6 +8,7 @@ import {
   type Frontmatter,
 } from "@/lib/wiki";
 import { extractSummary } from "@/lib/ingest";
+import { getPrincipal } from "@/lib/auth";
 import { getErrorMessage } from "@/lib/errors";
 import { patchMetadata } from "@/lib/patch-metadata";
 
@@ -76,14 +77,8 @@ export async function PUT(
       );
     }
 
-    // Optional author attribution from the request body.
-    const author =
-      body && typeof body === "object" && "author" in body
-        ? (body as { author: unknown }).author
-        : undefined;
-    const authorStr = typeof author === "string" && author.trim().length > 0
-      ? author.trim()
-      : undefined;
+    // Attribution comes from the authenticated session, never the body.
+    const authorStr = (await getPrincipal())?.handle;
 
     const existing = await readWikiPageWithFrontmatter(slug);
     if (!existing) {
@@ -197,14 +192,8 @@ export async function PATCH(
       );
     }
 
-    // Optional author attribution from the request body.
-    const author =
-      body && typeof body === "object" && "author" in body
-        ? (body as { author: unknown }).author
-        : undefined;
-    const authorStr = typeof author === "string" && author.trim().length > 0
-      ? author.trim()
-      : undefined;
+    // Attribution comes from the authenticated session, never the body.
+    const authorStr = (await getPrincipal())?.handle;
 
     const result = await patchMetadata({
       slug,

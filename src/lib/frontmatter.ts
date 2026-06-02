@@ -99,6 +99,7 @@ export const AUTHORS_MAX_ITEM_CHARS = 100;
 export const CONTRIBUTORS_MAX_ITEMS = 50;
 export const CONTRIBUTORS_MAX_ITEM_CHARS = 100;
 export const SUPERSEDES_MAX_CHARS = 200;
+export const OWNER_MAX_CHARS = 100;
 export const TAGS_MAX_ITEMS = 30;
 export const TAGS_MAX_ITEM_CHARS = 100;
 
@@ -227,6 +228,16 @@ export function normalizeTypedFields(data: Frontmatter): void {
   // --- supersedes: string (slug), max 200 chars ---
   if ("supersedes" in data && typeof data.supersedes === "string") {
     data.supersedes = guardString("supersedes", data.supersedes, SUPERSEDES_MAX_CHARS);
+  }
+
+  // --- owner: string (principal handle), max 100 chars ---
+  if ("owner" in data && typeof data.owner === "string") {
+    data.owner = guardString("owner", data.owner, OWNER_MAX_CHARS);
+  }
+
+  // --- visibility: "public" | "private" (anything else → public) ---
+  if ("visibility" in data) {
+    data.visibility = data.visibility === "private" ? "private" : "public";
   }
 
   // --- array fields: authors, contributors, aliases → string[] ---

@@ -1,12 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
 import { ingestUrl } from "@/lib/ingest";
 import { isUrl } from "@/lib/fetch";
+import { getPrincipal } from "@/lib/auth";
 import { MAX_BATCH_URLS } from "@/lib/constants";
 import { getErrorMessage } from "@/lib/errors";
 import { logger } from "@/lib/logger";
 
 export async function POST(request: NextRequest) {
   try {
+    const principal = await getPrincipal();
+    if (!principal) {
+      return NextResponse.json({ error: "Sign in required." }, { status: 401 });
+    }
     const body = await request.json();
     const { urls, tags } = body;
 
@@ -56,7 +61,12 @@ export async function POST(request: NextRequest) {
 
     // --- Stream NDJSON results as each URL completes --------------------
     const encoder = new TextEncoder();
-    const ingestOptions = Array.isArray(tags) && tags.length > 0 ? { tags } : undefined;
+    const ingestOptions = {
+      ...(Array.isArray(tags) && tags.length > 0 ? { tags } : {}),
+      author: principal.handle,
+      owner: principal.handle,
+      triggeredBy: principal.handle,
+    };
 
     const stream = new ReadableStream({
       async start(controller) {
