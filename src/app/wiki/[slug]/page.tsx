@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { decodeSlug } from "@/lib/slugify";
 import { readWikiPageWithFrontmatter, findBacklinks, type Frontmatter } from "@/lib/wiki";
 import { parseSources } from "@/lib/sources";
 import type { SourceEntry } from "@/lib/types";
@@ -424,7 +425,8 @@ function PageMetadata({ frontmatter, discussionStats }: { frontmatter: Frontmatt
 }
 
 export default async function WikiPageView({ params }: WikiPageProps) {
-  const { slug } = await params;
+  const { slug: encodedSlug } = await params;
+  const slug = decodeSlug(encodedSlug);
   const page = await readWikiPageWithFrontmatter(slug);
 
   if (!page) {

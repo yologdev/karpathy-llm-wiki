@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { decodeSlug } from "@/lib/slugify";
 import { readRawSource } from "@/lib/wiki";
 import { getErrorMessage } from "@/lib/errors";
 
@@ -15,7 +16,8 @@ export async function GET(
   { params }: { params: Promise<{ slug: string }> },
 ) {
   try {
-    const { slug } = await params;
+    const { slug: encodedSlug } = await params;
+    const slug = decodeSlug(encodedSlug);
     const source = await readRawSource(slug);
     return new NextResponse(source.content, {
       status: 200,

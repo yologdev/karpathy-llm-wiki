@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { decodeSlug } from "@/lib/slugify";
 import { readWikiPageWithFrontmatter } from "@/lib/wiki";
 import { WikiEditor } from "@/components/WikiEditor";
 
@@ -7,7 +8,8 @@ interface EditPageProps {
 }
 
 export default async function EditWikiPage({ params }: EditPageProps) {
-  const { slug } = await params;
+  const { slug: encodedSlug } = await params;
+  const slug = decodeSlug(encodedSlug);
   const page = await readWikiPageWithFrontmatter(slug);
 
   if (!page) {

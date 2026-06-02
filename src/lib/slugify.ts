@@ -31,3 +31,21 @@ export function slugify(title: string): string {
     .replace(SLUG_SEPARATOR_RE, "-")
     .replace(/^-+|-+$/g, "");
 }
+
+/**
+ * Decode a slug taken from a URL path parameter.
+ *
+ * Browsers percent-encode non-ASCII (CJK) slugs in the address bar, and some
+ * runtimes (notably OpenNext on Cloudflare Workers) deliver the route param
+ * still percent-encoded — so `/wiki/检索增强生成` arrives as
+ * `%E6%A3%80%E7%B4%A2...` and a raw lookup 404s. Decoding is safe because a
+ * valid slug never contains a literal `%` (see `validateSlug`); on malformed
+ * input we fall back to the raw value rather than throw.
+ */
+export function decodeSlug(slug: string): string {
+  try {
+    return decodeURIComponent(slug);
+  } catch {
+    return slug;
+  }
+}

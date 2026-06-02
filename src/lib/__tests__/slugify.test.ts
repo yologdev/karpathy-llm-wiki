@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { slugify } from "../slugify";
+import { slugify, decodeSlug } from "../slugify";
 
 describe("slugify", () => {
   it("converts a basic title to a slug", () => {
@@ -56,5 +56,20 @@ describe("slugify", () => {
   it("keeps CJK while hyphenating around Latin/punctuation", () => {
     expect(slugify("RAG 检索增强生成")).toBe("rag-检索增强生成");
     expect(slugify("你好 World")).toBe("你好-world");
+  });
+});
+
+describe("decodeSlug", () => {
+  it("decodes a percent-encoded CJK slug from a URL path", () => {
+    expect(decodeSlug("%E7%9F%A5%E8%AF%86%E5%BA%93")).toBe("知识库");
+  });
+
+  it("is a no-op for already-decoded slugs", () => {
+    expect(decodeSlug("知识库")).toBe("知识库");
+    expect(decodeSlug("llm-wiki")).toBe("llm-wiki");
+  });
+
+  it("falls back to the raw value on malformed encoding", () => {
+    expect(decodeSlug("%E0%A4%A")).toBe("%E0%A4%A");
   });
 });

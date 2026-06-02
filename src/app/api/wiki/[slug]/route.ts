@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { decodeSlug } from "@/lib/slugify";
 import {
   deleteWikiPage,
   readWikiPageWithFrontmatter,
@@ -15,7 +16,8 @@ export async function DELETE(
   { params }: { params: Promise<{ slug: string }> },
 ) {
   try {
-    const { slug } = await params;
+    const { slug: encodedSlug } = await params;
+    const slug = decodeSlug(encodedSlug);
     const result = await deleteWikiPage(slug);
     return NextResponse.json(result);
   } catch (err) {
@@ -50,8 +52,8 @@ export async function PUT(
   { params }: { params: Promise<{ slug: string }> },
 ) {
   try {
-    const { slug } = await params;
-
+    const { slug: encodedSlug } = await params;
+    const slug = decodeSlug(encodedSlug);
     let body: unknown;
     try {
       body = await req.json();
@@ -168,8 +170,8 @@ export async function PATCH(
   { params }: { params: Promise<{ slug: string }> },
 ) {
   try {
-    const { slug } = await params;
-
+    const { slug: encodedSlug } = await params;
+    const slug = decodeSlug(encodedSlug);
     let body: unknown;
     try {
       body = await req.json();

@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { decodeSlug } from "@/lib/slugify";
 import { notFound } from "next/navigation";
 import { readRawSource } from "@/lib/wiki";
 
@@ -20,8 +21,8 @@ function formatSize(bytes: number): string {
 }
 
 export default async function RawSourcePage({ params }: RawSourcePageProps) {
-  const { slug } = await params;
-
+  const { slug: encodedSlug } = await params;
+  const slug = decodeSlug(encodedSlug);
   let source;
   try {
     source = await readRawSource(slug);

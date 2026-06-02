@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { decodeSlug } from "@/lib/slugify";
 import { listThreads, createThread } from "@/lib/talk";
 import { getErrorMessage } from "@/lib/errors";
 import { logger } from "@/lib/logger";
@@ -13,7 +14,8 @@ type RouteParams = { params: Promise<{ slug: string }> };
  */
 export async function GET(_req: Request, { params }: RouteParams) {
   try {
-    const { slug } = await params;
+    const { slug: encodedSlug } = await params;
+    const slug = decodeSlug(encodedSlug);
     const threads = await listThreads(slug);
     return NextResponse.json({ threads });
   } catch (err) {
@@ -34,8 +36,8 @@ export async function GET(_req: Request, { params }: RouteParams) {
  */
 export async function POST(req: Request, { params }: RouteParams) {
   try {
-    const { slug } = await params;
-
+    const { slug: encodedSlug } = await params;
+    const slug = decodeSlug(encodedSlug);
     let body: unknown;
     try {
       body = await req.json();

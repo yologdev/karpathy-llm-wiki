@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { decodeSlug } from "@/lib/slugify";
 import { addComment } from "@/lib/talk";
 import { getErrorMessage } from "@/lib/errors";
 import { logger } from "@/lib/logger";
@@ -14,7 +15,8 @@ type RouteParams = { params: Promise<{ slug: string; threadIndex: string }> };
  */
 export async function POST(req: Request, { params }: RouteParams) {
   try {
-    const { slug, threadIndex } = await params;
+    const { slug: encodedSlug, threadIndex } = await params;
+    const slug = decodeSlug(encodedSlug);
     const idx = parseInt(threadIndex, 10);
     if (!Number.isFinite(idx) || idx < 0) {
       return NextResponse.json(
