@@ -3,7 +3,13 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState, useEffect } from "react";
-import { Show, SignInButton, SignUpButton, UserButton } from "@clerk/nextjs";
+import {
+  Show,
+  SignInButton,
+  SignUpButton,
+  UserButton,
+  useUser,
+} from "@clerk/nextjs";
 import { GlobalSearch } from "./GlobalSearch";
 import { ThemeToggle } from "./ThemeToggle";
 
@@ -42,6 +48,9 @@ export function NavHeader() {
   const pathname = usePathname();
   const activeHref = getActiveHref(pathname);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const { user } = useUser();
+  const handle = user?.username ?? null;
+  const profileHref = handle ? `/u/${handle}` : null;
 
   // Close mobile menu when pathname changes (navigation occurred)
   useEffect(() => {
@@ -148,7 +157,25 @@ export function NavHeader() {
               </SignUpButton>
             </Show>
             <Show when="signed-in">
-              <UserButton />
+              {profileHref && (
+                <Link
+                  href={profileHref}
+                  className="rounded-md px-3 py-1.5 text-sm text-foreground/60 hover:text-foreground hover:bg-foreground/5 transition-colors"
+                >
+                  My pages
+                </Link>
+              )}
+              <UserButton>
+                {profileHref && (
+                  <UserButton.MenuItems>
+                    <UserButton.Link
+                      label="My pages"
+                      labelIcon={<span aria-hidden>📄</span>}
+                      href={profileHref}
+                    />
+                  </UserButton.MenuItems>
+                )}
+              </UserButton>
             </Show>
           </li>
         </ul>
@@ -239,6 +266,17 @@ export function NavHeader() {
             <span>Theme</span>
           </div>
           <div className="mx-4 my-1 border-t border-foreground/10" />
+          <Show when="signed-in">
+            {profileHref && (
+              <Link
+                href={profileHref}
+                onClick={() => setMobileOpen(false)}
+                className="block px-6 py-2 text-sm text-foreground/60 hover:text-foreground hover:bg-foreground/5"
+              >
+                My pages
+              </Link>
+            )}
+          </Show>
           <div className="px-6 py-2 flex items-center gap-3 text-sm">
             <Show when="signed-out">
               <SignInButton mode="modal">
