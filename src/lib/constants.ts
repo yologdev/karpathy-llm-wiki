@@ -88,6 +88,13 @@ export const LLM_RETRY_MAX_MS = 10_000;
 /** Default maximum output tokens for LLM generation calls. */
 export const LLM_MAX_OUTPUT_TOKENS = 4096;
 
+/**
+ * Output-token cap for ingest synthesis. Higher than the default so the
+ * `## Details` section can faithfully preserve substantive source content
+ * rather than being truncated into a thin summary.
+ */
+export const INGEST_MAX_OUTPUT_TOKENS = 8192;
+
 // ---- Graph ----------------------------------------------------------------
 
 /** Default canvas height (px) for the wiki graph visualisation. */

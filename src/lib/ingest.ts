@@ -17,6 +17,7 @@ import {
 } from "./sources";
 import {
   MAX_LLM_INPUT_CHARS,
+  INGEST_MAX_OUTPUT_TOKENS,
 } from "./constants";
 import { slugify } from "./slugify";
 import { loadPageConventions } from "./schema";
@@ -342,6 +343,12 @@ Include:
 - A brief summary section (## Summary)
 - Key points or takeaways (## Key Points)
 - Notable entities, concepts, or terms worth remembering (## Concepts)
+- A detailed section (## Details) that faithfully preserves the source's
+  substantive content — important explanations, definitions, examples, steps,
+  data, and notable passages — written as readable prose and lists, not just
+  one-line bullets. Aim to retain what a reader would need so the page can
+  stand in for the source. Do not pad, repeat the summary, or invent anything
+  not supported by the source.
 
 Output pure markdown and nothing else. Do not wrap in code fences.`;
 
@@ -464,19 +471,24 @@ export async function ingest(
     const systemPrompt = await buildIngestSystemPrompt();
     const chunks = chunkText(content, MAX_LLM_INPUT_CHARS);
 
+    // Larger output budget so the ## Details section can preserve substantive
+    // source content instead of being truncated.
+    const llmOptions = { maxOutputTokens: INGEST_MAX_OUTPUT_TOKENS };
+
     if (chunks.length === 1) {
       // Short content — single LLM call (no behaviour change)
-      wikiContent = await callLLM(systemPrompt, chunks[0]);
+      wikiContent = await callLLM(systemPrompt, chunks[0], llmOptions);
     } else {
       // Long content — call LLM per chunk, merge results
       // First chunk produces the primary page structure
-      wikiContent = await callLLM(systemPrompt, chunks[0]);
+      wikiContent = await callLLM(systemPrompt, chunks[0], llmOptions);
 
       // Subsequent chunks add supplemental content
       for (let i = 1; i < chunks.length; i++) {
         const continuation = await callLLM(
           CONTINUATION_SYSTEM_PROMPT,
           `# Existing article so far\n\n${wikiContent}\n\n# Additional source material (part ${i + 1} of ${chunks.length})\n\n${chunks[i]}`,
+          llmOptions,
         );
         wikiContent += "\n\n" + continuation;
       }

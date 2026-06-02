@@ -1538,6 +1538,9 @@ describe("schema-aware ingest prompt", () => {
     const prompt = await buildIngestSystemPrompt();
     expect(prompt).toContain("You are a wiki editor");
     expect(prompt).toContain("Output pure markdown and nothing else");
+    // Fidelity section: the prompt asks for a Details section that preserves
+    // substantive source content (not just a thin summary).
+    expect(prompt).toContain("## Details");
   });
 });
 
