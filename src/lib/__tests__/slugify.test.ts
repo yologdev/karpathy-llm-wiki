@@ -47,4 +47,14 @@ describe("slugify", () => {
     expect(slugify("What is GPT-4?")).toBe("what-is-gpt-4");
     expect(slugify("C++ & Rust: A Comparison")).toBe("c-rust-a-comparison");
   });
+
+  it("preserves CJK characters (Chinese titles no longer collapse to empty)", () => {
+    expect(slugify("知识库")).toBe("知识库");
+    expect(slugify("大语言模型")).toBe("大语言模型");
+  });
+
+  it("keeps CJK while hyphenating around Latin/punctuation", () => {
+    expect(slugify("RAG 检索增强生成")).toBe("rag-检索增强生成");
+    expect(slugify("你好 World")).toBe("你好-world");
+  });
 });
