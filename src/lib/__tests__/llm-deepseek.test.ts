@@ -4,8 +4,14 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 // models without any network calls. We assert HOW the deepseek model is built:
 // via createOpenAI pointed at the DeepSeek base URL.
 // `vi.hoisted` so the mock fn exists before the hoisted vi.mock factory runs.
+// The provider is both callable (default = Responses API) AND exposes `.chat()`
+// (Chat Completions); deepseek must use `.chat()`, so we assert on it.
 const { createOpenAIMock } = vi.hoisted(() => ({
-  createOpenAIMock: vi.fn(() => vi.fn((id: string) => ({ id }))),
+  createOpenAIMock: vi.fn(() =>
+    Object.assign((id: string) => ({ id, api: "responses" }), {
+      chat: vi.fn((id: string) => ({ id, api: "chat" })),
+    }),
+  ),
 }));
 vi.mock("@ai-sdk/openai", () => ({ createOpenAI: createOpenAIMock }));
 vi.mock("@ai-sdk/anthropic", () => ({ createAnthropic: vi.fn(() => vi.fn()) }));
@@ -42,7 +48,11 @@ beforeEach(() => {
   process.env.DATA_DIR = "/tmp/llm-wiki-ds-test-nonexistent";
   vi.clearAllMocks();
   // clearAllMocks keeps implementations, but re-assert the factory impl to be safe.
-  createOpenAIMock.mockImplementation(() => vi.fn((id: string) => ({ id })));
+  createOpenAIMock.mockImplementation(() =>
+    Object.assign((id: string) => ({ id, api: "responses" }), {
+      chat: vi.fn((id: string) => ({ id, api: "chat" })),
+    }),
+  );
   _resetConfigCache();
 });
 
@@ -65,9 +75,10 @@ describe("DeepSeek getModel construction", () => {
       apiKey: "sk-ds",
       baseURL: "https://api.deepseek.com",
     });
-    // Default model is deepseek-v4-flash.
-    const modelFactory = createOpenAIMock.mock.results[0].value;
-    expect(modelFactory).toHaveBeenCalledWith("deepseek-v4-flash");
+    // Must use Chat Completions (.chat), NOT the default Responses API —
+    // DeepSeek doesn't implement /responses. Default model deepseek-v4-flash.
+    const provider = createOpenAIMock.mock.results[0].value;
+    expect(provider.chat).toHaveBeenCalledWith("deepseek-v4-flash");
   });
 
   it("honors LLM_MODEL=deepseek-v4-pro", async () => {
@@ -77,7 +88,7 @@ describe("DeepSeek getModel construction", () => {
 
     await callLLM("system", "message");
 
-    const modelFactory = createOpenAIMock.mock.results[0].value;
-    expect(modelFactory).toHaveBeenCalledWith("deepseek-v4-pro");
+    const provider = createOpenAIMock.mock.results[0].value;
+    expect(provider.chat).toHaveBeenCalledWith("deepseek-v4-pro");
   });
 });

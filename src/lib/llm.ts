@@ -246,11 +246,15 @@ function getModel() {
       // DeepSeek exposes an OpenAI-compatible endpoint, so we reuse the
       // OpenAI provider with a custom baseURL rather than adding a new
       // dependency. Default model is deepseek-v4-flash (see DEFAULT_MODELS).
+      //
+      // Use `.chat()` (Chat Completions, /chat/completions) explicitly: the
+      // provider's default callable targets OpenAI's Responses API
+      // (/responses), which DeepSeek does not implement — it would 404.
       const deepseek = createOpenAI({
         apiKey: creds.apiKey!,
         baseURL: DEEPSEEK_BASE_URL,
       });
-      return deepseek(model);
+      return deepseek.chat(model);
     }
     case "google": {
       const google = createGoogleGenerativeAI({ apiKey: creds.apiKey! });

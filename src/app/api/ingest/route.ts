@@ -9,12 +9,21 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
 
-    const { url, title, content, preview, generatedContent, triggeredBy, tags } = body;
+    const { url, title, content, preview, generatedContent, triggeredBy, tags, sourceUrl } = body;
 
     // Validate triggeredBy if provided
     if (triggeredBy !== undefined && typeof triggeredBy !== "string") {
       return NextResponse.json(
         { error: "triggeredBy must be a string if provided" },
+        { status: 400 },
+      );
+    }
+
+    // Validate sourceUrl if provided (text path provenance — the URL path
+    // records its own source automatically)
+    if (sourceUrl !== undefined && (typeof sourceUrl !== "string" || !isUrl(sourceUrl.trim()))) {
+      return NextResponse.json(
+        { error: "sourceUrl must be a valid URL if provided" },
         { status: 400 },
       );
     }
@@ -42,6 +51,9 @@ export async function POST(request: NextRequest) {
     }
     if (Array.isArray(tags) && tags.length > 0) {
       options.tags = tags;
+    }
+    if (typeof sourceUrl === "string" && sourceUrl.trim().length > 0) {
+      options.sourceUrl = sourceUrl.trim();
     }
 
     // URL path takes precedence
