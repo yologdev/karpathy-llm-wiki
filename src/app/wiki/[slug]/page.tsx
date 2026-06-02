@@ -83,6 +83,12 @@ function sourceTypeBadge(type: SourceEntry["type"]): {
         className:
           "bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-400",
       };
+    case "wiki-ref":
+      return {
+        label: "Wiki Reference",
+        className:
+          "bg-teal-100 text-teal-800 dark:bg-teal-900/30 dark:text-teal-400",
+      };
     default:
       return {
         label: String(type),
