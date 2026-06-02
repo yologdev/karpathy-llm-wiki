@@ -54,8 +54,17 @@ export function rawRelPath(filename: string): string {
 // Slug validation — path traversal protection
 // ---------------------------------------------------------------------------
 
-/** Safe slug pattern: lowercase alphanumeric, may contain hyphens, cannot start/end with hyphen. */
-const SAFE_SLUG_RE = /^[a-z0-9][a-z0-9-]*[a-z0-9]$|^[a-z0-9]$/;
+/**
+ * Safe slug pattern: lowercase alphanumeric **or CJK** (Han incl. Ext-A and
+ * compatibility ideographs, Japanese kana, Korean hangul), may contain hyphens,
+ * cannot start/end with hyphen. CJK is allowed so Chinese/Japanese/Korean
+ * titles can have meaningful slugs (matches {@link slugify}); path-safety is
+ * enforced separately below (null bytes, separators, `..`).
+ */
+const SLUG_CHAR = "a-z0-9\\u3400-\\u9fff\\uf900-\\ufaff\\u3040-\\u30ff\\uac00-\\ud7af";
+const SAFE_SLUG_RE = new RegExp(
+  `^[${SLUG_CHAR}][${SLUG_CHAR}-]*[${SLUG_CHAR}]$|^[${SLUG_CHAR}]$`,
+);
 
 /**
  * Validate that a slug is safe to use as a filename inside the wiki/raw dirs.

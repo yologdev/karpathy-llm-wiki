@@ -301,6 +301,12 @@ describe("validateSlug", () => {
     expect(() => validateSlug("x1")).not.toThrow();
   });
 
+  it("accepts CJK slugs", () => {
+    expect(() => validateSlug("检索增强生成")).not.toThrow();
+    expect(() => validateSlug("知识库")).not.toThrow();
+    expect(() => validateSlug("你好-world")).not.toThrow();
+  });
+
   it("rejects empty string", () => {
     expect(() => validateSlug("")).toThrow(/non-empty/);
   });
