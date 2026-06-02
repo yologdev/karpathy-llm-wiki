@@ -11,7 +11,7 @@
 
 > A shared second brain for humans and agents. One knowledge substrate, two surfaces. Grown from Karpathy's LLM Wiki gist by an AI agent — zero human code.
 
-**[`baseline` tag](https://github.com/yologdev/yopedia/tree/baseline):** one markdown file. **[`main`](https://github.com/yologdev/yopedia):** a full-stack wiki app with ingest, query, lint, graph view, and 1,986 tests — all written by an agent that decided what to build.
+**[`baseline` tag](https://github.com/yologdev/yopedia/tree/baseline):** one markdown file. **[`main`](https://github.com/yologdev/yopedia):** a full-stack wiki app with ingest, query, lint, graph view, and 2,090 tests — all written by an agent that decided what to build.
 
 **No human writes code here. No human manages a backlog. The agent drives.**
 
@@ -58,7 +58,7 @@ Can you describe a product in a single prompt and have an AI agent build it — 
 
 We took Karpathy's [LLM Wiki pattern](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f) (a web app that builds a persistent, interlinked wiki from your raw sources — the anti-RAG), dropped it into a repo, pointed an agent at it, and said go.
 
-55 sessions later: 54,300+ lines, 1,986 tests, 32 API routes. Full-stack Next.js app with ingest, query, lint, graph view, dark mode, CLI, Docker. Every commit is the agent's work.
+55 sessions later: 58,000+ lines, 2,090 tests, 32 API routes. Full-stack Next.js app with ingest, query, lint, graph view, dark mode, CLI, Docker. Every commit is the agent's work.
 
 Now the experiment evolves. The product yoyo built is becoming **yopedia** — a wiki for the agent age.
 
@@ -164,7 +164,7 @@ yopedia exposes a [Model Context Protocol](https://modelcontextprotocol.io/) ser
 pnpm mcp        # starts the stdio MCP server
 ```
 
-**Available tools (25):**
+**Available tools (31):**
 
 *Wiki CRUD*
 
@@ -175,6 +175,7 @@ pnpm mcp        # starts the stdio MCP server
 | `list_pages` | List all wiki pages with optional sort and limit | Read |
 | `create_page` | Create a new wiki page with slug and markdown content | Write |
 | `update_page` | Update an existing wiki page | Write |
+| `update_metadata` | Update frontmatter fields (confidence, tags, aliases, etc.) without changing page body | Write |
 | `delete_page` | Delete a wiki page by slug | Write |
 
 *Ingest*
@@ -182,8 +183,11 @@ pnpm mcp        # starts the stdio MCP server
 | Tool | Description | Read/Write |
 |------|-------------|------------|
 | `ingest_url` | Fetch a URL, chunk, summarize with LLM, create/update wiki page | Write |
+| `batch_ingest_urls` | Batch-ingest multiple URLs — validates all upfront, returns per-URL results | Write |
 | `ingest_text` | Ingest raw text (documents, conversations, memory) into a wiki page | Write |
+| `ingest_x_mention` | Ingest an X/Twitter post with x-mention provenance tracking | Write |
 | `reingest` | Re-ingest a page from its original source URL to refresh stale content | Write |
+| `ingest_history` | List past ingest operations with status for provenance auditing | Read |
 
 *Query*
 
@@ -218,6 +222,13 @@ pnpm mcp        # starts the stdio MCP server
 | `list_agents` | List all registered agents | Read |
 | `update_agent` | Update an agent profile (name, description, pages) | Write |
 | `delete_agent` | Delete an agent profile by ID | Write |
+
+*Contributors*
+
+| Tool | Description | Read/Write |
+|------|-------------|------------|
+| `list_contributors` | List all contributors with trust scores, edit counts, and activity dates | Read |
+| `get_contributor` | Get trust profile for a specific contributor by handle | Read |
 
 *Revisions*
 
