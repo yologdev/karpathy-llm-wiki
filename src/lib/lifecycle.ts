@@ -168,6 +168,32 @@ function stripBacklinksTo(slug: string, content: string): string {
  * Shared lifecycle-op pipeline for write and delete. See the block comment
  * above for the full 5-step shape.
  */
+/**
+ * Map over items with bounded concurrency. Keeps the parallelism win on large
+ * wikis without firing thousands of simultaneous R2 subrequests. Order-preserving.
+ */
+async function mapWithConcurrency<T, R>(
+  items: T[],
+  limit: number,
+  fn: (item: T, index: number) => Promise<R>,
+): Promise<R[]> {
+  const results = new Array<R>(items.length);
+  let next = 0;
+  async function worker(): Promise<void> {
+    while (next < items.length) {
+      const i = next++;
+      results[i] = await fn(items[i], i);
+    }
+  }
+  await Promise.all(
+    Array.from({ length: Math.min(limit, items.length) }, () => worker()),
+  );
+  return results;
+}
+
+/** Max concurrent R2 reads/writes during a page lifecycle op. */
+const LIFECYCLE_CONCURRENCY = 12;
+
 async function runPageLifecycleOp(
   slug: string,
   op: PageLifecycleOp,
@@ -195,48 +221,43 @@ async function runPageLifecycleOp(
     }
   }
 
-  // 2b. Update vector index (blocking but failure-tolerant — errors are
-  //      logged and swallowed so they never fail the operation).
-  try {
-    if (op.kind === "write") {
+  // 2b–2d. Secondary storage cleanup. All steps are failure-tolerant (logged +
+  //        swallowed) so they never fail the op. On the delete path the three
+  //        independent ops (embedding, revisions, discussions) run CONCURRENTLY
+  //        instead of one-after-another to cut latency.
+  if (op.kind === "write") {
+    try {
       await upsertEmbedding(slug, op.content);
-    } else {
-      await removeEmbedding(slug);
+    } catch (err) {
+      logger.warn(
+        "wiki",
+        `embedding upsert failed for "${slug}":`,
+        getErrorMessage(err, String(err)),
+      );
     }
-  } catch (err) {
-    logger.warn(
-      "wiki",
-      `embedding ${op.kind === "write" ? "upsert" : "remove"} failed for "${slug}":`,
-      getErrorMessage(err, String(err)),
-    );
+  } else {
+    const cleanups: { label: string; run: Promise<unknown> }[] = [
+      { label: "embedding remove", run: removeEmbedding(slug) },
+      { label: "deleteRevisions", run: deleteRevisions(slug) },
+      { label: "deleteDiscussions", run: deleteDiscussions(slug) },
+    ];
+    const settled = await Promise.allSettled(cleanups.map((c) => c.run));
+    settled.forEach((r, i) => {
+      if (r.status === "rejected") {
+        logger.warn(
+          "wiki",
+          `${cleanups[i].label} failed for "${slug}":`,
+          getErrorMessage(r.reason, String(r.reason)),
+        );
+      }
+    });
   }
 
-  // 2c. Clean up revision history when deleting a page.
+  // 2e. Index maintenance (in-memory, fast).
   if (op.kind === "delete") {
-    try {
-      await deleteRevisions(slug);
-    } catch (err) {
-      logger.warn(
-        "wiki",
-        `deleteRevisions failed for "${slug}":`,
-        getErrorMessage(err, String(err)),
-      );
-    }
-    // 2d. Clean up talk page discussions when deleting a page.
-    try {
-      await deleteDiscussions(slug);
-    } catch (err) {
-      logger.warn(
-        "wiki",
-        `deleteDiscussions failed for "${slug}":`,
-        getErrorMessage(err, String(err)),
-      );
-    }
-
-    // 2e. Invalidate alias index entries for the deleted page so that
-    //     resolveAlias(deletedTitle) no longer ghost-resolves to this slug.
+    // Invalidate alias entries so resolveAlias(deletedTitle) no longer
+    // ghost-resolves here; drop source-index (URL/content-hash) entries too.
     removeAliasForPage(slug);
-    // Also drop source-index (URL/content-hash) entries for the deleted page.
     removeSourceForPage(slug);
   } else {
     // 2e. Update alias index for written page so resolveAlias() finds it
@@ -304,17 +325,24 @@ async function runPageLifecycleOp(
       crossRefedSlugs = await updateRelatedPages(slug, op.title, relatedSlugs);
     }
   } else {
-    for (const entry of postIndexEntries!) {
-      const otherPage = await readWikiPage(entry.slug);
-      if (!otherPage) continue;
-      if (!otherPage.content.includes(`${slug}.md`)) continue;
-
-      const updated = stripBacklinksTo(slug, otherPage.content);
-      if (updated !== otherPage.content) {
+    // Strip links to the deleted page from every other page. Read all pages
+    // CONCURRENTLY (bounded) — this was the main sequential bottleneck and the
+    // part that scaled badly with page count. Then rewrite only the linkers.
+    const pages = await mapWithConcurrency(
+      postIndexEntries!,
+      LIFECYCLE_CONCURRENCY,
+      async (entry) => ({ entry, page: await readWikiPage(entry.slug) }),
+    );
+    const linkers = pages.filter(
+      ({ page }) => page && page.content.includes(`${slug}.md`),
+    );
+    await mapWithConcurrency(linkers, LIFECYCLE_CONCURRENCY, async ({ entry, page }) => {
+      const updated = stripBacklinksTo(slug, page!.content);
+      if (updated !== page!.content) {
         await writeWikiPage(entry.slug, updated);
         strippedBacklinksFrom.push(entry.slug);
       }
-    }
+    });
   }
 
   // 5. Log.
