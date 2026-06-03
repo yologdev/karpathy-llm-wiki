@@ -1,5 +1,7 @@
 import { rawRelPath } from "@/lib/wiki";
 import { getStorage } from "@/lib/storage";
+import { isEnoent } from "@/lib/errors";
+import { logger } from "@/lib/logger";
 
 /**
  * GET /api/assets/[...path]
@@ -65,8 +67,13 @@ export async function GET(
   let bytes: ArrayBuffer;
   try {
     bytes = await getStorage().readAsset(storageKey);
-  } catch {
-    return new Response(null, { status: 404 });
+  } catch (err) {
+    // A genuinely missing asset is a 404; anything else (R2 outage, binding
+    // failure) is a real incident — surface it as 500 + log so it isn't
+    // indistinguishable from "file not found".
+    if (isEnoent(err)) return new Response(null, { status: 404 });
+    logger.error("assets", `readAsset failed for ${storageKey}`, err);
+    return new Response(null, { status: 500 });
   }
 
   const name = segments[segments.length - 1];

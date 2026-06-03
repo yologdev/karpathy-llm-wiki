@@ -69,7 +69,7 @@ type IngestOutcome = "ingested" | "not-a-user" | "dropped" | "failed";
 // every access below is optional-chained or guarded).
 // ---------------------------------------------------------------------------
 interface XMedia {
-  media_key: string;
+  media_key?: string; // unchecked cast — guarded by the `if (u)` consumer
   type?: string; // photo | video | animated_gif
   url?: string; // photos
   preview_image_url?: string; // video / gif poster frame
@@ -196,7 +196,9 @@ async function run(env: Env): Promise<Summary> {
     (payload.includes?.tweets ?? []).map((t) => [t.id, t]),
   );
   const mediaByKey = Object.fromEntries(
-    (payload.includes?.media ?? []).map((m) => [m.media_key, m]),
+    (payload.includes?.media ?? [])
+      .filter((m) => m.media_key)
+      .map((m) => [m.media_key as string, m]),
   );
   if (mentions.length === 0) {
     console.log(`No new mentions for query [${QUERY}]. Nothing to ingest.`);
@@ -354,7 +356,9 @@ async function probe(env: Env, hours: number): Promise<unknown> {
       (payload.includes?.tweets ?? []).map((t) => [t.id, t]),
     );
     const mediaByKey = Object.fromEntries(
-      (payload.includes?.media ?? []).map((m) => [m.media_key, m]),
+      (payload.includes?.media ?? [])
+      .filter((m) => m.media_key)
+      .map((m) => [m.media_key as string, m]),
     );
     results[name] = {
       query,

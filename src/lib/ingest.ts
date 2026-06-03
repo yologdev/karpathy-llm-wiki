@@ -712,9 +712,12 @@ export async function ingest(
   // Download any images referenced in the source to local storage and rewrite
   // their markdown refs to `assets/<slug>/...`. Centralized here (not in
   // ingestUrl) so URL, pasted-text, agent, and X ingests all capture images.
-  // No-op when the content has no remote image refs (e.g. already-local refs
-  // from a re-ingest or the image-ingest path), so it's safe to run always.
-  content = await downloadImages(content, slug, getRawDir());
+  // Skipped when committing pre-generated content (commit-from-preview or the
+  // image-ingest body): those already ran image capture / carry local refs, so
+  // re-downloading would refetch every image needlessly.
+  if (!preGeneratedContent) {
+    content = await downloadImages(content, slug, getRawDir());
+  }
 
   // Dedup by content: if identical content was already ingested (any slug),
   // attach the triggerer and skip the LLM + embedding. Not for preview /

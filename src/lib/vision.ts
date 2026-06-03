@@ -40,6 +40,7 @@ export async function describeImage(
   const bytes = image instanceof Uint8Array ? image : new Uint8Array(image);
   const model = visionModel();
 
+  let timer: ReturnType<typeof setTimeout> | undefined;
   try {
     const result = await Promise.race([
       ai.run(model, {
@@ -47,9 +48,9 @@ export async function describeImage(
         prompt: opts?.prompt ?? DEFAULT_PROMPT,
         max_tokens: opts?.maxTokens ?? 512,
       }),
-      new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error("vision timeout")), VISION_TIMEOUT_MS),
-      ),
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error("vision timeout")), VISION_TIMEOUT_MS);
+      }),
     ]);
 
     // Different models name the field differently (llama → response, llava →
@@ -66,5 +67,7 @@ export async function describeImage(
       `Image description failed (${model}): ${err instanceof Error ? err.message : String(err)}`,
     );
     return null;
+  } finally {
+    clearTimeout(timer);
   }
 }

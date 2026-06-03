@@ -43,12 +43,21 @@ describe("GET /api/assets/[...path]", () => {
     expect(res.headers.get("X-Content-Type-Options")).toBe("nosniff");
   });
 
-  it("404s on a missing asset (readAsset throws) without leaking the error", async () => {
-    readAssetReturning(new Error("ENOENT"));
+  it("404s on a genuinely missing asset (ENOENT)", async () => {
+    const enoent = Object.assign(new Error("ENOENT"), { code: "ENOENT" });
+    readAssetReturning(enoent);
     const res = await GET(req(), {
       params: Promise.resolve({ path: ["alice", "missing.png"] }),
     });
     expect(res.status).toBe(404);
+  });
+
+  it("500s on a real storage failure (not ENOENT) so an outage isn't masked as 404", async () => {
+    readAssetReturning(new Error("R2 service unavailable"));
+    const res = await GET(req(), {
+      params: Promise.resolve({ path: ["alice", "x.png"] }),
+    });
+    expect(res.status).toBe(500);
   });
 
   it.each([["..", "x.png"], ["alice", ".."], ["alice", "a/b.png"], ["", "x.png"]])(

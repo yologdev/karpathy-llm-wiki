@@ -13,6 +13,18 @@ export function getErrorMessage(
   return fallback;
 }
 
+/**
+ * A caller-supplied-input error (bad/oversized/unsafe input) that a route
+ * should surface as a 4xx, distinct from a server-side failure. Lets routes
+ * classify by type rather than by string-matching the message.
+ */
+export class ClientInputError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ClientInputError";
+  }
+}
+
 /** Check whether an unknown caught value is a Node.js ENOENT (file-not-found) error. */
 export function isEnoent(err: unknown): boolean {
   return (

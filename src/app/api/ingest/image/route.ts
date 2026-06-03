@@ -3,7 +3,7 @@ import { ingestImage } from "@/lib/ingest";
 import type { IngestOptions } from "@/lib/ingest";
 import { isUrl } from "@/lib/fetch";
 import { getPrincipal } from "@/lib/auth";
-import { getErrorMessage } from "@/lib/errors";
+import { ClientInputError, getErrorMessage } from "@/lib/errors";
 import { logger } from "@/lib/logger";
 import { MAX_RESPONSE_SIZE } from "@/lib/constants";
 
@@ -76,12 +76,14 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(result);
   } catch (error) {
     const msg = getErrorMessage(error);
-    // Bad-input failures from fetching/storing the image are the caller's fault.
-    const clientError =
-      /not an image|too large|Failed to fetch image|unsafe|blocked|private|Invalid/i.test(
-        msg,
-      );
-    if (!clientError) logger.error("ingest", "Image ingest error", error);
-    return NextResponse.json({ error: msg }, { status: clientError ? 400 : 500 });
+    // Bad-input failures (unsafe/oversized/non-image URL) are tagged
+    // ClientInputError by the store helpers → 400. Anything else is a real
+    // server failure → 500 + error log (always log so nothing is masked).
+    if (error instanceof ClientInputError) {
+      logger.warn("ingest", `Image ingest rejected: ${msg}`);
+      return NextResponse.json({ error: msg }, { status: 400 });
+    }
+    logger.error("ingest", "Image ingest error", error);
+    return NextResponse.json({ error: msg }, { status: 500 });
   }
 }

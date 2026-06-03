@@ -24,6 +24,7 @@ import {
 import { validateUrlSafety } from "./url-safety";
 import { getStorage } from "./storage";
 import { rawRelPath } from "./wiki";
+import { ClientInputError, getErrorMessage } from "./errors";
 
 // Re-export HTML parsing utilities for backwards compatibility
 export { stripHtml, htmlToMarkdown, extractTitle, extractWithReadability } from "./html-parse";
@@ -378,19 +379,27 @@ export async function storeImageAsset(
   url: string,
   slug: string,
 ): Promise<{ localPath: string; bytes: ArrayBuffer; filename: string; contentType: string }> {
-  validateUrlSafety(url); // SSRF guard — throws on private/unsafe hosts
+  // SSRF guard — throws on private/unsafe hosts. Re-tag as client input so the
+  // route classifies it as a 4xx (the bad URL is the caller's).
+  try {
+    validateUrlSafety(url);
+  } catch (err) {
+    throw new ClientInputError(getErrorMessage(err));
+  }
 
   const resp = await fetch(url, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
   if (!resp.ok) {
-    throw new Error(`Failed to fetch image: HTTP ${resp.status}`);
+    throw new ClientInputError(`Failed to fetch image: HTTP ${resp.status}`);
   }
   const contentType = resp.headers.get("content-type") || "";
   if (!contentType.startsWith("image/")) {
-    throw new Error(`URL is not an image (content-type: ${contentType || "unknown"})`);
+    throw new ClientInputError(
+      `URL is not an image (content-type: ${contentType || "unknown"})`,
+    );
   }
   const bytes = await resp.arrayBuffer();
   if (bytes.byteLength > MAX_RESPONSE_SIZE) {
-    throw new Error(
+    throw new ClientInputError(
       `Image too large (${bytes.byteLength} bytes, max ${MAX_RESPONSE_SIZE})`,
     );
   }
@@ -410,7 +419,7 @@ export async function storeImageBytes(
   suggestedName: string,
 ): Promise<{ localPath: string; filename: string }> {
   if (bytes.byteLength > MAX_RESPONSE_SIZE) {
-    throw new Error(
+    throw new ClientInputError(
       `Image too large (${bytes.byteLength} bytes, max ${MAX_RESPONSE_SIZE})`,
     );
   }

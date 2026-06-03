@@ -130,7 +130,9 @@ export interface AiImageToTextResponse {
   description?: string;
 }
 
-/** Minimal Workers AI binding surface — `run()` for embeddings and vision. */
+/** Minimal Workers AI binding surface — `run()` for embeddings and vision.
+ *  Overload resolution relies on the inputs' required keys being DISJOINT
+ *  (`text` for embeddings vs `image`+`prompt` for vision); keep them disjoint. */
 export interface Ai {
   run(model: string, inputs: AiEmbeddingInputs): Promise<AiEmbeddingResponse>;
   run(model: string, inputs: AiImageToTextInputs): Promise<AiImageToTextResponse>;
