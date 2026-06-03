@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { getAgentByOwnerName, resolveAgentPages } from "@/lib/agents";
+import { getAgentByOwnerName, resolveAgentPages, sharedPagesFor } from "@/lib/agents";
 import { listWikiPages } from "@/lib/wiki";
 import { decodeSlug } from "@/lib/slugify";
 import { getErrorMessage } from "@/lib/errors";
@@ -33,8 +33,10 @@ export default async function AgentProfilePage({
   }
   if (!agent) notFound();
 
-  // Effective pages = own + inherited from the template chain (the base yoyo).
+  // Effective pages = own + inherited from the template chain (the base yoyo),
+  // plus pages the owner shared into this agent's context.
   const resolved = await resolveAgentPages(agent);
+  const sharedSlugs = await sharedPagesFor(agent.id);
 
   // Resolve slug -> title from the index for nicer links (fall back to slug).
   const index = await listWikiPages();
@@ -44,6 +46,7 @@ export default async function AgentProfilePage({
     { label: "Identity", slugs: resolved.identityPages },
     { label: "Learnings", slugs: resolved.learningPages },
     { label: "Social wisdom", slugs: resolved.socialPages },
+    { label: "Shared by owner", slugs: sharedSlugs },
   ];
   const totalPages = sections.reduce((n, s) => n + s.slugs.length, 0);
 

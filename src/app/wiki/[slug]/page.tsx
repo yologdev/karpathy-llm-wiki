@@ -6,6 +6,9 @@ import type { SourceEntry } from "@/lib/types";
 import { MarkdownRenderer } from "@/components/MarkdownRenderer";
 import { DeletePageButton } from "@/components/DeletePageButton";
 import { ReingestButton } from "@/components/ReingestButton";
+import { ShareWithYoyoButton } from "@/components/ShareWithYoyoButton";
+import { getPrincipal } from "@/lib/auth";
+import { agentIdFor, DEFAULT_AGENT_NAME } from "@/lib/agents";
 import { RevisionHistory } from "@/components/RevisionHistory";
 import { DiscussionPanel } from "@/components/DiscussionPanel";
 import { AuthorBadges } from "@/components/AuthorBadges";
@@ -458,6 +461,26 @@ export default async function WikiPageView({ params }: WikiPageProps) {
     typeof page.frontmatter.source_url === "string" &&
     page.frontmatter.source_url.trim().length > 0;
 
+  // "Share with yoyo" is shown only to the page's owner/contributor, and we
+  // pre-compute whether it's already shared into their yoyo.
+  const principal = await getPrincipal();
+  const pageOwner =
+    typeof page.frontmatter.owner === "string" ? page.frontmatter.owner : "";
+  const pageContributors = Array.isArray(page.frontmatter.contributors)
+    ? (page.frontmatter.contributors as string[])
+    : [];
+  const canShare =
+    !!principal &&
+    (pageOwner === principal.handle ||
+      pageContributors.includes(principal.handle));
+  const myYoyoId = principal
+    ? agentIdFor(principal.handle, DEFAULT_AGENT_NAME)
+    : "";
+  const alreadyShared =
+    !!myYoyoId &&
+    Array.isArray(page.frontmatter.sharedWith) &&
+    (page.frontmatter.sharedWith as string[]).includes(myYoyoId);
+
   return (
     <main className="mx-auto max-w-3xl px-6 py-12">
       <Link
@@ -500,6 +523,9 @@ export default async function WikiPageView({ params }: WikiPageProps) {
           Edit page
         </Link>
         {hasSourceUrl && <ReingestButton slug={slug} />}
+        {canShare && (
+          <ShareWithYoyoButton slug={slug} initiallyShared={alreadyShared} />
+        )}
         <DeletePageButton slug={slug} />
       </div>
     </main>

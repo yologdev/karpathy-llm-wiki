@@ -19,9 +19,13 @@ import {
   agentShortName,
   forkAgent,
   resolveAgentPages,
+  sharedPagesFor,
+  setPageShared,
 } from "../agents";
 import type { UpdateAgentPage } from "../agents";
 import { readWikiPage, readWikiPageWithFrontmatter } from "../wiki";
+import { writeWikiPageWithSideEffects } from "../lifecycle";
+import { serializeFrontmatter } from "../frontmatter";
 import type { AgentProfile } from "../types";
 import { _resetStorage, getStorage } from "../storage";
 
@@ -1249,3 +1253,47 @@ describe("agent page interlinking", () => {
     expect(p!.content).not.toContain("## Related");
   });
 });
+
+describe("sharing (feed-as-grant via sharedWith)", () => {
+  async function writeUserPage(slug: string, owner: string) {
+    const content = serializeFrontmatter(
+      { owner, authors: [owner], contributors: [owner] },
+      `# ${slug}\n\nSome content.`,
+    );
+    await writeWikiPageWithSideEffects({
+      slug,
+      title: slug,
+      content,
+      summary: "s",
+      logOp: "other",
+      crossRefSource: null,
+      author: owner,
+    });
+  }
+
+  it("shares and unshares a page into an agent's context", async () => {
+    await writeUserPage("alice-note", "alice");
+    expect(await sharedPagesFor("alice--yoyo")).toEqual([]);
+
+    await setPageShared("alice-note", "alice--yoyo", true);
+    expect(await sharedPagesFor("alice--yoyo")).toEqual(["alice-note"]);
+
+    // Idempotent — sharing again is a no-op.
+    await setPageShared("alice-note", "alice--yoyo", true);
+    expect(await sharedPagesFor("alice--yoyo")).toEqual(["alice-note"]);
+
+    await setPageShared("alice-note", "alice--yoyo", false);
+    expect(await sharedPagesFor("alice--yoyo")).toEqual([]);
+  });
+
+  it("grants are scoped to one agent (no cross-leak)", async () => {
+    await writeUserPage("alice-note", "alice");
+    await setPageShared("alice-note", "alice--yoyo", true);
+    expect(await sharedPagesFor("alice--yoyo")).toEqual(["alice-note"]);
+    expect(await sharedPagesFor("bob--yoyo")).toEqual([]);
+  });
+
+  it("throws for a missing page", async () => {
+    await expect(setPageShared("nope", "alice--yoyo", true)).rejects.toThrow();
+  });
+})
