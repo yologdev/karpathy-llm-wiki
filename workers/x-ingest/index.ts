@@ -135,6 +135,30 @@ function articleImageUrls(parent: XTweet, mediaByKey: Record<string, XMedia>): s
   return [...urls].filter(isUsableHttpUrl).slice(0, 12);
 }
 
+/**
+ * Fetch an X Article's cover image via the unauthenticated syndication CDN (the
+ * endpoint that powers tweet embeds). The official `article` API field exposes
+ * NO image URLs, but this returns `article.cover_media...original_img_url` —
+ * usually the Article's hero image. Inline body images are not exposed anywhere.
+ * Fail-soft: any error / shape change → null (the article still ingests as text).
+ */
+async function fetchArticleCoverImage(tweetId: string): Promise<string | null> {
+  try {
+    const res = await fetch(
+      `https://cdn.syndication.twimg.com/tweet-result?id=${tweetId}&lang=en&token=a`,
+      { headers: { "User-Agent": "Mozilla/5.0" } },
+    );
+    if (!res.ok) return null;
+    const data = (await res.json()) as {
+      article?: { cover_media?: { media_info?: { original_img_url?: string } } };
+    };
+    const u = data.article?.cover_media?.media_info?.original_img_url;
+    return u && isUsableHttpUrl(u) ? u : null;
+  } catch {
+    return null;
+  }
+}
+
 /** Build the X recent-search URL for a query + time/cursor bound. The media
  *  expansion + fields surface any images the API exposes for the parent
  *  tweet/article so they can be ingested too (best-effort). */
@@ -276,9 +300,12 @@ async function run(env: Env): Promise<Summary> {
     const article = parent.article;
     if (article && (article.text || article.title)) {
       const title = article.title || `X Article (shared by @${handle})`;
-      // Append any image URLs the API exposes as markdown so the ingest
-      // pipeline downloads + renders them with the article.
-      const imgs = articleImageUrls(parent, mediaByKey);
+      // Image URLs from the API (usually none for Articles) + the cover image
+      // from the syndication CDN. Appended as markdown so the ingest pipeline
+      // downloads + renders them with the article.
+      const apiImgs = articleImageUrls(parent, mediaByKey);
+      const cover = await fetchArticleCoverImage(parent.id);
+      const imgs = [...new Set([...(cover ? [cover] : []), ...apiImgs])].slice(0, 12);
       const imgBlock = imgs.length ? "\n\n" + imgs.map((u) => `![](${u})`).join("\n\n") : "";
       jobs.push({
         body: { text: (article.text || title) + imgBlock, title },

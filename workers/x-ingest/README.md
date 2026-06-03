@@ -17,12 +17,15 @@ What it does each run:
   system token and **`asOwner: true`**. The `@yoyoevolve` mention is the "save
   this to my wiki" command channel — it is **not** written to the agent's scoped
   knowledge, and plain tweet text is never ingested.
-- **Article images (best-effort):** the search also expands `attachments.media_keys`
+- **Article images (best-effort):** the search expands `attachments.media_keys`
   + `media.fields`, and any image URLs the X API exposes for the parent (attached
   media, article entities, image refs in the article text) are appended to the
-  ingest text as markdown so the pipeline downloads + renders them. If the API
-  exposes none, it degrades to text-only. Use `?debug=1` to see what's available
-  (the probe reports `articleImageUrls` / `includesMedia` per sample).
+  ingest text as markdown. The official `article` API field exposes **no** image
+  URLs, so for Articles the worker additionally fetches the **cover image** from
+  the unauthenticated syndication CDN (`cdn.syndication.twimg.com/tweet-result`
+  → `article.cover_media...original_img_url`) — fail-soft (any error → text-only).
+  Inline Article body images aren't exposed by any X surface. Use `?debug=1` to
+  see API-exposed media (`articleImageUrls` / `includesMedia`) per sample.
 
 > **Same-zone fetch note:** the ingest call targets the main yopedia Worker on
 > the same account (`yopedia.<sub>.workers.dev`). A plain Worker→Worker `fetch()`
