@@ -6,13 +6,24 @@ const WRITE_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 
 // Closes the unauthenticated-write hole at a single enforcement point:
 // any mutating request to /api/** requires a signed-in user. Reads (GET/HEAD)
-// stay public — yopedia is a public observer surface (see DESIGN-identity.md).
+// stay public — yopedia is a public observer surface (see yopedia-concept.md).
 // Attribution (which user) is read per-route from `getPrincipal()`.
 //
+// Exception: /api/agents/seed authenticates IN-ROUTE because it accepts either
+// a Clerk session OR a service token (getServicePrincipal) for automated
+// re-seeding. It still rejects unauthenticated callers — the auth just lives in
+// the handler, not here — so this is not a hole.
+//
 // The MCP server is stdio-only and not exposed over HTTP, so it is unaffected.
+const IN_ROUTE_AUTH_PATHS = new Set(["/api/agents/seed"]);
+
 export default clerkMiddleware(async (auth, req) => {
   const { pathname } = req.nextUrl;
-  if (WRITE_METHODS.has(req.method) && pathname.startsWith("/api/")) {
+  if (
+    WRITE_METHODS.has(req.method) &&
+    pathname.startsWith("/api/") &&
+    !IN_ROUTE_AUTH_PATHS.has(pathname)
+  ) {
     const { userId } = await auth();
     if (!userId) {
       return NextResponse.json(

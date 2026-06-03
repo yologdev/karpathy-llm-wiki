@@ -1,0 +1,107 @@
+name: Seed yoyo
+
+# Keeps the yopedia "yoyo" agent in sync with the canonical identity in
+# yologdev/yoyo-evolve. Assembles yoyo's identity / learnings / social pages
+# from that repo and POSTs them to /api/agents/seed.
+#
+# Auth: a service token (NOT a human Clerk session) — see src/lib/auth.ts
+# getServicePrincipal(). seedAgent is idempotent and preserves ownership, so a
+# weekly re-seed refreshes the content without changing the owner.
+#
+# Required config:
+#   - secret YOPEDIA_SERVICE_TOKEN  — must equal the Worker secret of the same name
+#   - (Worker secrets, set via wrangler) YOPEDIA_SERVICE_TOKEN + YOPEDIA_SERVICE_PRINCIPAL
+#   - optional repo variable YOPEDIA_URL (defaults to the production Worker URL)
+
+on:
+  schedule:
+    - cron: "17 6 * * 1" # Mondays 06:17 UTC
+  workflow_dispatch: {} # manual run — needed for the very first seed
+
+permissions:
+  contents: read
+
+concurrency:
+  group: seed-yoyo
+  cancel-in-progress: false
+
+jobs:
+  seed:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out yoyo-evolve identity (public repo)
+        uses: actions/checkout@v4
+        with:
+          repository: yologdev/yoyo-evolve
+          path: yoyo-evolve
+
+      - name: Build seed payload
+        run: |
+          cat > build-seed.mjs <<'EOF'
+          import { readFileSync, existsSync, writeFileSync } from "node:fs";
+
+          const ROOT = "yoyo-evolve";
+          const read = (rel) => {
+            const path = `${ROOT}/${rel}`;
+            return existsSync(path) ? readFileSync(path, "utf8").trim() : "";
+          };
+
+          // Maps yoyo-evolve's identity files onto seedAgent sections.
+          const defs = [
+            { type: "identity",  slug: "yoyo-identity",      title: "yoyo — Identity",             file: "IDENTITY.md" },
+            { type: "identity",  slug: "yoyo-personality",   title: "yoyo — Voice & Personality",  file: "PERSONALITY.md" },
+            { type: "identity",  slug: "yoyo-economics",     title: "yoyo — Economics",            file: "ECONOMICS.md" },
+            { type: "learnings", slug: "yoyo-learnings",     title: "yoyo — Learnings",            file: "memory/active_learnings.md" },
+            { type: "social",    slug: "yoyo-social-wisdom", title: "yoyo — Social Wisdom",        file: "memory/active_social_learnings.md" },
+          ];
+
+          // Skip any file that is missing or empty — seedAgent rejects empty content.
+          const sections = defs
+            .map((d) => ({ type: d.type, slug: d.slug, title: d.title, content: read(d.file) }))
+            .filter((s) => s.content.length > 0);
+
+          if (sections.length === 0) {
+            console.error("No identity content found in yoyo-evolve — aborting.");
+            process.exit(1);
+          }
+
+          const payload = {
+            id: "yoyo",
+            name: "yoyo",
+            description:
+              "A self-evolving coding agent growing up in public. Identity synced from yologdev/yoyo-evolve.",
+            sections,
+          };
+
+          writeFileSync("payload.json", JSON.stringify(payload));
+          console.log(
+            `Built payload: ${sections.length} sections (${sections.map((s) => s.slug).join(", ")}), ` +
+              `${JSON.stringify(payload).length} bytes`,
+          );
+          EOF
+          node build-seed.mjs
+
+      - name: Seed yopedia
+        env:
+          YOPEDIA_SERVICE_TOKEN: ${{ secrets.YOPEDIA_SERVICE_TOKEN }}
+          YOPEDIA_URL: ${{ vars.YOPEDIA_URL || 'https://yopedia.yuanhao-li.workers.dev' }}
+        run: |
+          set -euo pipefail
+          if [ -z "${YOPEDIA_SERVICE_TOKEN:-}" ]; then
+            echo "::error::YOPEDIA_SERVICE_TOKEN secret is not set"
+            exit 1
+          fi
+          code=$(curl -sS -o resp.json -w '%{http_code}' \
+            -X POST "$YOPEDIA_URL/api/agents/seed" \
+            -H "Authorization: Bearer $YOPEDIA_SERVICE_TOKEN" \
+            -H "Content-Type: application/json" \
+            --data @payload.json)
+          echo "HTTP $code"
+          cat resp.json || true
+          echo
+          if [ "$code" != "201" ]; then
+            echo "::error::Seed failed with HTTP $code"
+            exit 1
+          fi
+          echo "yoyo seeded/updated successfully."

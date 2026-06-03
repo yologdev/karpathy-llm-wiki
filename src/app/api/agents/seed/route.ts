@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { seedAgent, assertCanMutateAgent, AgentOwnershipError } from "@/lib/agents";
-import { getPrincipal } from "@/lib/auth";
+import { getPrincipal, getServicePrincipal } from "@/lib/auth";
 import { getErrorMessage } from "@/lib/errors";
 
 const VALID_SECTION_TYPES = new Set(["identity", "learnings", "social"]);
@@ -12,19 +12,23 @@ const VALID_SECTION_TYPES = new Set(["identity", "learnings", "social"]);
  * the agent profile. Idempotent — re-seeding an existing agent updates its
  * pages (seedAgent preserves original registration date and owner).
  *
- * The first seed claims ownership (`owner` = the session principal); only that
- * owner may re-seed. Anyone signed in can seed a brand-new agent id.
+ * The first seed claims ownership (`owner` = the principal); only that owner
+ * may re-seed. Anyone signed in can seed a brand-new agent id.
+ *
+ * This route is exempt from the middleware write-gate and authenticates here,
+ * accepting EITHER a Clerk session OR a service token (for the scheduled
+ * seed-yoyo job). Both resolve to a principal whose handle becomes the owner.
  *
  * Body: { id, name, description, sections: [{ slug, title, type, content }] }
  * Returns 201 with { agent: AgentProfile } on success.
  */
 export async function POST(req: Request) {
   try {
-    // Writes are gated by middleware, but resolve the principal for ownership.
-    const principal = await getPrincipal();
+    // Clerk session (human) OR service token (automation) — never the body.
+    const principal = (await getPrincipal()) ?? getServicePrincipal(req);
     if (!principal) {
       return NextResponse.json(
-        { error: "Sign in required to seed an agent." },
+        { error: "Sign in or a valid service token is required to seed an agent." },
         { status: 401 },
       );
     }

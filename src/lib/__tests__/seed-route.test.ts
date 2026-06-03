@@ -19,19 +19,22 @@ vi.mock("@/lib/agents", () => {
   };
 });
 
-// The route resolves the owner from the session principal.
+// The route resolves the owner from the session principal, falling back to a
+// service-token principal for automated (CI) seeding.
 vi.mock("@/lib/auth", () => ({
   getPrincipal: vi.fn(async () => ({ id: "test-user", handle: "test-user" })),
+  getServicePrincipal: vi.fn(() => null),
 }));
 
 import { seedAgent, assertCanMutateAgent, AgentOwnershipError } from "@/lib/agents";
-import { getPrincipal } from "@/lib/auth";
+import { getPrincipal, getServicePrincipal } from "@/lib/auth";
 import { POST } from "@/app/api/agents/seed/route";
 import type { AgentProfile } from "@/lib/types";
 
 const mockedSeedAgent = vi.mocked(seedAgent);
 const mockedAssertCanMutate = vi.mocked(assertCanMutateAgent);
 const mockedGetPrincipal = vi.mocked(getPrincipal);
+const mockedGetServicePrincipal = vi.mocked(getServicePrincipal);
 
 function makeRequest(body: unknown): NextRequest {
   return new NextRequest("http://localhost:3000/api/agents/seed", {
@@ -87,6 +90,8 @@ beforeEach(() => {
   mockedAssertCanMutate.mockResolvedValue(null);
   mockedGetPrincipal.mockReset();
   mockedGetPrincipal.mockResolvedValue({ id: "test-user", handle: "test-user" });
+  mockedGetServicePrincipal.mockReset();
+  mockedGetServicePrincipal.mockReturnValue(null);
 });
 
 // ---------------------------------------------------------------------------
@@ -121,11 +126,27 @@ describe("POST /api/agents/seed", () => {
   });
 
   describe("auth & ownership", () => {
-    it("returns 401 when there is no signed-in principal", async () => {
+    it("returns 401 when there is neither a session nor a service token", async () => {
       mockedGetPrincipal.mockResolvedValue(null);
+      mockedGetServicePrincipal.mockReturnValue(null);
       const res = await POST(makeRequest(validBody()));
       expect(res.status).toBe(401);
       expect(mockedSeedAgent).not.toHaveBeenCalled();
+    });
+
+    it("seeds via a service token when there is no session (CI path)", async () => {
+      mockedGetPrincipal.mockResolvedValue(null);
+      mockedGetServicePrincipal.mockReturnValue({
+        id: "service:yoyo-bot",
+        handle: "yoyo-bot",
+      });
+      const res = await POST(makeRequest(validBody()));
+      expect(res.status).toBe(201);
+      // The service principal's handle becomes the owner.
+      expect(mockedSeedAgent).toHaveBeenCalledWith(
+        expect.objectContaining({ owner: "yoyo-bot" }),
+      );
+      expect(mockedAssertCanMutate).toHaveBeenCalledWith("yoyo", "yoyo-bot");
     });
 
     it("returns 403 when a non-owner tries to re-seed", async () => {
