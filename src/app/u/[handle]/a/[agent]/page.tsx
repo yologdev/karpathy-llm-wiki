@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { getAgent } from "@/lib/agents";
 import { listWikiPages } from "@/lib/wiki";
 import { decodeSlug } from "@/lib/slugify";
+import { getErrorMessage } from "@/lib/errors";
 import type { AgentProfile } from "@/lib/types";
 
 // Public agent profile, scoped under its owner's handle:
@@ -18,7 +19,17 @@ export default async function AgentProfilePage({
   const handle = decodeSlug(encodedHandle);
   const agentId = decodeSlug(encodedAgent);
 
-  const agent = await getAgent(agentId).catch(() => null);
+  // getAgent returns null for a genuinely missing agent (ENOENT) and throws on
+  // real errors (storage down, corrupt JSON). Don't flatten the latter into a
+  // 404 — only a missing or malformed-id agent is "not found"; let real errors
+  // propagate to the error boundary (500 + logging).
+  let agent: AgentProfile | null;
+  try {
+    agent = await getAgent(agentId);
+  } catch (err) {
+    if (getErrorMessage(err).includes("Invalid agent ID")) notFound();
+    throw err;
+  }
   if (!agent) notFound();
 
   // Resolve slug -> title from the index for nicer links (fall back to slug).

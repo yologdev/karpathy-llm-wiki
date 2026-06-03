@@ -98,6 +98,9 @@ export class AgentOwnershipError extends Error {
  * Otherwise throws {@link AgentOwnershipError}. This is what makes "seed once,
  * then only the owner can re-seed/feed/edit/delete" hold: the first seed claims
  * ownership, and everyone else is read-only against that agent.
+ *
+ * Also throws a validation error first if `id` is malformed (routes map that to
+ * 400, distinct from the 403 ownership rejection).
  */
 export async function assertCanMutateAgent(
   id: string,
@@ -515,7 +518,8 @@ export async function seedAgent(options: SeedAgentOptions): Promise<AgentProfile
   };
 
   // If the agent already exists, preserve its original registration date and
-  // owner — ownership is claimed by the first seed and never transfers here.
+  // owner — an owned agent never changes hands here. An existing *unowned*
+  // (legacy) agent is claimed by this seeder via the `?? options.owner` fallback.
   const existingAgent = await getAgent(options.id);
   if (existingAgent) {
     profile.registered = existingAgent.registered;
