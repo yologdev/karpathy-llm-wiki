@@ -16,10 +16,21 @@ import { getErrorMessage } from "@/lib/errors";
  *
  * Lightweight list of all wiki pages (slug, title, summary).
  * Much cheaper than /api/wiki/graph which reads every page and builds a link graph.
+ *
+ * By default, pages with `type: agent-identity` are excluded from the response
+ * so the main feed stays human-centric. Pass `?includeAgentPages=true` to
+ * include them (used by agent profile pages and admin views).
  */
-export async function GET() {
+export async function GET(req: Request) {
   try {
-    const entries = await listWikiPages();
+    const url = new URL(req.url);
+    const includeAgentPages =
+      url.searchParams.get("includeAgentPages") === "true";
+
+    let entries = await listWikiPages();
+    if (!includeAgentPages) {
+      entries = entries.filter((e) => e.type !== "agent-identity");
+    }
     return NextResponse.json({ pages: entries });
   } catch (err) {
     const message = getErrorMessage(err);

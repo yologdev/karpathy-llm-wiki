@@ -534,3 +534,91 @@ describe("PATCH /api/wiki/[slug] — metadata updates", () => {
     expect(page!.frontmatter.authors).toEqual(["original-author"]);
   });
 });
+
+// ---------------------------------------------------------------------------
+// GET /api/wiki — agent-identity filtering
+// ---------------------------------------------------------------------------
+
+describe("GET /api/wiki — agent-identity filtering", () => {
+  async function seedPage(slug: string, fm: Frontmatter = {}) {
+    const today = new Date().toISOString().slice(0, 10);
+    const defaults: Frontmatter = {
+      created: today,
+      confidence: 0.5,
+      authors: ["test-user"],
+      contributors: [],
+      expiry: "2099-01-01",
+      sources: [],
+      ...fm,
+    };
+    const content = serializeFrontmatter(defaults, `# ${slug}\n\nSome content.`);
+    await writeWikiPageWithSideEffects({
+      slug,
+      title: slug,
+      content,
+      summary: `Summary of ${slug}`,
+      logOp: "ingest",
+      crossRefSource: null,
+    });
+  }
+
+  async function callGet(params = "") {
+    const { GET } = await import("@/app/api/wiki/route");
+    const req = new Request(`http://localhost:3000/api/wiki${params}`);
+    return GET(req);
+  }
+
+  it("excludes agent-identity pages from default response", async () => {
+    await seedPage("human-page");
+    await seedPage("agent-page", { type: "agent-identity" });
+
+    const res = await callGet();
+    expect(res.status).toBe(200);
+
+    const data = await res.json();
+    const slugs = data.pages.map((p: { slug: string }) => p.slug);
+    expect(slugs).toContain("human-page");
+    expect(slugs).not.toContain("agent-page");
+  });
+
+  it("includes agent-identity pages when includeAgentPages=true", async () => {
+    await seedPage("human-page-b");
+    await seedPage("agent-page-b", { type: "agent-identity" });
+
+    const res = await callGet("?includeAgentPages=true");
+    expect(res.status).toBe(200);
+
+    const data = await res.json();
+    const slugs = data.pages.map((p: { slug: string }) => p.slug);
+    expect(slugs).toContain("human-page-b");
+    expect(slugs).toContain("agent-page-b");
+  });
+
+  it("enriches type field in index entries", async () => {
+    await seedPage("typed-page", { type: "agent-identity" });
+
+    const res = await callGet("?includeAgentPages=true");
+    expect(res.status).toBe(200);
+
+    const data = await res.json();
+    const typed = data.pages.find(
+      (p: { slug: string }) => p.slug === "typed-page",
+    );
+    expect(typed).toBeDefined();
+    expect(typed.type).toBe("agent-identity");
+  });
+
+  it("does not add type field for normal pages", async () => {
+    await seedPage("normal-page");
+
+    const res = await callGet();
+    expect(res.status).toBe(200);
+
+    const data = await res.json();
+    const normal = data.pages.find(
+      (p: { slug: string }) => p.slug === "normal-page",
+    );
+    expect(normal).toBeDefined();
+    expect(normal.type).toBeUndefined();
+  });
+});

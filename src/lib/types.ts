@@ -24,6 +24,8 @@ export interface IndexEntry {
   confidence?: number;
   /** Owner (principal handle) from frontmatter, if any. */
   owner?: string;
+  /** Page type from frontmatter (e.g. "agent-identity"). */
+  type?: string;
 }
 
 /** Result returned after ingesting a source document. */

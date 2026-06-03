@@ -30,6 +30,10 @@ export default async function WikiIndex({
   if (ownerHandle) {
     const mine = new Set(await slugsForOwner(ownerHandle));
     pages = pages.filter((p) => mine.has(p.slug));
+  } else {
+    // "All" scope: hide agent-identity pages so the public feed stays
+    // human-centric. Agent content is browsable under agent profiles.
+    pages = pages.filter((p) => p.type !== "agent-identity");
   }
 
   const slugs = pages.map((p) => p.slug);

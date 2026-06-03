@@ -348,6 +348,11 @@ export async function listWikiPages(): Promise<IndexEntry[]> {
             ? fm.owner
             : undefined;
 
+        const pageType =
+          typeof fm.type === "string" && fm.type.length > 0
+            ? fm.type
+            : undefined;
+
         // Parse confidence (0–1 number from frontmatter)
         const confidenceRaw = fm.confidence;
         const confidenceNum =
@@ -369,6 +374,7 @@ export async function listWikiPages(): Promise<IndexEntry[]> {
           ...(sourceUrl ? { sourceUrl } : {}),
           ...(confidence !== undefined ? { confidence } : {}),
           ...(owner ? { owner } : {}),
+          ...(pageType ? { type: pageType } : {}),
         };
       } catch (err) {
         logger.warn(
