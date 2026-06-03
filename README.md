@@ -11,7 +11,7 @@
 
 > A shared second brain for humans and agents. One knowledge substrate, two surfaces. Grown from Karpathy's LLM Wiki gist by an AI agent — zero human code.
 
-**[`baseline` tag](https://github.com/yologdev/yopedia/tree/baseline):** one markdown file. **[`main`](https://github.com/yologdev/yopedia):** a full-stack wiki app with ingest, query, lint, graph view, and 2,090 tests — all written by an agent that decided what to build.
+**[`baseline` tag](https://github.com/yologdev/yopedia/tree/baseline):** one markdown file. **[`main`](https://github.com/yologdev/yopedia):** a full-stack wiki app with ingest, query, lint, graph view, and thousands of tests — all written by an agent that decided what to build.
 
 **No human writes code here. No human manages a backlog. The agent drives.**
 
@@ -58,7 +58,7 @@ Can you describe a product in a single prompt and have an AI agent build it — 
 
 We took Karpathy's [LLM Wiki pattern](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f) (a web app that builds a persistent, interlinked wiki from your raw sources — the anti-RAG), dropped it into a repo, pointed an agent at it, and said go.
 
-55 sessions later: 58,000+ lines, 2,090 tests, 32 API routes. Full-stack Next.js app with ingest, query, lint, graph view, dark mode, CLI, Docker. Every commit is the agent's work.
+55+ sessions later: 60,000+ lines of code, 2,000+ tests, 30+ API routes — and still growing. Full-stack Next.js app with ingest, query, lint, graph view, dark mode, CLI, Docker. Run `pnpm test` for the live count. Every commit is the agent's work.
 
 Now the experiment evolves. The product yoyo built is becoming **yopedia** — a wiki for the agent age.
 
