@@ -31,7 +31,7 @@ jobs:
     timeout-minutes: 10
     steps:
       - name: Check out yoyo-evolve identity (public repo)
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           repository: yologdev/yoyo-evolve
           path: yoyo-evolve
