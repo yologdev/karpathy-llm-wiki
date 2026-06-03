@@ -55,7 +55,10 @@ export async function POST(request: NextRequest) {
         options.tags = tags.split(",").map((t) => t.trim()).filter(Boolean);
       }
       const bytes = await file.arrayBuffer();
-      const result = await ingestImage({ bytes, filename: file.name }, options);
+      const result = await ingestImage(
+        { bytes, filename: file.name, contentType: file.type || undefined },
+        options,
+      );
       return NextResponse.json(result);
     }
 

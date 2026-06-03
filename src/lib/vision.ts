@@ -1,70 +1,86 @@
 import { getWorkersAiBinding } from "./embeddings";
+import { hasLLMKey, callVisionLLM } from "./llm";
 import { logger } from "./logger";
 
 /**
- * Vision (image → text) extraction via the Workers AI binding.
+ * Vision (image → text) extraction.
  *
- * Mirrors the embeddings pattern (`getWorkersAiBinding().run(...)`). Used by the
- * image-ingest flow to turn an image into a factual description that becomes the
- * wiki page body. Fails SOFT: any problem (no binding, timeout, model error,
- * empty result) returns `null` so ingestion proceeds with an image-only page —
- * vision must never break the pipeline.
+ * Prefers the configured LLM provider's multimodal capability (e.g. DeepSeek V4,
+ * which is Chinese-native and far better at CJK text than the free Workers AI
+ * vision models) — reusing the existing API key, no extra model/license. Falls
+ * back to the Workers AI binding (llava, no license required) when no LLM key is
+ * present (e.g. local dev). Fails SOFT: any problem returns `null` so an image
+ * still ingests as an image-only page — vision must never break the pipeline.
  */
 
-/** Default model — overridable via the `VISION_MODEL` env var.
- *  llama-3.2-vision reads text/diagrams notably better than llava. */
-const DEFAULT_VISION_MODEL = "@cf/meta/llama-3.2-11b-vision-instruct";
+/** Workers AI fallback model — overridable via `VISION_MODEL`. llava needs no
+ *  license agreement (unlike llama-3.2-vision). */
+const DEFAULT_WAI_VISION_MODEL = "@cf/llava-hf/llava-1.5-7b-hf";
 
 const DEFAULT_PROMPT =
-  "Describe this image in detail. Include any visible text, diagrams, charts, " +
-  "people, objects, and the overall context. Be factual and concise.";
+  "Describe this image in detail. Transcribe any visible text exactly (in its " +
+  "original language), and note diagrams, charts, objects, and overall context. " +
+  "Be factual and concise.";
 
-/** Hard ceiling so a slow/hung model run can't stall an ingest. */
-const VISION_TIMEOUT_MS = 20_000;
-
-function visionModel(): string {
-  return process.env.VISION_MODEL || DEFAULT_VISION_MODEL;
-}
+/** Hard ceiling so a slow/hung Workers AI run can't stall an ingest. */
+const WAI_TIMEOUT_MS = 20_000;
 
 /**
- * Describe an image from its raw bytes. Returns `{ text }` or `null` when vision
- * is unavailable / fails (caller then produces a minimal image-only page).
+ * Describe an image from its raw bytes. Returns `{ text }` or `null` when no
+ * vision backend is available / it fails.
  */
 export async function describeImage(
   image: ArrayBuffer | Uint8Array,
-  opts?: { prompt?: string; maxTokens?: number },
+  opts?: { prompt?: string; maxTokens?: number; mediaType?: string },
 ): Promise<{ text: string } | null> {
-  const ai = getWorkersAiBinding();
-  if (!ai) return null; // off-Workers or AI binding unbound — degrade gracefully
+  const prompt = opts?.prompt ?? DEFAULT_PROMPT;
+  const maxTokens = opts?.maxTokens ?? 512;
 
+  // 1. Preferred: the configured LLM's multimodal vision (DeepSeek etc.).
+  if (hasLLMKey()) {
+    try {
+      const text = (
+        await callVisionLLM(prompt, image, {
+          maxOutputTokens: maxTokens,
+          mediaType: opts?.mediaType,
+        })
+      ).trim();
+      if (text) return { text };
+      logger.warn("vision", "Vision LLM returned an empty description.");
+    } catch (err) {
+      logger.warn(
+        "vision",
+        `Vision LLM failed (${err instanceof Error ? err.message : String(err)}) — ` +
+          "falling back to Workers AI.",
+      );
+    }
+  }
+
+  // 2. Fallback: the Workers AI binding (llava).
+  const ai = getWorkersAiBinding();
+  if (!ai) return null;
   const bytes = image instanceof Uint8Array ? image : new Uint8Array(image);
-  const model = visionModel();
+  const model = process.env.VISION_MODEL || DEFAULT_WAI_VISION_MODEL;
 
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
     const result = await Promise.race([
-      ai.run(model, {
-        image: [...bytes],
-        prompt: opts?.prompt ?? DEFAULT_PROMPT,
-        max_tokens: opts?.maxTokens ?? 512,
-      }),
+      ai.run(model, { image: [...bytes], prompt, max_tokens: maxTokens }),
       new Promise<never>((_, reject) => {
-        timer = setTimeout(() => reject(new Error("vision timeout")), VISION_TIMEOUT_MS);
+        timer = setTimeout(() => reject(new Error("vision timeout")), WAI_TIMEOUT_MS);
       }),
     ]);
-
-    // Different models name the field differently (llama → response, llava →
-    // description); read defensively.
+    // Field name varies by model (llava → description, llama → response).
     const text = (result.response ?? result.description ?? "").trim();
     if (!text) {
-      logger.warn("vision", `Model ${model} returned an empty description.`);
+      logger.warn("vision", `Workers AI ${model} returned an empty description.`);
       return null;
     }
     return { text };
   } catch (err) {
     logger.warn(
       "vision",
-      `Image description failed (${model}): ${err instanceof Error ? err.message : String(err)}`,
+      `Workers AI image description failed (${model}): ${err instanceof Error ? err.message : String(err)}`,
     );
     return null;
   } finally {

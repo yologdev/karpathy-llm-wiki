@@ -186,7 +186,7 @@ function humanizeFilename(nameOrUrl: string): string {
  * Accepts either an `imageUrl` (fetched + SSRF-guarded) or raw `bytes` (upload).
  */
 export async function ingestImage(
-  input: { imageUrl?: string; bytes?: ArrayBuffer; filename?: string },
+  input: { imageUrl?: string; bytes?: ArrayBuffer; filename?: string; contentType?: string },
   options?: IngestOptions & { title?: string },
 ): Promise<IngestResult> {
   const { imageUrl, bytes: uploadedBytes, filename: uploadName } = input;
@@ -210,8 +210,11 @@ export async function ingestImage(
   // Store the image as an asset and get its bytes for the vision model.
   let localPath: string;
   let bytes: ArrayBuffer;
+  let mediaType: string | undefined = input.contentType;
   if (imageUrl) {
-    ({ localPath, bytes } = await storeImageAsset(imageUrl, slug));
+    const stored = await storeImageAsset(imageUrl, slug);
+    ({ localPath, bytes } = stored);
+    mediaType = stored.contentType;
   } else if (uploadedBytes) {
     bytes = uploadedBytes;
     ({ localPath } = await storeImageBytes(uploadedBytes, slug, uploadName || "image"));
@@ -220,7 +223,7 @@ export async function ingestImage(
   }
 
   // Vision description — fail-soft (null → image-only page).
-  const vision = await describeImage(bytes);
+  const vision = await describeImage(bytes, { mediaType });
 
   const body =
     `# ${title}\n\n![${title}](${localPath})` + (vision ? `\n\n${vision.text}` : "");

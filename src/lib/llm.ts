@@ -311,6 +311,44 @@ export async function callLLM(
 }
 
 /**
+ * Describe an image using the configured LLM provider's multimodal capability
+ * (e.g. DeepSeek V4, GPT-4o, Gemini). Sends the image bytes + a text prompt as
+ * a single user message. Throws if the provider/model isn't multimodal or the
+ * response is empty — the caller (vision.ts) handles the fallback.
+ *
+ * @param mediaType — e.g. "image/jpeg"; helps the provider; inferred if omitted.
+ */
+export async function callVisionLLM(
+  prompt: string,
+  image: ArrayBuffer | Uint8Array,
+  options?: { maxOutputTokens?: number; mediaType?: string },
+): Promise<string> {
+  const model = getModel();
+  const bytes = image instanceof Uint8Array ? image : new Uint8Array(image);
+
+  const { text } = await retryWithBackoff(() =>
+    generateText({
+      model,
+      messages: [
+        {
+          role: "user",
+          content: [
+            { type: "text", text: prompt },
+            { type: "image", image: bytes, mediaType: options?.mediaType },
+          ],
+        },
+      ],
+      maxOutputTokens: options?.maxOutputTokens ?? 512,
+    }),
+  );
+
+  if (!text) {
+    throw new Error("Vision LLM response contained no text");
+  }
+  return text;
+}
+
+/**
  * Call the configured LLM provider and return a streaming result.
  *
  * Returns a `StreamTextResult` from the Vercel AI SDK. Use
