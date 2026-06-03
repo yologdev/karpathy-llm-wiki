@@ -54,7 +54,10 @@ export function AgentTokenPanel({ agentId }: { agentId: string }) {
       </h2>
       <p className="mt-1 text-sm text-foreground/60">
         A token lets an external runtime (e.g. openclaw) ingest into this agent.
-        It&rsquo;s shown once — copy it now; rotate if you lose it.
+        It&rsquo;s shown once — copy it now; rotate if you lose it.{" "}
+        <a href="/agent-api" className="underline hover:text-foreground">
+          How agents use it →
+        </a>
       </p>
 
       {token && (
