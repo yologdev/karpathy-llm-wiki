@@ -25,10 +25,15 @@ const AGENT_KNOWLEDGE_TYPE = "agent-knowledge";
  *     is enforced — a mention from a non-user hits a 404 and is skipped.
  * This route is exempt from the middleware write-gate because it uses a token.
  *
- * Body: { url } or { text, title? }. The resulting page is scoped
- * (`type: agent-knowledge`, authored/owned by the agent) and appended to the
- * agent's learnings, so it surfaces under the agent profile and `agent:` scope
- * but not in the public feed or general search.
+ * Body: { url } or { text, title? }, plus an optional `asOwner` flag.
+ *   - Default (per-agent token, e.g. openclaw): the page is scoped
+ *     (`type: agent-knowledge`, owned by the agent) and appended to the agent's
+ *     learnings — surfaces under the agent profile / `agent:` scope only.
+ *   - `asOwner: true` (system token only): the page is ingested as the agent's
+ *     **human owner's own content** — a normal public page owned/authored by the
+ *     owner, in their `/u/<handle>` + the commons, NOT agent knowledge. This is
+ *     the @yoyoevolve "save this to my wiki" reply flow: the actor (a registered
+ *     user) replied, so the saved article is theirs, not the agent's.
  */
 export async function POST(req: Request, { params }: RouteParams) {
   try {
@@ -43,6 +48,10 @@ export async function POST(req: Request, { params }: RouteParams) {
         { status: 401 },
       );
     }
+    // Resolved only on the system-token path; carries the agent's human owner so
+    // `asOwner` ingests can attribute the page to them.
+    let agentRecord: Awaited<ReturnType<typeof getAgent>> | null = null;
+    let isSystem = false;
     const tokenAgentId = await verifyAgentToken(bearer);
     if (tokenAgentId) {
       // Per-agent token: can only ingest into its own agent.
@@ -53,22 +62,22 @@ export async function POST(req: Request, { params }: RouteParams) {
         );
       }
     } else if (getServicePrincipal(req)) {
+      isSystem = true;
       // System token: trusted to target any agent, but it must exist — this is
       // the "registered user only" gate for the @yoyoevolve loop.
-      let exists;
       try {
-        exists = await getAgent(id);
+        agentRecord = await getAgent(id);
       } catch (err) {
         // A malformed id is "not a user" (404). A real storage error must
         // surface as 500 — never masquerade as "not registered", which would
         // make an outage look like nobody who mentioned us is a yopedia user.
         if (err instanceof Error && err.message.includes("Invalid agent ID")) {
-          exists = null;
+          agentRecord = null;
         } else {
           throw err;
         }
       }
-      if (!exists) {
+      if (!agentRecord) {
         return NextResponse.json(
           { error: `Agent "${id}" not found` },
           { status: 404 },
@@ -78,7 +87,7 @@ export async function POST(req: Request, { params }: RouteParams) {
       return NextResponse.json({ error: "Invalid token." }, { status: 401 });
     }
 
-    let body: { url?: unknown; text?: unknown; title?: unknown };
+    let body: { url?: unknown; text?: unknown; title?: unknown; asOwner?: unknown };
     try {
       body = await req.json();
     } catch {
@@ -95,19 +104,40 @@ export async function POST(req: Request, { params }: RouteParams) {
       );
     }
 
-    // Ingest as the agent: scoped type, attributed to the agent.
-    const opts: IngestOptions = {
-      author: id,
-      owner: id,
-      triggeredBy: id,
-      pageType: AGENT_KNOWLEDGE_TYPE,
-    };
+    // `asOwner` ingests into the human owner's own content. It requires the
+    // system token (which resolved the owner) — an agent token must never be
+    // able to write to its owner's public space.
+    const asOwner = body.asOwner === true;
+    if (asOwner && !isSystem) {
+      return NextResponse.json(
+        { error: "asOwner ingestion requires the system token." },
+        { status: 403 },
+      );
+    }
+
+    let opts: IngestOptions;
+    if (asOwner) {
+      // Save into the owner's wiki — a normal page attributed to the user.
+      const owner = agentRecord!.owner;
+      opts = { author: owner, owner, triggeredBy: owner, sourceType: "x-mention" };
+    } else {
+      // Ingest as the agent: scoped type, attributed to the agent.
+      opts = {
+        author: id,
+        owner: id,
+        triggeredBy: id,
+        pageType: AGENT_KNOWLEDGE_TYPE,
+      };
+    }
     const result = url
       ? await ingestUrl(url, opts)
       : await ingest(title || "Untitled", text, opts);
 
-    // Attach the ingested page to the agent's own learnings.
-    await addAgentLearningPage(id, result.primarySlug);
+    // Agent-knowledge ingests attach to the agent's learnings; owner-content
+    // ingests do not (they live in the owner's normal content space).
+    if (!asOwner) {
+      await addAgentLearningPage(id, result.primarySlug);
+    }
 
     return NextResponse.json({
       slug: result.primarySlug,

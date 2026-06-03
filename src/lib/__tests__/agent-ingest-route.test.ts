@@ -180,5 +180,35 @@ describe("POST /api/agents/[id]/ingest", () => {
       expect(res.status).toBe(404);
       expect(mockedIngestUrl).not.toHaveBeenCalled();
     });
+
+    it("asOwner: ingests into the owner's OWN content (not agent-scoped) and does not touch learnings", async () => {
+      mockedVerify.mockResolvedValue(null);
+      mockedServicePrincipal.mockReturnValue({ id: "service:yopedia", handle: "yopedia" });
+      mockedGetAgent.mockResolvedValue({ id: "alice--yoyo", owner: "alice" } as never);
+
+      const res = await POST(
+        req({ url: "https://example.com", asOwner: true }, "sys-token"),
+        { params },
+      );
+      expect(res.status).toBe(200);
+      // Owner-attributed, normal page — NO agent-knowledge scope.
+      const opts = mockedIngestUrl.mock.calls[0][1];
+      expect(opts).toMatchObject({ author: "alice", owner: "alice", sourceType: "x-mention" });
+      expect(opts).not.toHaveProperty("pageType");
+      // Owner content is not appended to the agent's learnings.
+      expect(mockedAddLearning).not.toHaveBeenCalled();
+    });
+
+    it("asOwner is rejected (403) for a per-agent token — agents can't write to the owner's space", async () => {
+      mockedVerify.mockResolvedValue("alice--yoyo"); // per-agent token, matches path
+      mockedServicePrincipal.mockReturnValue(null);
+
+      const res = await POST(
+        req({ url: "https://example.com", asOwner: true }, "alice--yoyo.s"),
+        { params },
+      );
+      expect(res.status).toBe(403);
+      expect(mockedIngestUrl).not.toHaveBeenCalled();
+    });
   });
 });

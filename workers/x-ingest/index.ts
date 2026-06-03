@@ -3,9 +3,12 @@
 // On its Cron Trigger (every 10 min) it searches X for replies of the form
 // "@yoyoevolve yopedia ..." and, for each reply from a registered yopedia user,
 // ingests what the REPLIED-TO (parent) tweet points to — its full long-form X
-// Article (via the X API `article` field) and/or its external links — into that
-// user's yoyo, by calling the deployed yopedia ingest endpoint with the system
-// token. It never ingests plain tweet text.
+// Article (via the X API `article` field) and/or its external links — into the
+// mentioner's OWN yopedia content (a normal page owned/authored by them, in
+// their /u/<handle> + the public commons), by POSTing the deployed ingest
+// endpoint with the system token and `asOwner: true`. The @yoyoevolve mention
+// is the "save this to my wiki" command channel; it never ingests plain tweet
+// text and never writes into the agent's scoped knowledge.
 //
 // Cursor: `since_id` persisted in KV, so each run fetches only new mentions
 // (near-zero overlap). First run / missing / stale cursor → 48h safety window.
@@ -35,6 +38,12 @@ const SKIP_HOSTS = new Set([
   "www.twitter.com",
 ]);
 
+// The live query. `(to:HANDLE OR @HANDLE)` catches BOTH a reply directly to
+// @yoyoevolve's tweet (where the @mention is just the auto-prepended reply
+// prefix, which the bare `@HANDLE` keyword does not reliably match) AND a reply
+// to someone else that explicitly CCs @yoyoevolve in the body.
+const QUERY = `(to:${HANDLE} OR @${HANDLE}) ${TRIGGER} is:reply -is:retweet`;
+
 // ASCII-only subset of src/lib/slugify.ts — sufficient because X usernames are
 // [A-Za-z0-9_] (no CJK/whitespace), so it matches slugify() for all valid handles.
 const slug = (s: string) =>
@@ -55,7 +64,25 @@ interface Summary {
 // a future truthiness slip can't conflate "not a user" with "failed".
 type IngestOutcome = "ingested" | "not-a-user" | "dropped" | "failed";
 
-function externalLinks(tweet: { entities?: { urls?: { expanded_url?: string; url?: string }[] } }): string[] {
+// ---------------------------------------------------------------------------
+// X API types (only the fields we read; res.json() is an unchecked cast, so
+// every access below is optional-chained or guarded).
+// ---------------------------------------------------------------------------
+interface XTweet {
+  id: string;
+  author_id?: string;
+  text?: string;
+  referenced_tweets?: { type: string; id: string }[];
+  article?: { title?: string; text?: string };
+  entities?: { urls?: { expanded_url?: string; url?: string }[] };
+}
+interface XSearchPayload {
+  data?: XTweet[];
+  includes?: { users?: { id: string; username: string }[]; tweets?: XTweet[] };
+  meta?: { newest_id?: string; result_count?: number };
+}
+
+function externalLinks(tweet: XTweet): string[] {
   return (tweet.entities?.urls ?? [])
     .map((u) => u.expanded_url || u.url || "")
     .filter((u) => {
@@ -68,6 +95,17 @@ function externalLinks(tweet: { entities?: { urls?: { expanded_url?: string; url
     });
 }
 
+/** Build the X recent-search URL for a query + time/cursor bound. */
+function searchUrl(query: string, bound: string): string {
+  return (
+    `https://api.twitter.com/2/tweets/search/recent?query=${encodeURIComponent(query)}` +
+    `&max_results=100${bound}` +
+    `&expansions=referenced_tweets.id,author_id` +
+    `&tweet.fields=entities,author_id,referenced_tweets,article,created_at` +
+    `&user.fields=username`
+  );
+}
+
 async function run(env: Env): Promise<Summary> {
   const X_BEARER = env.X_BEARER_TOKEN;
   const SERVICE = env.YOPEDIA_SERVICE_TOKEN;
@@ -78,34 +116,15 @@ async function run(env: Env): Promise<Summary> {
   }
 
   const sinceId = await env.CURSOR.get(CURSOR_KEY);
-  const q = encodeURIComponent(`@${HANDLE} ${TRIGGER} is:reply -is:retweet`);
   const bound = sinceId
     ? `&since_id=${sinceId}`
     : `&start_time=${new Date(Date.now() - 48 * 3600 * 1000).toISOString()}`;
-  const url =
-    `https://api.twitter.com/2/tweets/search/recent?query=${q}` +
-    `&max_results=100${bound}` +
-    `&expansions=referenced_tweets.id,author_id` +
-    `&tweet.fields=entities,author_id,referenced_tweets,article,created_at` +
-    `&user.fields=username`;
 
-  let payload: {
-    data?: {
-      author_id: string;
-      referenced_tweets?: { type: string; id: string }[];
-    }[];
-    includes?: {
-      users?: { id: string; username: string }[];
-      tweets?: {
-        id: string;
-        article?: { title?: string; text?: string };
-        entities?: { urls?: { expanded_url?: string; url?: string }[] };
-      }[];
-    };
-    meta?: { newest_id?: string; result_count?: number };
-  };
+  let payload: XSearchPayload;
   try {
-    const res = await fetch(url, { headers: { Authorization: `Bearer ${X_BEARER}` } });
+    const res = await fetch(searchUrl(QUERY, bound), {
+      headers: { Authorization: `Bearer ${X_BEARER}` },
+    });
     if (!res.ok) {
       const bodyText = await res.text();
       // A bad/revoked bearer is systemic — surface it loudly (leaving the
@@ -134,7 +153,7 @@ async function run(env: Env): Promise<Summary> {
     (payload.includes?.tweets ?? []).map((t) => [t.id, t]),
   );
   if (mentions.length === 0) {
-    console.log("No new @yoyoevolve yopedia reply-mentions. Nothing to ingest.");
+    console.log(`No new mentions for query [${QUERY}]. Nothing to ingest.`);
     return { ingested: 0, skipped: 0, dropped: 0, failed: 0, mentions: 0 };
   }
 
@@ -143,21 +162,24 @@ async function run(env: Env): Promise<Summary> {
   let dropped = 0;
   let failed = 0;
 
-  async function ingestInto(agentId: string, body: unknown, label: string): Promise<IngestOutcome> {
+  // POST one source into <handle>'s OWN yopedia content (asOwner). The agent id
+  // (<handle>--yoyo) is only used to resolve the owner + gate on "registered
+  // user" (404 ⇒ not a user); the resulting page is owned/authored by <handle>.
+  async function ingestForOwner(agentId: string, body: object, label: string): Promise<IngestOutcome> {
     const res = await fetch(`${BASE}/api/agents/${agentId}/ingest`, {
       method: "POST",
       headers: { Authorization: `Bearer ${SERVICE}`, "Content-Type": "application/json" },
-      body: JSON.stringify(body),
+      body: JSON.stringify({ ...body, asOwner: true }),
     });
     if (res.status === 200) {
-      // A 200 means the server committed the page (it attaches to learnings
-      // before responding), so the outcome is authoritative even if the body
-      // is unreadable — but warn rather than silently print "(ok)".
+      // A 200 means the server committed the page, so the outcome is
+      // authoritative even if the body is unreadable — but warn rather than
+      // silently print "(ok)".
       const data = (await res.json().catch((e) => {
         console.warn(`200 from ${agentId} but body unparseable (${label}): ${e}`);
         return {};
       })) as { slug?: string; deduped?: boolean };
-      console.log(`✓ ${agentId}: ${label} → ${data.slug ?? "(ok)"}${data.deduped ? " (deduped)" : ""}`);
+      console.log(`✓ ${agentId} (owner content): ${label} → ${data.slug ?? "(ok)"}${data.deduped ? " (deduped)" : ""}`);
       return "ingested";
     }
     if (res.status === 404) {
@@ -180,9 +202,9 @@ async function run(env: Env): Promise<Summary> {
   }
 
   for (const mention of mentions) {
-    const handle = userById[mention.author_id];
+    const handle = mention.author_id ? userById[mention.author_id] : undefined;
     if (!handle) {
-      console.warn(`! mention by ${mention.author_id}: author not expanded — skipping`);
+      console.warn(`! mention by ${mention.author_id ?? "?"}: author not expanded — skipping`);
       skipped++;
       continue;
     }
@@ -194,7 +216,7 @@ async function run(env: Env): Promise<Summary> {
       continue;
     }
 
-    const jobs: { body: unknown; label: string }[] = [];
+    const jobs: { body: object; label: string }[] = [];
     const article = parent.article;
     if (article && (article.text || article.title)) {
       const title = article.title || `X Article (shared by @${handle})`;
@@ -212,7 +234,7 @@ async function run(env: Env): Promise<Summary> {
 
     const agentId = `${slug(handle)}--yoyo`;
     for (const job of jobs) {
-      const outcome = await ingestInto(agentId, job.body, job.label);
+      const outcome = await ingestForOwner(agentId, job.body, job.label);
       if (outcome === "ingested") ingested++;
       else if (outcome === "not-a-user") {
         skipped++;
@@ -236,6 +258,60 @@ async function run(env: Env): Promise<Summary> {
   return { ingested, skipped, dropped, failed, mentions: mentions.length };
 }
 
+// ---------------------------------------------------------------------------
+// Debug probe: runs several query variants over a recent window and reports
+// what X returns for each, WITHOUT ingesting or touching the cursor. Lets an
+// operator (with the system token) see exactly which match pattern X honors
+// for a given reply. GET/POST `?debug=1` (optionally `&hours=N`).
+// ---------------------------------------------------------------------------
+async function probe(env: Env, hours: number): Promise<unknown> {
+  const X_BEARER = env.X_BEARER_TOKEN;
+  if (!X_BEARER) return { error: "X_BEARER_TOKEN not set" };
+  const bound = `&start_time=${new Date(Date.now() - hours * 3600 * 1000).toISOString()}`;
+  const variants: Record<string, string> = {
+    live: QUERY,
+    toOnly: `to:${HANDLE} ${TRIGGER} is:reply -is:retweet`,
+    mentionOnly: `@${HANDLE} ${TRIGGER} is:reply -is:retweet`,
+    noTrigger: `to:${HANDLE} is:reply -is:retweet`,
+    broad: `${TRIGGER} is:reply -is:retweet`,
+  };
+
+  const results: Record<string, unknown> = {};
+  for (const [name, query] of Object.entries(variants)) {
+    const res = await fetch(searchUrl(query, bound), {
+      headers: { Authorization: `Bearer ${X_BEARER}` },
+    });
+    if (!res.ok) {
+      results[name] = { query, status: res.status, error: (await res.text()).slice(0, 300) };
+      continue;
+    }
+    const payload: XSearchPayload = await res.json();
+    const userById = Object.fromEntries(
+      (payload.includes?.users ?? []).map((u) => [u.id, u.username]),
+    );
+    const tweetById = Object.fromEntries(
+      (payload.includes?.tweets ?? []).map((t) => [t.id, t]),
+    );
+    results[name] = {
+      query,
+      result_count: payload.meta?.result_count ?? (payload.data?.length ?? 0),
+      samples: (payload.data ?? []).slice(0, 5).map((m) => {
+        const parentId = (m.referenced_tweets ?? []).find((r) => r.type === "replied_to")?.id;
+        const parent = parentId ? tweetById[parentId] : undefined;
+        return {
+          id: m.id,
+          author: m.author_id ? userById[m.author_id] : undefined,
+          text: (m.text ?? "").slice(0, 80),
+          parentId: parentId ?? null,
+          parentHasArticle: !!parent?.article,
+          parentLinks: parent ? externalLinks(parent).length : 0,
+        };
+      }),
+    };
+  }
+  return { window_hours: hours, variants: results };
+}
+
 export default {
   // Cron Trigger (every 10 min).
   async scheduled(_event: unknown, env: Env): Promise<void> {
@@ -251,15 +327,21 @@ export default {
     }
   },
 
-  // Manual trigger for testing — gated by the system token. The regex requires
+  // Manual trigger / debug probe — gated by the system token. The regex requires
   // a non-empty bearer, so an unconfigured YOPEDIA_SERVICE_TOKEN (undefined)
   // rejects every request rather than auth-bypassing.
+  //   POST           → run the loop once, returns the Summary
+  //   ?debug=1       → run the read-only query probe (no ingest, no cursor write)
   async fetch(req: Request, env: Env): Promise<Response> {
     const bearer = req.headers.get("authorization")?.match(/^Bearer\s+(.+)$/i)?.[1];
     if (!bearer || bearer !== env.YOPEDIA_SERVICE_TOKEN) {
       return new Response("Unauthorized", { status: 401 });
     }
-    const summary = await run(env);
-    return Response.json(summary);
+    const params = new URL(req.url).searchParams;
+    if (params.get("debug")) {
+      const hours = Math.min(Math.max(Number(params.get("hours")) || 24, 1), 168);
+      return Response.json(await probe(env, hours));
+    }
+    return Response.json(await run(env));
   },
 };

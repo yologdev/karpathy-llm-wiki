@@ -5,11 +5,18 @@ The `@yoyoevolve` X-ingest loop as a **standalone Cloudflare Worker** with a
 every 10 minutes and ingests into yopedia via the deployed ingest endpoint.
 
 What it does each run:
-- Searches X for replies matching **`@yoyoevolve yopedia is:reply -is:retweet`**.
+- Searches X with **`(to:yoyoevolve OR @yoyoevolve) yopedia is:reply -is:retweet`**.
+  The `(to: OR @)` group catches both a reply *directly to* @yoyoevolve's tweet
+  (where `@yoyoevolve` is just the auto-prepended reply prefix, which the bare
+  keyword doesn't reliably match) and a reply elsewhere that CCs @yoyoevolve.
 - For each reply from a **registered** yopedia user, ingests what the
   **replied-to (parent) tweet** points to — its full long-form **X Article**
-  (`tweet.fields=article`) and/or its **external links** — into that user's
-  `<handle>--yoyo` via `POST /api/agents/<id>/ingest` with the system token.
+  (`tweet.fields=article`) and/or its **external links** — into **that user's own
+  yopedia content** (a normal page owned/authored by them, in their `/u/<handle>`
+  + the public commons), via `POST /api/agents/<handle>--yoyo/ingest` with the
+  system token and **`asOwner: true`**. The `@yoyoevolve` mention is the "save
+  this to my wiki" command channel — it is **not** written to the agent's scoped
+  knowledge, and plain tweet text is never ingested.
 - Tracks a **`since_id` cursor in KV** (near-zero overlap); first run / missing /
   stale cursor falls back to a 48h window. The cursor advances only on a clean
   run, so a failed ingest is retried.
@@ -36,10 +43,26 @@ key `x-ingest:since_id`. To use a dedicated namespace instead, create one with
 ## Trigger it manually (testing)
 
 ```sh
-# The Worker also exposes a fetch handler gated by the system token:
+# Run the loop once (gated by the system token):
 curl -X POST "https://yopedia-x-ingest.<your-subdomain>.workers.dev" \
   -H "Authorization: Bearer <YOPEDIA_SERVICE_TOKEN>"
 # → { ingested, skipped, dropped, failed, mentions }  (plus a `note` when skipped/unconfigured)
 ```
+
+### Debug probe (why didn't my reply match?)
+
+A read-only probe that runs several query variants over a recent window and
+reports what X returns for each — **no ingest, no cursor write**. Use it to see
+which match pattern X honors for a given reply:
+
+```sh
+curl -X POST "https://yopedia-x-ingest.<your-subdomain>.workers.dev/?debug=1&hours=24" \
+  -H "Authorization: Bearer <YOPEDIA_SERVICE_TOKEN>" | jq
+# → { window_hours, variants: { live, toOnly, mentionOnly, noTrigger, broad: { result_count, samples[] } } }
+```
+
+If `live`/`toOnly` find your reply but `mentionOnly` (the old bare-`@` query)
+doesn't, that confirms the `to:` operator was the fix. Each sample shows the
+author, a text snippet, and whether the parent has an article/links.
 
 Logs: `pnpm exec wrangler tail --config workers/x-ingest/wrangler.jsonc`.
