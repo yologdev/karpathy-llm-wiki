@@ -92,6 +92,12 @@ function sourceTypeBadge(type: SourceEntry["type"]): {
         className:
           "bg-teal-100 text-teal-800 dark:bg-teal-900/30 dark:text-teal-400",
       };
+    case "image":
+      return {
+        label: "Image",
+        className:
+          "bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400",
+      };
     default:
       return {
         label: String(type),

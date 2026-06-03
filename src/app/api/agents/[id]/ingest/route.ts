@@ -92,6 +92,7 @@ export async function POST(req: Request, { params }: RouteParams) {
       text?: unknown;
       title?: unknown;
       imageUrl?: unknown;
+      sourceUrl?: unknown;
       asOwner?: unknown;
     };
     try {
@@ -136,11 +137,19 @@ export async function POST(req: Request, { params }: RouteParams) {
         pageType: AGENT_KNOWLEDGE_TYPE,
       };
     }
+    // A caller-provided source URL (e.g. the original X article) is recorded as
+    // the page's provenance so the wiki page links back to it. The `url`/
+    // `imageUrl` paths set their own source, so this only applies to text.
+    const sourceUrl =
+      typeof body.sourceUrl === "string" && /^https?:\/\//.test(body.sourceUrl.trim())
+        ? body.sourceUrl.trim()
+        : undefined;
+
     const result = imageUrl
       ? await ingestImage({ imageUrl }, { ...opts, title: title || undefined })
       : url
         ? await ingestUrl(url, opts)
-        : await ingest(title || "Untitled", text, opts);
+        : await ingest(title || "Untitled", text, { ...opts, sourceUrl });
 
     // Agent-knowledge ingests attach to the agent's learnings; owner-content
     // ingests do not (they live in the owner's normal content space).

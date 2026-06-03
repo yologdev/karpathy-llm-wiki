@@ -296,6 +296,14 @@ async function run(env: Env): Promise<Summary> {
       continue;
     }
 
+    // The original article/tweet URL — recorded as the page's source so the
+    // wiki page links back to it. Author handle if expanded, else the
+    // handle-agnostic /i/status/ form (which X redirects correctly).
+    const parentAuthor = parent.author_id ? userById[parent.author_id] : undefined;
+    const sourceUrl = parentAuthor
+      ? `https://x.com/${parentAuthor}/status/${parent.id}`
+      : `https://x.com/i/status/${parent.id}`;
+
     const jobs: { body: object; label: string }[] = [];
     const article = parent.article;
     if (article && (article.text || article.title)) {
@@ -308,7 +316,7 @@ async function run(env: Env): Promise<Summary> {
       const imgs = [...new Set([...(cover ? [cover] : []), ...apiImgs])].slice(0, 12);
       const imgBlock = imgs.length ? "\n\n" + imgs.map((u) => `![](${u})`).join("\n\n") : "";
       jobs.push({
-        body: { text: (article.text || title) + imgBlock, title },
+        body: { text: (article.text || title) + imgBlock, title, sourceUrl },
         label: `article "${title}"${imgs.length ? ` (+${imgs.length} img)` : ""}`,
       });
     } else if (article) {
