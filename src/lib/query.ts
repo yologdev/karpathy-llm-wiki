@@ -4,6 +4,7 @@ import {
   listWikiPages,
   writeWikiPageWithSideEffects,
   withPageCache,
+  isAgentScopedType,
 } from "./wiki";
 import { slugify } from "./slugify";
 import { extractSummary } from "./ingest";
@@ -171,7 +172,7 @@ export async function query(
   scope?: string,
 ): Promise<QueryResult> {
   return withPageCache(async () => {
-    const entries = await listWikiPages();
+    let entries = await listWikiPages();
 
     // Resolve scope to a set of slugs when provided
     let scopeSlugs: string[] | undefined;
@@ -190,6 +191,12 @@ export async function query(
           sources: [],
         };
       }
+    }
+
+    // General (unscoped) query excludes agent-scoped pages — agent knowledge
+    // surfaces only via an `agent:` scope.
+    if (!scopeSlugs) {
+      entries = entries.filter((e) => !isAgentScopedType(e.type));
     }
 
     // Empty wiki — nothing to query

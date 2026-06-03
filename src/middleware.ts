@@ -9,20 +9,27 @@ const WRITE_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 // stay public — yopedia is a public observer surface (see yopedia-concept.md).
 // Attribution (which user) is read per-route from `getPrincipal()`.
 //
-// Exception: /api/agents/seed authenticates IN-ROUTE because it accepts either
-// a Clerk session OR a service token (getServicePrincipal) for automated
-// re-seeding. It still rejects unauthenticated callers — the auth just lives in
-// the handler, not here — so this is not a hole.
+// Exception: some routes authenticate IN-ROUTE with a token instead of a Clerk
+// session, so they're exempt from this gate (they still reject unauthenticated
+// callers — the auth just lives in the handler):
+//   - /api/agents/seed            — Clerk session OR the system service token
+//   - /api/agents/<id>/ingest     — the agent's own per-agent token
+// This is not a hole.
 //
 // The MCP server is stdio-only and not exposed over HTTP, so it is unaffected.
 const IN_ROUTE_AUTH_PATHS = new Set(["/api/agents/seed"]);
+const AGENT_INGEST_RE = /^\/api\/agents\/[^/]+\/ingest$/;
+
+function authenticatesInRoute(pathname: string): boolean {
+  return IN_ROUTE_AUTH_PATHS.has(pathname) || AGENT_INGEST_RE.test(pathname);
+}
 
 export default clerkMiddleware(async (auth, req) => {
   const { pathname } = req.nextUrl;
   if (
     WRITE_METHODS.has(req.method) &&
     pathname.startsWith("/api/") &&
-    !IN_ROUTE_AUTH_PATHS.has(pathname)
+    !authenticatesInRoute(pathname)
   ) {
     const { userId } = await auth();
     if (!userId) {

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getAgent, resolveAgentPages, sharedPagesFor } from "@/lib/agents";
+import { getAgent, resolveAgentPages, sharedPagesFor, publicAgent } from "@/lib/agents";
 import { readWikiPageWithFrontmatter } from "@/lib/wiki";
 import { getErrorMessage } from "@/lib/errors";
 import { logger } from "@/lib/logger";
@@ -96,7 +96,7 @@ export async function GET(_req: Request, { params }: RouteParams) {
       identity.count + learnings.count + social.count + shared.count;
 
     return NextResponse.json({
-      agent,
+      agent: publicAgent(agent),
       context: {
         identity: identity.content,
         learnings: learnings.content,

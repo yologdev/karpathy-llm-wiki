@@ -101,6 +101,30 @@ describe("searchWikiContent", () => {
     expect(results[0].title).toBe("Neural Networks");
   });
 
+  it("excludes agent-scoped pages from general (unscoped) search", async () => {
+    await ensureDirectories();
+    await writeWikiPage(
+      "normal-note",
+      "# Normal\n\nAttention mechanisms explained here.",
+    );
+    await writeWikiPage(
+      "agent-note",
+      serializeFrontmatter(
+        { type: "agent-knowledge" },
+        "# Agent Note\n\nAttention mechanisms explained here.",
+      ),
+    );
+    // Both must be in the index so the type-based exclusion can see them.
+    await writeWikiPage(
+      "index",
+      "# Index\n\n- [Normal](normal-note.md) — n\n- [Agent Note](agent-note.md) — a",
+    );
+
+    const slugs = (await searchWikiContent("attention")).map((r) => r.slug);
+    expect(slugs).toContain("normal-note");
+    expect(slugs).not.toContain("agent-note");
+  });
+
   it("is case-insensitive", async () => {
     await ensureDirectories();
     await writeWikiPage("test-page", "# Test Page\n\nHello WORLD.");

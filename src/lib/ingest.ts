@@ -460,6 +460,12 @@ export interface IngestOptions {
    * user. Defaults to `author`.
    */
   owner?: string;
+  /**
+   * Optional page `type` frontmatter (e.g. "agent-knowledge"). When set, marks
+   * the page as agent-scoped so it is excluded from the public browse feed and
+   * general search, surfacing only via an `agent:` scope.
+   */
+  pageType?: string;
 }
 
 /**
@@ -697,6 +703,12 @@ export async function ingest(
     aliases: [],
     content_hash: hash,
   };
+
+  // Agent-scoped pages carry a `type` (e.g. "agent-knowledge") so they're
+  // filtered from the public browse feed and general search.
+  if (options?.pageType) {
+    frontmatter.type = options.pageType;
+  }
 
   // Persist the original source URL when provided (URL-based ingest).
   if (options?.sourceUrl) {

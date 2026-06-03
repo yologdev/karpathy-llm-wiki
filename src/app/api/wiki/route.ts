@@ -5,6 +5,7 @@ import {
   listWikiPages,
   serializeFrontmatter,
   writeWikiPageWithSideEffects,
+  isAgentScopedType,
   type Frontmatter,
 } from "@/lib/wiki";
 import { extractSummary } from "@/lib/ingest";
@@ -17,9 +18,9 @@ import { getErrorMessage } from "@/lib/errors";
  * Lightweight list of all wiki pages (slug, title, summary).
  * Much cheaper than /api/wiki/graph which reads every page and builds a link graph.
  *
- * By default, pages with `type: agent-identity` are excluded from the response
- * so the main feed stays human-centric. Pass `?includeAgentPages=true` to
- * include them (used by agent profile pages and admin views).
+ * By default, agent-scoped pages (`type: agent-*` — identity, knowledge, …) are
+ * excluded from the response so the main feed stays human-centric. Pass
+ * `?includeAgentPages=true` to include them (used by agent profile pages).
  */
 export async function GET(req: Request) {
   try {
@@ -29,7 +30,7 @@ export async function GET(req: Request) {
 
     let entries = await listWikiPages();
     if (!includeAgentPages) {
-      entries = entries.filter((e) => e.type !== "agent-identity");
+      entries = entries.filter((e) => !isAgentScopedType(e.type));
     }
     return NextResponse.json({ pages: entries });
   } catch (err) {

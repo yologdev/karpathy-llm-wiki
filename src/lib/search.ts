@@ -11,6 +11,7 @@ import {
   listWikiPages,
   withPageCache,
   wikiRelPath,
+  isAgentScopedType,
 } from "./wiki";
 import { isEnoent } from "./errors";
 import { getAgent, resolveAgentPages, sharedPagesFor } from "./agents";
@@ -284,6 +285,17 @@ export function fuzzyMatch(
  * When `scope` is provided, only pages whose slug appears in `scope.slugs`
  * are searched.
  */
+/**
+ * Slugs whose page is agent-scoped (`agent-*` type) — excluded from general
+ * (unscoped) search so agent knowledge surfaces only via an `agent:` scope.
+ */
+async function agentScopedSlugSet(): Promise<Set<string>> {
+  const pages = await listWikiPages();
+  return new Set(
+    pages.filter((p) => isAgentScopedType(p.type)).map((p) => p.slug),
+  );
+}
+
 export async function searchWikiContent(
   query: string,
   maxResults = 10,
@@ -307,6 +319,9 @@ export async function searchWikiContent(
 
   const SKIP = new Set(["index.md", "log.md"]);
   const scopeSlugs = scope ? new Set(scope.slugs) : null;
+  // Without a scope, exclude agent-scoped pages from general search — they
+  // surface only via an `agent:` scope.
+  const excludedSlugs = scope ? null : await agentScopedSlugSet();
 
   const scored: Array<{
     slug: string;
@@ -322,6 +337,8 @@ export async function searchWikiContent(
 
     // Scope filtering: skip pages not in the scope's slug set
     if (scopeSlugs && !scopeSlugs.has(slug)) continue;
+    // General search: skip agent-scoped pages
+    if (excludedSlugs && excludedSlugs.has(slug)) continue;
 
     let content: string;
     try {
@@ -434,6 +451,7 @@ export async function fuzzySearchWikiContent(
   const SKIP = new Set(["index.md", "log.md"]);
   const exactSlugs = new Set(exactResults.map((r) => r.slug));
   const scopeSlugs = scope ? new Set(scope.slugs) : null;
+  const excludedSlugs = scope ? null : await agentScopedSlugSet();
 
   const fuzzyResults: ContentSearchResult[] = [];
 
@@ -443,6 +461,8 @@ export async function fuzzySearchWikiContent(
 
     // Scope filtering: skip pages not in the scope's slug set
     if (scopeSlugs && !scopeSlugs.has(slug)) continue;
+    // General search: skip agent-scoped pages
+    if (excludedSlugs && excludedSlugs.has(slug)) continue;
 
     // Skip pages already in exact results
     if (exactSlugs.has(slug)) continue;

@@ -191,6 +191,11 @@ export interface AgentProfile {
    *  the template's pages by reference — see resolveAgentPages() — so base
    *  updates keep flowing through until the fork overrides a page (future). */
   template?: string;
+  /** SHA-256 hash (hex) of the agent's credential secret, or undefined if no
+   *  token has been issued. Only the hash is stored — the raw token is shown to
+   *  the owner once at generation. NEVER serialize this to public responses
+   *  (use publicAgent() to strip it). */
+  tokenHash?: string;
   /** Wiki page slugs that form this agent's identity context (its OWN pages;
    *  inherited pages come from the template via resolveAgentPages). */
   identityPages: string[];

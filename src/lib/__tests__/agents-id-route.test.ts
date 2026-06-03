@@ -18,6 +18,7 @@ vi.mock("@/lib/agents", () => {
     updateAgent: vi.fn(),
     assertCanMutateAgent: vi.fn(),
     AgentOwnershipError,
+    publicAgent: (a: unknown) => a,
   };
 });
 

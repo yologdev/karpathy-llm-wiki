@@ -40,6 +40,15 @@ export function wikiRelPath(filename: string): string {
 }
 
 /**
+ * True when a page `type` marks it as agent-scoped (`agent-identity`,
+ * `agent-knowledge`, …). Such pages are excluded from the public browse feed
+ * and general search, surfacing only via an `agent:` scope.
+ */
+export function isAgentScopedType(type: string | undefined): boolean {
+  return typeof type === "string" && type.startsWith("agent-");
+}
+
+/**
  * Compute a storage-relative path for a raw source file.
  *
  * Same logic as {@link wikiRelPath} but for the `raw/` directory. Used by

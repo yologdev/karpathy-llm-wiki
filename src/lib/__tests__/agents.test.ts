@@ -21,6 +21,11 @@ import {
   resolveAgentPages,
   sharedPagesFor,
   setPageShared,
+  generateAgentToken,
+  verifyAgentToken,
+  revokeAgentToken,
+  publicAgent,
+  addAgentLearningPage,
 } from "../agents";
 import type { UpdateAgentPage } from "../agents";
 import { readWikiPage, readWikiPageWithFrontmatter } from "../wiki";
@@ -1327,5 +1332,74 @@ describe("sharing (feed-as-grant via sharedWith)", () => {
     await setPageShared("alice-note", "alice--yoyo", false);
     page = await readWikiPageWithFrontmatter("alice-note");
     expect(page!.frontmatter.sharedWith).toEqual(["bob--yoyo"]);
+  });
+})
+
+describe("per-agent credentials", () => {
+  async function seedAgentRecord(id = "alice--yoyo", owner = "alice") {
+    await registerAgent(makeProfile({ id, owner }));
+  }
+
+  it("generateAgentToken returns <id>.<secret> and stores only the hash", async () => {
+    await seedAgentRecord();
+    const token = await generateAgentToken("alice--yoyo");
+    expect(token.startsWith("alice--yoyo.")).toBe(true);
+
+    const agent = await getAgent("alice--yoyo");
+    expect(agent!.tokenHash).toBeTruthy();
+    // The raw secret is never stored.
+    expect(agent!.tokenHash).not.toContain(token.split(".")[1]);
+  });
+
+  it("verifyAgentToken accepts the right token and rejects others", async () => {
+    await seedAgentRecord();
+    const token = await generateAgentToken("alice--yoyo");
+
+    expect(await verifyAgentToken(token)).toBe("alice--yoyo");
+    expect(await verifyAgentToken("alice--yoyo.wrongsecret")).toBeNull();
+    expect(await verifyAgentToken("garbage")).toBeNull();
+    expect(await verifyAgentToken("bob--yoyo.whatever")).toBeNull(); // no such agent
+  });
+
+  it("rotating invalidates the previous token", async () => {
+    await seedAgentRecord();
+    const first = await generateAgentToken("alice--yoyo");
+    const second = await generateAgentToken("alice--yoyo");
+    expect(first).not.toBe(second);
+    expect(await verifyAgentToken(first)).toBeNull();
+    expect(await verifyAgentToken(second)).toBe("alice--yoyo");
+  });
+
+  it("revokeAgentToken clears the credential", async () => {
+    await seedAgentRecord();
+    const token = await generateAgentToken("alice--yoyo");
+    await revokeAgentToken("alice--yoyo");
+    expect(await verifyAgentToken(token)).toBeNull();
+    expect((await getAgent("alice--yoyo"))!.tokenHash).toBeUndefined();
+  });
+
+  it("publicAgent strips the tokenHash", async () => {
+    await seedAgentRecord();
+    await generateAgentToken("alice--yoyo");
+    const agent = await getAgent("alice--yoyo");
+    expect(agent!.tokenHash).toBeTruthy();
+    expect(publicAgent(agent!).tokenHash).toBeUndefined();
+    // Other fields survive.
+    expect(publicAgent(agent!).id).toBe("alice--yoyo");
+  });
+});
+
+describe("addAgentLearningPage", () => {
+  it("appends a slug to learningPages (idempotent)", async () => {
+    await registerAgent(makeProfile({ id: "alice--yoyo", owner: "alice" }));
+    await addAgentLearningPage("alice--yoyo", "some-page");
+    await addAgentLearningPage("alice--yoyo", "some-page"); // no dup
+    expect((await getAgent("alice--yoyo"))!.learningPages).toEqual(["some-page"]);
+  });
+
+  it("is a no-op for a missing agent", async () => {
+    await expect(
+      addAgentLearningPage("ghost--yoyo", "x"),
+    ).resolves.toBeUndefined();
   });
 })
