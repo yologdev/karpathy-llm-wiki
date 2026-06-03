@@ -87,9 +87,19 @@ export const DEFAULT_AGENT_NAME = "yoyo";
 /** The owner handle of the canonical root agent (the synced base). */
 export const BASE_AGENT_OWNER = "yopedia";
 
-/** Compose the stable storage id for an agent from its (owner, name). */
+/**
+ * Compose the stable storage id for an agent from its (owner, name).
+ *
+ * Each part is slugified SEPARATELY and joined with `--`. Because slugify never
+ * emits a run of separators, the `--` delimiter is unambiguous and the
+ * owner/name boundary cannot be crossed — so a user-chosen short name can't be
+ * crafted to collide with another owner's id (e.g. owner `a_b`+`yoyo` →
+ * `a-b--yoyo`, owner `a`+`b_yoyo` → `a--b-yoyo`, distinct). The only residual
+ * collision is two owner handles that slugify identically, which forkAgent and
+ * the seed ownership check guard against.
+ */
 export function agentIdFor(owner: string, name: string = DEFAULT_AGENT_NAME): string {
-  return slugify(`${owner}-${name}`);
+  return `${slugify(owner)}--${slugify(name)}`;
 }
 
 /** The id of the canonical root agent every per-user yoyo is forked from. */
@@ -99,13 +109,14 @@ export function baseAgentId(): string {
 
 /**
  * Recover an agent's short name from its composite id — the inverse of
- * {@link agentIdFor} for the clean `/u/<owner>/a/<name>` URL form. Since the id
- * is `slugify("<owner>-<name>")`, stripping the `slugify(owner)-` prefix yields
- * the name slug. Falls back to the full id for unowned/legacy agents.
+ * {@link agentIdFor} for the clean `/u/<owner>/a/<name>` URL form. The id is
+ * `slugify(owner)--slugify(name)`, so stripping the unambiguous `slugify(owner)--`
+ * prefix yields the name slug. Falls back to the full id for unowned/legacy
+ * agents (and for any agent whose owner doesn't slugify to a non-empty prefix).
  */
 export function agentShortName(agent: AgentProfile): string {
   if (!agent.owner) return agent.id;
-  const prefix = `${slugify(agent.owner)}-`;
+  const prefix = `${slugify(agent.owner)}--`;
   return agent.id.startsWith(prefix) ? agent.id.slice(prefix.length) : agent.id;
 }
 
@@ -651,7 +662,13 @@ export async function forkAgent(
   const id = agentIdFor(options.owner, name);
 
   const existing = await getAgent(id);
-  if (existing) return existing;
+  if (existing) {
+    // Safety: never hand back an agent owned by someone else (only reachable
+    // via a rare owner-slug collision). Treat as not-provisionable rather than
+    // leak another user's agent.
+    if (existing.owner && existing.owner !== options.owner) return null;
+    return existing;
+  }
 
   const template = await getAgent(options.templateId);
   if (!template) return null;

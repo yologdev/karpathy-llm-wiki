@@ -16,6 +16,7 @@ import {
   assertCanMutateAgent,
   AgentOwnershipError,
   agentIdFor,
+  agentShortName,
   forkAgent,
   resolveAgentPages,
 } from "../agents";
@@ -1034,10 +1035,45 @@ describe("agent ownership", () => {
 // ---------------------------------------------------------------------------
 
 describe("agent addressing", () => {
-  it("agentIdFor composes owner + name into a slug", () => {
-    expect(agentIdFor("yopedia", "yoyo")).toBe("yopedia-yoyo");
-    expect(agentIdFor("Alice_B", "yoyo")).toBe("alice-b-yoyo");
-    expect(agentIdFor("bob")).toBe("bob-yoyo"); // default name
+  it("agentIdFor composes owner + name with an unambiguous '--' separator", () => {
+    expect(agentIdFor("yopedia", "yoyo")).toBe("yopedia--yoyo");
+    expect(agentIdFor("Alice_B", "yoyo")).toBe("alice-b--yoyo");
+    expect(agentIdFor("bob")).toBe("bob--yoyo"); // default name
+  });
+
+  it("agentIdFor does not let a crafted name collide across owners", () => {
+    // The classic single-hyphen collision: owner "a_b"+"yoyo" vs owner "a"+"b_yoyo".
+    // With separate slugify + "--", these stay distinct.
+    expect(agentIdFor("a_b", "yoyo")).not.toBe(agentIdFor("a", "b_yoyo"));
+    expect(agentIdFor("a_b", "yoyo")).toBe("a-b--yoyo");
+    expect(agentIdFor("a", "b_yoyo")).toBe("a--b-yoyo");
+  });
+
+  describe("agentShortName round-trips agentIdFor", () => {
+    const cases: Array<[string, string]> = [
+      ["alice", "yoyo"],
+      ["Alice_B", "yoyo"],
+      ["bob-smith", "yoyo"], // (not a real Twitter handle, but exercises hyphens)
+      ["a", "yoyo"],
+      ["alice", "v2"],
+    ];
+    for (const [owner, name] of cases) {
+      it(`(${owner}, ${name})`, () => {
+        const id = agentIdFor(owner, name);
+        const short = agentShortName({
+          ...makeProfile({ id }),
+          owner,
+        });
+        // The short name must re-compose to the same id (URL round-trip).
+        expect(agentIdFor(owner, short)).toBe(id);
+      });
+    }
+
+    it("returns the full id for an unowned/legacy agent", () => {
+      expect(agentShortName(makeProfile({ id: "legacy", owner: undefined }))).toBe(
+        "legacy",
+      );
+    });
   });
 
   it("getAgentByOwnerName round-trips a seeded agent", async () => {
@@ -1093,6 +1129,46 @@ describe("forkAgent", () => {
     expect(
       await forkAgent({ owner: "alice", templateId: "does-not-exist" }),
     ).toBeNull();
+  });
+
+  it("never returns an agent owned by someone else (collision safety)", async () => {
+    // Simulate an id already taken by a different owner (e.g. an owner-slug
+    // collision): forkAgent must not hand it over.
+    const id = agentIdFor("alice", "yoyo");
+    await registerAgent(makeProfile({ id, owner: "mallory" }));
+    const base = await seedBase();
+    expect(await forkAgent({ owner: "alice", templateId: base.id })).toBeNull();
+  });
+});
+
+describe("resolveAgentPages cycle + depth", () => {
+  // Use the injectable `load` so we can build pathological chains in memory.
+  const mk = (id: string, template: string | undefined, pages: string[]) =>
+    makeProfile({ id, template, identityPages: pages });
+
+  it("terminates on a self-referential template", async () => {
+    const a = mk("a--yoyo", "a--yoyo", ["a-id"]);
+    const load = async () => a;
+    const resolved = await resolveAgentPages(a, load);
+    expect(resolved.identityPages).toEqual(["a-id"]); // once, no hang
+  });
+
+  it("terminates on a 2-node cycle and de-dupes", async () => {
+    const a = mk("a--yoyo", "b--yoyo", ["a-id"]);
+    const b = mk("b--yoyo", "a--yoyo", ["b-id"]);
+    const load = async (id: string) => (id === a.id ? a : b);
+    const resolved = await resolveAgentPages(a, load);
+    expect(resolved.identityPages.sort()).toEqual(["a-id", "b-id"]);
+  });
+
+  it("unions a multi-level chain own-first", async () => {
+    const a = mk("a--yoyo", "b--yoyo", ["a-id"]);
+    const b = mk("b--yoyo", "c--yoyo", ["b-id"]);
+    const c = mk("c--yoyo", undefined, ["c-id"]);
+    const load = async (id: string) =>
+      ({ [a.id]: a, [b.id]: b, [c.id]: c })[id] ?? null;
+    const resolved = await resolveAgentPages(a, load);
+    expect(resolved.identityPages).toEqual(["a-id", "b-id", "c-id"]);
   });
 });
 

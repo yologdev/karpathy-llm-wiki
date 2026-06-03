@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { forkAgent, baseAgentId } from "@/lib/agents";
 import { getPrincipal } from "@/lib/auth";
 import { getErrorMessage } from "@/lib/errors";
+import { logger } from "@/lib/logger";
 
 /**
  * POST /api/agents/ensure
@@ -34,6 +35,9 @@ export async function POST() {
 
     return NextResponse.json({ agent, provisioned: true });
   } catch (err) {
+    // The client's auto-ping ignores the body, so this is the only place a real
+    // provisioning failure is observable — log it before returning 500.
+    logger.error("agents", "ensure (auto-provision) failed:", err);
     return NextResponse.json({ error: getErrorMessage(err) }, { status: 500 });
   }
 }

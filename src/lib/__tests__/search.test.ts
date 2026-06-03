@@ -686,6 +686,38 @@ describe("resolveScope", () => {
     expect(result).toBeNull();
   });
 
+  it("resolves a fork to its INHERITED (template) pages", async () => {
+    await ensureAgentsDir();
+    // Base with its own pages…
+    await registerAgent(
+      makeProfile({
+        id: "base--yoyo",
+        owner: "yopedia",
+        identityPages: ["yoyo-identity"],
+        learningPages: ["yoyo-learnings"],
+        socialPages: [],
+      }),
+    );
+    // …and a fork that owns NO pages, only a template pointer.
+    await registerAgent(
+      makeProfile({
+        id: "alice--yoyo",
+        owner: "alice",
+        template: "base--yoyo",
+        identityPages: [],
+        learningPages: [],
+        socialPages: [],
+      }),
+    );
+
+    const result = await resolveScope("agent:alice--yoyo");
+    expect(result).not.toBeNull();
+    // The fork's scope must include the base's inherited slugs.
+    expect(result!.slugs).toEqual(
+      expect.arrayContaining(["yoyo-identity", "yoyo-learnings"]),
+    );
+  });
+
   it("returns null for invalid scope format", async () => {
     const result = await resolveScope("invalid");
     expect(result).toBeNull();

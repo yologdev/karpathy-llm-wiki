@@ -566,8 +566,15 @@ export async function resolveScope(
     ];
 
     return { agentId: agent.id, slugs };
-  } catch {
-    // Invalid agent ID format or other error — treat as unresolvable
-    return null;
+  } catch (err) {
+    // A malformed agent id is genuinely unresolvable → null is correct. Any
+    // other error (storage outage, corrupt agent JSON in the template chain)
+    // must NOT be masked as an empty scope — that would silently mis-scope
+    // search during an outage. Log and rethrow those.
+    if (err instanceof Error && err.message.includes("Invalid agent ID")) {
+      return null;
+    }
+    logger.warn("search", `resolveScope failed for "${scopeParam}":`, err);
+    throw err;
   }
 }
