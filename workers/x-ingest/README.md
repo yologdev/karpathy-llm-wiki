@@ -21,16 +21,16 @@ first-class Cron Trigger) and is excluded from the app's tsconfig/eslint.
 
 ```sh
 # Secrets (stored on the cron Worker):
-npx wrangler secret put X_BEARER_TOKEN        --config workers/x-ingest/wrangler.jsonc
-npx wrangler secret put YOPEDIA_SERVICE_TOKEN --config workers/x-ingest/wrangler.jsonc   # same value as the main Worker
+pnpm exec wrangler secret put X_BEARER_TOKEN        --config workers/x-ingest/wrangler.jsonc
+pnpm exec wrangler secret put YOPEDIA_SERVICE_TOKEN --config workers/x-ingest/wrangler.jsonc   # same value as the main Worker
 
 # First deploy (afterwards it auto-deploys via deploy-cloudflare.yml on push to main):
-npx wrangler deploy --config workers/x-ingest/wrangler.jsonc
+pnpm exec wrangler deploy --config workers/x-ingest/wrangler.jsonc
 ```
 
 The cursor reuses the existing yopedia KV namespace (bound as `CURSOR`) under the
 key `x-ingest:since_id`. To use a dedicated namespace instead, create one with
-`wrangler kv namespace create x-ingest` and swap **only the `id`** in
+`pnpm exec wrangler kv namespace create x-ingest` and swap **only the `id`** in
 `wrangler.jsonc` — keep `"binding": "CURSOR"`, or `env.CURSOR` breaks.
 
 ## Trigger it manually (testing)
@@ -42,4 +42,4 @@ curl -X POST "https://yopedia-x-ingest.<your-subdomain>.workers.dev" \
 # → { ingested, skipped, dropped, failed, mentions }  (plus a `note` when skipped/unconfigured)
 ```
 
-Logs: `npx wrangler tail --config workers/x-ingest/wrangler.jsonc`.
+Logs: `pnpm exec wrangler tail --config workers/x-ingest/wrangler.jsonc`.
