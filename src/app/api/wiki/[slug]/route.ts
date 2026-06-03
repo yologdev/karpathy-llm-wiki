@@ -207,6 +207,7 @@ export async function PATCH(
     const code = (err as NodeJS.ErrnoException).code;
     let status = 500;
     if (code === "LIFECYCLE_FIELD") status = 400;
+    else if (code === "PRIVATE_NOT_SUPPORTED") status = 400;
     else if (code === "NOT_FOUND") status = 404;
     else if (message.toLowerCase().startsWith("invalid slug")) status = 400;
     return NextResponse.json({ error: message }, { status });

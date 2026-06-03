@@ -20,6 +20,7 @@ export const PATCHABLE_KEYS = new Set([
   "expiry",
   "valid_from",
   "supersedes",
+  "visibility",
 ]);
 
 /** Lifecycle-managed keys that PATCH must reject. */
@@ -60,6 +61,18 @@ export async function patchMetadata(
       `cannot update lifecycle-managed fields via PATCH: ${rejected.join(", ")}`,
     );
     (err as NodeJS.ErrnoException).code = "LIFECYCLE_FIELD";
+    throw err;
+  }
+
+  // Guard: reject visibility: "private" until read-path enforcement exists.
+  if (
+    "visibility" in metadata &&
+    metadata.visibility === "private"
+  ) {
+    const err = new Error(
+      "Private visibility is not yet enforced. Pages marked private would still be publicly readable. Set visibility to \"public\" or omit it.",
+    );
+    (err as NodeJS.ErrnoException).code = "PRIVATE_NOT_SUPPORTED";
     throw err;
   }
 
