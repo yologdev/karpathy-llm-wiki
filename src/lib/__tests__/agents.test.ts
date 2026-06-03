@@ -24,7 +24,6 @@ import {
   generateAgentToken,
   verifyAgentToken,
   revokeAgentToken,
-  publicAgent,
   addAgentLearningPage,
 } from "../agents";
 import type { UpdateAgentPage } from "../agents";
@@ -1340,15 +1339,16 @@ describe("per-agent credentials", () => {
     await registerAgent(makeProfile({ id, owner }));
   }
 
-  it("generateAgentToken returns <id>.<secret> and stores only the hash", async () => {
+  it("generateAgentToken returns <id>.<secret>, and the profile carries no secret", async () => {
     await seedAgentRecord();
     const token = await generateAgentToken("alice--yoyo");
     expect(token.startsWith("alice--yoyo.")).toBe(true);
+    expect(await verifyAgentToken(token)).toBe("alice--yoyo");
 
+    // The secret lives in a SEPARATE store — never on the serializable profile.
     const agent = await getAgent("alice--yoyo");
-    expect(agent!.tokenHash).toBeTruthy();
-    // The raw secret is never stored.
-    expect(agent!.tokenHash).not.toContain(token.split(".")[1]);
+    expect(JSON.stringify(agent)).not.toContain("tokenHash");
+    expect(JSON.stringify(agent)).not.toContain(token.split(".")[1]);
   });
 
   it("verifyAgentToken accepts the right token and rejects others", async () => {
@@ -1384,17 +1384,13 @@ describe("per-agent credentials", () => {
     const token = await generateAgentToken("alice--yoyo");
     await revokeAgentToken("alice--yoyo");
     expect(await verifyAgentToken(token)).toBeNull();
-    expect((await getAgent("alice--yoyo"))!.tokenHash).toBeUndefined();
   });
 
-  it("publicAgent strips the tokenHash", async () => {
+  it("deleting an agent revokes its credential", async () => {
     await seedAgentRecord();
-    await generateAgentToken("alice--yoyo");
-    const agent = await getAgent("alice--yoyo");
-    expect(agent!.tokenHash).toBeTruthy();
-    expect(publicAgent(agent!).tokenHash).toBeUndefined();
-    // Other fields survive.
-    expect(publicAgent(agent!).id).toBe("alice--yoyo");
+    const token = await generateAgentToken("alice--yoyo");
+    await deleteAgent("alice--yoyo");
+    expect(await verifyAgentToken(token)).toBeNull();
   });
 });
 

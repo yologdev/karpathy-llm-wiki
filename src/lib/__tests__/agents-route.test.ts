@@ -9,7 +9,6 @@ vi.mock("@/lib/agents", () => ({
   listAgents: vi.fn(),
   registerAgent: vi.fn(),
   getAgent: vi.fn(),
-  publicAgent: (a: unknown) => a,
 }));
 
 // The route claims ownership from the session principal.

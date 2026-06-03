@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { listAgents, registerAgent, getAgent, publicAgent } from "@/lib/agents";
+import { listAgents, registerAgent, getAgent } from "@/lib/agents";
 import { getPrincipal } from "@/lib/auth";
 import { getErrorMessage } from "@/lib/errors";
 import type { AgentProfile } from "@/lib/types";
@@ -12,7 +12,7 @@ import type { AgentProfile } from "@/lib/types";
 export async function GET() {
   try {
     const agents = await listAgents();
-    return NextResponse.json({ agents: agents.map(publicAgent) });
+    return NextResponse.json({ agents });
   } catch (err) {
     const message = getErrorMessage(err);
     return NextResponse.json({ error: message }, { status: 500 });
@@ -84,7 +84,7 @@ export async function POST(req: Request) {
     };
 
     await registerAgent(profile);
-    return NextResponse.json({ agent: publicAgent(profile) }, { status: 201 });
+    return NextResponse.json({ agent: profile }, { status: 201 });
   } catch (err) {
     const message = getErrorMessage(err);
     // Surface validation errors from the lib layer as 400s

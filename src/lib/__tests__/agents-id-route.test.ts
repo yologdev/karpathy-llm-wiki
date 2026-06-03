@@ -18,12 +18,6 @@ vi.mock("@/lib/agents", () => {
     updateAgent: vi.fn(),
     assertCanMutateAgent: vi.fn(),
     AgentOwnershipError,
-    // Faithful strip so the test verifies the route routes responses through it.
-    publicAgent: (a: { tokenHash?: string }) => {
-      const { tokenHash: _omit, ...rest } = a;
-      void _omit;
-      return rest;
-    },
   };
 });
 
@@ -36,17 +30,15 @@ import {
   updateAgent,
   assertCanMutateAgent,
   AgentOwnershipError,
-  getAgent,
 } from "@/lib/agents";
 import { getPrincipal } from "@/lib/auth";
-import { GET, PUT, DELETE } from "@/app/api/agents/[id]/route";
+import { PUT, DELETE } from "@/app/api/agents/[id]/route";
 import type { AgentProfile } from "@/lib/types";
 
 const mockedDelete = vi.mocked(deleteAgent);
 const mockedUpdate = vi.mocked(updateAgent);
 const mockedAssert = vi.mocked(assertCanMutateAgent);
 const mockedGetPrincipal = vi.mocked(getPrincipal);
-const mockedGetAgent = vi.mocked(getAgent);
 
 const ownedAgent: AgentProfile = {
   id: "yoyo",
@@ -145,18 +137,5 @@ describe("DELETE /api/agents/[id] — ownership", () => {
     });
     expect(res.status).toBe(404);
     expect(mockedDelete).not.toHaveBeenCalled();
-  });
-});
-
-describe("GET /api/agents/[id] — secret stripping", () => {
-  it("never serializes tokenHash to the client", async () => {
-    mockedGetAgent.mockResolvedValue({ ...ownedAgent, tokenHash: "deadbeef" });
-    const res = await GET(new Request("http://localhost/api/agents/yoyo"), {
-      params,
-    });
-    expect(res.status).toBe(200);
-    const data = await res.json();
-    expect(data.agent.id).toBe("yoyo");
-    expect(data.agent.tokenHash).toBeUndefined();
   });
 });

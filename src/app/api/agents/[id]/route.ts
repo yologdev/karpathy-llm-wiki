@@ -5,7 +5,6 @@ import {
   updateAgent,
   assertCanMutateAgent,
   AgentOwnershipError,
-  publicAgent,
 } from "@/lib/agents";
 import type { UpdateAgentOptions } from "@/lib/agents";
 import { getPrincipal } from "@/lib/auth";
@@ -39,7 +38,7 @@ export async function GET(_req: Request, { params }: RouteParams) {
       );
     }
 
-    return NextResponse.json({ agent: publicAgent(agent) });
+    return NextResponse.json({ agent });
   } catch (err) {
     const message = getErrorMessage(err);
     if (message.includes("Invalid agent ID")) {
@@ -161,7 +160,7 @@ export async function PUT(req: Request, { params }: RouteParams) {
       );
     }
 
-    return NextResponse.json({ agent: publicAgent(updated) });
+    return NextResponse.json({ agent: updated });
   } catch (err) {
     if (err instanceof AgentOwnershipError) {
       return NextResponse.json({ error: err.message }, { status: 403 });
