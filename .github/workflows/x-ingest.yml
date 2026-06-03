@@ -1,19 +1,20 @@
 name: X mention ingest
 
-# The @yoyoevolve autonomous loop. Polls X for recent mentions of @yoyoevolve
-# that contain a link, and — for each mention from a REGISTERED yopedia user —
-# ingests the link into that user's yoyo as scoped agent-knowledge, using the
-# system token. A mention from a non-user hits a 404 and is skipped (no base
-# fallback). Closes the loop in yopedia-concept.md / issue #21.
+# The @yoyoevolve autonomous loop. When a registered yopedia user *replies* to a
+# tweet and mentions @yoyoevolve, yoyo ingests what the REPLIED-TO (parent) tweet
+# points to — its full long-form X **Article** (via the X API `article` field)
+# and/or its external **links** — into that user's yoyo as scoped agent-knowledge.
+# It never ingests plain tweet text. A mention from a non-user hits a 404 and is
+# skipped (no base fallback). Closes the loop in yopedia-concept.md / issue #21.
 #
 # Required config:
-#   - secret X_BEARER_TOKEN          (X API v2 bearer; already used by research.yml)
+#   - secret X_BEARER_TOKEN          (X API v2 bearer; also used by research.yml)
 #   - secret YOPEDIA_SERVICE_TOKEN   (the system write credential)
 #   - optional var YOPEDIA_URL       (defaults to the production Worker URL)
 #
-# Dedup is by idempotent ingest (re-ingesting the same URL attaches/no-ops), so
-# we use an overlapping time window rather than persisting a cursor — simpler
-# and stateless for CI.
+# Dedup relies on idempotent ingest (re-ingesting the same URL attaches/no-ops —
+# see addAgentLearningPage in src/lib/agents.ts), so we use an overlapping time
+# window rather than persisting a cursor — stateless and simple for CI.
 
 on:
   schedule:
@@ -32,7 +33,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - name: Poll @yoyoevolve mentions and ingest
+      - name: Poll @yoyoevolve reply-mentions and ingest the parent tweet's article/links
         env:
           X_BEARER_TOKEN: ${{ secrets.X_BEARER_TOKEN }}
           YOPEDIA_SERVICE_TOKEN: ${{ secrets.YOPEDIA_SERVICE_TOKEN }}
@@ -54,13 +55,28 @@ jobs:
           const slug = (s) =>
             s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
 
+          const SKIP_HOSTS = new Set(["x.com", "twitter.com", "t.co", "www.x.com", "www.twitter.com"]);
+          const externalLinks = (tweet) =>
+            (tweet.entities?.urls ?? [])
+              .map((u) => u.expanded_url || u.url)
+              .filter((u) => {
+                try {
+                  const { protocol, hostname } = new URL(u);
+                  return /^https?:$/.test(protocol) && !SKIP_HOSTS.has(hostname);
+                } catch {
+                  return false;
+                }
+              });
+
           // Overlapping window (idempotent ingest dedups the overlap).
           const startTime = new Date(Date.now() - 7 * 3600 * 1000).toISOString();
-          const q = encodeURIComponent(`@${HANDLE} -is:retweet has:links`);
+          const q = encodeURIComponent(`@${HANDLE} is:reply -is:retweet`);
           const url =
             `https://api.twitter.com/2/tweets/search/recent?query=${q}` +
             `&max_results=50&start_time=${startTime}` +
-            `&tweet.fields=entities,author_id,created_at&expansions=author_id&user.fields=username`;
+            `&expansions=referenced_tweets.id,author_id` +
+            `&tweet.fields=entities,author_id,referenced_tweets,article,created_at` +
+            `&user.fields=username`;
 
           let payload;
           try {
@@ -75,67 +91,87 @@ jobs:
             process.exit(0);
           }
 
-          const tweets = payload.data ?? [];
+          const mentions = payload.data ?? [];
           const userById = Object.fromEntries(
             (payload.includes?.users ?? []).map((u) => [u.id, u.username]),
           );
-          if (tweets.length === 0) {
-            console.log("No new @yoyoevolve mentions with links. Nothing to ingest.");
+          const tweetById = Object.fromEntries(
+            (payload.includes?.tweets ?? []).map((t) => [t.id, t]),
+          );
+          if (mentions.length === 0) {
+            console.log("No new @yoyoevolve reply-mentions. Nothing to ingest.");
             process.exit(0);
           }
 
-          const SKIP_HOSTS = new Set(["x.com", "twitter.com", "t.co", "www.x.com", "www.twitter.com"]);
           let ingested = 0, skipped = 0, failed = 0;
 
-          for (const tweet of tweets) {
-            const handle = userById[tweet.author_id];
+          // POST one ingest job ({url} or {text,title}) to the user's yoyo.
+          // Returns true on success, false on (recoverable) failure; aborts the
+          // whole run on a systemic auth rejection.
+          async function ingestInto(agentId, body, label) {
+            const res = await fetch(`${BASE}/api/agents/${agentId}/ingest`, {
+              method: "POST",
+              headers: { Authorization: `Bearer ${SERVICE}`, "Content-Type": "application/json" },
+              body: JSON.stringify(body),
+            });
+            if (res.status === 200) {
+              const { slug: pageSlug, deduped } = await res.json();
+              console.log(`✓ ${agentId}: ${label} → ${pageSlug}${deduped ? " (deduped)" : ""}`);
+              return true;
+            }
+            if (res.status === 404) {
+              console.log(`· ${agentId} is not a yopedia user — skipped (${label})`);
+              return null; // not-a-user — skip, not a failure
+            }
+            if (res.status === 401 || res.status === 403) {
+              // Same token every request → one rejection is systemic, not per-item.
+              console.error(`FATAL: service token rejected (${res.status}) — check YOPEDIA_SERVICE_TOKEN. Aborting.`);
+              process.exit(1);
+            }
+            console.warn(`! ${agentId}: ingest failed (${res.status}) (${label})`);
+            return false;
+          }
+
+          for (const mention of mentions) {
+            const handle = userById[mention.author_id];
             if (!handle) { skipped++; continue; }
 
-            // Pick the first real external link in the mention.
-            const link = (tweet.entities?.urls ?? [])
-              .map((u) => u.expanded_url || u.url)
-              .find((u) => {
-                try { return /^https?:$/.test(new URL(u).protocol) && !SKIP_HOSTS.has(new URL(u).hostname); }
-                catch { return false; }
-              });
-            if (!link) { skipped++; continue; }
+            // The replied-to (parent) tweet — that's what we ingest from.
+            const parentId = (mention.referenced_tweets ?? []).find((r) => r.type === "replied_to")?.id;
+            const parent = parentId ? tweetById[parentId] : undefined;
+            if (!parent) { skipped++; continue; } // not a reply / parent unavailable
+
+            // Build ingest jobs: the parent's full Article (if any) + its external links.
+            const jobs = [];
+            const article = parent.article;
+            if (article && (article.text || article.title)) {
+              const title = article.title || `X Article (shared by @${handle})`;
+              const body = article.text || title;
+              jobs.push({ body: { text: body, title }, label: `article "${title}"` });
+            }
+            for (const link of externalLinks(parent)) {
+              jobs.push({ body: { url: link }, label: link });
+            }
+            if (jobs.length === 0) { skipped++; continue; } // nothing ingestable (e.g. plain tweet)
 
             const agentId = `${slug(handle)}--yoyo`;
-            try {
-              const res = await fetch(`${BASE}/api/agents/${agentId}/ingest`, {
-                method: "POST",
-                headers: { Authorization: `Bearer ${SERVICE}`, "Content-Type": "application/json" },
-                body: JSON.stringify({ url: link }),
-              });
-              if (res.status === 200) {
-                const { slug: pageSlug, deduped } = await res.json();
-                console.log(`✓ @${handle} → ${agentId}: ${link} → ${pageSlug}${deduped ? " (deduped)" : ""}`);
-                ingested++;
-              } else if (res.status === 404) {
-                console.log(`· @${handle} is not a yopedia user (${agentId} not found) — skipped`);
-                skipped++;
-              } else if (res.status === 401 || res.status === 403) {
-                // The token is the SAME for every request, so a single rejection
-                // is systemic (bad/rotated YOPEDIA_SERVICE_TOKEN), not per-mention.
-                // Fail the run loudly rather than silently ingesting nothing.
-                console.error(
-                  `FATAL: service token rejected (${res.status}) — check YOPEDIA_SERVICE_TOKEN. Aborting.`,
-                );
-                process.exit(1);
-              } else {
-                console.warn(`! @${handle} → ${agentId}: ingest failed (${res.status})`);
+            for (const job of jobs) {
+              try {
+                const ok = await ingestInto(agentId, job.body, job.label);
+                if (ok === true) ingested++;
+                else if (ok === null) { skipped++; break; } // not a user → skip the rest for this handle
+                else failed++;
+              } catch (err) {
+                console.warn(`! ${agentId}: ${err?.message ?? err}`);
                 failed++;
               }
-            } catch (err) {
-              console.warn(`! @${handle} → ${agentId}: ${err?.message ?? err}`);
-              failed++;
             }
           }
 
-          console.log(`Done: ${ingested} ingested, ${skipped} skipped, ${failed} failed (of ${tweets.length}).`);
+          console.log(`Done: ${ingested} ingested, ${skipped} skipped, ${failed} failed (from ${mentions.length} mentions).`);
 
-          // Loud failure when the whole batch failed for non-per-user reasons
-          // (e.g. yopedia down / 5xx) — otherwise a dead loop shows green forever.
+          // Loud failure when everything errored and nothing landed — otherwise a
+          // dead loop (yopedia down, etc.) shows green forever.
           if (failed > 0 && ingested === 0 && skipped === 0) {
             console.error(`All ${failed} attempts failed and nothing was ingested — likely an outage. Failing the run.`);
             process.exit(1);
