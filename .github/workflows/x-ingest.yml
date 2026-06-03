@@ -14,13 +14,15 @@ name: X mention ingest
 #   - secret YOPEDIA_SERVICE_TOKEN   (the system write credential)
 #   - optional var YOPEDIA_URL       (defaults to the production Worker URL)
 #
-# Dedup relies on idempotent ingest (re-ingesting the same URL attaches/no-ops —
-# see addAgentLearningPage in src/lib/agents.ts), so we use an overlapping time
-# window rather than persisting a cursor — stateless and simple for CI.
+# Cadence: every 10 minutes, polling a 30-minute lookback window (3× overlap so a
+# delayed/dropped cron run doesn't miss a trigger). Stateless — no cursor to
+# persist; idempotent ingest (re-ingesting the same URL attaches/no-ops — see
+# addAgentLearningPage in src/lib/agents.ts) absorbs the overlap. On pay-as-you-go
+# X pricing this is cheap: empty polls read 0 posts ($0); cost ≈ triggers × $0.01.
 
 on:
   schedule:
-    - cron: "23 */6 * * *" # every 6 hours
+    - cron: "*/10 * * * *" # every 10 minutes
   workflow_dispatch: {}
 
 permissions:
@@ -75,8 +77,9 @@ jobs:
                 }
               });
 
-          // Overlapping window (idempotent ingest dedups the overlap).
-          const startTime = new Date(Date.now() - 7 * 3600 * 1000).toISOString();
+          // 30-min lookback on a 10-min cron = 3× overlap, so a late/dropped run
+          // doesn't miss a trigger. Idempotent ingest dedups the overlap.
+          const startTime = new Date(Date.now() - 30 * 60 * 1000).toISOString();
           const q = encodeURIComponent(`@${HANDLE} ${TRIGGER} is:reply -is:retweet`);
           const url =
             `https://api.twitter.com/2/tweets/search/recent?query=${q}` +
