@@ -59,7 +59,7 @@ const WORKERS_AI_MODEL_PREFIX = "@cf/";
  * misconfiguration, not "no embeddings", so we surface it with a warning
  * rather than silently degrading to BM25-only search.
  */
-function getWorkersAiBinding(): Ai | null {
+export function getWorkersAiBinding(): Ai | null {
   let env: { AI?: Ai };
   try {
     ({ env } = getCloudflareContext() as { env: { AI?: Ai } });

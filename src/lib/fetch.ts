@@ -361,3 +361,61 @@ export async function downloadImages(
 
   return result;
 }
+
+/**
+ * Fetch a single image by URL and store it as an asset under
+ * `assets/<slug>/<filename>`. Used by the image-ingest flow.
+ *
+ * Unlike {@link downloadImages} (which degrades gracefully across many embedded
+ * images), this **throws** on hard failures (unsafe URL, non-image, oversized,
+ * fetch error) so the calling route can return a clear client error — the user
+ * gave us a single URL and expects feedback if it's bad.
+ *
+ * @returns the local markdown ref, the raw bytes (for the vision model), the
+ *          filename, and the content type.
+ */
+export async function storeImageAsset(
+  url: string,
+  slug: string,
+): Promise<{ localPath: string; bytes: ArrayBuffer; filename: string; contentType: string }> {
+  validateUrlSafety(url); // SSRF guard — throws on private/unsafe hosts
+
+  const resp = await fetch(url, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
+  if (!resp.ok) {
+    throw new Error(`Failed to fetch image: HTTP ${resp.status}`);
+  }
+  const contentType = resp.headers.get("content-type") || "";
+  if (!contentType.startsWith("image/")) {
+    throw new Error(`URL is not an image (content-type: ${contentType || "unknown"})`);
+  }
+  const bytes = await resp.arrayBuffer();
+  if (bytes.byteLength > MAX_RESPONSE_SIZE) {
+    throw new Error(
+      `Image too large (${bytes.byteLength} bytes, max ${MAX_RESPONSE_SIZE})`,
+    );
+  }
+
+  const { localPath, filename } = await storeImageBytes(bytes, slug, url);
+  return { localPath, bytes, filename, contentType };
+}
+
+/**
+ * Store raw image bytes (e.g. an uploaded file) as an asset under
+ * `assets/<slug>/<filename>`. `suggestedName` may be a URL or a plain filename;
+ * it's sanitized. Enforces {@link MAX_RESPONSE_SIZE}.
+ */
+export async function storeImageBytes(
+  bytes: ArrayBuffer,
+  slug: string,
+  suggestedName: string,
+): Promise<{ localPath: string; filename: string }> {
+  if (bytes.byteLength > MAX_RESPONSE_SIZE) {
+    throw new Error(
+      `Image too large (${bytes.byteLength} bytes, max ${MAX_RESPONSE_SIZE})`,
+    );
+  }
+  const filename = sanitizeImageFilename(suggestedName);
+  const localPath = `assets/${slug}/${filename}`;
+  await getStorage().writeAsset(rawRelPath(localPath), bytes);
+  return { localPath, filename };
+}

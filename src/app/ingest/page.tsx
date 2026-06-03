@@ -14,6 +14,8 @@ export default function IngestPage() {
     title,
     content,
     url,
+    imageUrl,
+    imageFile,
     loading,
     error,
     result,
@@ -23,9 +25,12 @@ export default function IngestPage() {
     setTitle,
     setContent,
     setUrl,
+    setImageUrl,
+    setImageFile,
     handlePreview,
     handleApprove,
     handleDirectIngest,
+    handleImageIngest,
     reset,
     cancelPreview,
     toggleRawMarkdown,
@@ -78,7 +83,7 @@ export default function IngestPage() {
 
       {/* Mode tabs */}
       <div className="mb-6 flex gap-2 overflow-x-auto">
-        {(["text", "url", "batch"] as const).map((m) => (
+        {(["text", "url", "image", "batch"] as const).map((m) => (
           <button
             key={m}
             type="button"
@@ -89,13 +94,79 @@ export default function IngestPage() {
                 : "border border-foreground/20 text-foreground/60 hover:text-foreground"
             }`}
           >
-            {m === "text" ? "Paste Text" : m === "url" ? "From URL" : "Batch URLs"}
+            {m === "text"
+              ? "Paste Text"
+              : m === "url"
+                ? "From URL"
+                : m === "image"
+                  ? "Image"
+                  : "Batch URLs"}
           </button>
         ))}
       </div>
 
-      {/* Batch mode */}
-      {mode === "batch" ? (
+      {/* Image mode */}
+      {mode === "image" ? (
+        <form onSubmit={handleImageIngest} className="space-y-6">
+          <div>
+            <label htmlFor="imageUrl" className="block text-sm font-medium mb-2">
+              Image URL
+            </label>
+            <input
+              id="imageUrl"
+              type="url"
+              value={imageUrl}
+              onChange={(e) => setImageUrl(e.target.value)}
+              disabled={!!imageFile}
+              placeholder="https://example.com/image.png"
+              className="w-full rounded-lg border border-foreground/20 bg-transparent px-4 py-2.5 text-sm placeholder:text-foreground/40 focus:border-foreground/50 focus:outline-none transition-colors disabled:opacity-50"
+            />
+          </div>
+
+          <div className="text-center text-xs text-foreground/40">— or —</div>
+
+          <div>
+            <label htmlFor="imageFile" className="block text-sm font-medium mb-2">
+              Upload an image
+            </label>
+            <input
+              id="imageFile"
+              type="file"
+              accept="image/*"
+              onChange={(e) => setImageFile(e.target.files?.[0] ?? null)}
+              className="w-full text-sm text-foreground/80 file:mr-3 file:rounded-lg file:border file:border-foreground/20 file:bg-transparent file:px-4 file:py-2 file:text-sm file:text-foreground hover:file:border-foreground/50"
+            />
+          </div>
+
+          <div>
+            <label htmlFor="imageTitle" className="block text-sm font-medium mb-2">
+              Title <span className="text-foreground/40">(optional)</span>
+            </label>
+            <input
+              id="imageTitle"
+              type="text"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              placeholder="Defaults to the filename"
+              className="w-full rounded-lg border border-foreground/20 bg-transparent px-4 py-2.5 text-sm placeholder:text-foreground/40 focus:border-foreground/50 focus:outline-none transition-colors"
+            />
+            <p className="mt-2 text-xs text-foreground/40">
+              A vision model reads the image into a page that embeds it.
+            </p>
+          </div>
+
+          {error && <Alert variant="error">{error}</Alert>}
+
+          <button
+            type="submit"
+            disabled={loading}
+            className="inline-block rounded-lg bg-foreground px-6 py-3 text-sm font-medium text-background hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {loading ? "Processing..." : "Ingest image"}
+          </button>
+        </form>
+      ) : /* Batch mode */
+      mode === "batch" ? (
         <BatchIngestForm />
       ) : (
       <form onSubmit={handlePreview} className="space-y-6">

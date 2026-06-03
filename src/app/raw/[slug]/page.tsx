@@ -2,6 +2,7 @@ import Link from "next/link";
 import { decodeSlug } from "@/lib/slugify";
 import { notFound } from "next/navigation";
 import { readRawSource } from "@/lib/wiki";
+import { MarkdownRenderer } from "@/components/MarkdownRenderer";
 
 interface RawSourcePageProps {
   params: Promise<{ slug: string }>;
@@ -79,9 +80,11 @@ export default async function RawSourcePage({ params }: RawSourcePageProps) {
         </div>
       )}
 
-      <pre className="mt-6 max-h-[70vh] overflow-auto whitespace-pre-wrap break-words rounded-lg border border-foreground/10 bg-foreground/[0.03] p-4 font-mono text-sm text-foreground/90">
-        {displayedContent}
-      </pre>
+      {/* Render the markdown so images and formatting show. The "View raw"
+          link above serves the unrendered plaintext via /api/raw. */}
+      <div className="mt-6 max-h-[70vh] overflow-auto rounded-lg border border-foreground/10 bg-foreground/[0.03] p-4">
+        <MarkdownRenderer content={displayedContent} />
+      </div>
     </main>
   );
 }

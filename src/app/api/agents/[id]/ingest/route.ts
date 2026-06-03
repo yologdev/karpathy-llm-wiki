@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { verifyAgentToken, addAgentLearningPage, getAgent } from "@/lib/agents";
 import { getServicePrincipal } from "@/lib/auth";
-import { ingestUrl, ingest, type IngestOptions } from "@/lib/ingest";
+import { ingestUrl, ingest, ingestImage, type IngestOptions } from "@/lib/ingest";
 import { logger } from "@/lib/logger";
 
 interface RouteParams {
@@ -87,7 +87,13 @@ export async function POST(req: Request, { params }: RouteParams) {
       return NextResponse.json({ error: "Invalid token." }, { status: 401 });
     }
 
-    let body: { url?: unknown; text?: unknown; title?: unknown; asOwner?: unknown };
+    let body: {
+      url?: unknown;
+      text?: unknown;
+      title?: unknown;
+      imageUrl?: unknown;
+      asOwner?: unknown;
+    };
     try {
       body = await req.json();
     } catch {
@@ -97,9 +103,10 @@ export async function POST(req: Request, { params }: RouteParams) {
     const url = typeof body.url === "string" ? body.url.trim() : "";
     const text = typeof body.text === "string" ? body.text : "";
     const title = typeof body.title === "string" ? body.title : "";
-    if (!url && !text) {
+    const imageUrl = typeof body.imageUrl === "string" ? body.imageUrl.trim() : "";
+    if (!url && !text && !imageUrl) {
       return NextResponse.json(
-        { error: "Provide a 'url' or 'text' to ingest." },
+        { error: "Provide a 'url', 'text', or 'imageUrl' to ingest." },
         { status: 400 },
       );
     }
@@ -129,9 +136,11 @@ export async function POST(req: Request, { params }: RouteParams) {
         pageType: AGENT_KNOWLEDGE_TYPE,
       };
     }
-    const result = url
-      ? await ingestUrl(url, opts)
-      : await ingest(title || "Untitled", text, opts);
+    const result = imageUrl
+      ? await ingestImage({ imageUrl }, { ...opts, title: title || undefined })
+      : url
+        ? await ingestUrl(url, opts)
+        : await ingest(title || "Untitled", text, opts);
 
     // Agent-knowledge ingests attach to the agent's learnings; owner-content
     // ingests do not (they live in the owner's normal content space).

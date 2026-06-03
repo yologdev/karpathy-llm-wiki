@@ -113,9 +113,27 @@ export interface AiEmbeddingInputs {
   pooling?: "cls" | "mean";
 }
 
-/** Minimal Workers AI binding surface — we only call `run()` for embeddings. */
+/** Inputs for an image-to-text / vision model run (e.g.
+ *  @cf/meta/llama-3.2-11b-vision-instruct or @cf/llava-hf/llava-1.5-7b-hf).
+ *  `image` is the raw bytes as an array of integers. */
+export interface AiImageToTextInputs {
+  image: number[];
+  prompt: string;
+  max_tokens?: number;
+}
+
+/** Response from a vision model run. Different models name the text field
+ *  differently (`response` for llama-vision, `description` for llava), so both
+ *  are optional and read defensively. */
+export interface AiImageToTextResponse {
+  response?: string;
+  description?: string;
+}
+
+/** Minimal Workers AI binding surface — `run()` for embeddings and vision. */
 export interface Ai {
   run(model: string, inputs: AiEmbeddingInputs): Promise<AiEmbeddingResponse>;
+  run(model: string, inputs: AiImageToTextInputs): Promise<AiImageToTextResponse>;
 }
 
 // ---------------------------------------------------------------------------

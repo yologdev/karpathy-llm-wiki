@@ -8,7 +8,8 @@ import {
   type Frontmatter,
 } from "./wiki";
 import { callLLM, hasLLMKey } from "./llm";
-import { fetchUrlContent, downloadImages } from "./fetch";
+import { fetchUrlContent, downloadImages, storeImageAsset, storeImageBytes } from "./fetch";
+import { describeImage } from "./vision";
 import type { IngestResult } from "./types";
 import {
   serializeSources,
@@ -18,6 +19,7 @@ import {
 import {
   MAX_LLM_INPUT_CHARS,
   INGEST_MAX_OUTPUT_TOKENS,
+  MAX_APPENDED_IMAGES,
 } from "./constants";
 import { slugify } from "./slugify";
 import { loadPageConventions } from "./schema";
@@ -135,11 +137,82 @@ export async function ingestUrl(
     }
   }
 
-  const { title, content: rawContent } = await fetchUrlContent(url);
-  // Download images referenced in the fetched content to local storage
-  const slug = slugify(title);
-  const content = await downloadImages(rawContent, slug, getRawDir());
+  const { title, content } = await fetchUrlContent(url);
+  // Image downloading is centralized in ingest() so every path (url, text,
+  // agent, X) captures embedded images uniformly.
   return ingest(title, content, { ...options, sourceUrl: url });
+}
+
+/** Derive a human-ish title from a filename or URL (e.g. "diagram-2.png" →
+ *  "diagram 2"). Falls back to "Image". */
+function humanizeFilename(nameOrUrl: string): string {
+  let base = nameOrUrl;
+  try {
+    base = new URL(nameOrUrl).pathname.split("/").pop() || nameOrUrl;
+  } catch {
+    // not a URL — use as-is
+  }
+  base = base.split("?")[0].split("#")[0].replace(/\.[a-z0-9]+$/i, "");
+  return base.replace(/[-_]+/g, " ").trim() || "Image";
+}
+
+/**
+ * Ingest a single image. Stores the image as an asset, runs a vision model to
+ * extract a description (fail-soft), and writes a wiki page that embeds the
+ * image followed by the description. The LLM re-distillation is skipped (the
+ * body is already small and correct) but frontmatter/dedup/embedding all reuse
+ * the normal {@link ingest} pipeline.
+ *
+ * Accepts either an `imageUrl` (fetched + SSRF-guarded) or raw `bytes` (upload).
+ */
+export async function ingestImage(
+  input: { imageUrl?: string; bytes?: ArrayBuffer; filename?: string },
+  options?: IngestOptions & { title?: string },
+): Promise<IngestResult> {
+  const { imageUrl, bytes: uploadedBytes, filename: uploadName } = input;
+
+  // Dedup by URL first — cheapest path (no fetch, no vision, no LLM).
+  if (imageUrl && !options?.preview && !options?.generatedContent) {
+    const dupSlug = await resolveSourceUrl(imageUrl);
+    if (dupSlug) {
+      const result = await attachIngestTrigger(dupSlug, {
+        url: imageUrl,
+        type: "image",
+        triggeredBy: options?.triggeredBy,
+      });
+      if (result) return result;
+    }
+  }
+
+  const title = options?.title?.trim() || humanizeFilename(uploadName || imageUrl || "image");
+  const slug = slugify(title);
+
+  // Store the image as an asset and get its bytes for the vision model.
+  let localPath: string;
+  let bytes: ArrayBuffer;
+  if (imageUrl) {
+    ({ localPath, bytes } = await storeImageAsset(imageUrl, slug));
+  } else if (uploadedBytes) {
+    bytes = uploadedBytes;
+    ({ localPath } = await storeImageBytes(uploadedBytes, slug, uploadName || "image"));
+  } else {
+    throw new Error("ingestImage requires either imageUrl or bytes");
+  }
+
+  // Vision description — fail-soft (null → image-only page).
+  const vision = await describeImage(bytes);
+
+  const body =
+    `# ${title}\n\n![${title}](${localPath})` + (vision ? `\n\n${vision.text}` : "");
+
+  // generatedContent writes `body` as-is (skip the wiki-editor LLM) while still
+  // reusing frontmatter, dedup, embedding, cross-refs, and the ledger.
+  return ingest(title, body, {
+    ...options,
+    generatedContent: body,
+    sourceUrl: imageUrl ?? "upload",
+    sourceType: "image",
+  });
 }
 
 /**
@@ -197,6 +270,43 @@ export async function ingestXMention(
 function generateFallbackPage(title: string, content: string): string {
   const preview = content.length > 200 ? content.slice(0, 200) + "..." : content;
   return `# ${title}\n\n## Summary\n\n${preview}\n\n## Raw Content\n\n${content}`;
+}
+
+// ---------------------------------------------------------------------------
+// Image preservation
+// ---------------------------------------------------------------------------
+
+/**
+ * Append the source's downloaded images to the wiki body as a trailing
+ * `## Images` section. The LLM distills text and drops image refs, so this
+ * deterministically re-surfaces them (no LLM cost, no hallucinated paths).
+ *
+ * Only locally-downloaded images (`assets/...` refs, produced by
+ * {@link downloadImages}) are included — they're guaranteed servable via
+ * `/api/assets`. Idempotent: if the body already has an `## Images` heading
+ * (e.g. a preview→commit round-trip), it's returned unchanged.
+ */
+function appendSourceImages(wikiBody: string, sourceContent: string): string {
+  if (/^##\s+Images\s*$/m.test(wikiBody)) return wikiBody;
+
+  const re = /!\[([^\]]*)\]\((assets\/[^)\s]+)\)/g;
+  const seen = new Set<string>();
+  const refs: { alt: string; ref: string }[] = [];
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(sourceContent)) !== null) {
+    const ref = m[2];
+    if (seen.has(ref)) continue;
+    seen.add(ref);
+    // Don't duplicate an image the body already embeds (e.g. the image-ingest
+    // page, where the image is the page's centerpiece).
+    if (wikiBody.includes(`](${ref})`)) continue;
+    refs.push({ alt: m[1], ref });
+    if (refs.length >= MAX_APPENDED_IMAGES) break;
+  }
+  if (refs.length === 0) return wikiBody;
+
+  const section = refs.map(({ alt, ref }) => `![${alt}](${ref})`).join("\n\n");
+  return `${wikiBody}\n\n## Images\n\n${section}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -436,7 +546,7 @@ export interface IngestOptions {
    * default `"url"` / `"text"` heuristic when building the `sources[]` entry.
    * Used by `ingestXMention()` to set `"x-mention"` provenance.
    */
-  sourceType?: "url" | "text" | "x-mention";
+  sourceType?: "url" | "text" | "x-mention" | "image";
   /**
    * Who triggered the ingest (user handle or agent ID). Defaults to `"system"`.
    * Passed through to the `triggered_by` field on the `SourceEntry`.
@@ -482,7 +592,7 @@ async function attachIngestTrigger(
   slug: string,
   source: {
     url: string;
-    type: "url" | "text" | "x-mention" | "wiki-ref";
+    type: "url" | "text" | "x-mention" | "wiki-ref" | "image";
     triggeredBy?: string;
   },
 ): Promise<IngestResult | null> {
@@ -599,6 +709,13 @@ export async function ingest(
   const isPreview = options?.preview === true;
   const preGeneratedContent = options?.generatedContent;
 
+  // Download any images referenced in the source to local storage and rewrite
+  // their markdown refs to `assets/<slug>/...`. Centralized here (not in
+  // ingestUrl) so URL, pasted-text, agent, and X ingests all capture images.
+  // No-op when the content has no remote image refs (e.g. already-local refs
+  // from a re-ingest or the image-ingest path), so it's safe to run always.
+  content = await downloadImages(content, slug, getRawDir());
+
   // Dedup by content: if identical content was already ingested (any slug),
   // attach the triggerer and skip the LLM + embedding. Not for preview /
   // commit-from-preview.
@@ -649,6 +766,10 @@ export async function ingest(
   } else {
     wikiContent = generateFallbackPage(title, content);
   }
+
+  // The LLM distills text and drops image refs, so deterministically append the
+  // source's downloaded images as a trailing section — reliable, no LLM cost.
+  wikiContent = appendSourceImages(wikiContent, content);
 
   // 2. Compute the index summary from the *raw* source so the index reflects
   // the original document, not the LLM's reformatting.

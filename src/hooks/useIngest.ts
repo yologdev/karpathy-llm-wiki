@@ -3,7 +3,7 @@
 import { useState } from "react";
 import type { PreviewData } from "@/components/IngestPreview";
 
-export type Mode = "text" | "url" | "batch";
+export type Mode = "text" | "url" | "batch" | "image";
 export type Stage = "form" | "preview" | "success";
 
 export interface IngestResponse {
@@ -23,6 +23,8 @@ export interface UseIngestReturn {
   title: string;
   content: string;
   url: string;
+  imageUrl: string;
+  imageFile: File | null;
   loading: boolean;
   error: string | null;
   result: IngestResponse | null;
@@ -33,9 +35,12 @@ export interface UseIngestReturn {
   setTitle: (v: string) => void;
   setContent: (v: string) => void;
   setUrl: (v: string) => void;
+  setImageUrl: (v: string) => void;
+  setImageFile: (f: File | null) => void;
   handlePreview: (e: React.FormEvent) => void;
   handleApprove: () => void;
   handleDirectIngest: (e: React.FormEvent) => void;
+  handleImageIngest: (e: React.FormEvent) => void;
   reset: () => void;
   cancelPreview: () => void;
   toggleRawMarkdown: () => void;
@@ -77,6 +82,8 @@ export function useIngest(): UseIngestReturn {
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
   const [url, setUrl] = useState("");
+  const [imageUrl, setImageUrl] = useState("");
+  const [imageFile, setImageFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<IngestResponse | null>(null);
@@ -91,10 +98,17 @@ export function useIngest(): UseIngestReturn {
       setContent("");
     } else if (newMode === "text") {
       setUrl("");
+    } else if (newMode === "image") {
+      setContent("");
+      setUrl("");
     } else {
       setTitle("");
       setContent("");
       setUrl("");
+    }
+    if (newMode !== "image") {
+      setImageUrl("");
+      setImageFile(null);
     }
   }
 
@@ -220,10 +234,66 @@ export function useIngest(): UseIngestReturn {
     }
   }
 
+  /** Image ingest: store image, describe via vision model, write a page. No
+   *  preview stage (the body is just the image + description). */
+  async function handleImageIngest(e: React.FormEvent) {
+    e.preventDefault();
+    setError(null);
+
+    if (!imageFile && !imageUrl.trim()) {
+      setError("Provide an image URL or choose a file");
+      return;
+    }
+    if (!imageFile && imageUrl.trim()) {
+      try {
+        new URL(imageUrl.trim());
+      } catch {
+        setError("Please enter a valid image URL");
+        return;
+      }
+    }
+
+    setLoading(true);
+    setResult(null);
+
+    try {
+      let res: Response;
+      if (imageFile) {
+        const fd = new FormData();
+        fd.append("file", imageFile);
+        if (title.trim()) fd.append("title", title.trim());
+        res = await fetch("/api/ingest/image", { method: "POST", body: fd });
+      } else {
+        res = await fetch("/api/ingest/image", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            imageUrl: imageUrl.trim(),
+            title: title.trim() || undefined,
+          }),
+        });
+      }
+
+      const data: IngestResponse = await res.json();
+      if (!res.ok) {
+        setError(data.error || "Something went wrong");
+        return;
+      }
+      setResult(data);
+      setStage("success");
+    } catch {
+      setError("Network error — could not reach the server");
+    } finally {
+      setLoading(false);
+    }
+  }
+
   function reset() {
     setTitle("");
     setContent("");
     setUrl("");
+    setImageUrl("");
+    setImageFile(null);
     setError(null);
     setResult(null);
     setPreview(null);
@@ -248,6 +318,8 @@ export function useIngest(): UseIngestReturn {
     title,
     content,
     url,
+    imageUrl,
+    imageFile,
     loading,
     error,
     result,
@@ -257,9 +329,12 @@ export function useIngest(): UseIngestReturn {
     setTitle,
     setContent,
     setUrl,
+    setImageUrl,
+    setImageFile,
     handlePreview,
     handleApprove,
     handleDirectIngest,
+    handleImageIngest,
     reset,
     cancelPreview,
     toggleRawMarkdown,

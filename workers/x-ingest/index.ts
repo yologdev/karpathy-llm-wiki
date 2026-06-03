@@ -68,40 +68,83 @@ type IngestOutcome = "ingested" | "not-a-user" | "dropped" | "failed";
 // X API types (only the fields we read; res.json() is an unchecked cast, so
 // every access below is optional-chained or guarded).
 // ---------------------------------------------------------------------------
+interface XMedia {
+  media_key: string;
+  type?: string; // photo | video | animated_gif
+  url?: string; // photos
+  preview_image_url?: string; // video / gif poster frame
+  alt_text?: string;
+}
+interface XArticleEntityUrl {
+  expanded_url?: string;
+  url?: string;
+}
 interface XTweet {
   id: string;
   author_id?: string;
   text?: string;
   referenced_tweets?: { type: string; id: string }[];
-  article?: { title?: string; text?: string };
+  article?: { title?: string; text?: string; entities?: { urls?: XArticleEntityUrl[] } };
   entities?: { urls?: { expanded_url?: string; url?: string }[] };
+  attachments?: { media_keys?: string[] };
 }
 interface XSearchPayload {
   data?: XTweet[];
-  includes?: { users?: { id: string; username: string }[]; tweets?: XTweet[] };
+  includes?: {
+    users?: { id: string; username: string }[];
+    tweets?: XTweet[];
+    media?: XMedia[];
+  };
   meta?: { newest_id?: string; result_count?: number };
+}
+
+function isUsableHttpUrl(u: string): boolean {
+  try {
+    const { protocol, hostname } = new URL(u);
+    return /^https?:$/.test(protocol) && !SKIP_HOSTS.has(hostname);
+  } catch {
+    return false; // malformed/relative URL from X — unusable, drop it
+  }
 }
 
 function externalLinks(tweet: XTweet): string[] {
   return (tweet.entities?.urls ?? [])
     .map((u) => u.expanded_url || u.url || "")
-    .filter((u) => {
-      try {
-        const { protocol, hostname } = new URL(u);
-        return /^https?:$/.test(protocol) && !SKIP_HOSTS.has(hostname);
-      } catch {
-        return false; // malformed/relative URL from X — unusable, drop it
-      }
-    });
+    .filter(isUsableHttpUrl);
 }
 
-/** Build the X recent-search URL for a query + time/cursor bound. */
+/**
+ * Best-effort image URLs the X API exposes for a tweet/article: attached media
+ * (photos → url, video/gif → poster), image-looking URLs in the article's
+ * entities, and markdown image refs already in the article text. The X Article
+ * API surface is thin, so this returns whatever is available (possibly none).
+ */
+function articleImageUrls(parent: XTweet, mediaByKey: Record<string, XMedia>): string[] {
+  const urls = new Set<string>();
+  for (const key of parent.attachments?.media_keys ?? []) {
+    const m = mediaByKey[key];
+    const u = m?.url || m?.preview_image_url;
+    if (u) urls.add(u);
+  }
+  const text = parent.article?.text ?? "";
+  for (const m of text.matchAll(/!\[[^\]]*\]\((https?:\/\/[^)\s]+)\)/g)) urls.add(m[1]);
+  for (const e of parent.article?.entities?.urls ?? []) {
+    const u = e.expanded_url || e.url;
+    if (u && /\.(png|jpe?g|gif|webp|avif)(\?|$)/i.test(u)) urls.add(u);
+  }
+  return [...urls].filter(isUsableHttpUrl).slice(0, 12);
+}
+
+/** Build the X recent-search URL for a query + time/cursor bound. The media
+ *  expansion + fields surface any images the API exposes for the parent
+ *  tweet/article so they can be ingested too (best-effort). */
 function searchUrl(query: string, bound: string): string {
   return (
     `https://api.twitter.com/2/tweets/search/recent?query=${encodeURIComponent(query)}` +
     `&max_results=100${bound}` +
-    `&expansions=referenced_tweets.id,author_id` +
-    `&tweet.fields=entities,author_id,referenced_tweets,article,created_at` +
+    `&expansions=referenced_tweets.id,author_id,attachments.media_keys` +
+    `&tweet.fields=entities,author_id,referenced_tweets,article,attachments,created_at` +
+    `&media.fields=url,preview_image_url,type,alt_text` +
     `&user.fields=username`
   );
 }
@@ -151,6 +194,9 @@ async function run(env: Env): Promise<Summary> {
   );
   const tweetById = Object.fromEntries(
     (payload.includes?.tweets ?? []).map((t) => [t.id, t]),
+  );
+  const mediaByKey = Object.fromEntries(
+    (payload.includes?.media ?? []).map((m) => [m.media_key, m]),
   );
   if (mentions.length === 0) {
     console.log(`No new mentions for query [${QUERY}]. Nothing to ingest.`);
@@ -228,7 +274,14 @@ async function run(env: Env): Promise<Summary> {
     const article = parent.article;
     if (article && (article.text || article.title)) {
       const title = article.title || `X Article (shared by @${handle})`;
-      jobs.push({ body: { text: article.text || title, title }, label: `article "${title}"` });
+      // Append any image URLs the API exposes as markdown so the ingest
+      // pipeline downloads + renders them with the article.
+      const imgs = articleImageUrls(parent, mediaByKey);
+      const imgBlock = imgs.length ? "\n\n" + imgs.map((u) => `![](${u})`).join("\n\n") : "";
+      jobs.push({
+        body: { text: (article.text || title) + imgBlock, title },
+        label: `article "${title}"${imgs.length ? ` (+${imgs.length} img)` : ""}`,
+      });
     } else if (article) {
       console.warn(`! @${handle}: parent 'article' has an unexpected shape — skipping the article`);
     }
@@ -300,6 +353,9 @@ async function probe(env: Env, hours: number): Promise<unknown> {
     const tweetById = Object.fromEntries(
       (payload.includes?.tweets ?? []).map((t) => [t.id, t]),
     );
+    const mediaByKey = Object.fromEntries(
+      (payload.includes?.media ?? []).map((m) => [m.media_key, m]),
+    );
     results[name] = {
       query,
       result_count: payload.meta?.result_count ?? (payload.data?.length ?? 0),
@@ -313,6 +369,12 @@ async function probe(env: Env, hours: number): Promise<unknown> {
           parentId: parentId ?? null,
           parentHasArticle: !!parent?.article,
           parentLinks: parent ? externalLinks(parent).length : 0,
+          // Image diagnostics (Phase 3): what media the API actually exposes.
+          articleTitle: parent?.article?.title ?? null,
+          articleTextLen: parent?.article?.text?.length ?? 0,
+          parentMediaKeys: parent?.attachments?.media_keys ?? [],
+          articleImageUrls: parent ? articleImageUrls(parent, mediaByKey) : [],
+          includesMedia: payload.includes?.media ?? [],
         };
       }),
     };
