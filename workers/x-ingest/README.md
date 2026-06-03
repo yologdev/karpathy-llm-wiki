@@ -14,9 +14,12 @@ What it does each run:
   (`tweet.fields=article`) and/or its **external links** — into **that user's own
   yopedia content** (a normal page owned/authored by them, in their `/u/<handle>`
   + the public commons), via `POST /api/agents/<handle>--yoyo/ingest` with the
-  system token and **`asOwner: true`**. The `@yoyoevolve` mention is the "save
-  this to my wiki" command channel — it is **not** written to the agent's scoped
-  knowledge, and plain tweet text is never ingested.
+  system token and **`asOwner: true`**, dispatched through a **service binding**
+  to the yopedia Worker (`env.YOPEDIA.fetch`) — a plain `fetch()` to its
+  `workers.dev` URL is short-circuited at the edge for same-account Worker→Worker
+  calls (a cached 404 that never reaches origin). The `@yoyoevolve` mention is the
+  "save this to my wiki" command channel — it is **not** written to the agent's
+  scoped knowledge, and plain tweet text is never ingested.
 - Tracks a **`since_id` cursor in KV** (near-zero overlap); first run / missing /
   stale cursor falls back to a 48h window. The cursor advances only on a clean
   run, so a failed ingest is retried.

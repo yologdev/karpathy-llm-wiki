@@ -20,8 +20,16 @@ interface KVNamespace {
   put(key: string, value: string): Promise<void>;
   delete(key: string): Promise<void>;
 }
+/** A service-binding Fetcher (the bound Worker), invoked instead of HTTP. */
+interface Fetcher {
+  fetch(input: string | Request, init?: RequestInit): Promise<Response>;
+}
 interface Env {
   CURSOR: KVNamespace;
+  // Service binding to the main yopedia Worker (see wrangler.jsonc). Routes
+  // subrequests directly to it, bypassing the workers.dev edge that otherwise
+  // short-circuits same-account Worker→Worker fetches with a cached 404.
+  YOPEDIA?: Fetcher;
   X_BEARER_TOKEN?: string;
   YOPEDIA_SERVICE_TOKEN?: string;
   YOPEDIA_URL?: string;
@@ -166,11 +174,18 @@ async function run(env: Env): Promise<Summary> {
   // (<handle>--yoyo) is only used to resolve the owner + gate on "registered
   // user" (404 ⇒ not a user); the resulting page is owned/authored by <handle>.
   async function ingestForOwner(agentId: string, body: object, label: string): Promise<IngestOutcome> {
-    const res = await fetch(`${BASE}/api/agents/${agentId}/ingest`, {
+    const target = `${BASE}/api/agents/${agentId}/ingest`;
+    const init: RequestInit = {
       method: "POST",
       headers: { Authorization: `Bearer ${SERVICE}`, "Content-Type": "application/json" },
       body: JSON.stringify({ ...body, asOwner: true }),
-    });
+    };
+    // Prefer the service binding (direct Worker→Worker dispatch). Fall back to
+    // plain HTTP only if the binding is absent (e.g. local dev) — note that the
+    // HTTP path is unreliable on the same account's workers.dev (cached 404).
+    const res = env.YOPEDIA
+      ? await env.YOPEDIA.fetch(target, init)
+      : await fetch(target, init);
     if (res.status === 200) {
       // A 200 means the server committed the page, so the outcome is
       // authoritative even if the body is unreadable — but warn rather than

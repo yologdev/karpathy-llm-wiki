@@ -17,6 +17,15 @@
     { "binding": "CURSOR", "id": "31e48c3fc033443788f1d3fe130e6266" }
   ],
 
+  // Service binding to the main yopedia Worker. We call it via env.YOPEDIA.fetch()
+  // instead of fetch("https://yopedia.…workers.dev") because a Worker fetching
+  // another Worker on the same account's workers.dev hostname is short-circuited
+  // at the edge (a cached/synthetic 404 that never reaches origin). The binding
+  // routes the subrequest directly to the Worker, bypassing DNS + edge cache.
+  "services": [{ "binding": "YOPEDIA", "service": "yopedia" }],
+
+  // YOPEDIA_URL is only used to build the request path; the host is ignored when
+  // the request is dispatched through the service binding.
   "vars": { "YOPEDIA_URL": "https://yopedia.yuanhao-li.workers.dev" }
 
   // Secrets (set with `wrangler secret put --config workers/x-ingest/wrangler.jsonc`):
