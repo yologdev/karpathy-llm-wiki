@@ -6,7 +6,7 @@ import {
 } from "@/lib/agents";
 import { getPrincipal } from "@/lib/auth";
 import { readWikiPageWithFrontmatter } from "@/lib/wiki";
-import { getErrorMessage } from "@/lib/errors";
+import { logger } from "@/lib/logger";
 
 /**
  * Share / unshare one of YOUR pages into YOUR yoyo's context.
@@ -40,7 +40,10 @@ async function handle(req: Request, shared: boolean) {
       );
     }
 
-    const page = await readWikiPageWithFrontmatter(slug).catch(() => null);
+    // No .catch: readWikiPage returns null for a genuinely missing page (→ 404);
+    // a malformed-frontmatter throw should fall through to the 500 (and be
+    // logged) rather than masquerade as "not found".
+    const page = await readWikiPageWithFrontmatter(slug);
     if (!page) {
       return NextResponse.json(
         { error: `Page "${slug}" not found` },
@@ -56,7 +59,7 @@ async function handle(req: Request, shared: boolean) {
       : [];
     if (owner !== principal.handle && !contributors.includes(principal.handle)) {
       return NextResponse.json(
-        { error: "You can only share pages you own." },
+        { error: "You can only share pages you own or contributed to." },
         { status: 403 },
       );
     }
@@ -69,7 +72,12 @@ async function handle(req: Request, shared: boolean) {
     await setPageShared(slug, agentId, shared);
     return NextResponse.json({ shared, slug, agentId });
   } catch (err) {
-    return NextResponse.json({ error: getErrorMessage(err) }, { status: 500 });
+    // This is the only place a real write/parse failure is observable — log it.
+    logger.error("agents", "share toggle failed:", err);
+    return NextResponse.json(
+      { error: "Failed to update sharing." },
+      { status: 500 },
+    );
   }
 }
 

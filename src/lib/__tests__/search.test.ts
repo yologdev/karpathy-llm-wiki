@@ -27,6 +27,7 @@ import {
 } from "../search";
 import type { SearchScope } from "../search";
 import { registerAgent, ensureAgentsDir } from "../agents";
+import { serializeFrontmatter } from "../frontmatter";
 import type { AgentProfile } from "../types";
 import { _resetStorage } from "../storage";
 
@@ -684,6 +685,38 @@ describe("resolveScope", () => {
     await ensureAgentsDir();
     const result = await resolveScope("agent:nonexistent");
     expect(result).toBeNull();
+  });
+
+  it("includes pages the owner shared into the agent (sharedWith)", async () => {
+    await ensureAgentsDir();
+    await registerAgent(
+      makeProfile({
+        id: "alice--yoyo",
+        owner: "alice",
+        identityPages: ["yoyo-identity"],
+        learningPages: [],
+        socialPages: [],
+      }),
+    );
+    // A separate page the owner shared into their yoyo via the frontmatter
+    // label. It must be in the index for the sharedWith scan to see it.
+    await writeWikiPage(
+      "alice-note",
+      serializeFrontmatter(
+        { owner: "alice", sharedWith: ["alice--yoyo"] },
+        "# Note\n\nShared knowledge.",
+      ),
+    );
+    await writeWikiPage(
+      "index",
+      "# Index\n\n- [Note](alice-note.md) — Shared knowledge.",
+    );
+
+    const result = await resolveScope("agent:alice--yoyo");
+    expect(result).not.toBeNull();
+    expect(result!.slugs).toEqual(
+      expect.arrayContaining(["yoyo-identity", "alice-note"]),
+    );
   });
 
   it("resolves a fork to its INHERITED (template) pages", async () => {

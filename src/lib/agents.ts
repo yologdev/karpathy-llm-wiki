@@ -162,7 +162,11 @@ export async function sharedPagesFor(agentId: string): Promise<string[]> {
   const out: string[] = [];
   for (const entry of pages) {
     if (entry.slug === "index" || entry.slug === "log") continue;
-    const page = await readWikiPageWithFrontmatter(entry.slug).catch(() => null);
+    // No .catch here — readWikiPage already returns null for missing/ENOENT,
+    // so the only thing a catch would swallow is a malformed-frontmatter throw.
+    // Let that propagate (same as slugsForOwner) rather than silently dropping
+    // a shared page from the agent's context.
+    const page = await readWikiPageWithFrontmatter(entry.slug);
     if (!page) continue;
     const shared = Array.isArray(page.frontmatter.sharedWith)
       ? (page.frontmatter.sharedWith as string[])
@@ -177,8 +181,9 @@ export async function sharedPagesFor(agentId: string): Promise<string[]> {
  * the page is already in the requested state. Frontmatter-only write (the body
  * is untouched), so no re-synthesis or re-embedding — just a cheap revision.
  *
- * Ownership/authorization is enforced by the caller (the route checks both that
- * the actor owns the page and owns the target agent).
+ * Ownership/authorization is enforced by the caller: the route checks the actor
+ * owns/contributed to the page, and derives the target agent from the session so
+ * it is necessarily the actor's own yoyo.
  */
 export async function setPageShared(
   slug: string,

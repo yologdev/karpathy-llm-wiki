@@ -13,7 +13,8 @@ interface ShareWithYoyoButtonProps {
  * Toggles whether one of your own pages is shared into your yoyo's context.
  * "Share" is a grant (read-access reference), not a copy — the page stays
  * yours and unchanged; your yoyo just also sees it. Rendered only for the
- * page's owner (the server gates this and re-checks ownership on the request).
+ * page's owner or a contributor (the server gates this and re-checks the same
+ * owner/contributor condition on the request).
  */
 export function ShareWithYoyoButton({
   slug,
