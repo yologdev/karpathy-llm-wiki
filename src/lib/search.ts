@@ -13,7 +13,7 @@ import {
   wikiRelPath,
 } from "./wiki";
 import { isEnoent } from "./errors";
-import { getAgent } from "./agents";
+import { getAgent, resolveAgentPages } from "./agents";
 import { getStorage } from "./storage";
 
 // ---------------------------------------------------------------------------
@@ -556,10 +556,13 @@ export async function resolveScope(
     const agent = await getAgent(agentId);
     if (!agent) return null;
 
+    // Effective pages = own + inherited from the template chain, so an
+    // `agent:<fork>` scope also searches the base content the fork inherits.
+    const pages = await resolveAgentPages(agent);
     const slugs = [
-      ...(agent.identityPages ?? []),
-      ...(agent.learningPages ?? []),
-      ...(agent.socialPages ?? []),
+      ...pages.identityPages,
+      ...pages.learningPages,
+      ...pages.socialPages,
     ];
 
     return { agentId: agent.id, slugs };

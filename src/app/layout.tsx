@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { ClerkProvider } from "@clerk/nextjs";
 import { NavHeader } from "@/components/NavHeader";
 import { ClientProviders } from "@/components/ClientProviders";
+import { EnsureYoyo } from "@/components/EnsureYoyo";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -38,6 +39,7 @@ export default function RootLayout({
       <body className="min-h-screen antialiased">
         <ClerkProvider>
           <ClientProviders>
+            <EnsureYoyo />
             <a href="#main-content" className="skip-nav">
               Skip to main content
             </a>

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getAgent } from "@/lib/agents";
+import { getAgent, resolveAgentPages } from "@/lib/agents";
 import { readWikiPageWithFrontmatter } from "@/lib/wiki";
 import { getErrorMessage } from "@/lib/errors";
 import { logger } from "@/lib/logger";
@@ -73,11 +73,15 @@ export async function GET(_req: Request, { params }: RouteParams) {
       );
     }
 
+    // Resolve effective pages (own + inherited from the template chain), so a
+    // forked per-user yoyo returns the base content it inherits.
+    const pages = await resolveAgentPages(agent);
+
     // Load all three context sections in parallel
     const [identity, learnings, social] = await Promise.all([
-      loadPages(agent.identityPages),
-      loadPages(agent.learningPages),
-      loadPages(agent.socialPages),
+      loadPages(pages.identityPages),
+      loadPages(pages.learningPages),
+      loadPages(pages.socialPages),
     ]);
 
     const totalChars =

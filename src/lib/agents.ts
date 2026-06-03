@@ -13,6 +13,7 @@ import { getStorage } from "./storage";
 import { getDataDir } from "./config";
 import { isEnoent } from "./errors";
 import { serializeFrontmatter } from "./frontmatter";
+import { slugify } from "./slugify";
 import { writeWikiPageWithSideEffects } from "./lifecycle";
 import { readWikiPageWithFrontmatter } from "./wiki";
 import type { AgentProfile } from "./types";
@@ -69,6 +70,43 @@ function validateProfile(profile: AgentProfile): void {
   if (!profile.description || typeof profile.description !== "string") {
     throw new Error("Agent profile requires a non-empty 'description'");
   }
+}
+
+// ---------------------------------------------------------------------------
+// Addressing — an agent is identified by (owner, name)
+// ---------------------------------------------------------------------------
+//
+// Every owner can have their own "yoyo", so the stored id encodes both:
+//   id = slugify("<owner>-<name>")   e.g. "yopedia-yoyo", "alice-yoyo"
+// This keeps a flat agents/<id>.json registry (and the existing id-based API
+// and `agent:<id>` search scope) working unchanged — the id is just composite.
+
+/** The default agent name every user gets. */
+export const DEFAULT_AGENT_NAME = "yoyo";
+
+/** The owner handle of the canonical root agent (the synced base). */
+export const BASE_AGENT_OWNER = "yopedia";
+
+/** Compose the stable storage id for an agent from its (owner, name). */
+export function agentIdFor(owner: string, name: string = DEFAULT_AGENT_NAME): string {
+  return slugify(`${owner}-${name}`);
+}
+
+/** The id of the canonical root agent every per-user yoyo is forked from. */
+export function baseAgentId(): string {
+  return agentIdFor(BASE_AGENT_OWNER, DEFAULT_AGENT_NAME);
+}
+
+/**
+ * Recover an agent's short name from its composite id — the inverse of
+ * {@link agentIdFor} for the clean `/u/<owner>/a/<name>` URL form. Since the id
+ * is `slugify("<owner>-<name>")`, stripping the `slugify(owner)-` prefix yields
+ * the name slug. Falls back to the full id for unowned/legacy agents.
+ */
+export function agentShortName(agent: AgentProfile): string {
+  if (!agent.owner) return agent.id;
+  const prefix = `${slugify(agent.owner)}-`;
+  return agent.id.startsWith(prefix) ? agent.id.slice(prefix.length) : agent.id;
 }
 
 // ---------------------------------------------------------------------------
@@ -175,6 +213,54 @@ export async function getAgent(id: string): Promise<AgentProfile | null> {
     if (isEnoent(err)) return null;
     throw err;
   }
+}
+
+/** Get an agent by its (owner, name) address. Returns null if absent. */
+export async function getAgentByOwnerName(
+  owner: string,
+  name: string = DEFAULT_AGENT_NAME,
+): Promise<AgentProfile | null> {
+  return getAgent(agentIdFor(owner, name));
+}
+
+/**
+ * Resolve an agent's EFFECTIVE pages, following its `template` chain.
+ *
+ * A fork stores only its own pages; everything else is inherited from its
+ * template (and the template's template, …). So a freshly forked yoyo with no
+ * own pages resolves to exactly the base's pages — and when the base is
+ * re-seeded, the fork sees the update. Own pages are unioned on top (additive
+ * learnings); de-duplicated, own-first. A depth cap guards against cycles.
+ *
+ * @param load optional fetcher (defaults to getAgent) — injectable for tests.
+ */
+export async function resolveAgentPages(
+  agent: AgentProfile,
+  load: (id: string) => Promise<AgentProfile | null> = getAgent,
+): Promise<{ identityPages: string[]; learningPages: string[]; socialPages: string[] }> {
+  const identity: string[] = [];
+  const learnings: string[] = [];
+  const social: string[] = [];
+
+  let current: AgentProfile | null = agent;
+  const seen = new Set<string>();
+  let depth = 0;
+  while (current && depth < 20) {
+    if (seen.has(current.id)) break; // cycle guard
+    seen.add(current.id);
+    identity.push(...(current.identityPages ?? []));
+    learnings.push(...(current.learningPages ?? []));
+    social.push(...(current.socialPages ?? []));
+    current = current.template ? await load(current.template) : null;
+    depth++;
+  }
+
+  const dedup = (xs: string[]) => [...new Set(xs)];
+  return {
+    identityPages: dedup(identity),
+    learningPages: dedup(learnings),
+    socialPages: dedup(social),
+  };
 }
 
 /**
@@ -504,9 +590,15 @@ export async function seedAgent(options: SeedAgentOptions): Promise<AgentProfile
     }
   }
 
-  // Register (or update) the agent profile
+  // Composite id so each owner can have their own "<name>" (e.g. "yopedia-yoyo").
+  // Unowned/legacy seeds keep the bare id for back-compat.
+  const storedId = options.owner
+    ? agentIdFor(options.owner, options.id)
+    : options.id;
+
+  // Register (or update) the agent profile. Seeded agents are roots (no template).
   const profile: AgentProfile = {
-    id: options.id,
+    id: storedId,
     name: options.name,
     description: options.description,
     owner: options.owner,
@@ -520,11 +612,64 @@ export async function seedAgent(options: SeedAgentOptions): Promise<AgentProfile
   // If the agent already exists, preserve its original registration date and
   // owner — an owned agent never changes hands here. An existing *unowned*
   // (legacy) agent is claimed by this seeder via the `?? options.owner` fallback.
-  const existingAgent = await getAgent(options.id);
+  const existingAgent = await getAgent(storedId);
   if (existingAgent) {
     profile.registered = existingAgent.registered;
     profile.owner = existingAgent.owner ?? options.owner;
   }
+
+  await registerAgent(profile);
+  return profile;
+}
+
+// ---------------------------------------------------------------------------
+// forkAgent — provision a per-user agent that inherits from a template
+// ---------------------------------------------------------------------------
+
+/** Options for {@link forkAgent}. */
+export interface ForkAgentOptions {
+  /** The owner (principal handle) of the new fork. */
+  owner: string;
+  /** The id of the template to fork from (e.g. the base "yopedia-yoyo"). */
+  templateId: string;
+  /** Short name for the fork; defaults to {@link DEFAULT_AGENT_NAME}. */
+  name?: string;
+}
+
+/**
+ * Provision a per-user agent forked from a template. Idempotent: if the owner
+ * already has this agent, the existing profile is returned untouched.
+ *
+ * The fork starts with NO own pages — it inherits everything from the template
+ * by reference (see {@link resolveAgentPages}), so it tracks base updates until
+ * it overrides a page (future). Returns null if the template doesn't exist.
+ */
+export async function forkAgent(
+  options: ForkAgentOptions,
+): Promise<AgentProfile | null> {
+  const name = options.name ?? DEFAULT_AGENT_NAME;
+  const id = agentIdFor(options.owner, name);
+
+  const existing = await getAgent(id);
+  if (existing) return existing;
+
+  const template = await getAgent(options.templateId);
+  if (!template) return null;
+
+  const now = new Date().toISOString();
+  const profile: AgentProfile = {
+    id,
+    name: template.name,
+    description: template.description,
+    owner: options.owner,
+    template: options.templateId,
+    // Own pages start empty — everything is inherited from the template.
+    identityPages: [],
+    learningPages: [],
+    socialPages: [],
+    registered: now,
+    lastUpdated: now,
+  };
 
   await registerAgent(profile);
   return profile;

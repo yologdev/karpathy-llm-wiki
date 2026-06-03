@@ -1,15 +1,16 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { getAgent } from "@/lib/agents";
+import { getAgentByOwnerName, resolveAgentPages } from "@/lib/agents";
 import { listWikiPages } from "@/lib/wiki";
 import { decodeSlug } from "@/lib/slugify";
 import { getErrorMessage } from "@/lib/errors";
 import type { AgentProfile } from "@/lib/types";
 
 // Public agent profile, scoped under its owner's handle:
-//   /u/<handle>/a/<agent>
-// Shows the agent's identity / learnings / social pages and cross-links back to
-// the owning user. Reads are public — yopedia is a public observer surface.
+//   /u/<handle>/a/<name>     e.g. /u/alice/a/yoyo
+// Resolves the agent by (handle, name) and shows its EFFECTIVE identity /
+// learnings / social pages — including everything inherited from its template
+// (the base yoyo). Reads are public — yopedia is a public observer surface.
 export default async function AgentProfilePage({
   params,
 }: {
@@ -17,29 +18,32 @@ export default async function AgentProfilePage({
 }) {
   const { handle: encodedHandle, agent: encodedAgent } = await params;
   const handle = decodeSlug(encodedHandle);
-  const agentId = decodeSlug(encodedAgent);
+  const name = decodeSlug(encodedAgent);
 
-  // getAgent returns null for a genuinely missing agent (ENOENT) and throws on
-  // real errors (storage down, corrupt JSON). Don't flatten the latter into a
-  // 404 — only a missing or malformed-id agent is "not found"; let real errors
-  // propagate to the error boundary (500 + logging).
+  // getAgentByOwnerName returns null for a genuinely missing agent (ENOENT) and
+  // throws on real errors (storage down, corrupt JSON). Don't flatten the latter
+  // into a 404 — only a missing/malformed-id agent is "not found"; let real
+  // errors propagate to the error boundary (500 + logging).
   let agent: AgentProfile | null;
   try {
-    agent = await getAgent(agentId);
+    agent = await getAgentByOwnerName(handle, name);
   } catch (err) {
     if (getErrorMessage(err).includes("Invalid agent ID")) notFound();
     throw err;
   }
   if (!agent) notFound();
 
+  // Effective pages = own + inherited from the template chain (the base yoyo).
+  const resolved = await resolveAgentPages(agent);
+
   // Resolve slug -> title from the index for nicer links (fall back to slug).
   const index = await listWikiPages();
   const titleFor = new Map(index.map((p) => [p.slug, p.title]));
 
   const sections: { label: string; slugs: string[] }[] = [
-    { label: "Identity", slugs: agent.identityPages ?? [] },
-    { label: "Learnings", slugs: agent.learningPages ?? [] },
-    { label: "Social wisdom", slugs: agent.socialPages ?? [] },
+    { label: "Identity", slugs: resolved.identityPages },
+    { label: "Learnings", slugs: resolved.learningPages },
+    { label: "Social wisdom", slugs: resolved.socialPages },
   ];
   const totalPages = sections.reduce((n, s) => n + s.slugs.length, 0);
 

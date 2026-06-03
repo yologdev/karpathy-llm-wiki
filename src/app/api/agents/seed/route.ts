@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { seedAgent, assertCanMutateAgent, AgentOwnershipError } from "@/lib/agents";
+import { seedAgent, assertCanMutateAgent, AgentOwnershipError, agentIdFor } from "@/lib/agents";
 import { getPrincipal, getServicePrincipal } from "@/lib/auth";
 import { getErrorMessage } from "@/lib/errors";
 
@@ -100,8 +100,10 @@ export async function POST(req: Request) {
       }
     }
 
-    // --- Ownership: only the owner may re-seed an existing agent ---
-    await assertCanMutateAgent(id, principal.handle);
+    // --- Ownership: only the owner may re-seed their agent ---
+    // The stored agent is owner-namespaced (agentIdFor), so the body `id` is
+    // just the short name; check ownership of the composite id.
+    await assertCanMutateAgent(agentIdFor(principal.handle, id), principal.handle);
 
     // --- Call seedAgent (owner from session, never from the body) ---
     const profile = await seedAgent({

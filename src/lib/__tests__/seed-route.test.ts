@@ -16,6 +16,8 @@ vi.mock("@/lib/agents", () => {
     seedAgent: vi.fn(),
     assertCanMutateAgent: vi.fn(async () => null),
     AgentOwnershipError,
+    // Mirrors the real composite-id helper closely enough for these handles.
+    agentIdFor: (owner: string, name = "yoyo") => `${owner}-${name}`,
   };
 });
 
@@ -146,7 +148,8 @@ describe("POST /api/agents/seed", () => {
       expect(mockedSeedAgent).toHaveBeenCalledWith(
         expect.objectContaining({ owner: "yoyo-bot" }),
       );
-      expect(mockedAssertCanMutate).toHaveBeenCalledWith("yoyo", "yoyo-bot");
+      // Ownership is checked against the owner-namespaced composite id.
+      expect(mockedAssertCanMutate).toHaveBeenCalledWith("yoyo-bot-yoyo", "yoyo-bot");
     });
 
     it("returns 403 when a non-owner tries to re-seed", async () => {

@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { listWikiPages } from "@/lib/wiki";
 import { slugsForOwner } from "@/lib/search";
-import { listAgentsForOwner } from "@/lib/agents";
+import { listAgentsForOwner, agentShortName } from "@/lib/agents";
 import { getDiscussionStatsForSlugs } from "@/lib/talk";
 import { decodeSlug } from "@/lib/slugify";
 import { WikiIndexClient } from "@/components/WikiIndexClient";
@@ -45,7 +45,7 @@ export default async function UserPage({
             {agents.map((agent) => (
               <li key={agent.id}>
                 <Link
-                  href={`/u/${handle}/a/${agent.id}`}
+                  href={`/u/${handle}/a/${agentShortName(agent)}`}
                   className="group block rounded-lg border border-foreground/10 p-3 hover:border-foreground/30"
                 >
                   <span className="font-medium group-hover:underline">
