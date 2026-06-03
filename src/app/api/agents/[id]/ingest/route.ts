@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { verifyAgentToken, addAgentLearningPage, getAgent } from "@/lib/agents";
 import { getServicePrincipal } from "@/lib/auth";
 import { ingestUrl, ingest, type IngestOptions } from "@/lib/ingest";
+import { getStorage } from "@/lib/storage";
 import { logger } from "@/lib/logger";
 
 interface RouteParams {
@@ -78,6 +79,20 @@ export async function POST(req: Request, { params }: RouteParams) {
         }
       }
       if (!agentRecord) {
+        // DIAGNOSTIC: a system-token ingest 404 means getAgent saw no file.
+        // Log what storage actually contains under agents/ so we can tell a
+        // genuine "not a user" from a storage/context mismatch.
+        let dbg = "?";
+        try {
+          const files = await getStorage().listFiles("agents");
+          dbg = files.map((f) => f.name).join(",") || "(empty)";
+        } catch (e) {
+          dbg = `list-error: ${e instanceof Error ? e.message : String(e)}`;
+        }
+        logger.error(
+          "agents",
+          `[ingest] system-token getAgent(${JSON.stringify(id)}) → null; agents/ = [${dbg}]`,
+        );
         return NextResponse.json(
           { error: `Agent "${id}" not found` },
           { status: 404 },
