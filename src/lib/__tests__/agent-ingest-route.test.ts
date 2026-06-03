@@ -3,6 +3,11 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 vi.mock("@/lib/agents", () => ({
   verifyAgentToken: vi.fn(),
   addAgentLearningPage: vi.fn(),
+  getAgent: vi.fn(),
+}));
+
+vi.mock("@/lib/auth", () => ({
+  getServicePrincipal: vi.fn(() => null),
 }));
 
 vi.mock("@/lib/ingest", () => ({
@@ -10,12 +15,15 @@ vi.mock("@/lib/ingest", () => ({
   ingest: vi.fn(),
 }));
 
-import { verifyAgentToken, addAgentLearningPage } from "@/lib/agents";
+import { verifyAgentToken, addAgentLearningPage, getAgent } from "@/lib/agents";
+import { getServicePrincipal } from "@/lib/auth";
 import { ingestUrl, ingest } from "@/lib/ingest";
 import { POST } from "@/app/api/agents/[id]/ingest/route";
 
 const mockedVerify = vi.mocked(verifyAgentToken);
 const mockedAddLearning = vi.mocked(addAgentLearningPage);
+const mockedGetAgent = vi.mocked(getAgent);
+const mockedServicePrincipal = vi.mocked(getServicePrincipal);
 const mockedIngestUrl = vi.mocked(ingestUrl);
 const mockedIngest = vi.mocked(ingest);
 
@@ -34,6 +42,7 @@ function req(body: unknown, token?: string): Request {
 beforeEach(() => {
   vi.clearAllMocks();
   mockedVerify.mockResolvedValue("alice--yoyo");
+  mockedServicePrincipal.mockReturnValue(null);
   mockedAddLearning.mockResolvedValue();
   mockedIngestUrl.mockResolvedValue({
     primarySlug: "ingested-page",
@@ -106,5 +115,41 @@ describe("POST /api/agents/[id]/ingest", () => {
   it("400 when neither url nor text is provided", async () => {
     const res = await POST(req({}, "alice--yoyo.s"), { params });
     expect(res.status).toBe(400);
+  });
+
+  describe("system token (the @yoyoevolve loop)", () => {
+    it("ingests into a registered (existing) agent", async () => {
+      mockedVerify.mockResolvedValue(null); // not an agent token
+      mockedServicePrincipal.mockReturnValue({
+        id: "service:yopedia",
+        handle: "yopedia",
+      });
+      mockedGetAgent.mockResolvedValue({ id: "alice--yoyo" } as never);
+
+      const res = await POST(req({ url: "https://example.com" }, "sys-token"), {
+        params,
+      });
+      expect(res.status).toBe(200);
+      expect(mockedIngestUrl).toHaveBeenCalledWith(
+        "https://example.com",
+        expect.objectContaining({ pageType: "agent-knowledge" }),
+      );
+      expect(mockedAddLearning).toHaveBeenCalledWith("alice--yoyo", "ingested-page");
+    });
+
+    it("404 when the handle is not a registered user (agent missing) — skip", async () => {
+      mockedVerify.mockResolvedValue(null);
+      mockedServicePrincipal.mockReturnValue({
+        id: "service:yopedia",
+        handle: "yopedia",
+      });
+      mockedGetAgent.mockResolvedValue(null); // no such agent → not a user
+
+      const res = await POST(req({ url: "https://example.com" }, "sys-token"), {
+        params,
+      });
+      expect(res.status).toBe(404);
+      expect(mockedIngestUrl).not.toHaveBeenCalled();
+    });
   });
 });
