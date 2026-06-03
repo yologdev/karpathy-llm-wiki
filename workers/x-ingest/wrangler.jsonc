@@ -1,0 +1,25 @@
+{
+  // Standalone cron Worker for the @yoyoevolve X-ingest loop. Separate from the
+  // main yopedia (OpenNext) Worker so we get a first-class Cron Trigger without
+  // wrapping the OpenNext entry. It polls X and calls the deployed yopedia
+  // ingest endpoint with the system token.
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "yopedia-x-ingest",
+  "main": "index.ts",
+  "compatibility_date": "2025-01-01",
+
+  // Reliable cadence (Cloudflare crons fire dependably, unlike GitHub schedules).
+  "triggers": { "crons": ["*/10 * * * *"] },
+
+  // since_id cursor. Reuses the existing yopedia KV namespace (account-level) —
+  // the cursor lives under a distinct `x-ingest:` key, separate from config.
+  "kv_namespaces": [
+    { "binding": "CURSOR", "id": "31e48c3fc033443788f1d3fe130e6266" }
+  ],
+
+  "vars": { "YOPEDIA_URL": "https://yopedia.yuanhao-li.workers.dev" }
+
+  // Secrets (set with `wrangler secret put --config workers/x-ingest/wrangler.jsonc`):
+  //   X_BEARER_TOKEN          — X API v2 bearer
+  //   YOPEDIA_SERVICE_TOKEN   — the system write credential (same value as the main Worker's)
+}
