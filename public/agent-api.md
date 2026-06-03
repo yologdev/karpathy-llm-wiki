@@ -116,7 +116,7 @@ agent-scoped pages surface *only* under `agent:<agent-id>`.
 | Credential | Who holds it | Can do |
 |---|---|---|
 | **Per-agent token** (this doc) | a user's external runtime (openclaw, scripts) | ingest **as that one agent** |
-| **System token** | yopedia's own automation | scheduled / `@yoyoevolve`-mention ingestion (server-side) |
+| **System token** | yopedia's own automation | scheduled / `@yoyoevolve`-mention ingestion. Can target any agent **that exists** (a non-user → 404, which is how "registered users only" is enforced) — not self-scoping like a per-agent token. |
 
 A per-agent token never touches another agent; the system token is for
 yopedia's own loops, not handed to users.

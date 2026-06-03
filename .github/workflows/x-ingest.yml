@@ -51,7 +51,9 @@ jobs:
             process.exit(0);
           }
 
-          // Mirror src/lib/slugify.ts for ASCII X handles (usernames are [A-Za-z0-9_]).
+          // ASCII-only subset of src/lib/slugify.ts — sufficient because X
+          // usernames are [A-Za-z0-9_] (no CJK/whitespace), so it matches
+          // slugify() for all valid handles.
           const slug = (s) =>
             s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
 
@@ -82,7 +84,15 @@ jobs:
           try {
             const res = await fetch(url, { headers: { Authorization: `Bearer ${X_BEARER}` } });
             if (!res.ok) {
-              console.warn(`X search failed (${res.status}: ${await res.text()}) — skipping this run.`);
+              const bodyText = await res.text();
+              // A bad/revoked bearer is systemic (same token every run) → fail
+              // loudly, like the yopedia-side token. Transient errors (429, 5xx)
+              // just skip this run and retry next cron.
+              if (res.status === 401 || res.status === 403) {
+                console.error(`FATAL: X rejected the bearer token (${res.status}: ${bodyText}) — check X_BEARER_TOKEN. Aborting.`);
+                process.exit(1);
+              }
+              console.warn(`X search failed (${res.status}: ${bodyText}) — transient, skipping this run.`);
               process.exit(0);
             }
             payload = await res.json();
@@ -115,8 +125,9 @@ jobs:
               body: JSON.stringify(body),
             });
             if (res.status === 200) {
-              const { slug: pageSlug, deduped } = await res.json();
-              console.log(`✓ ${agentId}: ${label} → ${pageSlug}${deduped ? " (deduped)" : ""}`);
+              // 200 means it was ingested — tolerate a non-JSON body.
+              const data = await res.json().catch(() => ({}));
+              console.log(`✓ ${agentId}: ${label} → ${data.slug ?? "(ok)"}${data.deduped ? " (deduped)" : ""}`);
               return true;
             }
             if (res.status === 404) {
@@ -134,12 +145,20 @@ jobs:
 
           for (const mention of mentions) {
             const handle = userById[mention.author_id];
-            if (!handle) { skipped++; continue; }
+            if (!handle) {
+              console.warn(`! mention ${mention.id}: author not expanded by X — skipping`);
+              skipped++; continue;
+            }
 
             // The replied-to (parent) tweet — that's what we ingest from.
             const parentId = (mention.referenced_tweets ?? []).find((r) => r.type === "replied_to")?.id;
             const parent = parentId ? tweetById[parentId] : undefined;
-            if (!parent) { skipped++; continue; } // not a reply / parent unavailable
+            if (!parent) {
+              // Distinct from "plain tweet": the parent was deleted/protected or
+              // X didn't return it in includes.
+              console.log(`· @${handle}: replied-to tweet unavailable — skipping`);
+              skipped++; continue;
+            }
 
             // Build ingest jobs: the parent's full Article (if any) + its external links.
             const jobs = [];
@@ -148,6 +167,8 @@ jobs:
               const title = article.title || `X Article (shared by @${handle})`;
               const body = article.text || title;
               jobs.push({ body: { text: body, title }, label: `article "${title}"` });
+            } else if (article) {
+              console.warn(`! @${handle}: parent has an 'article' field of an unexpected shape (no text/title) — skipping the article`);
             }
             for (const link of externalLinks(parent)) {
               jobs.push({ body: { url: link }, label: link });
@@ -170,10 +191,12 @@ jobs:
 
           console.log(`Done: ${ingested} ingested, ${skipped} skipped, ${failed} failed (from ${mentions.length} mentions).`);
 
-          // Loud failure when everything errored and nothing landed — otherwise a
-          // dead loop (yopedia down, etc.) shows green forever.
-          if (failed > 0 && ingested === 0 && skipped === 0) {
-            console.error(`All ${failed} attempts failed and nothing was ingested — likely an outage. Failing the run.`);
+          // Loud failure when ingest attempts were made but none succeeded —
+          // otherwise a dead loop (yopedia down / bad token) shows green forever.
+          // Gate on attempts only: a skip (non-user / no content) is never
+          // evidence ingestion is healthy, so it must not mask a real outage.
+          if (ingested === 0 && failed > 0) {
+            console.error(`All ${failed} ingest attempt(s) failed and nothing was ingested — likely an outage or bad token. Failing the run.`);
             process.exit(1);
           }
           EOF
