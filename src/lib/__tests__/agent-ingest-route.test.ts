@@ -112,6 +112,18 @@ describe("POST /api/agents/[id]/ingest", () => {
     expect(mockedIngestUrl).not.toHaveBeenCalled();
   });
 
+  it("a per-agent mismatch is denied even if a system principal is also present", async () => {
+    // Precedence guard: the per-agent check must short-circuit BEFORE the
+    // system-token branch — a wrong agent token can't escalate via the system path.
+    mockedVerify.mockResolvedValue("bob--yoyo");
+    mockedServicePrincipal.mockReturnValue({ id: "service:yopedia", handle: "yopedia" });
+    const res = await POST(req({ url: "https://example.com" }, "bob--yoyo.s"), {
+      params,
+    });
+    expect(res.status).toBe(403);
+    expect(mockedIngestUrl).not.toHaveBeenCalled();
+  });
+
   it("400 when neither url nor text is provided", async () => {
     const res = await POST(req({}, "alice--yoyo.s"), { params });
     expect(res.status).toBe(400);
@@ -135,6 +147,23 @@ describe("POST /api/agents/[id]/ingest", () => {
         expect.objectContaining({ pageType: "agent-knowledge" }),
       );
       expect(mockedAddLearning).toHaveBeenCalledWith("alice--yoyo", "ingested-page");
+    });
+
+    it("ingests text (not just url) into an existing agent", async () => {
+      mockedVerify.mockResolvedValue(null);
+      mockedServicePrincipal.mockReturnValue({ id: "service:yopedia", handle: "yopedia" });
+      mockedGetAgent.mockResolvedValue({ id: "alice--yoyo" } as never);
+
+      const res = await POST(
+        req({ text: "an X post body", title: "Post" }, "sys-token"),
+        { params },
+      );
+      expect(res.status).toBe(200);
+      expect(mockedIngest).toHaveBeenCalledWith(
+        "Post",
+        "an X post body",
+        expect.objectContaining({ pageType: "agent-knowledge", owner: "alice--yoyo" }),
+      );
     });
 
     it("404 when the handle is not a registered user (agent missing) — skip", async () => {

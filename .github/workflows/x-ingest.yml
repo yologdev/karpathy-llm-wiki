@@ -85,7 +85,7 @@ jobs:
           }
 
           const SKIP_HOSTS = new Set(["x.com", "twitter.com", "t.co", "www.x.com", "www.twitter.com"]);
-          let ingested = 0, skipped = 0, capped = 0, failed = 0;
+          let ingested = 0, skipped = 0, failed = 0;
 
           for (const tweet of tweets) {
             const handle = userById[tweet.author_id];
@@ -114,9 +114,14 @@ jobs:
               } else if (res.status === 404) {
                 console.log(`· @${handle} is not a yopedia user (${agentId} not found) — skipped`);
                 skipped++;
-              } else if (res.status === 429) {
-                console.log(`· @${handle} hit their ingest limit — skipped`);
-                capped++;
+              } else if (res.status === 401 || res.status === 403) {
+                // The token is the SAME for every request, so a single rejection
+                // is systemic (bad/rotated YOPEDIA_SERVICE_TOKEN), not per-mention.
+                // Fail the run loudly rather than silently ingesting nothing.
+                console.error(
+                  `FATAL: service token rejected (${res.status}) — check YOPEDIA_SERVICE_TOKEN. Aborting.`,
+                );
+                process.exit(1);
               } else {
                 console.warn(`! @${handle} → ${agentId}: ingest failed (${res.status})`);
                 failed++;
@@ -127,6 +132,13 @@ jobs:
             }
           }
 
-          console.log(`Done: ${ingested} ingested, ${skipped} skipped, ${capped} capped, ${failed} failed (of ${tweets.length}).`);
+          console.log(`Done: ${ingested} ingested, ${skipped} skipped, ${failed} failed (of ${tweets.length}).`);
+
+          // Loud failure when the whole batch failed for non-per-user reasons
+          // (e.g. yopedia down / 5xx) — otherwise a dead loop shows green forever.
+          if (failed > 0 && ingested === 0 && skipped === 0) {
+            console.error(`All ${failed} attempts failed and nothing was ingested — likely an outage. Failing the run.`);
+            process.exit(1);
+          }
           EOF
           node x-ingest.mjs

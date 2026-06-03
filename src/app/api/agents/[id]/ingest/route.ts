@@ -55,7 +55,19 @@ export async function POST(req: Request, { params }: RouteParams) {
     } else if (getServicePrincipal(req)) {
       // System token: trusted to target any agent, but it must exist — this is
       // the "registered user only" gate for the @yoyoevolve loop.
-      const exists = await getAgent(id).catch(() => null);
+      let exists;
+      try {
+        exists = await getAgent(id);
+      } catch (err) {
+        // A malformed id is "not a user" (404). A real storage error must
+        // surface as 500 — never masquerade as "not registered", which would
+        // make an outage look like nobody who mentioned us is a yopedia user.
+        if (err instanceof Error && err.message.includes("Invalid agent ID")) {
+          exists = null;
+        } else {
+          throw err;
+        }
+      }
       if (!exists) {
         return NextResponse.json(
           { error: `Agent "${id}" not found` },
