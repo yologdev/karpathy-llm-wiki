@@ -13,8 +13,8 @@ export default function RawSourceError({
     <PageError
       title="Source view error"
       description="Something went wrong while loading this source."
-      backHref="/raw"
-      backLabel="← Sources"
+      backHref="/wiki"
+      backLabel="← Back to the wiki"
       error={error}
       reset={reset}
     />

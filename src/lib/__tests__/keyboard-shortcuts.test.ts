@@ -106,12 +106,6 @@ describe("matchShortcut", () => {
     expect(match!.route).toBe("/settings");
   });
 
-  it("matches g then r → /raw", () => {
-    const { match } = matchShortcut(["g"], "r");
-    expect(match).not.toBeNull();
-    expect(match!.route).toBe("/raw");
-  });
-
   it("resets buffer on unrecognized second key", () => {
     const { match, newBuffer } = matchShortcut(["g"], "z");
     expect(match).toBeNull();
@@ -146,12 +140,12 @@ describe("matchShortcut", () => {
 
 describe("SHORTCUTS", () => {
   it("has expected number of shortcuts", () => {
-    expect(SHORTCUTS.length).toBeGreaterThanOrEqual(8);
+    expect(SHORTCUTS.length).toBeGreaterThanOrEqual(7);
   });
 
   it("all navigation shortcuts have a route", () => {
     const navShortcuts = SHORTCUTS.filter((s) => s.description.startsWith("Go to"));
-    expect(navShortcuts.length).toBe(7);
+    expect(navShortcuts.length).toBe(6);
     for (const s of navShortcuts) {
       expect(s.route).toBeTruthy();
     }
@@ -209,7 +203,6 @@ describe("route mapping", () => {
     "g b": "/wiki",
     "g g": "/wiki/graph",
     "g s": "/settings",
-    "g r": "/raw",
   };
 
   for (const [seq, route] of Object.entries(expectedRoutes)) {

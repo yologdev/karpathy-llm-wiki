@@ -10,10 +10,14 @@ import { listWikiPages } from "@/lib/wiki";
 import { listContributors } from "@/lib/contributors";
 
 export default async function Home() {
-  const [pages, contributors] = await Promise.all([
+  const [allPages, contributors] = await Promise.all([
     listWikiPages(),
     listContributors(),
   ]);
+
+  // Match the public /wiki "all" view: hide agent-identity pages so the stats,
+  // recent grid, and topics reflect the human-facing commons.
+  const pages = allPages.filter((p) => p.type !== "agent-identity");
 
   const pageCount = pages.length;
   const sourceCount = pages.reduce((n, p) => n + (p.sourceCount ?? 0), 0);
