@@ -770,6 +770,98 @@ describe("agent_context tool", () => {
 
     expect(result.meta.pageCount).toBe(3);
   });
+
+  it("resolves template chain for forked agents", async () => {
+    // Create a base agent with pages
+    const agentsDir = path.join(tmpDir, "agents");
+    await fs.mkdir(agentsDir, { recursive: true });
+
+    const baseProfile = {
+      id: "base-agent",
+      name: "Base Agent",
+      description: "The base template agent",
+      identityPages: ["base-identity"],
+      learningPages: ["base-learnings"],
+      socialPages: ["base-social"],
+      registered: "2026-05-03",
+      lastUpdated: "2026-05-03",
+    };
+    await fs.writeFile(
+      path.join(agentsDir, "base-agent.json"),
+      JSON.stringify(baseProfile),
+      "utf-8",
+    );
+
+    // Create a forked agent with NO own pages but pointing to the base template
+    const forkedProfile = {
+      id: "forked-agent",
+      name: "Forked Agent",
+      description: "A forked per-user agent",
+      template: "base-agent",
+      identityPages: [] as string[],
+      learningPages: [] as string[],
+      socialPages: [] as string[],
+      registered: "2026-05-03",
+      lastUpdated: "2026-05-03",
+    };
+    await fs.writeFile(
+      path.join(agentsDir, "forked-agent.json"),
+      JSON.stringify(forkedProfile),
+      "utf-8",
+    );
+
+    // Write the base agent's pages
+    await writeTestPage("base-identity", "# Base Identity\n\nI am the base.");
+    await writeTestPage("base-learnings", "# Base Learnings\n\nBase learned things.");
+    await writeTestPage("base-social", "# Base Social\n\nBase social wisdom.");
+
+    const result = await handleAgentContext({ agent_id: "forked-agent" });
+
+    // Forked agent should inherit base template's pages
+    expect(result.context.identity).toContain("I am the base.");
+    expect(result.context.learnings).toContain("Base learned things.");
+    expect(result.context.socialWisdom).toContain("Base social wisdom.");
+    expect(result.meta.pageCount).toBe(3);
+    expect(result.meta.totalChars).toBeGreaterThan(0);
+  });
+
+  it("includes shared pages in the response", async () => {
+    const agentsDir = path.join(tmpDir, "agents");
+    await fs.mkdir(agentsDir, { recursive: true });
+
+    const profile = {
+      id: "shared-ctx-agent",
+      name: "Shared Context Agent",
+      description: "Agent with shared pages",
+      identityPages: ["shared-identity"],
+      learningPages: [] as string[],
+      socialPages: [] as string[],
+      registered: "2026-05-03",
+      lastUpdated: "2026-05-03",
+    };
+    await fs.writeFile(
+      path.join(agentsDir, "shared-ctx-agent.json"),
+      JSON.stringify(profile),
+      "utf-8",
+    );
+
+    await writeTestPage("shared-identity", "# Identity\n\nAgent identity.");
+    // Write a page with sharedWith frontmatter pointing to this agent
+    await writeTestPage(
+      "shared-note",
+      "---\nslug: shared-note\nsharedWith: [shared-ctx-agent]\n---\n# Shared Note\n\nThis was shared with the agent.",
+    );
+    // sharedPagesFor scans via listWikiPages which reads index.md
+    await writeIndex([
+      { title: "Shared Note", slug: "shared-note", summary: "A shared note" },
+    ]);
+
+    const result = await handleAgentContext({ agent_id: "shared-ctx-agent" });
+
+    expect(result.context.identity).toContain("Agent identity.");
+    expect(result.context.shared).toContain("This was shared with the agent.");
+    expect(result.meta.pageCount).toBe(2);
+  });
 });
 
 // ---------------------------------------------------------------------------
