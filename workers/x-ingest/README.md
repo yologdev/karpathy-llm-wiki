@@ -5,7 +5,7 @@ The `@yoyoevolve` X-ingest loop as a **standalone Cloudflare Worker** with a
 every 10 minutes and ingests into yopedia via the deployed ingest endpoint.
 
 What it does each run:
-- Searches X for replies matching **`@yoyoevolve yopedia is:reply`**.
+- Searches X for replies matching **`@yoyoevolve yopedia is:reply -is:retweet`**.
 - For each reply from a **registered** yopedia user, ingests what the
   **replied-to (parent) tweet** points to — its full long-form **X Article**
   (`tweet.fields=article`) and/or its **external links** — into that user's
@@ -30,7 +30,8 @@ npx wrangler deploy --config workers/x-ingest/wrangler.jsonc
 
 The cursor reuses the existing yopedia KV namespace (bound as `CURSOR`) under the
 key `x-ingest:since_id`. To use a dedicated namespace instead, create one with
-`wrangler kv namespace create x_ingest` and swap the `id` in `wrangler.jsonc`.
+`wrangler kv namespace create x-ingest` and swap **only the `id`** in
+`wrangler.jsonc` — keep `"binding": "CURSOR"`, or `env.CURSOR` breaks.
 
 ## Trigger it manually (testing)
 
@@ -38,7 +39,7 @@ key `x-ingest:since_id`. To use a dedicated namespace instead, create one with
 # The Worker also exposes a fetch handler gated by the system token:
 curl -X POST "https://yopedia-x-ingest.<your-subdomain>.workers.dev" \
   -H "Authorization: Bearer <YOPEDIA_SERVICE_TOKEN>"
-# → { ingested, skipped, failed, mentions }
+# → { ingested, skipped, dropped, failed, mentions }  (plus a `note` when skipped/unconfigured)
 ```
 
 Logs: `npx wrangler tail --config workers/x-ingest/wrangler.jsonc`.

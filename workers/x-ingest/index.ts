@@ -42,11 +42,18 @@ const slug = (s: string) =>
 
 interface Summary {
   ingested: number;
-  skipped: number;
-  failed: number;
+  skipped: number; // non-user (404), unavailable parent, or nothing ingestable
+  dropped: number; // permanently rejected (4xx) — consciously discarded, not retried
+  failed: number; // transient (5xx/429) — holds the cursor so the run retries
   mentions: number;
   note?: string;
 }
+
+// The three terminal outcomes of one ingest attempt (a 4th, auth rejection,
+// throws instead of returning so the whole run aborts loudly). A string union
+// rather than boolean|null so the consumer's branching is self-documenting and
+// a future truthiness slip can't conflate "not a user" with "failed".
+type IngestOutcome = "ingested" | "not-a-user" | "dropped" | "failed";
 
 function externalLinks(tweet: { entities?: { urls?: { expanded_url?: string; url?: string }[] } }): string[] {
   return (tweet.entities?.urls ?? [])
@@ -56,7 +63,7 @@ function externalLinks(tweet: { entities?: { urls?: { expanded_url?: string; url
         const { protocol, hostname } = new URL(u);
         return /^https?:$/.test(protocol) && !SKIP_HOSTS.has(hostname);
       } catch {
-        return false;
+        return false; // malformed/relative URL from X — unusable, drop it
       }
     });
 }
@@ -67,7 +74,7 @@ async function run(env: Env): Promise<Summary> {
   const BASE = env.YOPEDIA_URL ?? "https://yopedia.yuanhao-li.workers.dev";
   if (!X_BEARER || !SERVICE) {
     console.log("X_BEARER_TOKEN or YOPEDIA_SERVICE_TOKEN not set — skipping.");
-    return { ingested: 0, skipped: 0, failed: 0, mentions: 0, note: "unconfigured" };
+    return { ingested: 0, skipped: 0, dropped: 0, failed: 0, mentions: 0, note: "unconfigured" };
   }
 
   const sinceId = await env.CURSOR.get(CURSOR_KEY);
@@ -101,20 +108,22 @@ async function run(env: Env): Promise<Summary> {
     const res = await fetch(url, { headers: { Authorization: `Bearer ${X_BEARER}` } });
     if (!res.ok) {
       const bodyText = await res.text();
-      // A bad/revoked bearer is systemic — surface it loudly. A stale since_id
-      // can also be rejected; clear it so the next run self-heals via the window.
+      // A bad/revoked bearer is systemic — surface it loudly (leaving the
+      // cursor intact: it's still valid once the token is fixed).
       if (res.status === 401 || res.status === 403) {
-        if (sinceId) await env.CURSOR.delete(CURSOR_KEY);
         throw new Error(`X rejected the bearer token (${res.status}: ${bodyText})`);
       }
-      if (sinceId) await env.CURSOR.delete(CURSOR_KEY);
+      // A 400 from recent-search typically means a stale/too-old since_id —
+      // clear it so the next run self-heals via the 48h window. On a 5xx (X
+      // outage) keep the cursor so we don't needlessly widen the next fetch.
+      if (res.status === 400 && sinceId) await env.CURSOR.delete(CURSOR_KEY);
       console.warn(`X search failed (${res.status}: ${bodyText}) — transient, skipping.`);
-      return { ingested: 0, skipped: 0, failed: 0, mentions: 0, note: "x-error" };
+      return { ingested: 0, skipped: 0, dropped: 0, failed: 0, mentions: 0, note: "x-error" };
     }
     payload = await res.json();
   } catch (err) {
     console.warn("X unreachable — skipping this run:", (err as Error)?.message ?? err);
-    return { ingested: 0, skipped: 0, failed: 0, mentions: 0, note: "x-unreachable" };
+    return { ingested: 0, skipped: 0, dropped: 0, failed: 0, mentions: 0, note: "x-unreachable" };
   }
 
   const mentions = payload.data ?? [];
@@ -126,33 +135,48 @@ async function run(env: Env): Promise<Summary> {
   );
   if (mentions.length === 0) {
     console.log("No new @yoyoevolve yopedia reply-mentions. Nothing to ingest.");
-    return { ingested: 0, skipped: 0, failed: 0, mentions: 0 };
+    return { ingested: 0, skipped: 0, dropped: 0, failed: 0, mentions: 0 };
   }
 
   let ingested = 0;
   let skipped = 0;
+  let dropped = 0;
   let failed = 0;
 
-  async function ingestInto(agentId: string, body: unknown, label: string): Promise<boolean | null> {
+  async function ingestInto(agentId: string, body: unknown, label: string): Promise<IngestOutcome> {
     const res = await fetch(`${BASE}/api/agents/${agentId}/ingest`, {
       method: "POST",
       headers: { Authorization: `Bearer ${SERVICE}`, "Content-Type": "application/json" },
       body: JSON.stringify(body),
     });
     if (res.status === 200) {
-      const data = (await res.json().catch(() => ({}))) as { slug?: string; deduped?: boolean };
+      // A 200 means the server committed the page (it attaches to learnings
+      // before responding), so the outcome is authoritative even if the body
+      // is unreadable — but warn rather than silently print "(ok)".
+      const data = (await res.json().catch((e) => {
+        console.warn(`200 from ${agentId} but body unparseable (${label}): ${e}`);
+        return {};
+      })) as { slug?: string; deduped?: boolean };
       console.log(`✓ ${agentId}: ${label} → ${data.slug ?? "(ok)"}${data.deduped ? " (deduped)" : ""}`);
-      return true;
+      return "ingested";
     }
     if (res.status === 404) {
       console.log(`· ${agentId} is not a yopedia user — skipped (${label})`);
-      return null;
+      return "not-a-user";
     }
     if (res.status === 401 || res.status === 403) {
       throw new Error(`service token rejected (${res.status}) — check YOPEDIA_SERVICE_TOKEN`);
     }
-    console.warn(`! ${agentId}: ingest failed (${res.status}) (${label})`);
-    return false;
+    if (res.status >= 500 || res.status === 429) {
+      // Transient — retry next run. Counting as `failed` holds the cursor.
+      console.warn(`! ${agentId}: ingest transient failure (${res.status}) (${label}) — will retry`);
+      return "failed";
+    }
+    // Other 4xx (e.g. 400 bad body): permanent for this exact payload. Retrying
+    // is futile and would wedge the cursor forever, blocking all later mentions
+    // — so drop it loudly and let the cursor advance past it.
+    console.error(`✗ ${agentId}: ingest permanently rejected (${res.status}) (${label}) — dropping`);
+    return "dropped";
   }
 
   for (const mention of mentions) {
@@ -188,32 +212,48 @@ async function run(env: Env): Promise<Summary> {
 
     const agentId = `${slug(handle)}--yoyo`;
     for (const job of jobs) {
-      const ok = await ingestInto(agentId, job.body, job.label);
-      if (ok === true) ingested++;
-      else if (ok === null) {
+      const outcome = await ingestInto(agentId, job.body, job.label);
+      if (outcome === "ingested") ingested++;
+      else if (outcome === "not-a-user") {
         skipped++;
         break; // not a user → skip this handle's remaining jobs
-      } else failed++;
+      } else if (outcome === "dropped") dropped++;
+      else failed++;
     }
   }
 
-  console.log(`Done: ${ingested} ingested, ${skipped} skipped, ${failed} failed (from ${mentions.length} mentions).`);
+  console.log(
+    `Done: ${ingested} ingested, ${skipped} skipped, ${dropped} dropped, ${failed} failed (from ${mentions.length} mentions).`,
+  );
 
-  // Advance the cursor only on a clean run — a failed ingest must be retried.
+  // Advance the cursor only when nothing is left to retry. `failed` (transient)
+  // holds the cursor so the run retries; `dropped` (permanent) does not, so a
+  // poison job can't wedge the loop and block later mentions forever.
   if (failed === 0 && payload.meta?.newest_id) {
     await env.CURSOR.put(CURSOR_KEY, payload.meta.newest_id);
   }
 
-  return { ingested, skipped, failed, mentions: mentions.length };
+  return { ingested, skipped, dropped, failed, mentions: mentions.length };
 }
 
 export default {
   // Cron Trigger (every 10 min).
   async scheduled(_event: unknown, env: Env): Promise<void> {
-    await run(env);
+    const s = await run(env);
+    // Fail the invocation loudly if every attempt failed and nothing landed —
+    // a dead loop (outage / wrong URL) must not report success run after run.
+    // Mirrors the old GitHub Actions `exit 1` guard. `dropped` is excluded: a
+    // permanently-rejected job is a known bad payload, not an outage.
+    if (s.ingested === 0 && s.failed > 0) {
+      throw new Error(
+        `All ${s.failed} transient ingest attempt(s) failed and nothing was ingested — likely an outage or wrong YOPEDIA_URL.`,
+      );
+    }
   },
 
-  // Manual trigger for testing — gated by the system token.
+  // Manual trigger for testing — gated by the system token. The regex requires
+  // a non-empty bearer, so an unconfigured YOPEDIA_SERVICE_TOKEN (undefined)
+  // rejects every request rather than auth-bypassing.
   async fetch(req: Request, env: Env): Promise<Response> {
     const bearer = req.headers.get("authorization")?.match(/^Bearer\s+(.+)$/i)?.[1];
     if (!bearer || bearer !== env.YOPEDIA_SERVICE_TOKEN) {
