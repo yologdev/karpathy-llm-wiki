@@ -117,3 +117,31 @@ describe("appendSourceImages (via ingest, LLM path)", () => {
     expect(page!.content).toContain("![a chart](assets/doc/chart.png)");
   });
 });
+
+describe("source provenance — text-paste supersession", () => {
+  it("a real source URL replaces a prior text-paste placeholder of the same type", async () => {
+    mockedHasLLMKey.mockReturnValue(true);
+    mockedCallLLM.mockResolvedValue("# X\n\n## Summary\n\nv1.");
+    // First ingest with no URL → an x-mention source with a "text-paste" placeholder.
+    await ingest("Recur Src", "version one content here", {
+      sourceType: "x-mention",
+      author: "a",
+      owner: "a",
+    });
+
+    mockedCallLLM.mockResolvedValue("# X\n\n## Summary\n\nv2.");
+    // Re-ingest (changed content) now WITH the real article URL.
+    const r = await ingest("Recur Src", "version two content, changed", {
+      sourceType: "x-mention",
+      sourceUrl: "https://x.com/i/status/123",
+      author: "a",
+      owner: "a",
+    });
+
+    const page = await readWikiPageWithFrontmatter(r.primarySlug);
+    const sources = parseSources(page!.frontmatter.sources as string);
+    // The stale text-paste is gone; only the real URL remains.
+    expect(sources).toHaveLength(1);
+    expect(sources[0]).toMatchObject({ type: "x-mention", url: "https://x.com/i/status/123" });
+  });
+});

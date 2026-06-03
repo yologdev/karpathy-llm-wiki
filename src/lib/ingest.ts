@@ -10,12 +10,32 @@ import {
 import { callLLM, hasLLMKey } from "./llm";
 import { fetchUrlContent, downloadImages, storeImageAsset, storeImageBytes } from "./fetch";
 import { describeImage } from "./vision";
-import type { IngestResult } from "./types";
+import type { IngestResult, SourceEntry } from "./types";
 import {
   serializeSources,
   parseSources,
   buildSourceEntry,
 } from "./sources";
+
+/**
+ * Merge a provenance entry into a sources list. A real source URL supersedes a
+ * stale `"text-paste"` placeholder of the same type (the placeholder just means
+ * "no URL was known"), so once a real URL arrives the placeholder is dropped.
+ * Updates an existing match in place; otherwise appends.
+ */
+function mergeSourceEntry(sources: SourceEntry[], entry: SourceEntry): SourceEntry[] {
+  const base =
+    entry.url !== "text-paste"
+      ? sources.filter((s) => !(s.type === entry.type && s.url === "text-paste"))
+      : sources;
+  const idx = base.findIndex((s) => s.url === entry.url && s.type === entry.type);
+  if (idx >= 0) {
+    base[idx] = { ...base[idx], fetched: entry.fetched, triggered_by: entry.triggered_by };
+  } else {
+    base.push(entry);
+  }
+  return base;
+}
 import {
   MAX_LLM_INPUT_CHARS,
   INGEST_MAX_OUTPUT_TOKENS,
@@ -613,20 +633,9 @@ async function attachIngestTrigger(
         ? existingSourcesRaw
         : undefined,
   );
-  const matchIdx = sources.findIndex(
-    (s) => s.url === entry.url && s.type === entry.type,
-  );
-  if (matchIdx >= 0) {
-    sources[matchIdx] = {
-      ...sources[matchIdx],
-      fetched: entry.fetched,
-      triggered_by: entry.triggered_by,
-    };
-  } else {
-    sources.push(entry);
-  }
-  frontmatter.sources = serializeSources(sources);
-  frontmatter.source_count = String(sources.length);
+  const merged = mergeSourceEntry(sources, entry);
+  frontmatter.sources = serializeSources(merged);
+  frontmatter.source_count = String(merged.length);
 
   // Record the triggerer as a contributor (deduped) — drives the "Mine" lens.
   const triggeredBy = source.triggeredBy?.trim();
@@ -896,17 +905,9 @@ export async function ingest(
           ? existingSourcesRaw
           : undefined,
     );
-    // If the new source URL already has an entry, update its fetched date.
-    // Otherwise append the new entry.
-    const matchIdx = existingSources.findIndex(
-      (s) => s.url === sourceEntry.url && s.type === sourceEntry.type,
-    );
-    if (matchIdx >= 0) {
-      existingSources[matchIdx] = { ...existingSources[matchIdx], fetched: sourceEntry.fetched };
-    } else {
-      existingSources.push(sourceEntry);
-    }
-    frontmatter.sources = serializeSources(existingSources);
+    // Merge the new entry, superseding a stale "text-paste" placeholder.
+    // (source_count is the ingest counter, set above — not the array length.)
+    frontmatter.sources = serializeSources(mergeSourceEntry(existingSources, sourceEntry));
 
     // --- Phase 1 fields: preserve on re-ingest ---
     // Preserve authors from existing page (don't reset).

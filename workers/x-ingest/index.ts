@@ -166,7 +166,7 @@ function searchUrl(query: string, bound: string): string {
   return (
     `https://api.twitter.com/2/tweets/search/recent?query=${encodeURIComponent(query)}` +
     `&max_results=100${bound}` +
-    `&expansions=referenced_tweets.id,author_id,attachments.media_keys` +
+    `&expansions=referenced_tweets.id,author_id,referenced_tweets.id.author_id,attachments.media_keys` +
     `&tweet.fields=entities,author_id,referenced_tweets,article,attachments,created_at` +
     `&media.fields=url,preview_image_url,type,alt_text` +
     `&user.fields=username`
