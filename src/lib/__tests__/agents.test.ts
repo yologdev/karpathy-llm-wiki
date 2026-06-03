@@ -1211,3 +1211,41 @@ describe("resolveAgentPages", () => {
     expect(resolved.learningPages).toEqual(["alice-own-learning", "yoyo-learnings"]);
   });
 });
+
+describe("agent page interlinking", () => {
+  it("links sibling pages into a connected cluster (star, hub = first section)", async () => {
+    await seedAgent({
+      id: "yoyo",
+      name: "Yoyo",
+      description: "Base",
+      owner: "yopedia",
+      sections: [
+        { type: "identity", slug: "yoyo-identity", title: "yoyo — Identity", content: "id" },
+        { type: "learnings", slug: "yoyo-learnings", title: "yoyo — Learnings", content: "l" },
+        { type: "social", slug: "yoyo-social", title: "yoyo — Social", content: "s" },
+      ],
+    });
+
+    // Graph edges come from [text](slug.md) links. The hub links to each sibling…
+    const hub = await readWikiPage("yoyo-identity");
+    expect(hub!.content).toContain("](yoyo-learnings.md)");
+    expect(hub!.content).toContain("](yoyo-social.md)");
+
+    // …and each spoke links back to the hub (only).
+    const spoke = await readWikiPage("yoyo-learnings");
+    expect(spoke!.content).toContain("](yoyo-identity.md)");
+    expect(spoke!.content).not.toContain("](yoyo-social.md)");
+  });
+
+  it("adds no Related block for a single-section agent", async () => {
+    await seedAgent({
+      id: "solo",
+      name: "Solo",
+      description: "d",
+      owner: "yopedia",
+      sections: [{ type: "identity", slug: "solo-id", title: "Solo", content: "x" }],
+    });
+    const p = await readWikiPage("solo-id");
+    expect(p!.content).not.toContain("## Related");
+  });
+});

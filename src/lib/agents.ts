@@ -120,6 +120,27 @@ export function agentShortName(agent: AgentProfile): string {
   return agent.id.startsWith(prefix) ? agent.id.slice(prefix.length) : agent.id;
 }
 
+/**
+ * Build a "## Related" markdown block that links an agent section page to its
+ * siblings, so the agent's pages form a connected cluster in the wiki graph
+ * (graph edges come from `[text](slug.md)` links). Star topology: the hub (the
+ * first section) links to every other page, and every other page links back to
+ * the hub. Returns "" when there are no siblings to link.
+ */
+function relatedSectionLinks(
+  currentSlug: string,
+  hubSlug: string,
+  sections: SeedAgentSection[],
+): string {
+  const isHub = currentSlug === hubSlug;
+  const targets = sections.filter((s) =>
+    isHub ? s.slug !== hubSlug : s.slug === hubSlug && s.slug !== currentSlug,
+  );
+  if (targets.length === 0) return "";
+  const items = targets.map((s) => `- [${s.title}](${s.slug}.md)`).join("\n");
+  return `\n\n## Related\n\n${items}`;
+}
+
 // ---------------------------------------------------------------------------
 // Ownership
 // ---------------------------------------------------------------------------
@@ -532,6 +553,9 @@ export async function seedAgent(options: SeedAgentOptions): Promise<AgentProfile
   const learningPages: string[] = [];
   const socialPages: string[] = [];
 
+  // Hub for interlinking the agent's pages into one connected graph cluster.
+  const hubSlug = options.sections[0]?.slug ?? "";
+
   for (const section of options.sections) {
     // Build frontmatter for this page
     const frontmatter: Record<string, string | string[] | number | boolean> = {
@@ -562,8 +586,11 @@ export async function seedAgent(options: SeedAgentOptions): Promise<AgentProfile
       frontmatter.contributors = [options.id];
     }
 
-    // Assemble the full markdown: frontmatter + H1 title + content body
-    const bodyWithTitle = `# ${section.title}\n\n${section.content}`;
+    // Assemble the full markdown: frontmatter + H1 title + content body, plus a
+    // "Related" block linking sibling pages so the agent forms a connected
+    // cluster in the graph.
+    const related = relatedSectionLinks(section.slug, hubSlug, options.sections);
+    const bodyWithTitle = `# ${section.title}\n\n${section.content}${related}`;
     const fullContent = serializeFrontmatter(frontmatter, bodyWithTitle);
 
     // Extract a summary (first non-empty line of content, trimmed)
