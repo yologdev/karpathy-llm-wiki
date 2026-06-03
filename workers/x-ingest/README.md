@@ -14,12 +14,16 @@ What it does each run:
   (`tweet.fields=article`) and/or its **external links** — into **that user's own
   yopedia content** (a normal page owned/authored by them, in their `/u/<handle>`
   + the public commons), via `POST /api/agents/<handle>--yoyo/ingest` with the
-  system token and **`asOwner: true`**, dispatched through a **service binding**
-  to the yopedia Worker (`env.YOPEDIA.fetch`) — a plain `fetch()` to its
-  `workers.dev` URL is short-circuited at the edge for same-account Worker→Worker
-  calls (a cached 404 that never reaches origin). The `@yoyoevolve` mention is the
-  "save this to my wiki" command channel — it is **not** written to the agent's
-  scoped knowledge, and plain tweet text is never ingested.
+  system token and **`asOwner: true`**. The `@yoyoevolve` mention is the "save
+  this to my wiki" command channel — it is **not** written to the agent's scoped
+  knowledge, and plain tweet text is never ingested.
+
+> **Same-zone fetch note:** the ingest call targets the main yopedia Worker on
+> the same account (`yopedia.<sub>.workers.dev`). A plain Worker→Worker `fetch()`
+> on the same zone is blocked by Cloudflare (**error 1042**), so this Worker sets
+> the **`global_fetch_strictly_public`** compatibility flag, which makes `fetch()`
+> resolve as a normal public request. (A service binding is the alternative, but
+> it still 1042s when called with the real same-zone hostname as the URL.)
 - Tracks a **`since_id` cursor in KV** (near-zero overlap); first run / missing /
   stale cursor falls back to a 48h window. The cursor advances only on a clean
   run, so a failed ingest is retried.

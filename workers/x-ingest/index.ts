@@ -20,16 +20,8 @@ interface KVNamespace {
   put(key: string, value: string): Promise<void>;
   delete(key: string): Promise<void>;
 }
-/** A service-binding Fetcher (the bound Worker), invoked instead of HTTP. */
-interface Fetcher {
-  fetch(input: string | Request, init?: RequestInit): Promise<Response>;
-}
 interface Env {
   CURSOR: KVNamespace;
-  // Service binding to the main yopedia Worker (see wrangler.jsonc). Routes
-  // subrequests directly to it, bypassing the workers.dev edge that otherwise
-  // short-circuits same-account Worker→Worker fetches with a cached 404.
-  YOPEDIA?: Fetcher;
   X_BEARER_TOKEN?: string;
   YOPEDIA_SERVICE_TOKEN?: string;
   YOPEDIA_URL?: string;
@@ -180,12 +172,10 @@ async function run(env: Env): Promise<Summary> {
       headers: { Authorization: `Bearer ${SERVICE}`, "Content-Type": "application/json" },
       body: JSON.stringify({ ...body, asOwner: true }),
     };
-    // Prefer the service binding (direct Worker→Worker dispatch). Fall back to
-    // plain HTTP only if the binding is absent (e.g. local dev) — note that the
-    // HTTP path is unreliable on the same account's workers.dev (cached 404).
-    const res = env.YOPEDIA
-      ? await env.YOPEDIA.fetch(target, init)
-      : await fetch(target, init);
+    // Plain public fetch to the yopedia Worker. The worker sets the
+    // `global_fetch_strictly_public` compat flag so this same-zone request
+    // resolves as a normal public request instead of being blocked (error 1042).
+    const res = await fetch(target, init);
     if (res.status === 200) {
       // A 200 means the server committed the page, so the outcome is
       // authoritative even if the body is unreadable — but warn rather than
@@ -197,22 +187,25 @@ async function run(env: Env): Promise<Summary> {
       console.log(`✓ ${agentId} (owner content): ${label} → ${data.slug ?? "(ok)"}${data.deduped ? " (deduped)" : ""}`);
       return "ingested";
     }
+    // Non-200: capture a short body snippet for context (it surfaces both the
+    // route's JSON error and any Cloudflare edge error like 1042).
+    const errBody = (await res.text().catch(() => "")).slice(0, 200).replace(/\s+/g, " ");
     if (res.status === 404) {
       console.log(`· ${agentId} is not a yopedia user — skipped (${label})`);
       return "not-a-user";
     }
     if (res.status === 401 || res.status === 403) {
-      throw new Error(`service token rejected (${res.status}) — check YOPEDIA_SERVICE_TOKEN`);
+      throw new Error(`service token rejected (${res.status}: ${errBody}) — check YOPEDIA_SERVICE_TOKEN`);
     }
     if (res.status >= 500 || res.status === 429) {
       // Transient — retry next run. Counting as `failed` holds the cursor.
-      console.warn(`! ${agentId}: ingest transient failure (${res.status}) (${label}) — will retry`);
+      console.warn(`! ${agentId}: ingest transient failure (${res.status}: ${errBody}) (${label}) — will retry`);
       return "failed";
     }
     // Other 4xx (e.g. 400 bad body): permanent for this exact payload. Retrying
     // is futile and would wedge the cursor forever, blocking all later mentions
     // — so drop it loudly and let the cursor advance past it.
-    console.error(`✗ ${agentId}: ingest permanently rejected (${res.status}) (${label}) — dropping`);
+    console.error(`✗ ${agentId}: ingest permanently rejected (${res.status}: ${errBody}) (${label}) — dropping`);
     return "dropped";
   }
 
