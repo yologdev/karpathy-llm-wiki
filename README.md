@@ -272,9 +272,9 @@ This is closer to planting a seed than managing a developer.
 ```
 yopedia/
 ├── llm-wiki.md                    # The founding prompt (immutable)
-├── yopedia-concept.md             # The north star — where we're going (immutable)
+├── yopedia-concept.md             # The single concept doc — living, marks now vs future
 ├── SCHEMA.md                      # Wiki conventions and operations (LLM-readable)
-├── YOYO.md                        # Project context + phased roadmap
+├── YOYO.md                        # yoyo's operating manual + roadmap pointer
 ├── .github/workflows/
 │   ├── pm.yml                     # Daily 6am — file issues
 │   ├── office-hour.yml            # Daily 7am + on issue open — triage
