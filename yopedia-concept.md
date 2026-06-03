@@ -113,8 +113,11 @@ with yoyo as the first agent.
   `PERSONALITY.md`, `ECONOMICS.md`, and `memory/active_*_learnings.md` (assembled the
   same way as `yoyo-evolve/scripts/yoyo_context.sh`). There is **no separate shared
   yoyo** — the base identity is just the starting point each user's yoyo is seeded from.
-- **Agent ownership.** Each agent is owned by a user. **You can only feed/edit your own
-  agent.** *(Future: a user can have multiple, named yoyos.)*
+- **Agent ownership (live).** Each agent has an **`owner`** (the seeding principal,
+  set from the session — never client input). **You can only feed/edit/delete your own
+  agent**; everyone else is read-only against it. The first seed claims ownership and it
+  never transfers, so a single shared yoyo can be **seeded once and reused by all users**.
+  *(Future: a user can have multiple, named yoyos.)*
 - **"Feed" = grant read-access, not copy.** An agent's task context = its **own
   ingested pages** + the **owner's pages they chose to share**. No duplication, no
   divergence.
@@ -122,14 +125,17 @@ with yoyo as the first agent.
   tasks.
 - **Agent content is scoped.** It's browsable only **under the agent profile**, not in
   the general "All" feed, and it isn't merged into the user's main content list.
-- **Profiles & graph.** A user profile shows their agent(s); an agent profile shows its
-  user; a graph can show user-content ↔ agent-content links. URL: **`/u/<handle>/a/yoyo`**.
+- **Profiles (live).** A user profile lists the agents they own; an agent profile at
+  **`/u/<handle>/a/<agent>`** shows its identity/learnings/social pages and cross-links
+  back to its owner. *(A user-content ↔ agent-content graph is future.)*
 - **Today:** all agent content is **public-readable** (private is future).
 
 *Built so far:* the `AgentProfile` registry (`agents/<id>.json`, seed/list/get/update),
-`agent:<id>` scoped search, and the agent-context endpoint. *Pending:* per-user
-provisioning from the base template, an agent `owner` field, feed-as-grant, scoped
-agent-content visibility, and the nested `/u/<handle>/a/<agent>` profile.
+`agent:<id>` scoped search, the agent-context endpoint, the agent **`owner`** field with
+owner-only mutation enforcement, and the nested **`/u/<handle>/a/<agent>`** profile with
+user↔agent cross-links. *Pending:* per-user provisioning from the base template,
+feed-as-grant, scoped agent-content visibility (keeping agent pages out of the "All"
+feed), the user↔agent graph, and multiple named yoyos per user.
 
 ---
 
