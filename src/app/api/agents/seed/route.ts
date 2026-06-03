@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { seedAgent } from "@/lib/agents";
+import { seedAgent, assertCanMutateAgent, AgentOwnershipError } from "@/lib/agents";
+import { getPrincipal } from "@/lib/auth";
 import { getErrorMessage } from "@/lib/errors";
 
 const VALID_SECTION_TYPES = new Set(["identity", "learnings", "social"]);
@@ -9,13 +10,25 @@ const VALID_SECTION_TYPES = new Set(["identity", "learnings", "social"]);
  *
  * Seed an agent by creating wiki pages for each content section and registering
  * the agent profile. Idempotent — re-seeding an existing agent updates its
- * pages (seedAgent preserves original registration date).
+ * pages (seedAgent preserves original registration date and owner).
+ *
+ * The first seed claims ownership (`owner` = the session principal); only that
+ * owner may re-seed. Anyone signed in can seed a brand-new agent id.
  *
  * Body: { id, name, description, sections: [{ slug, title, type, content }] }
  * Returns 201 with { agent: AgentProfile } on success.
  */
 export async function POST(req: Request) {
   try {
+    // Writes are gated by middleware, but resolve the principal for ownership.
+    const principal = await getPrincipal();
+    if (!principal) {
+      return NextResponse.json(
+        { error: "Sign in required to seed an agent." },
+        { status: 401 },
+      );
+    }
+
     const body = await req.json();
 
     // --- Validate top-level fields ---
@@ -83,11 +96,23 @@ export async function POST(req: Request) {
       }
     }
 
-    // --- Call seedAgent ---
-    const profile = await seedAgent({ id, name, description, sections });
+    // --- Ownership: only the owner may re-seed an existing agent ---
+    await assertCanMutateAgent(id, principal.handle);
+
+    // --- Call seedAgent (owner from session, never from the body) ---
+    const profile = await seedAgent({
+      id,
+      name,
+      description,
+      owner: principal.handle,
+      sections,
+    });
 
     return NextResponse.json({ agent: profile }, { status: 201 });
   } catch (err) {
+    if (err instanceof AgentOwnershipError) {
+      return NextResponse.json({ error: err.message }, { status: 403 });
+    }
     const message = getErrorMessage(err);
     // Surface validation errors from the lib layer as 400s
     if (

@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { listWikiPages } from "@/lib/wiki";
 import { slugsForOwner } from "@/lib/search";
+import { listAgentsForOwner } from "@/lib/agents";
 import { getDiscussionStatsForSlugs } from "@/lib/talk";
 import { decodeSlug } from "@/lib/slugify";
 import { WikiIndexClient } from "@/components/WikiIndexClient";
@@ -17,6 +18,7 @@ export default async function UserPage({
 
   const mine = new Set(await slugsForOwner(handle));
   const pages = (await listWikiPages()).filter((p) => mine.has(p.slug));
+  const agents = await listAgentsForOwner(handle);
 
   const statsMap = await getDiscussionStatsForSlugs(pages.map((p) => p.slug));
   const discussionStats: Record<string, { total: number; open: number }> = {};
@@ -33,6 +35,31 @@ export default async function UserPage({
           Public pages owned or contributed by {handle}.
         </p>
       </div>
+
+      {agents.length > 0 && (
+        <section className="mb-8">
+          <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-foreground/50">
+            Agents
+          </h2>
+          <ul className="space-y-2">
+            {agents.map((agent) => (
+              <li key={agent.id}>
+                <Link
+                  href={`/u/${handle}/a/${agent.id}`}
+                  className="group block rounded-lg border border-foreground/10 p-3 hover:border-foreground/30"
+                >
+                  <span className="font-medium group-hover:underline">
+                    {agent.name}
+                  </span>
+                  <span className="mt-0.5 block text-sm text-foreground/60">
+                    {agent.description}
+                  </span>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       {pages.length === 0 ? (
         <p className="text-foreground/60">No pages yet.</p>

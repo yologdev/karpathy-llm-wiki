@@ -1,0 +1,93 @@
+import Link from "next/link";
+import { notFound } from "next/navigation";
+import { getAgent } from "@/lib/agents";
+import { listWikiPages } from "@/lib/wiki";
+import { decodeSlug } from "@/lib/slugify";
+import type { AgentProfile } from "@/lib/types";
+
+// Public agent profile, scoped under its owner's handle:
+//   /u/<handle>/a/<agent>
+// Shows the agent's identity / learnings / social pages and cross-links back to
+// the owning user. Reads are public — yopedia is a public observer surface.
+export default async function AgentProfilePage({
+  params,
+}: {
+  params: Promise<{ handle: string; agent: string }>;
+}) {
+  const { handle: encodedHandle, agent: encodedAgent } = await params;
+  const handle = decodeSlug(encodedHandle);
+  const agentId = decodeSlug(encodedAgent);
+
+  const agent = await getAgent(agentId).catch(() => null);
+  if (!agent) notFound();
+
+  // Resolve slug -> title from the index for nicer links (fall back to slug).
+  const index = await listWikiPages();
+  const titleFor = new Map(index.map((p) => [p.slug, p.title]));
+
+  const sections: { label: string; slugs: string[] }[] = [
+    { label: "Identity", slugs: agent.identityPages ?? [] },
+    { label: "Learnings", slugs: agent.learningPages ?? [] },
+    { label: "Social wisdom", slugs: agent.socialPages ?? [] },
+  ];
+  const totalPages = sections.reduce((n, s) => n + s.slugs.length, 0);
+
+  return (
+    <main className="mx-auto max-w-3xl px-6 py-12">
+      <div className="mb-6">
+        <Link
+          href={`/u/${handle}`}
+          className="text-sm text-foreground/50 hover:text-foreground"
+        >
+          ← @{handle}
+        </Link>
+        <h1 className="mt-2 text-3xl font-bold tracking-tight">{agent.name}</h1>
+        <p className="mt-1 text-foreground/60">{agent.description}</p>
+        <AgentMeta agent={agent} />
+      </div>
+
+      {totalPages === 0 ? (
+        <p className="text-foreground/60">
+          This agent has no knowledge pages yet.
+        </p>
+      ) : (
+        <div className="space-y-8">
+          {sections.map((section) =>
+            section.slugs.length === 0 ? null : (
+              <section key={section.label}>
+                <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-foreground/50">
+                  {section.label}
+                </h2>
+                <ul className="space-y-1">
+                  {section.slugs.map((slug) => (
+                    <li key={slug}>
+                      <Link
+                        href={`/wiki/${slug}`}
+                        className="text-foreground hover:underline"
+                      >
+                        {titleFor.get(slug) ?? slug}
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            ),
+          )}
+        </div>
+      )}
+    </main>
+  );
+}
+
+/** Owner cross-link under the agent header. */
+function AgentMeta({ agent }: { agent: AgentProfile }) {
+  if (!agent.owner) return null;
+  return (
+    <p className="mt-3 text-sm text-foreground/50">
+      owned by{" "}
+      <Link href={`/u/${agent.owner}`} className="hover:text-foreground">
+        @{agent.owner}
+      </Link>
+    </p>
+  );
+}

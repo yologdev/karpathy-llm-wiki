@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { listAgents, registerAgent, getAgent } from "@/lib/agents";
+import { getPrincipal } from "@/lib/auth";
 import { getErrorMessage } from "@/lib/errors";
 import type { AgentProfile } from "@/lib/types";
 
@@ -21,12 +22,22 @@ export async function GET() {
 /**
  * POST /api/agents
  *
- * Register a new agent. Body must include: id, name, description.
+ * Register a new agent. Body must include: id, name, description. The creating
+ * principal becomes the `owner`; only they may later update/delete it.
  * Returns 201 on success, 400 for invalid input, 409 if the agent already
- * exists (use PUT on /api/agents/[id] to update — not yet implemented).
+ * exists (use PUT on /api/agents/[id] to update).
  */
 export async function POST(req: Request) {
   try {
+    // Writes are gated by middleware; resolve the principal to claim ownership.
+    const principal = await getPrincipal();
+    if (!principal) {
+      return NextResponse.json(
+        { error: "Sign in required to register an agent." },
+        { status: 401 },
+      );
+    }
+
     const body = await req.json();
 
     // Basic presence checks before calling into the lib layer
@@ -64,6 +75,7 @@ export async function POST(req: Request) {
       id,
       name,
       description,
+      owner: principal.handle,
       identityPages: Array.isArray(body.identityPages) ? body.identityPages : [],
       learningPages: Array.isArray(body.learningPages) ? body.learningPages : [],
       socialPages: Array.isArray(body.socialPages) ? body.socialPages : [],

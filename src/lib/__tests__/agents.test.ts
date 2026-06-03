@@ -6,11 +6,14 @@ import {
   getAgentsDir,
   ensureAgentsDir,
   listAgents,
+  listAgentsForOwner,
   getAgent,
   registerAgent,
   deleteAgent,
   seedAgent,
   updateAgent,
+  assertCanMutateAgent,
+  AgentOwnershipError,
 } from "../agents";
 import type { UpdateAgentPage } from "../agents";
 import { readWikiPage, readWikiPageWithFrontmatter } from "../wiki";
@@ -895,5 +898,113 @@ describe("updateAgent", () => {
     expect(new Date(result!.lastUpdated).getTime()).toBeGreaterThan(
       new Date("2020-01-01T00:00:00.000Z").getTime(),
     );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Ownership — owner field, assertCanMutateAgent, listAgentsForOwner
+// ---------------------------------------------------------------------------
+
+describe("agent ownership", () => {
+  const sections = [
+    {
+      type: "identity" as const,
+      slug: "yoyo-identity",
+      title: "Yoyo Identity",
+      content: "I am yoyo.",
+    },
+  ];
+
+  it("seedAgent persists the owner", async () => {
+    const profile = await seedAgent({
+      id: "yoyo",
+      name: "Yoyo",
+      description: "An agent",
+      owner: "alice",
+      sections,
+    });
+    expect(profile.owner).toBe("alice");
+    expect((await getAgent("yoyo"))!.owner).toBe("alice");
+  });
+
+  it("re-seed preserves the original owner (ownership never transfers)", async () => {
+    await seedAgent({
+      id: "yoyo",
+      name: "Yoyo",
+      description: "An agent",
+      owner: "alice",
+      sections,
+    });
+    // A second seed claiming a different owner must NOT take over.
+    const reseeded = await seedAgent({
+      id: "yoyo",
+      name: "Yoyo v2",
+      description: "An agent, updated",
+      owner: "bob",
+      sections,
+    });
+    expect(reseeded.owner).toBe("alice");
+    expect((await getAgent("yoyo"))!.owner).toBe("alice");
+  });
+
+  describe("assertCanMutateAgent", () => {
+    it("allows creation when the agent does not exist yet", async () => {
+      await expect(assertCanMutateAgent("yoyo", "alice")).resolves.toBeNull();
+    });
+
+    it("allows the owner to mutate their agent", async () => {
+      await seedAgent({
+        id: "yoyo",
+        name: "Yoyo",
+        description: "An agent",
+        owner: "alice",
+        sections,
+      });
+      const existing = await assertCanMutateAgent("yoyo", "alice");
+      expect(existing!.owner).toBe("alice");
+    });
+
+    it("rejects a non-owner with AgentOwnershipError", async () => {
+      await seedAgent({
+        id: "yoyo",
+        name: "Yoyo",
+        description: "An agent",
+        owner: "alice",
+        sections,
+      });
+      await expect(assertCanMutateAgent("yoyo", "bob")).rejects.toBeInstanceOf(
+        AgentOwnershipError,
+      );
+    });
+
+    it("allows mutation of a legacy agent with no owner", async () => {
+      // Pre-ownership record written directly (no owner field).
+      await registerAgent(makeProfile({ id: "legacy" }));
+      await expect(
+        assertCanMutateAgent("legacy", "anyone"),
+      ).resolves.not.toBeNull();
+    });
+  });
+
+  describe("listAgentsForOwner", () => {
+    it("returns only the agents owned by the handle", async () => {
+      await seedAgent({
+        id: "yoyo",
+        name: "Yoyo",
+        description: "Alice's agent",
+        owner: "alice",
+        sections,
+      });
+      await seedAgent({
+        id: "bobbot",
+        name: "BobBot",
+        description: "Bob's agent",
+        owner: "bob",
+        sections: [{ ...sections[0], slug: "bobbot-identity" }],
+      });
+      const aliceAgents = await listAgentsForOwner("alice");
+      expect(aliceAgents.map((a) => a.id)).toEqual(["yoyo"]);
+      expect(await listAgentsForOwner("carol")).toEqual([]);
+    });
   });
 });

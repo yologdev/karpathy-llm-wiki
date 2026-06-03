@@ -2,17 +2,36 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { NextRequest } from "next/server";
 
 // ---------------------------------------------------------------------------
-// Mock the agents library — we only test the route's validation and wiring
+// Mock the agents library — we only test the route's validation and wiring.
+// AgentOwnershipError is a real class so the route's `instanceof` check works.
 // ---------------------------------------------------------------------------
-vi.mock("@/lib/agents", () => ({
-  seedAgent: vi.fn(),
+vi.mock("@/lib/agents", () => {
+  class AgentOwnershipError extends Error {
+    constructor(message: string) {
+      super(message);
+      this.name = "AgentOwnershipError";
+    }
+  }
+  return {
+    seedAgent: vi.fn(),
+    assertCanMutateAgent: vi.fn(async () => null),
+    AgentOwnershipError,
+  };
+});
+
+// The route resolves the owner from the session principal.
+vi.mock("@/lib/auth", () => ({
+  getPrincipal: vi.fn(async () => ({ id: "test-user", handle: "test-user" })),
 }));
 
-import { seedAgent } from "@/lib/agents";
+import { seedAgent, assertCanMutateAgent, AgentOwnershipError } from "@/lib/agents";
+import { getPrincipal } from "@/lib/auth";
 import { POST } from "@/app/api/agents/seed/route";
 import type { AgentProfile } from "@/lib/types";
 
 const mockedSeedAgent = vi.mocked(seedAgent);
+const mockedAssertCanMutate = vi.mocked(assertCanMutateAgent);
+const mockedGetPrincipal = vi.mocked(getPrincipal);
 
 function makeRequest(body: unknown): NextRequest {
   return new NextRequest("http://localhost:3000/api/agents/seed", {
@@ -64,6 +83,10 @@ const fakeProfile: AgentProfile = {
 beforeEach(() => {
   mockedSeedAgent.mockReset();
   mockedSeedAgent.mockResolvedValue(fakeProfile);
+  mockedAssertCanMutate.mockReset();
+  mockedAssertCanMutate.mockResolvedValue(null);
+  mockedGetPrincipal.mockReset();
+  mockedGetPrincipal.mockResolvedValue({ id: "test-user", handle: "test-user" });
 });
 
 // ---------------------------------------------------------------------------
@@ -81,8 +104,41 @@ describe("POST /api/agents/seed", () => {
         id: "yoyo",
         name: "yoyo",
         description: "A self-evolving coding agent growing up in public",
+        owner: "test-user",
         sections: validBody().sections,
       });
+    });
+
+    it("derives owner from the session, ignoring any client-supplied owner", async () => {
+      const body = { ...validBody(), owner: "attacker" };
+      const res = await POST(makeRequest(body));
+      expect(res.status).toBe(201);
+      // Owner comes from the principal, never the body.
+      expect(mockedSeedAgent).toHaveBeenCalledWith(
+        expect.objectContaining({ owner: "test-user" }),
+      );
+    });
+  });
+
+  describe("auth & ownership", () => {
+    it("returns 401 when there is no signed-in principal", async () => {
+      mockedGetPrincipal.mockResolvedValue(null);
+      const res = await POST(makeRequest(validBody()));
+      expect(res.status).toBe(401);
+      expect(mockedSeedAgent).not.toHaveBeenCalled();
+    });
+
+    it("returns 403 when a non-owner tries to re-seed", async () => {
+      mockedAssertCanMutate.mockRejectedValue(
+        new AgentOwnershipError(
+          'Agent "yoyo" is owned by @alice; @test-user cannot modify it.',
+        ),
+      );
+      const res = await POST(makeRequest(validBody()));
+      expect(res.status).toBe(403);
+      const data = await res.json();
+      expect(data.error).toMatch(/owned by @alice/);
+      expect(mockedSeedAgent).not.toHaveBeenCalled();
     });
   });
 

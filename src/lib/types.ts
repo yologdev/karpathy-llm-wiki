@@ -177,6 +177,11 @@ export interface AgentProfile {
   name: string;
   /** Short description of who this agent is */
   description: string;
+  /** Accountable principal handle (the user who seeded/owns this agent).
+   *  Set from the authenticated session, never from client input. Only the
+   *  owner may re-seed, feed, update, or delete the agent. Optional for
+   *  back-compat with any pre-ownership agent records (treated as unowned). */
+  owner?: string;
   /** Wiki page slugs that form this agent's identity context */
   identityPages: string[];
   /** Wiki page slugs containing this agent's learnings */

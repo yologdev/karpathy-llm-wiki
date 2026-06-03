@@ -1,6 +1,13 @@
 import { NextResponse } from "next/server";
-import { getAgent, deleteAgent, updateAgent } from "@/lib/agents";
+import {
+  getAgent,
+  deleteAgent,
+  updateAgent,
+  assertCanMutateAgent,
+  AgentOwnershipError,
+} from "@/lib/agents";
 import type { UpdateAgentOptions } from "@/lib/agents";
+import { getPrincipal } from "@/lib/auth";
 import { getErrorMessage } from "@/lib/errors";
 
 interface RouteParams {
@@ -44,7 +51,8 @@ export async function GET(_req: Request, { params }: RouteParams) {
 /**
  * DELETE /api/agents/[id]
  *
- * Remove an agent profile. Returns 200 on success, 404 if not found.
+ * Remove an agent profile. Only the owner may delete it. Returns 200 on
+ * success, 403 if not the owner, 404 if not found.
  */
 export async function DELETE(_req: Request, { params }: RouteParams) {
   try {
@@ -57,16 +65,28 @@ export async function DELETE(_req: Request, { params }: RouteParams) {
       );
     }
 
-    const deleted = await deleteAgent(id);
-    if (!deleted) {
+    const principal = await getPrincipal();
+    if (!principal) {
+      return NextResponse.json(
+        { error: "Sign in required to delete an agent." },
+        { status: 401 },
+      );
+    }
+    // Owns-or-403; also resolves whether the agent exists at all.
+    const existing = await assertCanMutateAgent(id, principal.handle);
+    if (!existing) {
       return NextResponse.json(
         { error: `Agent "${id}" not found` },
         { status: 404 },
       );
     }
 
+    await deleteAgent(id);
     return NextResponse.json({ deleted: true });
   } catch (err) {
+    if (err instanceof AgentOwnershipError) {
+      return NextResponse.json({ error: err.message }, { status: 403 });
+    }
     const message = getErrorMessage(err);
     if (message.includes("Invalid agent ID")) {
       return NextResponse.json({ error: message }, { status: 400 });
@@ -84,7 +104,8 @@ export async function DELETE(_req: Request, { params }: RouteParams) {
  *   - `addPages?` — array of `{ slug, title, type, content }` to create and link
  *   - `removePages?` — array of slugs to unlink (does NOT delete wiki pages)
  *
- * Returns the updated profile. 404 if agent doesn't exist, 400 for validation.
+ * Only the owner may update (feed) the agent. Returns the updated profile.
+ * 403 if not the owner, 404 if agent doesn't exist, 400 for validation.
  */
 export async function PUT(req: Request, { params }: RouteParams) {
   try {
@@ -94,6 +115,14 @@ export async function PUT(req: Request, { params }: RouteParams) {
       return NextResponse.json(
         { error: "Agent ID must be a non-empty string" },
         { status: 400 },
+      );
+    }
+
+    const principal = await getPrincipal();
+    if (!principal) {
+      return NextResponse.json(
+        { error: "Sign in required to update an agent." },
+        { status: 401 },
       );
     }
 
@@ -114,6 +143,15 @@ export async function PUT(req: Request, { params }: RouteParams) {
       );
     }
 
+    // Owns-or-403; also resolves whether the agent exists (404 below).
+    const existing = await assertCanMutateAgent(id, principal.handle);
+    if (!existing) {
+      return NextResponse.json(
+        { error: `Agent "${id}" not found` },
+        { status: 404 },
+      );
+    }
+
     const updated = await updateAgent(id, body);
     if (!updated) {
       return NextResponse.json(
@@ -124,6 +162,9 @@ export async function PUT(req: Request, { params }: RouteParams) {
 
     return NextResponse.json({ agent: updated });
   } catch (err) {
+    if (err instanceof AgentOwnershipError) {
+      return NextResponse.json({ error: err.message }, { status: 403 });
+    }
     const message = getErrorMessage(err);
     if (
       message.includes("Invalid agent ID") ||
