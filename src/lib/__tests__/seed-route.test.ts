@@ -16,6 +16,7 @@ vi.mock("@/lib/agents", () => {
     seedAgent: vi.fn(),
     assertCanMutateAgent: vi.fn(async () => null),
     AgentOwnershipError,
+    publicAgent: (a: unknown) => a,
     // Mirrors the real composite-id helper (separate parts joined with "--").
     agentIdFor: (owner: string, name = "yoyo") => `${owner}--${name}`,
   };

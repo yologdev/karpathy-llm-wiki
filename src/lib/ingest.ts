@@ -461,11 +461,13 @@ export interface IngestOptions {
    */
   owner?: string;
   /**
-   * Optional page `type` frontmatter (e.g. "agent-knowledge"). When set, marks
-   * the page as agent-scoped so it is excluded from the public browse feed and
-   * general search, surfacing only via an `agent:` scope.
+   * Optional page `type` frontmatter. When set on a NEW page, marks it as
+   * agent-scoped so it is excluded from the public browse feed and general
+   * search, surfacing only via an `agent:` scope. A union (not open string) so
+   * a typo can't silently produce an unscoped page. Ignored on re-ingest of an
+   * existing page (its scope is preserved — see below).
    */
-  pageType?: string;
+  pageType?: "agent-knowledge" | "agent-identity";
 }
 
 /**
@@ -794,6 +796,14 @@ export async function ingest(
     // Preserve visibility (don't silently re-publish a private page).
     if (existing.frontmatter.visibility === "private") {
       frontmatter.visibility = "private";
+    }
+    // Don't change an existing page's scope on re-ingest: preserve its `type`
+    // (or lack of one), so an agent ingest can't flip a public page into
+    // agent-scope (out of the feed/search) by colliding on a slug.
+    if (typeof existing.frontmatter.type === "string") {
+      frontmatter.type = existing.frontmatter.type;
+    } else {
+      delete frontmatter.type;
     }
     // Append the acting identity to contributors if not already present.
     const existingContribs = Array.isArray(existing.frontmatter.contributors)

@@ -84,7 +84,7 @@ export async function POST(req: Request) {
     };
 
     await registerAgent(profile);
-    return NextResponse.json({ agent: profile }, { status: 201 });
+    return NextResponse.json({ agent: publicAgent(profile) }, { status: 201 });
   } catch (err) {
     const message = getErrorMessage(err);
     // Surface validation errors from the lib layer as 400s

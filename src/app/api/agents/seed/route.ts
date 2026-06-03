@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { seedAgent, assertCanMutateAgent, AgentOwnershipError, agentIdFor } from "@/lib/agents";
+import { seedAgent, assertCanMutateAgent, AgentOwnershipError, agentIdFor, publicAgent } from "@/lib/agents";
 import { getPrincipal, getServicePrincipal } from "@/lib/auth";
 import { getErrorMessage } from "@/lib/errors";
 
@@ -114,7 +114,7 @@ export async function POST(req: Request) {
       sections,
     });
 
-    return NextResponse.json({ agent: profile }, { status: 201 });
+    return NextResponse.json({ agent: publicAgent(profile) }, { status: 201 });
   } catch (err) {
     if (err instanceof AgentOwnershipError) {
       return NextResponse.json({ error: err.message }, { status: 403 });

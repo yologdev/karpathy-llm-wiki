@@ -28,6 +28,7 @@ import {
 import type { SearchScope } from "../search";
 import { registerAgent, ensureAgentsDir } from "../agents";
 import { serializeFrontmatter } from "../frontmatter";
+import { isAgentScopedType } from "../wiki";
 import type { AgentProfile } from "../types";
 import { _resetStorage } from "../storage";
 
@@ -70,6 +71,18 @@ afterEach(async () => {
 // ---------------------------------------------------------------------------
 // searchWikiContent
 // ---------------------------------------------------------------------------
+
+describe("isAgentScopedType", () => {
+  it("is true only for agent-* types", () => {
+    expect(isAgentScopedType("agent-knowledge")).toBe(true);
+    expect(isAgentScopedType("agent-identity")).toBe(true);
+    expect(isAgentScopedType(undefined)).toBe(false);
+    expect(isAgentScopedType("")).toBe(false);
+    expect(isAgentScopedType("prose")).toBe(false);
+    // "agent" must be a prefix, not just contained.
+    expect(isAgentScopedType("my-agent-notes")).toBe(false);
+  });
+});
 
 describe("searchWikiContent", () => {
   it("returns empty array for empty query", async () => {

@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 vi.mock("@/lib/agents", () => ({
   forkAgent: vi.fn(),
   baseAgentId: vi.fn(() => "yopedia-yoyo"),
+  publicAgent: (a: unknown) => a,
 }));
 
 vi.mock("@/lib/auth", () => ({

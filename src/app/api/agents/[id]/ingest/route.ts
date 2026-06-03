@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { verifyAgentToken, addAgentLearningPage } from "@/lib/agents";
-import { ingestUrl, ingest } from "@/lib/ingest";
+import { ingestUrl, ingest, type IngestOptions } from "@/lib/ingest";
 import { logger } from "@/lib/logger";
 
 interface RouteParams {
@@ -67,7 +67,7 @@ export async function POST(req: Request, { params }: RouteParams) {
     }
 
     // Ingest as the agent: scoped type, attributed to the agent.
-    const opts = {
+    const opts: IngestOptions = {
       author: id,
       owner: id,
       triggeredBy: id,

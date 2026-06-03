@@ -16,6 +16,7 @@ import { serializeFrontmatter } from "./frontmatter";
 import { slugify } from "./slugify";
 import { writeWikiPageWithSideEffects } from "./lifecycle";
 import { readWikiPageWithFrontmatter, listWikiPages, writeWikiPage } from "./wiki";
+import { logger } from "./logger";
 import type { AgentProfile } from "./types";
 
 // ---------------------------------------------------------------------------
@@ -280,7 +281,15 @@ export async function addAgentLearningPage(
   slug: string,
 ): Promise<void> {
   const agent = await getAgent(id);
-  if (!agent) return;
+  if (!agent) {
+    // The agent was just authenticated for this ingest, so a missing record
+    // here is an anomaly — the page was written but is now unattached.
+    logger.error(
+      "agents",
+      `addAgentLearningPage: agent "${id}" not found; page "${slug}" left unattached`,
+    );
+    return;
+  }
   if (!agent.learningPages.includes(slug)) {
     agent.learningPages = [...agent.learningPages, slug];
     agent.lastUpdated = new Date().toISOString();
@@ -313,8 +322,15 @@ export async function verifyAgentToken(token: string): Promise<string | null> {
   let agent: AgentProfile | null;
   try {
     agent = await getAgent(id);
-  } catch {
-    return null; // malformed id, etc.
+  } catch (err) {
+    // A malformed id is a bad token (→ null → 401). A storage failure is OUR
+    // problem — surface it (route → 500) rather than masking an outage as an
+    // invalid credential, which would make a valid token look revoked.
+    if (err instanceof Error && err.message.includes("Invalid agent ID")) {
+      return null;
+    }
+    logger.error("agents", "verifyAgentToken: agent lookup failed:", err);
+    throw err;
   }
   if (!agent?.tokenHash) return null;
 
@@ -835,6 +851,9 @@ export async function seedAgent(options: SeedAgentOptions): Promise<AgentProfile
   if (existingAgent) {
     profile.registered = existingAgent.registered;
     profile.owner = existingAgent.owner ?? options.owner;
+    // Preserve a previously-issued credential — a re-seed must not silently
+    // revoke the agent's token.
+    if (existingAgent.tokenHash) profile.tokenHash = existingAgent.tokenHash;
   }
 
   await registerAgent(profile);

@@ -201,6 +201,25 @@ describe("ingest", () => {
     expect(entries[0].summary).toBe("This is the content.");
   });
 
+  it("writes the pageType to frontmatter.type on a new page (agent-scoping)", async () => {
+    const result = await ingest("Agent Note", "Knowledge the agent learned.", {
+      pageType: "agent-knowledge",
+    });
+    const page = await readWikiPageWithFrontmatter(result.primarySlug);
+    expect(page!.frontmatter.type).toBe("agent-knowledge");
+  });
+
+  it("does not change an existing page's scope on re-ingest", async () => {
+    // A plain public page (no type)…
+    await ingest("Shared Topic", "Public content here.");
+    // …re-ingested with an agent pageType must NOT be flipped to agent-scope.
+    const result = await ingest("Shared Topic", "Public content, expanded.", {
+      pageType: "agent-knowledge",
+    });
+    const page = await readWikiPageWithFrontmatter(result.primarySlug);
+    expect(page!.frontmatter.type).toBeUndefined();
+  });
+
   it("updates existing entry on re-ingest instead of duplicating", async () => {
     // First ingest
     await ingest("My Topic", "Original content about the topic. More details.");

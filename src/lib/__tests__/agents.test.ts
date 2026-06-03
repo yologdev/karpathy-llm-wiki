@@ -1361,6 +1361,15 @@ describe("per-agent credentials", () => {
     expect(await verifyAgentToken("bob--yoyo.whatever")).toBeNull(); // no such agent
   });
 
+  it("rejects malformed/crafted tokens", async () => {
+    await seedAgentRecord();
+    await generateAgentToken("alice--yoyo");
+    expect(await verifyAgentToken("")).toBeNull(); // empty
+    expect(await verifyAgentToken(".secret")).toBeNull(); // empty agent id
+    expect(await verifyAgentToken("alice--yoyo.")).toBeNull(); // empty secret
+    expect(await verifyAgentToken("alice--yoyo")).toBeNull(); // no dot
+  });
+
   it("rotating invalidates the previous token", async () => {
     await seedAgentRecord();
     const first = await generateAgentToken("alice--yoyo");
