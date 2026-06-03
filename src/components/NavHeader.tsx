@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
   Show,
   SignInButton,
@@ -12,27 +12,35 @@ import {
 } from "@clerk/nextjs";
 import { GlobalSearch } from "./GlobalSearch";
 import { ThemeToggle } from "./ThemeToggle";
+import { isOwnerHandle } from "@/lib/owner";
 
-const navLinks = [
+// Primary actions — shown to everyone, always in the bar.
+const primaryLinks = [
   { href: "/wiki", label: "Browse" },
+  { href: "/query", label: "Ask" },
+  { href: "/ingest", label: "Ingest" },
+];
+
+// Secondary / exploration — demoted under a "More" dropdown.
+const secondaryLinks = [
   { href: "/wiki/graph", label: "Graph" },
   { href: "/wiki/log", label: "Log" },
-  { href: "/raw", label: "Raw" },
-  { href: "/ingest", label: "Ingest" },
-  { href: "/query", label: "Query" },
-  { href: "/lint", label: "Lint" },
+  { href: "/wiki/contributors", label: "Contributors" },
 ];
+
+// Owner-only admin tools (also hard-gated server-side).
+const ownerLinks = [{ href: "/lint", label: "Lint" }];
 
 const utilityLinks = [{ href: "/settings", label: "Settings" }];
 
+// Every link that can be "active" — used to highlight the matching nav item.
+const ALL_LINKS = [...primaryLinks, ...secondaryLinks, ...ownerLinks, ...utilityLinks];
+
 function getActiveHref(pathname: string): string | null {
-  // Find the nav link with the longest matching prefix.
-  // This ensures /wiki/graph matches "Graph" (longer) over "Browse" (/wiki).
-  // /wiki/log uses an exact match so it doesn't accidentally highlight under
-  // sibling routes (and won't be shadowed by a longer Browse prefix).
-  const allLinks = [...navLinks, ...utilityLinks];
+  // Longest matching prefix wins (so /wiki/graph beats /wiki). /wiki/log is an
+  // exact match so it isn't shadowed by a sibling or the Browse prefix.
   let best: string | null = null;
-  for (const { href } of allLinks) {
+  for (const { href } of ALL_LINKS) {
     const matches =
       href === "/wiki/log"
         ? pathname === href
@@ -48,14 +56,34 @@ export function NavHeader() {
   const pathname = usePathname();
   const activeHref = getActiveHref(pathname);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [moreOpen, setMoreOpen] = useState(false);
+  const moreRef = useRef<HTMLLIElement>(null);
   const { user } = useUser();
   const handle = user?.username ?? null;
   const profileHref = handle ? `/u/${handle}` : null;
+  const isOwner = isOwnerHandle(handle);
 
-  // Close mobile menu when pathname changes (navigation occurred)
+  // Lint only appears for the owner; everything else is always in "More".
+  const moreLinks = isOwner ? [...secondaryLinks, ...ownerLinks] : secondaryLinks;
+  const moreActive = moreLinks.some((l) => l.href === activeHref);
+
+  // Close menus on navigation.
   useEffect(() => {
     setMobileOpen(false);
+    setMoreOpen(false);
   }, [pathname]);
+
+  // Close the "More" dropdown on an outside click.
+  useEffect(() => {
+    if (!moreOpen) return;
+    function onDown(e: MouseEvent) {
+      if (moreRef.current && !moreRef.current.contains(e.target as Node)) {
+        setMoreOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [moreOpen]);
 
   return (
     <header className="sticky top-0 z-50 bg-background border-b border-foreground/10 shadow-sm">
@@ -69,9 +97,8 @@ export function NavHeader() {
 
         {/* Desktop nav */}
         <ul className="hidden sm:flex items-center gap-1 sm:gap-2">
-          {navLinks.map(({ href, label }) => {
+          {primaryLinks.map(({ href, label }) => {
             const isActive = href === activeHref;
-
             return (
               <li key={href}>
                 <Link
@@ -88,6 +115,48 @@ export function NavHeader() {
             );
           })}
 
+          {/* "More" dropdown — secondary + owner-only links */}
+          <li ref={moreRef} className="relative">
+            <button
+              type="button"
+              onClick={() => setMoreOpen((o) => !o)}
+              aria-expanded={moreOpen}
+              aria-haspopup="menu"
+              className={`rounded-md px-3 py-1.5 text-sm transition-colors ${
+                moreActive
+                  ? "text-foreground font-semibold bg-foreground/10"
+                  : "text-foreground/60 hover:text-foreground hover:bg-foreground/5"
+              }`}
+            >
+              More ▾
+            </button>
+            {moreOpen && (
+              <div
+                role="menu"
+                className="absolute right-0 top-full mt-1 min-w-40 rounded-md border border-foreground/10 bg-background py-1 shadow-lg"
+              >
+                {moreLinks.map(({ href, label }) => {
+                  const isActive = href === activeHref;
+                  return (
+                    <Link
+                      key={href}
+                      href={href}
+                      role="menuitem"
+                      onClick={() => setMoreOpen(false)}
+                      className={`block px-4 py-1.5 text-sm transition-colors ${
+                        isActive
+                          ? "text-foreground font-semibold bg-foreground/10"
+                          : "text-foreground/70 hover:text-foreground hover:bg-foreground/5"
+                      }`}
+                    >
+                      {label}
+                    </Link>
+                  );
+                })}
+              </div>
+            )}
+          </li>
+
           {/* Search */}
           <li className="mx-1 h-4 w-px bg-foreground/10" aria-hidden="true" />
           <li>
@@ -98,7 +167,6 @@ export function NavHeader() {
           <li className="mx-1 h-4 w-px bg-foreground/10" aria-hidden="true" />
           {utilityLinks.map(({ href, label }) => {
             const isActive = href === activeHref;
-
             return (
               <li key={href}>
                 <Link
@@ -157,14 +225,6 @@ export function NavHeader() {
               </SignUpButton>
             </Show>
             <Show when="signed-in">
-              {profileHref && (
-                <Link
-                  href={profileHref}
-                  className="rounded-md px-3 py-1.5 text-sm text-foreground/60 hover:text-foreground hover:bg-foreground/5 transition-colors"
-                >
-                  My pages
-                </Link>
-              )}
               <UserButton>
                 {profileHref && (
                   <UserButton.MenuItems>
@@ -221,9 +281,28 @@ export function NavHeader() {
             <GlobalSearch />
           </div>
 
-          {navLinks.map(({ href, label }) => {
+          {primaryLinks.map(({ href, label }) => {
             const isActive = href === activeHref;
+            return (
+              <Link
+                key={href}
+                href={href}
+                onClick={() => setMobileOpen(false)}
+                className={`block px-6 py-2 text-sm transition-colors ${
+                  isActive
+                    ? "text-foreground font-semibold bg-foreground/10"
+                    : "text-foreground/60 hover:text-foreground hover:bg-foreground/5"
+                }`}
+              >
+                {label}
+              </Link>
+            );
+          })}
 
+          {/* More (secondary + owner-only) */}
+          <div className="mx-4 my-1 border-t border-foreground/10" />
+          {moreLinks.map(({ href, label }) => {
+            const isActive = href === activeHref;
             return (
               <Link
                 key={href}
@@ -244,7 +323,6 @@ export function NavHeader() {
           <div className="mx-4 my-1 border-t border-foreground/10" />
           {utilityLinks.map(({ href, label }) => {
             const isActive = href === activeHref;
-
             return (
               <Link
                 key={href}
@@ -266,17 +344,6 @@ export function NavHeader() {
             <span>Theme</span>
           </div>
           <div className="mx-4 my-1 border-t border-foreground/10" />
-          <Show when="signed-in">
-            {profileHref && (
-              <Link
-                href={profileHref}
-                onClick={() => setMobileOpen(false)}
-                className="block px-6 py-2 text-sm text-foreground/60 hover:text-foreground hover:bg-foreground/5"
-              >
-                My pages
-              </Link>
-            )}
-          </Show>
           <div className="px-6 py-2 flex items-center gap-3 text-sm">
             <Show when="signed-out">
               <SignInButton mode="modal">

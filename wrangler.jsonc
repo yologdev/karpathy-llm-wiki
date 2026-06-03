@@ -49,5 +49,12 @@
   // --- Workers AI: serverless embeddings (e.g. @cf/baai/bge-m3 for CJK) ---
   "ai": {
     "binding": "AI"
+  },
+
+  // Public site-owner handle for runtime server gates (owner-only Lint). The
+  // authoritative copy for the client is the build-time inline (deploy
+  // workflow); this is runtime parity for server reads. Public, not a secret.
+  "vars": {
+    "NEXT_PUBLIC_OWNER_HANDLE": "yuanhao"
   }
 }

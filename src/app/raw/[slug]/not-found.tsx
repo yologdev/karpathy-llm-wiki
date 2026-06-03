@@ -4,26 +4,22 @@ export default function RawSourceNotFound() {
   return (
     <main className="mx-auto max-w-3xl px-6 py-12">
       <Link
-        href="/raw"
+        href="/wiki"
         className="text-sm text-foreground/60 hover:text-foreground transition-colors"
       >
-        ← Back to sources
+        ← Back to the wiki
       </Link>
       <h1 className="mt-6 text-3xl font-bold">Source not found</h1>
       <p className="mt-4 text-foreground/60">
-        This raw source doesn&apos;t exist. Check the slug spelling or browse
-        the{" "}
-        <Link href="/raw" className="underline hover:text-foreground">
-          raw sources
+        This page has no stored raw source, or the slug is wrong. Browse the{" "}
+        <Link href="/wiki" className="underline hover:text-foreground">
+          wiki
         </Link>{" "}
-        to find what you&apos;re looking for.
-      </p>
-      <p className="mt-2 text-foreground/60">
-        You can also{" "}
+        or{" "}
         <Link href="/ingest" className="underline hover:text-foreground">
           ingest a new source
-        </Link>{" "}
-        to add content.
+        </Link>
+        .
       </p>
     </main>
   );

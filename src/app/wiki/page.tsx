@@ -8,9 +8,10 @@ import { WikiIndexClient } from "@/components/WikiIndexClient";
 export default async function WikiIndex({
   searchParams,
 }: {
-  searchParams: Promise<{ scope?: string }>;
+  searchParams: Promise<{ scope?: string; tag?: string }>;
 }) {
-  const { scope: scopeParam } = await searchParams;
+  const { scope: scopeParam, tag: tagParam } = await searchParams;
+  const tag = tagParam?.trim() || null;
   const principal = await getPrincipal();
   const myHandle = principal?.handle ?? null;
 
@@ -34,6 +35,11 @@ export default async function WikiIndex({
     // "All" scope: hide agent-identity pages so the public feed stays
     // human-centric. Agent content is browsable under agent profiles.
     pages = pages.filter((p) => p.type !== "agent-identity");
+  }
+
+  // Optional topic filter (from the homepage "Browse by topic" chips).
+  if (tag) {
+    pages = pages.filter((p) => (p.tags ?? []).includes(tag));
   }
 
   const slugs = pages.map((p) => p.slug);
@@ -83,7 +89,32 @@ export default async function WikiIndex({
         </Link>
       </div>
 
-      {pages.length === 0 && showingMine ? (
+      {tag && (
+        <div className="mb-4 flex items-center gap-2 text-sm text-foreground/60">
+          <span>
+            Filtered by{" "}
+            <span className="inline-block rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-700 dark:bg-gray-800 dark:text-gray-300">
+              #{tag}
+            </span>
+          </span>
+          <Link
+            href={showingMine ? "/wiki?scope=mine" : "/wiki?scope=all"}
+            className="underline hover:text-foreground"
+          >
+            clear
+          </Link>
+        </div>
+      )}
+
+      {pages.length === 0 && tag ? (
+        <p className="text-foreground/60">
+          No pages tagged <span className="font-medium">#{tag}</span>.{" "}
+          <Link href="/wiki?scope=all" className="underline hover:text-foreground">
+            Browse all content
+          </Link>
+          .
+        </p>
+      ) : pages.length === 0 && showingMine ? (
         <p className="text-foreground/60">
           You haven&rsquo;t added any pages yet.{" "}
           <Link href="/wiki?scope=all" className="underline hover:text-foreground">

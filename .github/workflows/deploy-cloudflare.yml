@@ -56,6 +56,11 @@ jobs:
           test -n "$CLOUDFLARE_ACCOUNT_ID"
 
       - name: Build Cloudflare Worker
+        env:
+          # Public site-owner handle — inlined into the client bundle at build
+          # time so the nav can gate owner-only tools (e.g. Lint). The server
+          # gates read it too. Public (not a secret); override via the repo var.
+          NEXT_PUBLIC_OWNER_HANDLE: ${{ vars.NEXT_PUBLIC_OWNER_HANDLE || 'yuanhao' }}
         run: pnpm build:cloudflare
 
       - name: Deploy Cloudflare Worker

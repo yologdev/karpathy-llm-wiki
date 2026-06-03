@@ -5,6 +5,8 @@ import {
   FixNotFoundError,
 } from "@/lib/lint-fix";
 import { getErrorMessage } from "@/lib/errors";
+import { getPrincipal } from "@/lib/auth";
+import { isOwnerHandle } from "@/lib/owner";
 import { logger } from "@/lib/logger";
 
 /**
@@ -28,6 +30,12 @@ import { logger } from "@/lib/logger";
  */
 export async function POST(req: NextRequest) {
   try {
+    // Lint fixes mutate pages — owner-only.
+    const principal = await getPrincipal();
+    if (!isOwnerHandle(principal?.handle)) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+
     const body = await req.json();
     const { type, slug, targetSlug, message } = body;
 

@@ -44,10 +44,10 @@ export default async function RawSourcePage({ params }: RawSourcePageProps) {
   return (
     <main className="mx-auto max-w-3xl px-6 py-12">
       <Link
-        href="/raw"
+        href={`/wiki/${slug}`}
         className="text-sm text-foreground/60 hover:text-foreground transition-colors"
       >
-        ← Back to raw sources
+        ← Back to page
       </Link>
 
       <div className="mt-6">

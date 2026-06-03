@@ -466,6 +466,10 @@ export default async function WikiPageView({ params }: WikiPageProps) {
   const hasSourceUrl =
     typeof page.frontmatter.source_url === "string" &&
     page.frontmatter.source_url.trim().length > 0;
+  // A raw source exists for any ingested page (URL/text/image/x-mention). Used
+  // to show the "View source" link; /raw/<slug> 404s gracefully otherwise.
+  const hasRawSource =
+    hasSourceUrl || Number(page.frontmatter.source_count ?? 0) > 0;
 
   // "Share with yoyo" is shown only to the page's owner/contributor, and we
   // pre-compute whether it's already shared into their yoyo.
@@ -528,6 +532,14 @@ export default async function WikiPageView({ params }: WikiPageProps) {
         >
           Edit page
         </Link>
+        {hasRawSource && (
+          <Link
+            href={`/raw/${slug}`}
+            className="rounded-md border border-foreground/20 px-4 py-2 text-sm font-medium text-foreground hover:bg-foreground/5 transition-colors"
+          >
+            View source
+          </Link>
+        )}
         {hasSourceUrl && <ReingestButton slug={slug} />}
         {canShare && (
           <ShareWithYoyoButton slug={slug} initiallyShared={alreadyShared} />
