@@ -11,11 +11,14 @@ export function WikiPageCard({ page, discussionCount }: WikiPageCardProps) {
   const relLabel = page.updated ? formatRelativeTime(page.updated) : null;
   const pageTags = page.tags ?? [];
   const hasOpenDiscussions = (discussionCount?.open ?? 0) > 0;
+  // Show real owners; hide the legacy/system placeholder.
+  const owner = page.owner && page.owner !== "system" ? page.owner : null;
   const hasMeta =
     pageTags.length > 0 ||
     relLabel !== null ||
     (page.sourceCount ?? 0) > 0 ||
-    hasOpenDiscussions;
+    hasOpenDiscussions ||
+    owner !== null;
 
   return (
     <li>
@@ -39,6 +42,11 @@ export function WikiPageCard({ page, discussionCount }: WikiPageCardProps) {
                 {tag}
               </span>
             ))}
+            {owner && (
+              <span className="inline-flex items-center rounded-full bg-foreground/5 px-2 py-0.5 text-xs text-foreground/60">
+                by @{owner}
+              </span>
+            )}
             {relLabel && <span>updated {relLabel}</span>}
             {(page.sourceCount ?? 0) > 0 && (
               <span>

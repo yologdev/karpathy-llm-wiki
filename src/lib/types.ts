@@ -22,6 +22,8 @@ export interface IndexEntry {
   sourceUrl?: string;
   /** Confidence score 0–1 from frontmatter. */
   confidence?: number;
+  /** Owner (principal handle) from frontmatter, if any. */
+  owner?: string;
 }
 
 /** Result returned after ingesting a source document. */
