@@ -375,14 +375,16 @@ export async function downloadImages(
  * @returns the local markdown ref, the raw bytes (for the vision model), the
  *          filename, and the content type.
  */
-export async function storeImageAsset(
+/**
+ * Fetch an image by URL and validate it WITHOUT storing it yet (so the caller
+ * can run vision and pick a slug before the asset path is fixed). Throws a
+ * {@link ClientInputError} on unsafe/non-image/oversized input (→ 4xx).
+ */
+export async function fetchImageBytes(
   url: string,
-  slug: string,
-): Promise<{ localPath: string; bytes: ArrayBuffer; filename: string; contentType: string }> {
-  // SSRF guard — throws on private/unsafe hosts. Re-tag as client input so the
-  // route classifies it as a 4xx (the bad URL is the caller's).
+): Promise<{ bytes: ArrayBuffer; filename: string; contentType: string }> {
   try {
-    validateUrlSafety(url);
+    validateUrlSafety(url); // SSRF guard — throws on private/unsafe hosts
   } catch (err) {
     throw new ClientInputError(getErrorMessage(err));
   }
@@ -403,8 +405,15 @@ export async function storeImageAsset(
       `Image too large (${bytes.byteLength} bytes, max ${MAX_RESPONSE_SIZE})`,
     );
   }
+  return { bytes, filename: sanitizeImageFilename(url), contentType };
+}
 
-  const { localPath, filename } = await storeImageBytes(bytes, slug, url);
+export async function storeImageAsset(
+  url: string,
+  slug: string,
+): Promise<{ localPath: string; bytes: ArrayBuffer; filename: string; contentType: string }> {
+  const { bytes, filename, contentType } = await fetchImageBytes(url);
+  const { localPath } = await storeImageBytes(bytes, slug, filename);
   return { localPath, bytes, filename, contentType };
 }
 

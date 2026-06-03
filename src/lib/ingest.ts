@@ -8,7 +8,7 @@ import {
   type Frontmatter,
 } from "./wiki";
 import { callLLM, hasLLMKey } from "./llm";
-import { fetchUrlContent, downloadImages, storeImageAsset, storeImageBytes } from "./fetch";
+import { fetchUrlContent, downloadImages, fetchImageBytes, storeImageBytes } from "./fetch";
 import { describeImage } from "./vision";
 import type { IngestResult, SourceEntry } from "./types";
 import {
@@ -163,6 +163,22 @@ export async function ingestUrl(
   return ingest(title, content, { ...options, sourceUrl: url });
 }
 
+/** Derive a concise page title from the vision description's first meaningful
+ *  line (e.g. a transcribed headline). Returns undefined if nothing usable. */
+function deriveImageTitle(visionText?: string): string | undefined {
+  if (!visionText) return undefined;
+  const firstLine = visionText
+    .split("\n")
+    .map((l) => l.replace(/^[#>\-*\d.\s)]+/, "").trim())
+    .find((l) => l.length > 0);
+  if (!firstLine) return undefined;
+  let title = firstLine;
+  const sentenceEnd = title.search(/[.!?。！？\n]/);
+  if (sentenceEnd >= 8 && sentenceEnd < 80) title = title.slice(0, sentenceEnd);
+  title = title.slice(0, 80).trim();
+  return title || undefined;
+}
+
 /** Derive a human-ish title from a filename or URL (e.g. "diagram-2.png" →
  *  "diagram 2"). Falls back to "Image". */
 function humanizeFilename(nameOrUrl: string): string {
@@ -204,26 +220,36 @@ export async function ingestImage(
     }
   }
 
-  const title = options?.title?.trim() || humanizeFilename(uploadName || imageUrl || "image");
-  const slug = slugify(title);
-
-  // Store the image as an asset and get its bytes for the vision model.
-  let localPath: string;
+  // 1. Obtain the bytes + metadata WITHOUT storing yet — we may title the page
+  //    (and thus the slug) from the vision text, so the slug isn't known yet.
   let bytes: ArrayBuffer;
-  let mediaType: string | undefined = input.contentType;
+  let filename: string;
+  let mediaType: string | undefined;
   if (imageUrl) {
-    const stored = await storeImageAsset(imageUrl, slug);
-    ({ localPath, bytes } = stored);
-    mediaType = stored.contentType;
+    const fetched = await fetchImageBytes(imageUrl);
+    bytes = fetched.bytes;
+    filename = fetched.filename;
+    mediaType = fetched.contentType;
   } else if (uploadedBytes) {
     bytes = uploadedBytes;
-    ({ localPath } = await storeImageBytes(uploadedBytes, slug, uploadName || "image"));
+    filename = uploadName || "image";
+    mediaType = input.contentType;
   } else {
     throw new Error("ingestImage requires either imageUrl or bytes");
   }
 
-  // Vision description — fail-soft (null → image-only page).
+  // 2. Vision description — fail-soft (null → image-only page).
   const vision = await describeImage(bytes, { mediaType });
+
+  // 3. Title: explicit → derived from the vision text → humanized filename.
+  const title =
+    options?.title?.trim() ||
+    deriveImageTitle(vision?.text) ||
+    humanizeFilename(filename || imageUrl || "image");
+  const slug = slugify(title);
+
+  // 4. Store the asset under the final slug.
+  const { localPath } = await storeImageBytes(bytes, slug, filename);
 
   const body =
     `# ${title}\n\n![${title}](${localPath})` + (vision ? `\n\n${vision.text}` : "");

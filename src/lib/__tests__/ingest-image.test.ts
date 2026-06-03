@@ -10,20 +10,22 @@ vi.mock("../vision", () => ({ describeImage: vi.fn() }));
 // Keep the real fetch module but stub the network-touching image helpers.
 vi.mock("../fetch", async (orig) => {
   const actual = await orig<typeof import("../fetch")>();
-  return { ...actual, storeImageAsset: vi.fn(), storeImageBytes: vi.fn() };
+  return { ...actual, fetchImageBytes: vi.fn(), storeImageBytes: vi.fn() };
 });
 
 import { ingest, ingestImage } from "../ingest";
 import { hasLLMKey, callLLM } from "../llm";
 import { describeImage } from "../vision";
-import { storeImageAsset } from "../fetch";
+import { fetchImageBytes, storeImageBytes } from "../fetch";
 import { readWikiPageWithFrontmatter } from "../wiki";
 import { parseSources } from "../sources";
 import { resetSourceIndex } from "../source-index";
 import { resetAliasIndex } from "../alias-index";
+import { _resetStorage } from "../storage";
 
 const mockedDescribe = vi.mocked(describeImage);
-const mockedStore = vi.mocked(storeImageAsset);
+const mockedFetchBytes = vi.mocked(fetchImageBytes);
+const mockedStoreBytes = vi.mocked(storeImageBytes);
 const mockedHasLLMKey = vi.mocked(hasLLMKey);
 const mockedCallLLM = vi.mocked(callLLM);
 
@@ -36,15 +38,20 @@ beforeEach(async () => {
   process.env.DATA_DIR = tmpDir;
   process.env.WIKI_DIR = path.join(tmpDir, "wiki");
   process.env.RAW_DIR = path.join(tmpDir, "raw");
+  _resetStorage(); // re-root storage at this test's fresh tmpDir (avoid cross-test bleed)
   resetSourceIndex();
   resetAliasIndex();
   vi.clearAllMocks();
-  mockedStore.mockResolvedValue({
-    localPath: "assets/photo/photo.png",
+  mockedFetchBytes.mockResolvedValue({
     bytes: new Uint8Array([1, 2, 3]).buffer,
     filename: "photo.png",
     contentType: "image/png",
   });
+  // localPath reflects the final (vision/title-derived) slug.
+  mockedStoreBytes.mockImplementation(async (_bytes, slug, fname) => ({
+    localPath: `assets/${slug}/${fname}`,
+    filename: fname,
+  }));
 });
 
 afterEach(async () => {
@@ -64,9 +71,9 @@ describe("ingestImage", () => {
       { author: "alice", owner: "alice", triggeredBy: "alice", title: "My Photo" },
     );
 
-    expect(mockedStore).toHaveBeenCalledWith("https://example.com/photo.png", "my-photo");
+    expect(mockedFetchBytes).toHaveBeenCalledWith("https://example.com/photo.png");
     const page = await readWikiPageWithFrontmatter(result.primarySlug);
-    expect(page!.content).toContain("![My Photo](assets/photo/photo.png)");
+    expect(page!.content).toContain("![My Photo](assets/my-photo/photo.png)");
     expect(page!.content).toContain("A red square on white.");
     expect(page!.frontmatter.owner).toBe("alice");
     expect(page!.frontmatter.source_url).toBe("https://example.com/photo.png");
@@ -83,9 +90,9 @@ describe("ingestImage", () => {
     );
 
     const page = await readWikiPageWithFrontmatter(result.primarySlug);
-    expect(page!.content).toContain("![Diagram](assets/photo/photo.png)");
+    expect(page!.content).toContain("![Diagram](assets/diagram/photo.png)");
     // No description paragraph, but the page exists and embeds the image.
-    expect(page!.content.trim().endsWith("(assets/photo/photo.png)")).toBe(true);
+    expect(page!.content.trim().endsWith("(assets/diagram/photo.png)")).toBe(true);
   });
 
   it("does not duplicate the embedded image in a ## Images section", async () => {
@@ -95,9 +102,30 @@ describe("ingestImage", () => {
       { author: "alice", owner: "alice", title: "Once" },
     );
     const page = await readWikiPageWithFrontmatter(result.primarySlug);
-    const occurrences = page!.content.split("assets/photo/photo.png").length - 1;
+    const occurrences = page!.content.split("assets/once/photo.png").length - 1;
     expect(occurrences).toBe(1);
     expect(page!.content).not.toContain("## Images");
+  });
+
+  it("titles the page from the vision text when no title is given (not the random filename)", async () => {
+    mockedFetchBytes.mockResolvedValue({
+      bytes: new Uint8Array([1]).buffer,
+      filename: "HI6bsa_a0AAqUJC.jpeg", // random upload name
+      contentType: "image/jpeg",
+    });
+    mockedDescribe.mockResolvedValue({
+      text: "模型 + 手脚架 = 智能体\n\nA blue advertisement for an agent harness.",
+    });
+
+    const result = await ingestImage(
+      { imageUrl: "https://example.com/x.jpeg" },
+      { author: "alice", owner: "alice" }, // no title
+    );
+
+    // Slug derived from the transcribed first line, not "hi6bsa-a0aaqujc".
+    expect(result.primarySlug).not.toBe("hi6bsa-a0aaqujc");
+    const page = await readWikiPageWithFrontmatter(result.primarySlug);
+    expect(page!.content).toContain("模型 + 手脚架 = 智能体");
   });
 });
 

@@ -18,9 +18,13 @@ import { logger } from "./logger";
 const DEFAULT_WAI_VISION_MODEL = "@cf/llava-hf/llava-1.5-7b-hf";
 
 const DEFAULT_PROMPT =
-  "Describe this image in detail. Transcribe any visible text exactly (in its " +
-  "original language), and note diagrams, charts, objects, and overall context. " +
-  "Be factual and concise.";
+  "Read this image carefully.\n" +
+  "1. First, TRANSCRIBE every piece of visible text exactly as written, in its " +
+  "ORIGINAL language — do not translate or paraphrase. Preserve line breaks and " +
+  "any formulas/equations.\n" +
+  "2. Then add a short factual description of the visuals (diagrams, charts, " +
+  "objects, layout) and the overall purpose.\n" +
+  "If there is no text, just describe the image.";
 
 /** Hard ceiling so a slow/hung Workers AI run can't stall an ingest. */
 const WAI_TIMEOUT_MS = 20_000;
