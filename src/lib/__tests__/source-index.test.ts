@@ -11,6 +11,7 @@ import {
   resolveContentHash,
   updateSourceIndexForPage,
   removeSourceForPage,
+  normalizeUrl,
 } from "../source-index";
 import { writeWikiPage, ensureDirectories, updateIndex } from "../wiki";
 import { serializeFrontmatter } from "../frontmatter";
@@ -182,6 +183,162 @@ describe("URL normalization", () => {
     await createPage("notes", "Notes", { source_url: "text-paste" });
     const index = await buildSourceIndex();
     expect(index.byUrl.size).toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// normalizeUrl — unit tests for each normalization rule
+// ---------------------------------------------------------------------------
+describe("normalizeUrl", () => {
+  it("strips fragments", () => {
+    expect(normalizeUrl("https://example.com/page#section")).toBe(
+      "https://example.com/page",
+    );
+  });
+
+  it("lowercases hostname but not path", () => {
+    expect(normalizeUrl("https://Example.COM/CaseSensitive/Path")).toBe(
+      "https://example.com/CaseSensitive/Path",
+    );
+  });
+
+  it("strips default port 443 for https", () => {
+    expect(normalizeUrl("https://example.com:443/path")).toBe(
+      "https://example.com/path",
+    );
+  });
+
+  it("strips default port 80 for http (upgraded to https)", () => {
+    expect(normalizeUrl("http://example.com:80/path")).toBe(
+      "https://example.com/path",
+    );
+  });
+
+  it("preserves non-default ports", () => {
+    expect(normalizeUrl("https://example.com:8080/path")).toBe(
+      "https://example.com:8080/path",
+    );
+  });
+
+  it("strips www. prefix", () => {
+    expect(normalizeUrl("https://www.example.com/page")).toBe(
+      "https://example.com/page",
+    );
+  });
+
+  it("sorts query parameters", () => {
+    expect(normalizeUrl("https://example.com/page?b=2&a=1")).toBe(
+      "https://example.com/page?a=1&b=2",
+    );
+  });
+
+  it("strips trailing slash from path", () => {
+    expect(normalizeUrl("https://example.com/docs/")).toBe(
+      "https://example.com/docs",
+    );
+  });
+
+  it("strips trailing slash from root URL", () => {
+    expect(normalizeUrl("https://example.com/")).toBe(
+      "https://example.com",
+    );
+  });
+
+  it("upgrades http to https", () => {
+    expect(normalizeUrl("http://example.com/page")).toBe(
+      "https://example.com/page",
+    );
+  });
+
+  it("handles all normalizations together (acceptance criterion)", () => {
+    expect(
+      normalizeUrl("https://www.Example.COM:443/path?b=2&a=1#frag"),
+    ).toBe("https://example.com/path?a=1&b=2");
+  });
+
+  it("trims whitespace", () => {
+    expect(normalizeUrl("  https://example.com/path  ")).toBe(
+      "https://example.com/path",
+    );
+  });
+
+  it("returns empty string for empty input", () => {
+    expect(normalizeUrl("")).toBe("");
+  });
+
+  it("falls back to trim+slash-strip for non-URL strings", () => {
+    expect(normalizeUrl("not-a-url/")).toBe("not-a-url");
+  });
+
+  it("falls back for non-http protocols", () => {
+    expect(normalizeUrl("ftp://files.example.com/data/")).toBe(
+      "ftp://files.example.com/data",
+    );
+  });
+
+  it("keeps query with root path", () => {
+    expect(normalizeUrl("https://example.com?q=test")).toBe(
+      "https://example.com/?q=test",
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// resolveSourceUrl — integration tests for URL variant dedup
+// ---------------------------------------------------------------------------
+describe("resolveSourceUrl variant dedup", () => {
+  it("matches www variant to stored non-www URL", async () => {
+    await createPage("example", "Example", {
+      source_url: "https://example.com/page",
+    });
+    resetSourceIndex();
+    const result = await resolveSourceUrl("https://www.example.com/page");
+    expect(result).toBe("example");
+  });
+
+  it("matches http variant to stored https URL", async () => {
+    await createPage("example", "Example", {
+      source_url: "https://example.com/page",
+    });
+    resetSourceIndex();
+    const result = await resolveSourceUrl("http://example.com/page");
+    expect(result).toBe("example");
+  });
+
+  it("matches URL with fragment to stored URL without fragment", async () => {
+    await createPage("example", "Example", {
+      source_url: "https://example.com/page",
+    });
+    resetSourceIndex();
+    const result = await resolveSourceUrl("https://example.com/page#section");
+    expect(result).toBe("example");
+  });
+
+  it("matches URL with different hostname casing", async () => {
+    await createPage("example", "Example", {
+      source_url: "https://example.com/path",
+    });
+    resetSourceIndex();
+    const result = await resolveSourceUrl("https://Example.COM/path");
+    expect(result).toBe("example");
+  });
+
+  it("matches URL with reordered query params", async () => {
+    await createPage("example", "Example", {
+      source_url: "https://example.com/page?a=1&b=2",
+    });
+    resetSourceIndex();
+    const result = await resolveSourceUrl("https://example.com/page?b=2&a=1");
+    expect(result).toBe("example");
+  });
+
+  it("matches URL with default port to stored URL without port", async () => {
+    await createPage("example", "Example", {
+      source_url: "https://example.com/page",
+    });
+    resetSourceIndex();
+    const result = await resolveSourceUrl("https://example.com:443/page");
+    expect(result).toBe("example");
   });
 });
 

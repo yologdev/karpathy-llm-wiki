@@ -32,9 +32,79 @@ export function resetSourceIndex(): void {
   cachedIndex = null;
 }
 
-/** Normalize a URL for stable matching (trim; drop a single trailing slash). */
-function normalizeUrl(url: string): string {
-  return url.trim().replace(/\/+$/, "");
+/**
+ * Normalize a URL for stable dedup matching.
+ *
+ * Steps (order matters):
+ *  1. Trim whitespace
+ *  2. Parse via URL (fall back to trim + trailing-slash strip for non-URLs)
+ *  3. Strip fragment
+ *  4. Lowercase hostname (paths stay case-sensitive per RFC)
+ *  5. Strip default ports (80 for http, 443 for https)
+ *  6. Strip leading `www.` from hostname
+ *  7. Sort query parameters
+ *  8. Drop trailing slash from pathname
+ *  9. Upgrade http → https so both variants match
+ */
+export function normalizeUrl(url: string): string {
+  const trimmed = url.trim();
+  if (trimmed === "") return trimmed;
+
+  let parsed: URL;
+  try {
+    parsed = new URL(trimmed);
+  } catch {
+    // Not a valid URL — fall back to the old trim + trailing-slash strip
+    return trimmed.replace(/\/+$/, "");
+  }
+
+  // Only normalize http(s) URLs; leave others (data:, file:, etc.) alone
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+    return trimmed.replace(/\/+$/, "");
+  }
+
+  // Upgrade http → https so the two variants collapse
+  parsed.protocol = "https:";
+
+  // Strip fragment
+  parsed.hash = "";
+
+  // Hostname is already lowercased by the URL constructor, but be explicit
+  parsed.hostname = parsed.hostname.toLowerCase();
+
+  // Strip default ports (URL constructor leaves these empty for defaults,
+  // but handle explicit :443 / :80 that survived)
+  if (
+    (parsed.port === "443" && parsed.protocol === "https:") ||
+    (parsed.port === "80" && parsed.protocol === "http:")
+  ) {
+    parsed.port = "";
+  }
+
+  // Strip www. prefix
+  if (parsed.hostname.startsWith("www.")) {
+    parsed.hostname = parsed.hostname.slice(4);
+  }
+
+  // Sort query parameters for stable ordering
+  const params = new URLSearchParams(parsed.search);
+  const sortedParams = new URLSearchParams(
+    [...params.entries()].sort(([a], [b]) => a.localeCompare(b)),
+  );
+  parsed.search = sortedParams.toString() ? `?${sortedParams.toString()}` : "";
+
+  // Strip trailing slash from pathname
+  if (parsed.pathname.length > 1 && parsed.pathname.endsWith("/")) {
+    parsed.pathname = parsed.pathname.replace(/\/+$/, "");
+  }
+
+  // URL.toString() always appends a trailing slash for root paths.
+  // Strip it so `https://react.dev/` → `https://react.dev`
+  let result = parsed.toString();
+  if (parsed.pathname === "/" && !parsed.search && !parsed.hash) {
+    result = result.replace(/\/+$/, "");
+  }
+  return result;
 }
 
 // ---------------------------------------------------------------------------
