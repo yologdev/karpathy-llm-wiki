@@ -1370,6 +1370,30 @@ describe("per-agent credentials", () => {
     expect(await verifyAgentToken("alice--yoyo")).toBeNull(); // no dot
   });
 
+  it("rejects ids that could escape the secret store (path traversal)", async () => {
+    // The id segment must pass AGENT_ID_RE before forming a storage path.
+    expect(await verifyAgentToken("../../etc/passwd.secret")).toBeNull();
+    expect(await verifyAgentToken("a/b.secret")).toBeNull();
+    expect(await verifyAgentToken("..%2f.secret")).toBeNull();
+    expect(await verifyAgentToken("UPPER.secret")).toBeNull(); // uppercase not allowed
+  });
+
+  it("fails closed on a corrupt secret file", async () => {
+    await getStorage().writeFile("agent-secrets/alice--yoyo.json", "not json{{{");
+    expect(await verifyAgentToken("alice--yoyo.anysecret")).toBeNull();
+  });
+
+  it("stores the hash only in the separate secret store", async () => {
+    await seedAgentRecord();
+    await generateAgentToken("alice--yoyo");
+    // Positively: the secret store holds a hash…
+    const raw = await getStorage().readFile("agent-secrets/alice--yoyo.json");
+    expect(JSON.parse(raw)).toHaveProperty("tokenHash");
+    // …and the profile object has no credential-bearing keys.
+    const agent = await getAgent("alice--yoyo");
+    expect(Object.keys(agent!)).not.toContain("tokenHash");
+  });
+
   it("rotating invalidates the previous token", async () => {
     await seedAgentRecord();
     const first = await generateAgentToken("alice--yoyo");
@@ -1386,11 +1410,14 @@ describe("per-agent credentials", () => {
     expect(await verifyAgentToken(token)).toBeNull();
   });
 
-  it("deleting an agent revokes its credential", async () => {
+  it("deleting an agent revokes its credential and removes the secret file", async () => {
     await seedAgentRecord();
     const token = await generateAgentToken("alice--yoyo");
     await deleteAgent("alice--yoyo");
     expect(await verifyAgentToken(token)).toBeNull();
+    expect(
+      await getStorage().fileExists("agent-secrets/alice--yoyo.json"),
+    ).toBe(false);
   });
 });
 

@@ -342,8 +342,12 @@ export async function verifyAgentToken(token: string): Promise<string | null> {
   let stored: { tokenHash?: unknown };
   try {
     stored = JSON.parse(raw);
-  } catch {
-    return null; // corrupt secret file — treat as no valid credential
+  } catch (err) {
+    // A corrupt secret file is OUR data-integrity problem, not a bad token —
+    // fail closed (null) but log it so it's observable rather than an invisible
+    // "valid token looks revoked".
+    logger.error("agents", `verifyAgentToken: corrupt secret file for "${id}":`, err);
+    return null;
   }
   if (typeof stored.tokenHash !== "string") return null;
 
@@ -532,10 +536,12 @@ export async function registerAgent(profile: AgentProfile): Promise<void> {
  */
 export async function deleteAgent(id: string): Promise<boolean> {
   validateAgentId(id);
+  // Revoke the credential FIRST so a token can never outlive its agent: if the
+  // profile delete then fails, the worst case is a profile with no credential
+  // (recoverable), never a live credential for a deleted agent.
+  await revokeAgentToken(id);
   try {
     await getStorage().deleteFile(agentRelPath(`${id}.json`));
-    // Also revoke any credential so a deleted agent's token can't linger.
-    await revokeAgentToken(id);
     return true;
   } catch (err) {
     if (isEnoent(err)) return false;
