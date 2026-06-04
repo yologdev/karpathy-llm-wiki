@@ -2,15 +2,17 @@ import { NextRequest, NextResponse } from "next/server";
 import { ingest, ingestUrl } from "@/lib/ingest";
 import type { IngestOptions } from "@/lib/ingest";
 import { isUrl } from "@/lib/fetch";
-import { getPrincipal } from "@/lib/auth";
+import { getPrincipal, getServicePrincipal } from "@/lib/auth";
 import { getErrorMessage } from "@/lib/errors";
 import { logger } from "@/lib/logger";
 
 export async function POST(request: NextRequest) {
   try {
-    // Writes require an authenticated user (also enforced in middleware). The
-    // acting identity comes from the session — never from the request body.
-    const principal = await getPrincipal();
+    // Writes require an authenticated user (also enforced in middleware for
+    // Clerk sessions). Service tokens (scheduled agent jobs) are accepted as a
+    // fallback — the acting identity comes from the session or token, never
+    // from the request body.
+    const principal = (await getPrincipal()) ?? getServicePrincipal(request);
     if (!principal) {
       return NextResponse.json({ error: "Sign in required." }, { status: 401 });
     }

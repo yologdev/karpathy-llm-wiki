@@ -14,24 +14,32 @@ vi.mock("@/lib/logger", () => ({
 
 vi.mock("@/lib/auth", () => ({
   getPrincipal: vi.fn(async () => ({ id: "test-user", handle: "test-user" })),
+  getServicePrincipal: vi.fn(() => null),
 }));
 
 import { ingestXMention } from "@/lib/ingest";
+import { getPrincipal, getServicePrincipal } from "@/lib/auth";
 import { POST } from "@/app/api/ingest/x-mention/route";
 import type { IngestResult } from "@/lib/types";
 
 const mockedIngestXMention = vi.mocked(ingestXMention);
+const mockedGetPrincipal = vi.mocked(getPrincipal);
+const mockedGetServicePrincipal = vi.mocked(getServicePrincipal);
 
-function makeRequest(body: unknown): NextRequest {
+function makeRequest(body: unknown, token?: string): NextRequest {
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  if (token) headers["Authorization"] = `Bearer ${token}`;
   return new NextRequest("http://localhost:3000/api/ingest/x-mention", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers,
     body: JSON.stringify(body),
   });
 }
 
 beforeEach(() => {
   mockedIngestXMention.mockReset();
+  mockedGetPrincipal.mockResolvedValue({ id: "test-user", handle: "test-user" });
+  mockedGetServicePrincipal.mockReturnValue(null);
 });
 
 // ---------------------------------------------------------------------------
@@ -215,5 +223,86 @@ describe("POST /api/ingest/x-mention", () => {
       const data = await res.json();
       expect(data.error).toMatch(/fetch failed/);
     });
+  });
+});
+
+// ===========================================================================
+// POST /api/ingest/x-mention — service token auth
+// ===========================================================================
+describe("POST /api/ingest/x-mention — service token auth", () => {
+  const fakeResult: IngestResult = {
+    rawPath: "raw/test.md",
+    primarySlug: "test-post",
+    relatedUpdated: [],
+    wikiPages: ["test-post"],
+    indexUpdated: true,
+    sourceUrl: "https://x.com/user/status/123",
+  };
+
+  it("accepts a valid service token when Clerk session is absent", async () => {
+    mockedGetPrincipal.mockResolvedValue(null);
+    mockedGetServicePrincipal.mockReturnValue({ id: "service:yopedia", handle: "yopedia" });
+    mockedIngestXMention.mockResolvedValue(fakeResult);
+
+    const res = await POST(
+      makeRequest({
+        url: "https://x.com/user/status/123",
+        triggeredBy: "@someone",
+      }, "valid-service-token"),
+    );
+    expect(res.status).toBe(200);
+    expect(mockedIngestXMention).toHaveBeenCalledWith(
+      "https://x.com/user/status/123",
+      "@someone",
+      { author: "yopedia", owner: "yopedia" },
+    );
+  });
+
+  it("returns 401 when neither Clerk session nor service token is present", async () => {
+    mockedGetPrincipal.mockResolvedValue(null);
+    mockedGetServicePrincipal.mockReturnValue(null);
+
+    const res = await POST(
+      makeRequest({
+        url: "https://x.com/user/status/123",
+        triggeredBy: "@someone",
+      }),
+    );
+    expect(res.status).toBe(401);
+    expect(mockedIngestXMention).not.toHaveBeenCalled();
+  });
+
+  it("returns 401 when service token is invalid (getServicePrincipal returns null)", async () => {
+    mockedGetPrincipal.mockResolvedValue(null);
+    mockedGetServicePrincipal.mockReturnValue(null);
+
+    const res = await POST(
+      makeRequest({
+        url: "https://x.com/user/status/123",
+        triggeredBy: "@someone",
+      }, "wrong-token"),
+    );
+    expect(res.status).toBe(401);
+    expect(mockedIngestXMention).not.toHaveBeenCalled();
+  });
+
+  it("prefers Clerk session when both are available", async () => {
+    mockedGetPrincipal.mockResolvedValue({ id: "clerk-user", handle: "alice" });
+    mockedGetServicePrincipal.mockReturnValue({ id: "service:yopedia", handle: "yopedia" });
+    mockedIngestXMention.mockResolvedValue(fakeResult);
+
+    const res = await POST(
+      makeRequest({
+        url: "https://x.com/user/status/123",
+        triggeredBy: "@someone",
+      }, "valid-service-token"),
+    );
+    expect(res.status).toBe(200);
+    // Clerk principal wins — author/owner should be "alice", not "yopedia"
+    expect(mockedIngestXMention).toHaveBeenCalledWith(
+      "https://x.com/user/status/123",
+      "@someone",
+      { author: "alice", owner: "alice" },
+    );
   });
 });

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { ingestXMention } from "@/lib/ingest";
-import { getPrincipal } from "@/lib/auth";
+import { getPrincipal, getServicePrincipal } from "@/lib/auth";
 import { getErrorMessage } from "@/lib/errors";
 import { logger } from "@/lib/logger";
 
@@ -9,7 +9,9 @@ const X_URL_PATTERN = /^https?:\/\/(www\.)?(x\.com|twitter\.com)\//i;
 
 export async function POST(request: NextRequest) {
   try {
-    const principal = await getPrincipal();
+    // Clerk session (human) OR service token (scheduled agent jobs) — never
+    // the request body.
+    const principal = (await getPrincipal()) ?? getServicePrincipal(request);
     if (!principal) {
       return NextResponse.json({ error: "Sign in required." }, { status: 401 });
     }

@@ -14,10 +14,16 @@ const WRITE_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 // callers — the auth just lives in the handler):
 //   - /api/agents/seed            — Clerk session OR the system service token
 //   - /api/agents/<id>/ingest     — the agent's own per-agent token
+//   - /api/ingest                 — Clerk session OR the system service token
+//   - /api/ingest/x-mention       — Clerk session OR the system service token
 // This is not a hole.
 //
 // The MCP server is stdio-only and not exposed over HTTP, so it is unaffected.
-const IN_ROUTE_AUTH_PATHS = new Set(["/api/agents/seed"]);
+const IN_ROUTE_AUTH_PATHS = new Set([
+  "/api/agents/seed",
+  "/api/ingest",
+  "/api/ingest/x-mention",
+]);
 const AGENT_INGEST_RE = /^\/api\/agents\/[^/]+\/ingest$/;
 
 function authenticatesInRoute(pathname: string): boolean {
