@@ -1,44 +1,77 @@
 import { zipSync, strToU8 } from "fflate";
-import { listReadableWikiPages, readWikiPage } from "@/lib/wiki";
+import type { NextRequest } from "next/server";
+import { listReadableWikiPages, readWikiPage, rawRelPath } from "@/lib/wiki";
+import { getStorage } from "@/lib/storage";
+import { isEnoent } from "@/lib/errors";
 import { getPrincipal } from "@/lib/auth";
-import { convertToObsidianLinks } from "@/lib/export";
+import { expandMineScope, resolveScope } from "@/lib/search";
+import { convertToObsidianLinks, normalizeVaultAssetPaths } from "@/lib/export";
 
 /**
- * GET /api/wiki/export
+ * GET /api/wiki/export[?scope=mine|owner:<handle>]
  *
- * Returns the entire wiki as an Obsidian-compatible zip vault.
- * Each page is exported as a markdown file with internal links converted to
- * Obsidian wikilink syntax (`[[slug|Title]]`). YAML frontmatter is preserved
- * as-is since Obsidian reads it natively.
+ * Returns an Obsidian-compatible **vault zip**. Unscoped → every readable page;
+ * scoped → just that silo's pages ("download my vault" from a /u/<handle>).
+ * Each page is a markdown file with internal links converted to wikilinks
+ * (`[[slug|Title]]`); YAML frontmatter is preserved (Obsidian reads it). Binary
+ * **assets** (images) are included under `assets/<slug>/…` and image paths are
+ * normalized so they resolve in the vault. Scoped reads are readability-gated:
+ * the scope only narrows the already-readable set, so it can't export another
+ * user's private pages.
  *
- * Uses fflate (pure JS) instead of archiver so this route can run in
- * Cloudflare Workers as well as Node.js.
+ * Uses fflate (pure JS) so this runs on Cloudflare Workers as well as Node.
  */
-export async function GET() {
+export async function GET(req: NextRequest) {
   try {
     const principal = await getPrincipal();
-    const pages = await listReadableWikiPages(principal);
+    const scopeParam = new URL(req.url).searchParams.get("scope") || undefined;
+    const expanded = expandMineScope(scopeParam, principal);
 
-    if (pages.length === 0) {
-      return new Response(JSON.stringify({ error: "No wiki pages to export" }), {
-        status: 400,
-        headers: { "Content-Type": "application/json" },
-      });
+    let pages = await listReadableWikiPages(principal);
+    let vaultName = "yopedia";
+    if (expanded) {
+      const resolved = await resolveScope(expanded);
+      const scopeSet = new Set(resolved?.slugs ?? []);
+      pages = pages.filter((p) => scopeSet.has(p.slug));
+      const ownerMatch = expanded.match(/^owner:(.+)$/);
+      if (ownerMatch) vaultName = ownerMatch[1].trim() || vaultName;
     }
 
-    // Build a map of filename → compressed Uint8Array content
+    if (pages.length === 0) {
+      return new Response(
+        JSON.stringify({ error: "No wiki pages to export" }),
+        { status: 400, headers: { "Content-Type": "application/json" } },
+      );
+    }
+
+    const storage = getStorage();
     const files: Record<string, Uint8Array> = {};
 
     for (const entry of pages) {
       const page = await readWikiPage(entry.slug);
       if (!page) continue;
 
-      const obsidianContent = convertToObsidianLinks(page.content);
-      files[`${entry.slug}.md`] = strToU8(obsidianContent);
+      const md = normalizeVaultAssetPaths(convertToObsidianLinks(page.content));
+      files[`${entry.slug}.md`] = strToU8(md);
+
+      // Bundle the page's binary assets (images) so the vault is self-contained.
+      let assetFiles: Awaited<ReturnType<typeof storage.listFiles>> = [];
+      try {
+        assetFiles = await storage.listFiles(rawRelPath(`assets/${entry.slug}`));
+      } catch (e) {
+        if (!isEnoent(e)) throw e;
+      }
+      for (const f of assetFiles) {
+        if (f.isDirectory) continue;
+        const data = await storage.readAsset(
+          rawRelPath(`assets/${entry.slug}/${f.name}`),
+        );
+        files[`assets/${entry.slug}/${f.name}`] = new Uint8Array(data);
+      }
     }
 
-    // Rebuild index.md from the readable pages only — the raw index file lists
-    // every page (including private ones the caller can't read).
+    // Rebuild index.md from the exported pages only (never list pages the
+    // caller can't read or that fall outside the scope).
     const indexLines = pages.map(
       (p) => `- [${p.title}](${p.slug}.md) — ${p.summary}`,
     );
@@ -46,19 +79,18 @@ export async function GET() {
       convertToObsidianLinks(`# Wiki Index\n\n${indexLines.join("\n")}\n`),
     );
 
-    // Create the zip synchronously (pure JS, no Node.js streams)
     const zipped = zipSync(files, { level: 9 });
 
     return new Response(zipped.buffer as ArrayBuffer, {
       headers: {
         "Content-Type": "application/zip",
-        "Content-Disposition": 'attachment; filename="yopedia-vault.zip"',
+        "Content-Disposition": `attachment; filename="${vaultName}-vault.zip"`,
       },
     });
   } catch (err) {
     return Response.json(
       { error: "Export failed", details: String(err) },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }

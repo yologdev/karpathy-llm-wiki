@@ -52,6 +52,13 @@ export default async function UserPage({
             >
               🕸 Graph this silo
             </Link>
+            {/* Plain anchor — this is a file download, not a route. */}
+            <a
+              href={`/api/wiki/export?scope=owner:${encodeURIComponent(handle)}`}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-foreground/10 px-3 py-1.5 text-sm text-foreground/70 hover:border-foreground/30 hover:text-foreground transition-colors"
+            >
+              ⬇ Download vault
+            </a>
           </div>
         )}
       </div>

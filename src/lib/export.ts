@@ -25,3 +25,14 @@ export function convertToObsidianLinks(content: string): string {
     (_match, title: string, slug: string) => `[[${slug}|${title}]]`,
   );
 }
+
+/**
+ * Rewrite a page's image references to vault-relative asset paths so images
+ * resolve in the exported vault. Stored sources are either `assets/<slug>/…`
+ * (already vault-relative) or `raw/assets/<slug>/…`; the latter is normalized to
+ * the former — where the export places the file. Absolute/`/api/assets` URLs are
+ * left untouched.
+ */
+export function normalizeVaultAssetPaths(content: string): string {
+  return content.replace(/\]\(raw\/assets\//g, "](assets/");
+}
