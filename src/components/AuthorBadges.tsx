@@ -56,7 +56,7 @@ export function AuthorBadges({ authors, contributors }: AuthorBadgesProps) {
   if (authors.length === 0) return null;
 
   return (
-    <div className="text-sm text-gray-500 dark:text-gray-400 flex flex-wrap items-center gap-x-1.5 gap-y-1">
+    <div className="text-sm text-muted flex flex-wrap items-center gap-x-1.5 gap-y-1">
       <span>By</span>
       {authors.map((author, i) => {
         const profile = profiles.get(author);
@@ -72,7 +72,7 @@ export function AuthorBadges({ authors, contributors }: AuthorBadgesProps) {
         );
       })}
       {contributors.length > 0 && (
-        <span className="ml-1 text-gray-400 dark:text-gray-500">
+        <span className="ml-1 text-muted">
           + {contributors.length}{" "}
           {contributors.length === 1 ? "contributor" : "contributors"}
         </span>

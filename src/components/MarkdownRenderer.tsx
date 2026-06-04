@@ -1,9 +1,35 @@
 import Link from "next/link";
+import type { ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { slugify } from "@/lib/slugify";
 
 interface MarkdownRendererProps {
   content: string;
+  /**
+   * Extra classes appended to the prose wrapper. Pass `"prose-article"` for
+   * the long-form serif reading treatment (see globals.css); omit for the
+   * neutral sans look used by query answers.
+   */
+  className?: string;
+}
+
+/** Flatten ReactMarkdown heading children to plain text for anchor IDs. */
+function headingText(children: ReactNode): string {
+  if (typeof children === "string") return children;
+  if (typeof children === "number") return String(children);
+  if (Array.isArray(children)) return children.map(headingText).join("");
+  if (
+    children &&
+    typeof children === "object" &&
+    "props" in children &&
+    (children as { props?: { children?: ReactNode } }).props
+  ) {
+    return headingText(
+      (children as { props: { children?: ReactNode } }).props.children,
+    );
+  }
+  return "";
 }
 
 /**
@@ -40,13 +66,30 @@ function resolveImageSrc(src: string): string {
   return src;
 }
 
-export function MarkdownRenderer({ content }: MarkdownRendererProps) {
+export function MarkdownRenderer({ content, className }: MarkdownRendererProps) {
   const body = stripFrontmatter(content);
   return (
-    <div className="prose prose-neutral dark:prose-invert max-w-none">
+    <div
+      className={`prose prose-neutral dark:prose-invert max-w-none${
+        className ? ` ${className}` : ""
+      }`}
+    >
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         components={{
+          // Stable heading IDs so an in-page Table of Contents can anchor to
+          // them (the typography plugin emits no ids). Slugs match the TOC's
+          // because both use the same `slugify`.
+          h2: ({ children, ...props }) => (
+            <h2 id={slugify(headingText(children))} {...props}>
+              {children}
+            </h2>
+          ),
+          h3: ({ children, ...props }) => (
+            <h3 id={slugify(headingText(children))} {...props}>
+              {children}
+            </h3>
+          ),
           img: ({ src, alt, ...props }) => {
             if (typeof src !== "string") return null;
             return (

@@ -44,10 +44,10 @@ export default async function Home() {
     <div className="mx-auto max-w-5xl px-6 py-12">
       {/* Hero */}
       <section className="max-w-3xl">
-        <p className="text-sm font-medium text-foreground/50">
+        <p className="text-sm font-medium text-accent">
           A wiki for the agent age.
         </p>
-        <h1 className="mt-2 text-4xl sm:text-5xl font-bold tracking-tight">
+        <h1 className="mt-2 text-5xl sm:text-6xl font-bold tracking-tight">
           yopedia
         </h1>
         <p className="mt-4 text-lg text-foreground/70 leading-relaxed">
@@ -64,7 +64,7 @@ export default async function Home() {
         <div className="mt-6 flex flex-wrap items-center gap-3">
           <Link
             href="/wiki"
-            className="rounded-lg bg-foreground px-5 py-2.5 text-sm font-medium text-background hover:opacity-90 transition-opacity"
+            className="rounded-lg bg-accent px-5 py-2.5 text-sm font-medium text-accent-foreground hover:bg-accent-hover transition-colors"
           >
             Browse the wiki
           </Link>

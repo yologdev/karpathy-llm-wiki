@@ -75,7 +75,7 @@ export function ContributorBadge({
 
   return (
     <span
-      className="inline-flex items-center gap-1 text-sm text-gray-700 dark:text-gray-300"
+      className="inline-flex items-center gap-1 text-sm text-muted"
       title={titleText}
     >
       <span

@@ -86,7 +86,7 @@ export function NavHeader() {
   }, [moreOpen]);
 
   return (
-    <header className="sticky top-0 z-50 bg-background border-b border-foreground/10 shadow-sm">
+    <header className="sticky top-0 z-50 bg-background border-b border-border shadow-sm">
       <nav aria-label="Main navigation" className="mx-auto flex h-14 max-w-5xl items-center justify-between px-6">
         <Link
           href="/"
@@ -105,7 +105,7 @@ export function NavHeader() {
                   href={href}
                   className={`rounded-md px-3 py-1.5 text-sm transition-colors ${
                     isActive
-                      ? "text-foreground font-semibold bg-foreground/10"
+                      ? "text-accent font-semibold bg-accent/10"
                       : "text-foreground/60 hover:text-foreground hover:bg-foreground/5"
                   }`}
                 >
@@ -124,7 +124,7 @@ export function NavHeader() {
               aria-haspopup="menu"
               className={`rounded-md px-3 py-1.5 text-sm transition-colors ${
                 moreActive
-                  ? "text-foreground font-semibold bg-foreground/10"
+                  ? "text-accent font-semibold bg-accent/10"
                   : "text-foreground/60 hover:text-foreground hover:bg-foreground/5"
               }`}
             >
@@ -145,7 +145,7 @@ export function NavHeader() {
                       onClick={() => setMoreOpen(false)}
                       className={`block px-4 py-1.5 text-sm transition-colors ${
                         isActive
-                          ? "text-foreground font-semibold bg-foreground/10"
+                          ? "text-accent font-semibold bg-accent/10"
                           : "text-foreground/70 hover:text-foreground hover:bg-foreground/5"
                       }`}
                     >
@@ -173,7 +173,7 @@ export function NavHeader() {
                   href={href}
                   className={`rounded-md px-3 py-1.5 text-sm transition-colors ${
                     isActive
-                      ? "text-foreground font-semibold bg-foreground/10"
+                      ? "text-accent font-semibold bg-accent/10"
                       : "text-foreground/40 hover:text-foreground hover:bg-foreground/5"
                   }`}
                   title={label}
@@ -219,7 +219,7 @@ export function NavHeader() {
                 </button>
               </SignInButton>
               <SignUpButton mode="modal">
-                <button className="rounded-md bg-foreground px-3 py-1.5 text-sm font-medium text-background hover:opacity-90 transition-opacity">
+                <button className="rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-accent-foreground hover:bg-accent-hover transition-colors">
                   Sign up
                 </button>
               </SignUpButton>
@@ -290,7 +290,7 @@ export function NavHeader() {
                 onClick={() => setMobileOpen(false)}
                 className={`block px-6 py-2 text-sm transition-colors ${
                   isActive
-                    ? "text-foreground font-semibold bg-foreground/10"
+                    ? "text-accent font-semibold bg-accent/10"
                     : "text-foreground/60 hover:text-foreground hover:bg-foreground/5"
                 }`}
               >
@@ -310,7 +310,7 @@ export function NavHeader() {
                 onClick={() => setMobileOpen(false)}
                 className={`block px-6 py-2 text-sm transition-colors ${
                   isActive
-                    ? "text-foreground font-semibold bg-foreground/10"
+                    ? "text-accent font-semibold bg-accent/10"
                     : "text-foreground/60 hover:text-foreground hover:bg-foreground/5"
                 }`}
               >
@@ -330,7 +330,7 @@ export function NavHeader() {
                 onClick={() => setMobileOpen(false)}
                 className={`block px-6 py-2 text-sm transition-colors ${
                   isActive
-                    ? "text-foreground font-semibold bg-foreground/10"
+                    ? "text-accent font-semibold bg-accent/10"
                     : "text-foreground/40 hover:text-foreground hover:bg-foreground/5"
                 }`}
               >
@@ -350,7 +350,7 @@ export function NavHeader() {
                 <button className="text-foreground/60 hover:text-foreground">Sign in</button>
               </SignInButton>
               <SignUpButton mode="modal">
-                <button className="font-medium text-foreground">Sign up</button>
+                <button className="font-medium text-accent">Sign up</button>
               </SignUpButton>
             </Show>
             <Show when="signed-in">

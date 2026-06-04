@@ -6,11 +6,35 @@
 :root {
   --background: #ffffff;
   --foreground: #171717;
+
+  /* Neutral surfaces & borders — single source of truth for the muted
+     greys that were previously expressed ad-hoc as gray-100/gray-800 and
+     foreground/X opacity. */
+  --surface: #f5f5f4;
+  --surface-strong: #e7e5e4;
+  --border: #e5e5e5;
+  --muted: #6b6b6b;
+
+  /* Brand accent — indigo. Used for primary actions, links, active nav,
+     and focus rings. */
+  --accent: #4f46e5;
+  --accent-hover: #4338ca;
+  --accent-foreground: #ffffff;
 }
 
 .dark {
   --background: #0a0a0a;
   --foreground: #ededed;
+
+  --surface: #1c1c1c;
+  --surface-strong: #2a2a2a;
+  --border: #2a2a2a;
+  --muted: #a3a3a3;
+
+  /* Brighter indigo + dark text so fills keep AA contrast on near-black. */
+  --accent: #818cf8;
+  --accent-hover: #a5b4fc;
+  --accent-foreground: #0a0a0a;
 }
 
 /* Fallback for when JS hasn't loaded yet */
@@ -18,18 +42,40 @@
   :root:not(.light) {
     --background: #0a0a0a;
     --foreground: #ededed;
+
+    --surface: #1c1c1c;
+    --surface-strong: #2a2a2a;
+    --border: #2a2a2a;
+    --muted: #a3a3a3;
+
+    --accent: #818cf8;
+    --accent-hover: #a5b4fc;
+    --accent-foreground: #0a0a0a;
   }
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
+  --color-surface: var(--surface);
+  --color-surface-strong: var(--surface-strong);
+  --color-border: var(--border);
+  --color-muted: var(--muted);
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-accent-foreground: var(--accent-foreground);
+
+  /* Fonts — wired to the next/font CSS variables set in layout.tsx, with
+     graceful fallbacks before the web fonts load. */
+  --font-sans: var(--font-sans-next), system-ui, -apple-system, sans-serif;
+  --font-serif: var(--font-serif-next), Georgia, "Times New Roman", serif;
+  --font-mono: var(--font-mono-next), ui-monospace, SFMono-Regular, monospace;
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: system-ui, -apple-system, sans-serif;
+  font-family: var(--font-sans);
 }
 
 /* Skip-nav link — visually hidden until focused */
@@ -56,13 +102,67 @@ body {
   font-size: 1rem;
 }
 
-/* Focus-visible ring for interactive elements */
+/* Focus-visible ring for interactive elements — accent-colored. */
 a:focus-visible,
 button:focus-visible,
 input:focus-visible,
 select:focus-visible,
 textarea:focus-visible,
 [tabindex]:focus-visible {
-  outline: 2px solid var(--foreground);
+  outline: 2px solid var(--accent);
   outline-offset: 2px;
+}
+
+/* ---------------------------------------------------------------------------
+   Article reading body — opt-in serif typography for long-form wiki pages.
+   Scoped to `.prose-article` so shared MarkdownRenderer consumers (query
+   answers, slide previews) keep the neutral sans look.
+   --------------------------------------------------------------------------- */
+.prose-article {
+  --tw-prose-body: var(--foreground);
+  --tw-prose-headings: var(--foreground);
+  --tw-prose-bold: var(--foreground);
+  --tw-prose-code: var(--foreground);
+  --tw-prose-links: var(--accent);
+  --tw-prose-quotes: var(--muted);
+  --tw-prose-quote-borders: var(--border);
+  --tw-prose-hr: var(--border);
+  --tw-prose-th-borders: var(--border);
+  --tw-prose-td-borders: var(--border);
+  font-family: var(--font-serif);
+}
+
+/* Headings stay in the UI sans even inside the serif article. */
+.prose-article :is(h1, h2, h3, h4) {
+  font-family: var(--font-sans);
+  letter-spacing: -0.01em;
+}
+
+/* Code uses the mono font on a subtle surface. */
+.prose-article :is(code, pre) {
+  font-family: var(--font-mono);
+}
+.prose-article :not(pre) > code {
+  background: var(--surface);
+  padding: 0.15em 0.35em;
+  border-radius: 0.3rem;
+  font-weight: 500;
+}
+.prose-article :not(pre) > code::before,
+.prose-article :not(pre) > code::after {
+  content: none; /* drop the typography plugin's backtick quotes */
+}
+.prose-article pre {
+  background: var(--surface);
+  border: 1px solid var(--border);
+}
+
+/* Reading measure (~68ch) for text, left-aligned so the body shares a left
+   edge with the (full-width) page title; media/code/tables bleed to the full
+   column width. Re-imposes a measure that `max-w-none` removes. */
+.prose-article > * {
+  max-width: 68ch;
+}
+.prose-article > :is(img, figure, pre, table, hr) {
+  max-width: 100%;
 }

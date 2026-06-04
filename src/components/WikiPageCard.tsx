@@ -24,9 +24,9 @@ export function WikiPageCard({ page, discussionCount }: WikiPageCardProps) {
     <li>
       <Link
         href={`/wiki/${page.slug}`}
-        className="group block rounded-lg border border-foreground/10 p-4 hover:border-foreground/30 transition-colors"
+        className="group block rounded-lg border border-border p-4 hover:border-accent/40 transition-colors"
       >
-        <span className="font-medium group-hover:underline">
+        <span className="font-medium group-hover:text-accent transition-colors">
           {page.title}
         </span>
         <span className="mt-1 block text-sm text-foreground/60">
@@ -37,7 +37,7 @@ export function WikiPageCard({ page, discussionCount }: WikiPageCardProps) {
             {pageTags.map((tag) => (
               <span
                 key={tag}
-                className="inline-block rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-700 dark:bg-gray-800 dark:text-gray-300"
+                className="inline-block rounded-full bg-surface px-2 py-0.5 text-xs text-muted"
               >
                 {tag}
               </span>

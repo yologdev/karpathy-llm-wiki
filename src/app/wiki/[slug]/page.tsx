@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { decodeSlug } from "@/lib/slugify";
+import { decodeSlug, slugify } from "@/lib/slugify";
 import { readWikiPageWithFrontmatter, findBacklinks, type Frontmatter } from "@/lib/wiki";
 import { parseSources } from "@/lib/sources";
 import type { SourceEntry } from "@/lib/types";
@@ -77,8 +77,7 @@ function sourceTypeBadge(type: SourceEntry["type"]): {
     case "text":
       return {
         label: "Text",
-        className:
-          "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300",
+        className: "bg-surface text-muted",
       };
     case "x-mention":
       return {
@@ -101,8 +100,7 @@ function sourceTypeBadge(type: SourceEntry["type"]): {
     default:
       return {
         label: String(type),
-        className:
-          "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300",
+        className: "bg-surface text-muted",
       };
   }
 }
@@ -137,8 +135,8 @@ function SourceProvenance({
   // Structured sources available — render the rich provenance section.
   if (sources.length > 0) {
     return (
-      <section className="mt-8 border-t border-foreground/10 pt-6">
-        <h2 className="text-sm font-medium text-foreground/50 uppercase tracking-wide mb-3">
+      <section className="mt-8 border-t border-border pt-6">
+        <h2 className="text-sm font-medium text-muted uppercase tracking-wide mb-3">
           Provenance
         </h2>
         <div className="space-y-2">
@@ -167,7 +165,7 @@ function SourceProvenance({
                     href={entry.url}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="text-blue-600 hover:underline dark:text-blue-400 truncate max-w-md"
+                    className="text-accent hover:underline truncate max-w-md"
                     title={entry.url}
                   >
                     {entry.url}
@@ -228,12 +226,19 @@ function SourceProvenance({
 }
 
 /**
- * Render a small muted metadata strip (date + source count + tag pills +
- * yopedia fields) built from a page's parsed frontmatter. Returns `null`
- * when no metadata fields are present, so legacy frontmatter-less pages
- * render nothing.
+ * Slim byline shown directly beneath the page title: the lightweight
+ * who/when/how-confident line plus authors and topic tags. The heavier
+ * reference fields (validity, aliases, supersedes) live in {@link PageInfo}.
+ * Returns `null` when nothing applies, so frontmatter-less pages render only
+ * the title.
  */
-function PageMetadata({ frontmatter, discussionStats }: { frontmatter: Frontmatter; discussionStats?: DiscussionStats }) {
+function PageByline({
+  frontmatter,
+  discussionStats,
+}: {
+  frontmatter: Frontmatter;
+  discussionStats?: DiscussionStats;
+}) {
   const updatedRaw = frontmatter.updated;
   const createdRaw = frontmatter.created;
   const dateLabel =
@@ -258,8 +263,6 @@ function PageMetadata({ frontmatter, discussionStats }: { frontmatter: Frontmatt
     ? frontmatter.tags.filter((t) => typeof t === "string" && t.length > 0)
     : [];
 
-  // --- Yopedia fields ---
-
   // Confidence badge: show only when confidence is a finite number.
   const confidenceRaw = frontmatter.confidence;
   const confidenceNum =
@@ -273,79 +276,33 @@ function PageMetadata({ frontmatter, discussionStats }: { frontmatter: Frontmatt
       ? confidenceDisplay(confidenceNum)
       : null;
 
-  // Expiry / staleness: show only when expiry is a non-empty string.
-  const expiryRaw = frontmatter.expiry;
-  const expiryStr =
-    typeof expiryRaw === "string" && expiryRaw.length >= 10
-      ? expiryRaw
-      : null;
-  const expiryDate = expiryStr ? new Date(expiryStr) : null;
-  const isExpired =
-    expiryDate !== null && !isNaN(expiryDate.getTime()) && expiryDate < new Date();
-
-  // Temporal validity: when the page's content was last verified as accurate.
-  const validFromRaw = frontmatter.valid_from;
-  const validFromStr =
-    typeof validFromRaw === "string" && validFromRaw.length >= 10
-      ? validFromRaw
-      : null;
-
-  // Authors
   const authors = Array.isArray(frontmatter.authors)
-    ? frontmatter.authors.filter(
-        (a) => typeof a === "string" && a.length > 0,
-      )
+    ? frontmatter.authors.filter((a) => typeof a === "string" && a.length > 0)
     : [];
-
-  // Contributors (only show extras not already in authors)
   const contributors = Array.isArray(frontmatter.contributors)
     ? frontmatter.contributors.filter(
-        (c) =>
-          typeof c === "string" && c.length > 0 && !authors.includes(c),
+        (c) => typeof c === "string" && c.length > 0 && !authors.includes(c),
       )
     : [];
 
-  // Disputed badge
   const disputed = frontmatter.disputed === true;
-
-  // Aliases
-  const aliases = Array.isArray(frontmatter.aliases)
-    ? frontmatter.aliases.filter(
-        (a) => typeof a === "string" && a.length > 0,
-      )
-    : [];
-
-  // Supersedes
-  const supersedes =
-    typeof frontmatter.supersedes === "string" &&
-    frontmatter.supersedes.length > 0
-      ? frontmatter.supersedes
-      : null;
-
-  // Discussion stats
   const hasOpenDiscussions = (discussionStats?.open ?? 0) > 0;
 
-  const hasDateLine = dateLabel !== null || sourceLabel !== null;
-  const hasTags = tags.length > 0;
-  const hasYopedia =
+  const hasMetaLine =
+    dateLabel !== null ||
+    sourceLabel !== null ||
     confidence !== null ||
-    expiryStr !== null ||
-    validFromStr !== null ||
-    authors.length > 0 ||
     disputed ||
-    aliases.length > 0 ||
-    supersedes !== null ||
     hasOpenDiscussions;
 
-  if (!hasDateLine && !hasTags && !hasYopedia) return null;
+  if (!hasMetaLine && authors.length === 0 && tags.length === 0) return null;
 
   return (
-    <div className="mb-6 space-y-2">
-      {/* Row 1: date · sources · confidence · disputed · discussions */}
-      {(hasDateLine || confidence || disputed || hasOpenDiscussions) && (
-        <div className="flex flex-wrap items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
+    <div className="mt-3 space-y-2">
+      {hasMetaLine && (
+        <div className="flex flex-wrap items-center gap-2 text-sm text-muted">
           {dateLabel && <span>{dateLabel}</span>}
-          {dateLabel && sourceLabel && <span>·</span>}
+          {dateLabel && sourceLabel && <span aria-hidden>·</span>}
           {sourceLabel && <span>{sourceLabel}</span>}
           {confidence && (
             <span
@@ -361,82 +318,193 @@ function PageMetadata({ frontmatter, discussionStats }: { frontmatter: Frontmatt
           )}
           {hasOpenDiscussions && (
             <span className="inline-flex items-center gap-0.5 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800 dark:bg-amber-900/30 dark:text-amber-400">
-              💬 {discussionStats!.open} open {discussionStats!.open === 1 ? "thread" : "threads"}
+              💬 {discussionStats!.open} open{" "}
+              {discussionStats!.open === 1 ? "thread" : "threads"}
             </span>
           )}
         </div>
       )}
 
-      {/* Row 2: tags */}
-      {hasTags && (
+      {authors.length > 0 && (
+        <AuthorBadges authors={authors} contributors={contributors} />
+      )}
+
+      {tags.length > 0 && (
         <div className="flex flex-wrap gap-1.5">
           {tags.map((tag) => (
             <span
               key={tag}
-              className="inline-block rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-700 dark:bg-gray-800 dark:text-gray-300"
+              className="inline-block rounded-full bg-surface px-2 py-0.5 text-xs text-muted"
             >
               {tag}
             </span>
           ))}
         </div>
       )}
-
-      {/* Row 3: authors + contributors (with trust badges) */}
-      {authors.length > 0 && (
-        <AuthorBadges authors={authors} contributors={contributors} />
-      )}
-
-      {/* Row 4: temporal validity — verified date + expiry */}
-      {(validFromStr || (expiryStr && expiryDate && !isNaN(expiryDate.getTime()))) && (
-        <div className="text-sm">
-          {isExpired ? (
-            <span className="text-amber-600 dark:text-amber-400">
-              ⚠{validFromStr ? ` Verified ${formatMonthYear(validFromStr)} ·` : ""} Expired {formatDate(expiryStr!)} — may be outdated
-            </span>
-          ) : validFromStr && expiryStr ? (
-            <span className="text-gray-400 dark:text-gray-500">
-              Verified {formatMonthYear(validFromStr)} · Review by {formatMonthYear(expiryStr)}
-            </span>
-          ) : validFromStr ? (
-            <span className="text-gray-400 dark:text-gray-500">
-              Verified {formatMonthYear(validFromStr)}
-            </span>
-          ) : (
-            <span className="text-gray-400 dark:text-gray-500">
-              Review by {formatMonthYear(expiryStr!)}
-            </span>
-          )}
-        </div>
-      )}
-
-      {/* Row 5: disputed explanation */}
-      {disputed && (
-        <div className="text-sm text-orange-600 dark:text-orange-400">
-          This page has unresolved contradictions
-        </div>
-      )}
-
-      {/* Row 6: aliases */}
-      {aliases.length > 0 && (
-        <div className="text-sm text-gray-400 dark:text-gray-500">
-          Also known as: {aliases.join(", ")}
-        </div>
-      )}
-
-      {/* Row 7: supersedes link */}
-      {supersedes && (
-        <div className="text-sm text-gray-400 dark:text-gray-500">
-          Replaces:{" "}
-          <Link
-            href={`/wiki/${supersedes}`}
-            className="text-blue-600 hover:underline dark:text-blue-400"
-          >
-            {supersedes}
-          </Link>
-        </div>
-      )}
     </div>
   );
+}
+
+/**
+ * Demoted reference details (temporal validity, dispute note, aliases, the
+ * superseded page). Rendered in the desktop sidebar rail and, on mobile,
+ * inline below the article. Returns `null` when there's nothing to show.
+ */
+function PageInfo({
+  frontmatter,
+  className,
+}: {
+  frontmatter: Frontmatter;
+  className?: string;
+}) {
+  const expiryRaw = frontmatter.expiry;
+  const expiryStr =
+    typeof expiryRaw === "string" && expiryRaw.length >= 10 ? expiryRaw : null;
+  const expiryDate = expiryStr ? new Date(expiryStr) : null;
+  const isExpired =
+    expiryDate !== null && !isNaN(expiryDate.getTime()) && expiryDate < new Date();
+
+  const validFromRaw = frontmatter.valid_from;
+  const validFromStr =
+    typeof validFromRaw === "string" && validFromRaw.length >= 10
+      ? validFromRaw
+      : null;
+
+  const disputed = frontmatter.disputed === true;
+
+  const aliases = Array.isArray(frontmatter.aliases)
+    ? frontmatter.aliases.filter((a) => typeof a === "string" && a.length > 0)
+    : [];
+
+  const supersedes =
+    typeof frontmatter.supersedes === "string" &&
+    frontmatter.supersedes.length > 0
+      ? frontmatter.supersedes
+      : null;
+
+  const hasValidity =
+    validFromStr !== null ||
+    (expiryStr !== null && expiryDate !== null && !isNaN(expiryDate.getTime()));
+
+  if (!hasValidity && !disputed && aliases.length === 0 && !supersedes) {
+    return null;
+  }
+
+  return (
+    <section className={className}>
+      <h2 className="text-xs font-medium text-muted uppercase tracking-wide mb-2">
+        Page info
+      </h2>
+      <div className="space-y-2 text-sm">
+        {hasValidity && (
+          <div>
+            {isExpired ? (
+              <span className="text-amber-600 dark:text-amber-400">
+                ⚠{validFromStr ? ` Verified ${formatMonthYear(validFromStr)} ·` : ""} Expired {formatDate(expiryStr!)} — may be outdated
+              </span>
+            ) : validFromStr && expiryStr ? (
+              <span className="text-muted">
+                Verified {formatMonthYear(validFromStr)} · Review by {formatMonthYear(expiryStr)}
+              </span>
+            ) : validFromStr ? (
+              <span className="text-muted">
+                Verified {formatMonthYear(validFromStr)}
+              </span>
+            ) : (
+              <span className="text-muted">
+                Review by {formatMonthYear(expiryStr!)}
+              </span>
+            )}
+          </div>
+        )}
+
+        {disputed && (
+          <div className="text-orange-600 dark:text-orange-400">
+            This page has unresolved contradictions
+          </div>
+        )}
+
+        {aliases.length > 0 && (
+          <div className="text-muted">
+            Also known as: {aliases.join(", ")}
+          </div>
+        )}
+
+        {supersedes && (
+          <div className="text-muted">
+            Replaces:{" "}
+            <Link
+              href={`/wiki/${supersedes}`}
+              className="text-accent hover:underline"
+            >
+              {supersedes}
+            </Link>
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
+/** A single Table-of-Contents entry parsed from the markdown body. */
+interface TocItem {
+  level: 2 | 3;
+  text: string;
+  id: string;
+}
+
+/**
+ * Parse h2/h3 ATX headings from a markdown body into TOC items. IDs use the
+ * same `slugify` as the MarkdownRenderer heading anchors, so the links line
+ * up. Light markdown emphasis is stripped from the displayed text.
+ */
+function buildToc(body: string): TocItem[] {
+  const items: TocItem[] = [];
+  const re = /^(#{2,3})\s+(.+?)\s*#*$/gm;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(body)) !== null) {
+    const text = m[2].replace(/[*_`]/g, "").trim();
+    if (!text) continue;
+    items.push({ level: m[1].length === 2 ? 2 : 3, text, id: slugify(text) });
+  }
+  return items;
+}
+
+/** In-page Table of Contents. Hidden when there are too few headings. */
+function TableOfContents({
+  items,
+  className,
+}: {
+  items: TocItem[];
+  className?: string;
+}) {
+  if (items.length < 3) return null;
+  return (
+    <nav aria-label="On this page" className={className}>
+      <h2 className="text-xs font-medium text-muted uppercase tracking-wide mb-2">
+        On this page
+      </h2>
+      <ul className="space-y-1.5 border-l border-border">
+        {items.map((it) => (
+          <li key={it.id}>
+            <a
+              href={`#${it.id}`}
+              className={`block border-l border-transparent -ml-px py-0.5 text-muted hover:border-accent hover:text-accent transition-colors ${
+                it.level === 3 ? "pl-6" : "pl-3"
+              }`}
+            >
+              {it.text}
+            </a>
+          </li>
+        ))}
+      </ul>
+    </nav>
+  );
+}
+
+/** Remove the first H1 line so the promoted page title isn't duplicated. */
+function stripLeadingH1(body: string): string {
+  return body.replace(/^#\s+.+(?:\r?\n)?/m, "");
 }
 
 export default async function WikiPageView({ params }: WikiPageProps) {
@@ -491,60 +559,95 @@ export default async function WikiPageView({ params }: WikiPageProps) {
     Array.isArray(page.frontmatter.sharedWith) &&
     (page.frontmatter.sharedWith as string[]).includes(myYoyoId);
 
+  const toc = buildToc(page.body);
+  const articleBody = stripLeadingH1(page.body);
+
   return (
-    <main className="mx-auto max-w-3xl px-6 py-12">
+    <main className="mx-auto max-w-5xl px-6 py-12">
       <Link
         href="/wiki"
-        className="text-sm text-foreground/60 hover:text-foreground transition-colors"
+        className="text-sm text-muted hover:text-foreground transition-colors"
       >
         ← Back to index
       </Link>
-      <article className="mt-6">
-        <PageMetadata frontmatter={page.frontmatter} discussionStats={discussStats} />
-        <MarkdownRenderer content={page.content} />
-      </article>
-      <SourceProvenance frontmatter={page.frontmatter} />
-      {backlinks.length > 0 && (
-        <section className="mt-10 border-t border-foreground/10 pt-6">
-          <h2 className="text-sm font-medium text-foreground/50 uppercase tracking-wide">
-            What links here
-          </h2>
-          <ul className="mt-2 space-y-1">
-            {backlinks.map((bl) => (
-              <li key={bl.slug}>
-                <Link
-                  href={`/wiki/${bl.slug}`}
-                  className="text-sm text-blue-600 hover:underline dark:text-blue-400"
-                >
-                  {bl.title}
-                </Link>
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
-      <DiscussionPanel slug={slug} />
-      <RevisionHistory slug={slug} />
-      <div className="mt-12 border-t border-foreground/10 pt-6 flex flex-wrap items-center gap-3">
-        <Link
-          href={`/wiki/${slug}/edit`}
-          className="rounded-md border border-foreground/20 px-4 py-2 text-sm font-medium text-foreground hover:bg-foreground/5 transition-colors"
-        >
-          Edit page
-        </Link>
-        {hasRawSource && (
-          <Link
-            href={`/raw/${slug}`}
-            className="rounded-md border border-foreground/20 px-4 py-2 text-sm font-medium text-foreground hover:bg-foreground/5 transition-colors"
-          >
-            View source
-          </Link>
-        )}
-        {hasSourceUrl && <ReingestButton slug={slug} />}
-        {canShare && (
-          <ShareWithYoyoButton slug={slug} initiallyShared={alreadyShared} />
-        )}
-        <DeletePageButton slug={slug} />
+
+      <div className="mt-6 lg:grid lg:grid-cols-[minmax(0,1fr)_15rem] lg:gap-12">
+        {/* Reading column */}
+        <div className="min-w-0">
+          <article>
+            <h1 className="text-3xl sm:text-4xl font-bold tracking-tight">
+              {page.title}
+            </h1>
+            <PageByline
+              frontmatter={page.frontmatter}
+              discussionStats={discussStats}
+            />
+            <div className="mt-8">
+              <MarkdownRenderer content={articleBody} className="prose-article" />
+            </div>
+          </article>
+
+          <SourceProvenance frontmatter={page.frontmatter} />
+
+          {/* Page info — inline on mobile; the rail shows it on desktop. */}
+          <PageInfo
+            frontmatter={page.frontmatter}
+            className="mt-8 border-t border-border pt-6 lg:hidden"
+          />
+
+          {backlinks.length > 0 && (
+            <section className="mt-10 border-t border-border pt-6">
+              <h2 className="text-sm font-medium text-muted uppercase tracking-wide">
+                What links here
+              </h2>
+              <ul className="mt-2 space-y-1">
+                {backlinks.map((bl) => (
+                  <li key={bl.slug}>
+                    <Link
+                      href={`/wiki/${bl.slug}`}
+                      className="text-sm text-accent hover:underline"
+                    >
+                      {bl.title}
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
+
+          <DiscussionPanel slug={slug} />
+          <RevisionHistory slug={slug} />
+
+          <div className="mt-12 border-t border-border pt-6 flex flex-wrap items-center gap-3">
+            <Link
+              href={`/wiki/${slug}/edit`}
+              className="rounded-md border border-border px-4 py-2 text-sm font-medium text-foreground hover:bg-foreground/5 transition-colors"
+            >
+              Edit page
+            </Link>
+            {hasRawSource && (
+              <Link
+                href={`/raw/${slug}`}
+                className="rounded-md border border-border px-4 py-2 text-sm font-medium text-foreground hover:bg-foreground/5 transition-colors"
+              >
+                View source
+              </Link>
+            )}
+            {hasSourceUrl && <ReingestButton slug={slug} />}
+            {canShare && (
+              <ShareWithYoyoButton slug={slug} initiallyShared={alreadyShared} />
+            )}
+            <DeletePageButton slug={slug} />
+          </div>
+        </div>
+
+        {/* Right rail — table of contents + page info (desktop only) */}
+        <aside className="hidden lg:block">
+          <div className="sticky top-20 space-y-8">
+            <TableOfContents items={toc} />
+            <PageInfo frontmatter={page.frontmatter} />
+          </div>
+        </aside>
       </div>
     </main>
   );
