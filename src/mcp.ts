@@ -47,13 +47,14 @@ import {
   searchWikiContent,
   readWikiPage,
   readWikiPageWithFrontmatter,
-  listWikiPages,
+  listReadableWikiPages,
   validateSlug,
   serializeFrontmatter,
   writeWikiPageWithSideEffects,
   deleteWikiPage,
   type Frontmatter,
 } from "./lib/wiki";
+import { canReadFrontmatter } from "./lib/authz";
 import { extractSummary, ingest, ingestUrl, ingestXMention, reingest, readLedger, type LedgerEntry } from "./lib/ingest";
 import { query, saveAnswerToWiki, type QueryFormat } from "./lib/query";
 import { isUrl } from "./lib/fetch";
@@ -88,6 +89,7 @@ export async function handleSearchWiki(args: {
     args.query,
     limit,
     scope ?? undefined,
+    null, // MCP is unauthenticated — enforce visibility with null principal
   );
   return results.map((r) => ({
     slug: r.slug,
@@ -107,6 +109,9 @@ export async function handleReadPage(args: {
 }> {
   const page = await readWikiPageWithFrontmatter(args.slug);
   if (!page) {
+    throw new Error(`Page not found: ${args.slug}`);
+  }
+  if (!canReadFrontmatter(page.frontmatter, null)) {
     throw new Error(`Page not found: ${args.slug}`);
   }
   return {
@@ -129,7 +134,7 @@ export async function handleListPages(args: {
     updated?: string;
   }[]
 > {
-  const entries = await listWikiPages();
+  const entries = await listReadableWikiPages(null);
 
   // Sort
   const sorted = [...entries];

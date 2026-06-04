@@ -2999,6 +2999,74 @@ describe("read_revision", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Visibility enforcement — private pages must not leak through MCP
+// ---------------------------------------------------------------------------
+
+describe("visibility enforcement", () => {
+  const PUBLIC_PAGE = [
+    "---",
+    "title: Public Page",
+    "owner: alice",
+    "visibility: public",
+    "---",
+    "# Public Page",
+    "",
+    "This page is public.",
+  ].join("\n");
+
+  const PRIVATE_PAGE = [
+    "---",
+    "title: Secret Page",
+    "owner: alice",
+    "visibility: private",
+    "---",
+    "# Secret Page",
+    "",
+    "This page is private and should not leak.",
+  ].join("\n");
+
+  it("handleListPages excludes private pages", async () => {
+    await writeTestPage("public-page", PUBLIC_PAGE);
+    await writeTestPage("secret-page", PRIVATE_PAGE);
+    await writeIndex([
+      { title: "Public Page", slug: "public-page", summary: "Public" },
+      { title: "Secret Page", slug: "secret-page", summary: "Secret" },
+    ]);
+
+    const result = await handleListPages({});
+    const slugs = result.map((p) => p.slug);
+    expect(slugs).toContain("public-page");
+    expect(slugs).not.toContain("secret-page");
+  });
+
+  it("handleReadPage throws for a private page", async () => {
+    await writeTestPage("secret-page", PRIVATE_PAGE);
+
+    await expect(handleReadPage({ slug: "secret-page" })).rejects.toThrow(
+      "Page not found: secret-page",
+    );
+  });
+
+  it("handleReadPage succeeds for a public page", async () => {
+    await writeTestPage("public-page", PUBLIC_PAGE);
+
+    const result = await handleReadPage({ slug: "public-page" });
+    expect(result.slug).toBe("public-page");
+    expect(result.title).toBe("Public Page");
+  });
+
+  it("handleSearchWiki excludes private page content", async () => {
+    await writeTestPage("public-page", PUBLIC_PAGE);
+    await writeTestPage("secret-page", PRIVATE_PAGE);
+
+    const results = await handleSearchWiki({ query: "page" });
+    const slugs = results.map((r) => r.slug);
+    expect(slugs).toContain("public-page");
+    expect(slugs).not.toContain("secret-page");
+  });
+});
+
+// ---------------------------------------------------------------------------
 // mcp.json manifest ↔ server drift test
 // ---------------------------------------------------------------------------
 

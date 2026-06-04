@@ -19,6 +19,9 @@ vi.mock("../wiki", async (importOriginal) => {
     listWikiPages: vi
       .fn()
       .mockRejectedValue(new Error("filesystem read failed")),
+    listReadableWikiPages: vi
+      .fn()
+      .mockRejectedValue(new Error("filesystem read failed")),
   };
 });
 
