@@ -110,12 +110,14 @@ export function useStreamingQuery(
           return;
         }
 
-        // Parse sources from the custom header
+        // Parse sources from the custom header. The server percent-encodes the
+        // JSON so non-ASCII slugs (e.g. CJK titles) survive the Latin-1 header
+        // transport; decode before parsing.
         const sourcesHeader = res.headers.get("X-Wiki-Sources");
         let sources: string[] = [];
         if (sourcesHeader) {
           try {
-            sources = JSON.parse(sourcesHeader) as string[];
+            sources = JSON.parse(decodeURIComponent(sourcesHeader)) as string[];
           } catch {
             // Malformed header — fall back to empty array
             sources = [];

@@ -113,7 +113,10 @@ export async function POST(request: NextRequest) {
 
     return result.toTextStreamResponse({
       headers: {
-        "X-Wiki-Sources": JSON.stringify(loadedSlugs),
+        // Percent-encode so non-ASCII slugs (e.g. CJK titles) survive the
+        // header transport, which is Latin-1 on the wire. The client decodes
+        // with decodeURIComponent before JSON.parse.
+        "X-Wiki-Sources": encodeURIComponent(JSON.stringify(loadedSlugs)),
       },
     });
   } catch (error) {
