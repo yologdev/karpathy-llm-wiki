@@ -454,18 +454,44 @@ interface TocItem {
 }
 
 /**
- * Parse h2/h3 ATX headings from a markdown body into TOC items. IDs use the
- * same `slugify` as the MarkdownRenderer heading anchors, so the links line
- * up. Light markdown emphasis is stripped from the displayed text.
+ * Reduce raw markdown heading text to the plain text the MarkdownRenderer
+ * actually renders: `[label](url)`/`![alt](src)` collapse to their label, and
+ * emphasis/code markers are dropped. Keeps TOC slugs in sync with the heading
+ * anchors (which slugify the rendered text).
+ */
+function headingDisplayText(raw: string): string {
+  return raw
+    .replace(/!?\[([^\]]*)\]\([^)]*\)/g, "$1")
+    .replace(/[*_`~]/g, "")
+    .trim();
+}
+
+/**
+ * Parse h2/h3 ATX headings into TOC items with unique ids (GitHub-style
+ * `-2`, `-3` suffixes for repeats). Fenced code blocks are skipped so a
+ * `## x` inside code isn't mistaken for a heading — keeping this list aligned
+ * with what the renderer emits. The id array is handed to the renderer so the
+ * heading anchors match these by construction.
  */
 function buildToc(body: string): TocItem[] {
+  const prose = body
+    .replace(/```[\s\S]*?```/g, "")
+    .replace(/~~~[\s\S]*?~~~/g, "");
   const items: TocItem[] = [];
+  const seen = new Map<string, number>();
   const re = /^(#{2,3})\s+(.+?)\s*#*$/gm;
   let m: RegExpExecArray | null;
-  while ((m = re.exec(body)) !== null) {
-    const text = m[2].replace(/[*_`]/g, "").trim();
+  while ((m = re.exec(prose)) !== null) {
+    const text = headingDisplayText(m[2]);
     if (!text) continue;
-    items.push({ level: m[1].length === 2 ? 2 : 3, text, id: slugify(text) });
+    const base = slugify(text) || "section";
+    const n = (seen.get(base) ?? 0) + 1;
+    seen.set(base, n);
+    items.push({
+      level: m[1].length === 2 ? 2 : 3,
+      text,
+      id: n === 1 ? base : `${base}-${n}`,
+    });
   }
   return items;
 }
@@ -583,7 +609,11 @@ export default async function WikiPageView({ params }: WikiPageProps) {
               discussionStats={discussStats}
             />
             <div className="mt-8">
-              <MarkdownRenderer content={articleBody} className="prose-article" />
+              <MarkdownRenderer
+                content={articleBody}
+                className="prose-article"
+                headingIds={toc.map((t) => t.id)}
+              />
             </div>
           </article>
 
