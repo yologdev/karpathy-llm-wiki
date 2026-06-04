@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { listWikiPages, readWikiPageWithFrontmatter } from "@/lib/wiki";
+import { listReadableWikiPages, readWikiPageWithFrontmatter } from "@/lib/wiki";
+import { getPrincipal } from "@/lib/auth";
 import { getErrorMessage } from "@/lib/errors";
 import { logger } from "@/lib/logger";
 
@@ -17,7 +18,8 @@ interface GraphEdge {
 
 export async function GET() {
   try {
-    const pages = await listWikiPages();
+    const principal = await getPrincipal();
+    const pages = await listReadableWikiPages(principal);
     const slugSet = new Set(pages.map((p) => p.slug));
 
     const nodes: GraphNode[] = [];

@@ -1,8 +1,9 @@
-import { listWikiPages, readWikiPageWithFrontmatter, isAgentScopedType } from "./wiki";
+import { listReadableWikiPages, readWikiPageWithFrontmatter, isAgentScopedType } from "./wiki";
 import { listRevisions } from "./revisions";
 import { parseSources } from "./sources";
 import { isAgentHandle } from "./agents";
 import type { SourceEntry } from "./types";
+import type { Principal } from "./auth";
 
 /** A single event in the public activity trail — the lab's running log. */
 export interface TrailEvent {
@@ -31,8 +32,11 @@ const MAX_PAGES_SCANNED = 60;
  * time-sorted feed. Agent-scoped pages are excluded; agent *actors* are kept
  * and flagged via {@link isAgentHandle} so the UI can mark them distinctly.
  */
-export async function getTrail(limit = 12): Promise<TrailEvent[]> {
-  const pages = (await listWikiPages())
+export async function getTrail(
+  limit = 12,
+  principal: Principal | null = null,
+): Promise<TrailEvent[]> {
+  const pages = (await listReadableWikiPages(principal))
     .filter((p) => !isAgentScopedType(p.type))
     .sort((a, b) => (b.updated ?? "").localeCompare(a.updated ?? ""))
     .slice(0, MAX_PAGES_SCANNED);

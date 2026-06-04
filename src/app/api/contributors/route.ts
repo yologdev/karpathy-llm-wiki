@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { listContributors, buildContributorProfile, buildContributorProfiles } from "@/lib/contributors";
+import { getPrincipal } from "@/lib/auth";
 import { getErrorMessage } from "@/lib/errors";
 
 /**
@@ -15,6 +16,7 @@ export async function GET(req: Request) {
     const url = new URL(req.url);
     const handle = url.searchParams.get("handle");
     const handles = url.searchParams.get("handles");
+    const principal = await getPrincipal();
 
     // Batch lookup: ?handles=alice,bob,charlie
     if (handles) {
@@ -30,13 +32,13 @@ export async function GET(req: Request) {
         );
       }
 
-      const profiles = await buildContributorProfiles(handleList);
+      const profiles = await buildContributorProfiles(handleList, undefined, principal);
       return NextResponse.json({ contributors: profiles });
     }
 
     // Single-handle lookup: ?handle=alice
     if (handle) {
-      const profile = await buildContributorProfile(handle);
+      const profile = await buildContributorProfile(handle, undefined, principal);
       // 404 if handle has zero activity
       if (profile.editCount === 0 && profile.commentCount === 0) {
         return NextResponse.json(
@@ -48,7 +50,7 @@ export async function GET(req: Request) {
     }
 
     // List all contributors
-    const contributors = await listContributors();
+    const contributors = await listContributors(principal);
     return NextResponse.json({ contributors });
   } catch (err) {
     const message = getErrorMessage(err);

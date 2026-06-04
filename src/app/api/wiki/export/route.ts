@@ -1,5 +1,6 @@
 import { zipSync, strToU8 } from "fflate";
-import { listWikiPages, readWikiPage } from "@/lib/wiki";
+import { listReadableWikiPages, readWikiPage } from "@/lib/wiki";
+import { getPrincipal } from "@/lib/auth";
 import { convertToObsidianLinks } from "@/lib/export";
 
 /**
@@ -15,7 +16,8 @@ import { convertToObsidianLinks } from "@/lib/export";
  */
 export async function GET() {
   try {
-    const pages = await listWikiPages();
+    const principal = await getPrincipal();
+    const pages = await listReadableWikiPages(principal);
 
     if (pages.length === 0) {
       return new Response(JSON.stringify({ error: "No wiki pages to export" }), {
@@ -26,7 +28,6 @@ export async function GET() {
 
     // Build a map of filename → compressed Uint8Array content
     const files: Record<string, Uint8Array> = {};
-    const added = new Set<string>();
 
     for (const entry of pages) {
       const page = await readWikiPage(entry.slug);
@@ -34,16 +35,16 @@ export async function GET() {
 
       const obsidianContent = convertToObsidianLinks(page.content);
       files[`${entry.slug}.md`] = strToU8(obsidianContent);
-      added.add(entry.slug);
     }
 
-    // Ensure index.md is included even if it isn't in the index entries
-    if (!added.has("index")) {
-      const indexPage = await readWikiPage("index");
-      if (indexPage) {
-        files["index.md"] = strToU8(convertToObsidianLinks(indexPage.content));
-      }
-    }
+    // Rebuild index.md from the readable pages only — the raw index file lists
+    // every page (including private ones the caller can't read).
+    const indexLines = pages.map(
+      (p) => `- [${p.title}](${p.slug}.md) — ${p.summary}`,
+    );
+    files["index.md"] = strToU8(
+      convertToObsidianLinks(`# Wiki Index\n\n${indexLines.join("\n")}\n`),
+    );
 
     // Create the zip synchronously (pure JS, no Node.js streams)
     const zipped = zipSync(files, { level: 9 });

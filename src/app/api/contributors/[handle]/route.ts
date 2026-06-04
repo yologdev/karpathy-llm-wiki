@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { buildContributorProfile } from "@/lib/contributors";
+import { getPrincipal } from "@/lib/auth";
 import { getErrorMessage } from "@/lib/errors";
 
 interface RouteParams {
@@ -23,7 +24,7 @@ export async function GET(_req: Request, { params }: RouteParams) {
       );
     }
 
-    const profile = await buildContributorProfile(handle);
+    const profile = await buildContributorProfile(handle, undefined, await getPrincipal());
 
     // 404 when handle has no recorded activity
     if (profile.editCount === 0 && profile.commentCount === 0) {

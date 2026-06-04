@@ -1,7 +1,7 @@
 import { callLLM, hasLLMKey } from "./llm";
 import { QUERY_MAX_OUTPUT_TOKENS } from "./constants";
 import {
-  listWikiPages,
+  listReadableWikiPages,
   writeWikiPageWithSideEffects,
   withPageCache,
   isAgentScopedType,
@@ -170,9 +170,13 @@ export async function query(
   question: string,
   format: QueryFormat = "prose",
   scope?: string,
+  principal: import("./auth").Principal | null = null,
 ): Promise<QueryResult> {
+  // Restrict to readable pages BEFORE entering the per-request page cache, so a
+  // private page never enters the LLM context, citations, or sources.
+  const readable = await listReadableWikiPages(principal);
   return withPageCache(async () => {
-    let entries = await listWikiPages();
+    let entries = readable;
 
     // Resolve scope to a set of slugs when provided
     let scopeSlugs: string[] | undefined;

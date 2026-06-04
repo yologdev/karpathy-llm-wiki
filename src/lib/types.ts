@@ -26,6 +26,8 @@ export interface IndexEntry {
   owner?: string;
   /** Page type from frontmatter (e.g. "agent-identity"). */
   type?: string;
+  /** Visibility from frontmatter ("private" gates reads; absent/other = public). */
+  visibility?: string;
 }
 
 /** Result returned after ingesting a source document. */

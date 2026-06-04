@@ -41,10 +41,16 @@ function resolveHandle(user: {
  * populated by `clerkMiddleware`).
  */
 export async function getPrincipal(): Promise<Principal | null> {
-  const { userId } = await auth();
-  if (!userId) return null;
-  const user = await currentUser();
-  return { id: userId, handle: resolveHandle(user) ?? userId };
+  try {
+    const { userId } = await auth();
+    if (!userId) return null;
+    const user = await currentUser();
+    return { id: userId, handle: resolveHandle(user) ?? userId };
+  } catch {
+    // No Clerk request context (e.g. unit tests, non-request scope) → treat as
+    // anonymous. Fail closed: callers get least privilege, never an exception.
+    return null;
+  }
 }
 
 // ---------------------------------------------------------------------------

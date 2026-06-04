@@ -6,7 +6,8 @@
 // (created, updated, tags, source_count, source_url, etc.). Inspired by
 // the Obsidian Dataview plugin pattern mentioned in the founding vision.
 
-import { listWikiPages, readWikiPageWithFrontmatter, withPageCache } from "./wiki";
+import { listReadableWikiPages, readWikiPageWithFrontmatter, withPageCache } from "./wiki";
+import type { Principal } from "./auth";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -204,6 +205,7 @@ function matchesFilter(
  */
 export async function queryByFrontmatter(
   query: DataviewQuery,
+  principal: Principal | null = null,
 ): Promise<DataviewResult[]> {
   validateQuery(query);
 
@@ -212,9 +214,9 @@ export async function queryByFrontmatter(
   const sortBy = query.sortBy;
   const sortOrder = query.sortOrder ?? "asc";
 
-  // Gather all pages with frontmatter, using the page cache for efficiency
+  // Gather readable pages with frontmatter, using the page cache for efficiency
   const entries = await withPageCache(async () => {
-    const pages = await listWikiPages();
+    const pages = await listReadableWikiPages(principal);
     const results: DataviewResult[] = [];
 
     for (const entry of pages) {

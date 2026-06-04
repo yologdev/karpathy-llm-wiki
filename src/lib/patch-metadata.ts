@@ -10,6 +10,7 @@ import {
   type Frontmatter,
 } from "./wiki";
 import { extractSummary } from "./ingest";
+import type { Principal } from "./auth";
 
 /** Frontmatter keys that PATCH is allowed to set. */
 export const PATCHABLE_KEYS = new Set([
@@ -30,6 +31,8 @@ export interface PatchMetadataArgs {
   slug: string;
   metadata: Record<string, unknown>;
   author?: string;
+  /** Full principal — required to gate setting `visibility: private` (paid + owner). */
+  principal?: Principal | null;
 }
 
 export interface PatchMetadataResult {
@@ -52,7 +55,7 @@ export interface PatchMetadataResult {
 export async function patchMetadata(
   args: PatchMetadataArgs,
 ): Promise<PatchMetadataResult> {
-  const { slug, metadata, author } = args;
+  const { slug, metadata, author, principal = null } = args;
 
   // Reject lifecycle-managed keys.
   const rejected = Object.keys(metadata).filter((k) => LIFECYCLE_KEYS.has(k));
@@ -61,18 +64,6 @@ export async function patchMetadata(
       `cannot update lifecycle-managed fields via PATCH: ${rejected.join(", ")}`,
     );
     (err as NodeJS.ErrnoException).code = "LIFECYCLE_FIELD";
-    throw err;
-  }
-
-  // Guard: reject visibility: "private" until read-path enforcement exists.
-  if (
-    "visibility" in metadata &&
-    metadata.visibility === "private"
-  ) {
-    const err = new Error(
-      "Private visibility is not yet enforced. Pages marked private would still be publicly readable. Set visibility to \"public\" or omit it.",
-    );
-    (err as NodeJS.ErrnoException).code = "PRIVATE_NOT_SUPPORTED";
     throw err;
   }
 
@@ -95,6 +86,27 @@ export async function patchMetadata(
     const err = new Error(`page not found: ${slug}`);
     (err as NodeJS.ErrnoException).code = "NOT_FOUND";
     throw err;
+  }
+
+  // Making a page private is a paid, owner-only action — enforced here, the
+  // single shared write path for both REST and MCP.
+  if ("visibility" in metadata && metadata.visibility === "private") {
+    const { canSetPrivate, canReadPage } = await import("./authz");
+    if (!(await canSetPrivate(principal))) {
+      const err = new Error("Setting a page private requires a paid plan.");
+      (err as NodeJS.ErrnoException).code = "PLAN_REQUIRED";
+      throw err;
+    }
+    const owner =
+      typeof existing.frontmatter.owner === "string"
+        ? existing.frontmatter.owner
+        : undefined;
+    // canReadPage's private rule == "is the page owner (or the agent's human owner)".
+    if (!canReadPage({ owner, visibility: "private" }, principal)) {
+      const err = new Error("Only the page owner can make it private.");
+      (err as NodeJS.ErrnoException).code = "NOT_OWNER";
+      throw err;
+    }
   }
 
   // Merge: existing frontmatter + patch + bump updated.

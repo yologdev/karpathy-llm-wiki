@@ -193,12 +193,13 @@ export async function PATCH(
     }
 
     // Attribution comes from the authenticated session, never the body.
-    const authorStr = (await getPrincipal())?.handle;
+    const principal = await getPrincipal();
 
     const result = await patchMetadata({
       slug,
       metadata: metadata as Record<string, unknown>,
-      author: authorStr,
+      author: principal?.handle,
+      principal,
     });
 
     return NextResponse.json(result);
@@ -207,7 +208,8 @@ export async function PATCH(
     const code = (err as NodeJS.ErrnoException).code;
     let status = 500;
     if (code === "LIFECYCLE_FIELD") status = 400;
-    else if (code === "PRIVATE_NOT_SUPPORTED") status = 400;
+    else if (code === "PLAN_REQUIRED") status = 402;
+    else if (code === "NOT_OWNER") status = 403;
     else if (code === "NOT_FOUND") status = 404;
     else if (message.toLowerCase().startsWith("invalid slug")) status = 400;
     return NextResponse.json({ error: message }, { status });

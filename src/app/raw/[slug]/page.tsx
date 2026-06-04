@@ -2,6 +2,8 @@ import Link from "next/link";
 import { decodeSlug } from "@/lib/slugify";
 import { notFound } from "next/navigation";
 import { readRawSource } from "@/lib/wiki";
+import { canReadSlug } from "@/lib/authz";
+import { getPrincipal } from "@/lib/auth";
 import { MarkdownRenderer } from "@/components/MarkdownRenderer";
 
 interface RawSourcePageProps {
@@ -24,6 +26,10 @@ function formatSize(bytes: number): string {
 export default async function RawSourcePage({ params }: RawSourcePageProps) {
   const { slug: encodedSlug } = await params;
   const slug = decodeSlug(encodedSlug);
+  // A private page's raw source is owner-only — 404 (same as missing) otherwise.
+  if (!(await canReadSlug(slug, await getPrincipal()))) {
+    notFound();
+  }
   let source;
   try {
     source = await readRawSource(slug);

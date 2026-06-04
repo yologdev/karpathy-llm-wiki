@@ -1,0 +1,124 @@
+/**
+ * Read-path authorization — the single, fail-closed predicate for "may this
+ * principal read this page?", applied at every read surface (mirroring how
+ * `middleware.ts` is the single write-gate).
+ *
+ * Model (decided with the owner):
+ *   - Everything is PUBLIC by default (human pages AND agent knowledge).
+ *   - `visibility: "private"` is an opt-in paid feature; a private page is
+ *     readable by the OWNER ONLY. For an agent-owned page (`<user>--<name>`),
+ *     the human `<user>` is the owner.
+ */
+
+import { agentOwnerHandle } from "./agents";
+import type { IndexEntry } from "./types";
+import type { Principal } from "./auth";
+
+/** The minimal page metadata needed to authorize a read. */
+export interface PageReadMeta {
+  owner?: string;
+  visibility?: string;
+  type?: string;
+}
+
+/** A reader identity (only the handle matters for authorization). */
+type Reader = { handle: string } | null;
+
+/**
+ * True iff `principal` may read a page with the given metadata. Fail-closed:
+ * only an explicit `visibility: "private"` ever denies; anything else is public.
+ */
+export function canReadPage(meta: PageReadMeta, principal: Reader): boolean {
+  // Public (or no explicit private flag) — always readable.
+  if (meta.visibility !== "private") return true;
+
+  // Private — requires an authenticated owner.
+  if (!principal) return false;
+  const owner = meta.owner;
+  if (!owner) return false; // private but unowned — fail closed
+
+  // Direct ownership.
+  if (principal.handle === owner) return true;
+
+  // Agent ownership: the human behind an agent-owned page is the owner.
+  const agentHuman = agentOwnerHandle(owner);
+  if (agentHuman !== null && agentHuman === principal.handle) return true;
+
+  return false;
+}
+
+/** {@link canReadPage} over an index entry. */
+export function canReadEntry(entry: IndexEntry, principal: Reader): boolean {
+  return canReadPage(
+    { owner: entry.owner, visibility: entry.visibility, type: entry.type },
+    principal,
+  );
+}
+
+/** {@link canReadPage} over a parsed frontmatter record. */
+export function canReadFrontmatter(
+  fm: { owner?: unknown; visibility?: unknown; type?: unknown },
+  principal: Reader,
+): boolean {
+  return canReadPage(
+    {
+      owner: typeof fm.owner === "string" ? fm.owner : undefined,
+      visibility: typeof fm.visibility === "string" ? fm.visibility : undefined,
+      type: typeof fm.type === "string" ? fm.type : undefined,
+    },
+    principal,
+  );
+}
+
+/**
+ * Read-gate by slug for surfaces that don't already hold the page's
+ * frontmatter (raw, revisions, discuss…). Returns `true` when readable OR when
+ * the page is missing (the caller's own not-found handling applies); returns
+ * `false` only for an existing private page the principal can't read — so the
+ * caller should respond 404. Dynamic import avoids a static wiki↔authz cycle.
+ */
+export async function canReadSlug(
+  slug: string,
+  principal: Reader,
+): Promise<boolean> {
+  const { readWikiPageWithFrontmatter } = await import("./wiki");
+  const page = await readWikiPageWithFrontmatter(slug);
+  if (!page) return true;
+  return canReadFrontmatter(page.frontmatter, principal);
+}
+
+/** Thrown when a read is denied; carries a stable code for callers to map to 404. */
+export class ReadAccessError extends Error {
+  readonly code = "PRIVATE_PAGE";
+  constructor(slug: string) {
+    super(`Page "${slug}" is private`);
+    this.name = "ReadAccessError";
+  }
+}
+
+/**
+ * True when the principal is entitled to create private (paid) content.
+ *
+ * Reads Clerk `publicMetadata.plan === "pro"`. No Clerk Billing checkout is
+ * wired in this codebase yet; provisioning the plan (dashboard or a billing
+ * webhook that sets `publicMetadata.plan`) is owner-side config. Fail-closed:
+ * service/token principals and any Clerk error yield `false`.
+ */
+export async function hasPaidPlan(principal: Principal): Promise<boolean> {
+  if (principal.id.startsWith("service:")) return false;
+  try {
+    const { currentUser } = await import("@clerk/nextjs/server");
+    const user = await currentUser();
+    if (!user) return false;
+    const meta = user.publicMetadata as Record<string, unknown> | undefined;
+    return meta?.plan === "pro";
+  } catch {
+    return false;
+  }
+}
+
+/** Whether `principal` may set a page to `visibility: private`. */
+export async function canSetPrivate(principal: Principal | null): Promise<boolean> {
+  if (!principal) return false;
+  return hasPaidPlan(principal);
+}

@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { decodeSlug } from "@/lib/slugify";
 import { readRawSource } from "@/lib/wiki";
+import { getPrincipal } from "@/lib/auth";
+import { canReadSlug } from "@/lib/authz";
 import { getErrorMessage } from "@/lib/errors";
 
 /**
@@ -18,6 +20,10 @@ export async function GET(
   try {
     const { slug: encodedSlug } = await params;
     const slug = decodeSlug(encodedSlug);
+    // A private page's raw source is owner-only — 404 otherwise (same as missing).
+    if (!(await canReadSlug(slug, await getPrincipal()))) {
+      return NextResponse.json({ error: "not found" }, { status: 404 });
+    }
     const source = await readRawSource(slug);
     return new NextResponse(source.content, {
       status: 200,

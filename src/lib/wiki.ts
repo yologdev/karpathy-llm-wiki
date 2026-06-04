@@ -362,6 +362,12 @@ export async function listWikiPages(): Promise<IndexEntry[]> {
             ? fm.type
             : undefined;
 
+        // Only "private" is meaningful for read-gating; everything else is public.
+        const visibility =
+          typeof fm.visibility === "string" && fm.visibility === "private"
+            ? "private"
+            : undefined;
+
         // Parse confidence (0–1 number from frontmatter)
         const confidenceRaw = fm.confidence;
         const confidenceNum =
@@ -384,6 +390,7 @@ export async function listWikiPages(): Promise<IndexEntry[]> {
           ...(confidence !== undefined ? { confidence } : {}),
           ...(owner ? { owner } : {}),
           ...(pageType ? { type: pageType } : {}),
+          ...(visibility ? { visibility } : {}),
         };
       } catch (err) {
         logger.warn(
@@ -397,6 +404,23 @@ export async function listWikiPages(): Promise<IndexEntry[]> {
   );
 
   return enriched;
+}
+
+/**
+ * Like {@link listWikiPages} but filtered to the pages `principal` may read —
+ * the read-side counterpart used by every list-consuming surface (browse,
+ * graph, search, query, export, trail, profiles…). Public pages always pass;
+ * `visibility: private` pages pass only for their owner. `principal` is passed
+ * explicitly (never an implicit default) so callers fail closed.
+ *
+ * Imported dynamically to avoid a static cycle (authz → agents → wiki).
+ */
+export async function listReadableWikiPages(
+  principal: import("./auth").Principal | null,
+): Promise<IndexEntry[]> {
+  const { canReadEntry } = await import("./authz");
+  const entries = await listWikiPages();
+  return entries.filter((e) => canReadEntry(e, principal));
 }
 
 /**

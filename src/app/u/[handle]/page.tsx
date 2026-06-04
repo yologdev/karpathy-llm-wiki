@@ -1,8 +1,9 @@
 import Link from "next/link";
-import { listWikiPages } from "@/lib/wiki";
+import { listReadableWikiPages } from "@/lib/wiki";
 import { slugsForOwner } from "@/lib/search";
 import { listAgentsForOwner, agentShortName } from "@/lib/agents";
 import { getDiscussionStatsForSlugs } from "@/lib/talk";
+import { getPrincipal } from "@/lib/auth";
 import { decodeSlug } from "@/lib/slugify";
 import { WikiIndexClient } from "@/components/WikiIndexClient";
 
@@ -17,7 +18,8 @@ export default async function UserPage({
   const handle = decodeSlug(encoded);
 
   const mine = new Set(await slugsForOwner(handle));
-  const pages = (await listWikiPages()).filter((p) => mine.has(p.slug));
+  const readable = await listReadableWikiPages(await getPrincipal());
+  const pages = readable.filter((p) => mine.has(p.slug));
   const agents = await listAgentsForOwner(handle);
 
   const statsMap = await getDiscussionStatsForSlugs(pages.map((p) => p.slug));

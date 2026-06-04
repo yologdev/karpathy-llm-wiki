@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { hasLLMKey, callLLMStream } from "@/lib/llm";
 import { QUERY_MAX_OUTPUT_TOKENS } from "@/lib/constants";
-import { listWikiPages } from "@/lib/wiki";
+import { listReadableWikiPages } from "@/lib/wiki";
+import { getPrincipal } from "@/lib/auth";
 import {
   selectPagesForQuery,
   buildContext,
@@ -70,7 +71,8 @@ export async function POST(request: NextRequest) {
     }
 
     const trimmedQuestion = question.trim();
-    const entries = await listWikiPages();
+    const principal = await getPrincipal();
+    const entries = await listReadableWikiPages(principal);
 
     // Empty wiki — nothing to query
     if (entries.length === 0) {

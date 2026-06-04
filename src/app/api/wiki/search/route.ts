@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { fuzzySearchWikiContent, resolveScope } from "@/lib/search";
+import { getPrincipal } from "@/lib/auth";
 import { getErrorMessage } from "@/lib/errors";
 
 /**
@@ -35,7 +36,8 @@ export async function GET(req: Request) {
       }
     }
 
-    const results = await fuzzySearchWikiContent(q, 10, scope);
+    const principal = await getPrincipal();
+    const results = await fuzzySearchWikiContent(q, 10, scope, principal);
     return NextResponse.json({ results });
   } catch (err) {
     const message = getErrorMessage(err);

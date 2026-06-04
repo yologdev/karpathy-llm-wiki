@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { decodeSlug } from "@/lib/slugify";
 import { readWikiPageWithFrontmatter } from "@/lib/wiki";
+import { canReadFrontmatter } from "@/lib/authz";
+import { getPrincipal } from "@/lib/auth";
 import { WikiEditor } from "@/components/WikiEditor";
 
 interface EditPageProps {
@@ -12,7 +14,8 @@ export default async function EditWikiPage({ params }: EditPageProps) {
   const slug = decodeSlug(encodedSlug);
   const page = await readWikiPageWithFrontmatter(slug);
 
-  if (!page) {
+  // A private page the viewer can't read is indistinguishable from missing.
+  if (!page || !canReadFrontmatter(page.frontmatter, await getPrincipal())) {
     return (
       <main className="mx-auto max-w-3xl px-6 py-12">
         <Link

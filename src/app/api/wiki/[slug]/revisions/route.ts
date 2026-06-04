@@ -3,6 +3,8 @@ import { readWikiPage, readWikiPageWithFrontmatter, writeWikiPageWithSideEffects
 import { listRevisions, readRevision, readRevisionMeta } from "@/lib/revisions";
 import { extractSummary } from "@/lib/ingest";
 import { serializeFrontmatter } from "@/lib/frontmatter";
+import { getPrincipal } from "@/lib/auth";
+import { canReadSlug } from "@/lib/authz";
 import { getErrorMessage } from "@/lib/errors";
 
 type RouteParams = { params: Promise<{ slug: string }> };
@@ -24,6 +26,14 @@ export async function GET(req: Request, { params }: RouteParams) {
     // Check the page exists first.
     const page = await readWikiPage(slug);
     if (!page) {
+      return NextResponse.json(
+        { error: `page not found: ${slug}` },
+        { status: 404 },
+      );
+    }
+
+    // A private page's revision history is owner-only (404 otherwise).
+    if (!(await canReadSlug(slug, await getPrincipal()))) {
       return NextResponse.json(
         { error: `page not found: ${slug}` },
         { status: 404 },

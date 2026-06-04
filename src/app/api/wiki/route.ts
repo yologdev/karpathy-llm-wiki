@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import {
   validateSlug,
   readWikiPage,
-  listWikiPages,
+  listReadableWikiPages,
   serializeFrontmatter,
   writeWikiPageWithSideEffects,
   isAgentScopedType,
@@ -28,7 +28,8 @@ export async function GET(req: Request) {
     const includeAgentPages =
       url.searchParams.get("includeAgentPages") === "true";
 
-    let entries = await listWikiPages();
+    const principal = await getPrincipal();
+    let entries = await listReadableWikiPages(principal);
     if (!includeAgentPages) {
       entries = entries.filter((e) => !isAgentScopedType(e.type));
     }

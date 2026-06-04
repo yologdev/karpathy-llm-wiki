@@ -7,15 +7,17 @@ import { TagChip } from "@/components/TagChip";
 import { HomeAsk } from "@/components/HomeAsk";
 import { HomeGraph } from "@/components/HomeGraph";
 import { Trail } from "@/components/Trail";
-import { listWikiPages, isAgentScopedType } from "@/lib/wiki";
+import { listReadableWikiPages, isAgentScopedType } from "@/lib/wiki";
 import { listContributors } from "@/lib/contributors";
 import { getTrail } from "@/lib/trail";
+import { getPrincipal } from "@/lib/auth";
 
 export default async function Home() {
+  const principal = await getPrincipal();
   const [allPages, contributors, trail] = await Promise.all([
-    listWikiPages(),
-    listContributors(),
-    getTrail(10),
+    listReadableWikiPages(principal),
+    listContributors(principal),
+    getTrail(10, principal),
   ]);
 
   // Public commons only — agent-scoped pages stay out of the stats/feeds.

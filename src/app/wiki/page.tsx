@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { listWikiPages } from "@/lib/wiki";
+import { listReadableWikiPages } from "@/lib/wiki";
 import { slugsForOwner } from "@/lib/search";
 import { getDiscussionStatsForSlugs } from "@/lib/talk";
 import { getPrincipal } from "@/lib/auth";
@@ -27,7 +27,7 @@ export default async function WikiIndex({
         : null;
   const showingMine = ownerHandle !== null;
 
-  let pages = await listWikiPages();
+  let pages = await listReadableWikiPages(principal);
   if (ownerHandle) {
     const mine = new Set(await slugsForOwner(ownerHandle));
     pages = pages.filter((p) => mine.has(p.slug));

@@ -5,7 +5,7 @@ import {
   resolveAgentPages,
   sharedPagesFor,
 } from "@/lib/agents";
-import { listWikiPages } from "@/lib/wiki";
+import { listReadableWikiPages } from "@/lib/wiki";
 import { getDiscussionStatsForSlugs } from "@/lib/talk";
 import { decodeSlug } from "@/lib/slugify";
 import { getErrorMessage } from "@/lib/errors";
@@ -40,7 +40,8 @@ export default async function AgentProfilePage({
   const resolved = await resolveAgentPages(agent);
   const sharedSlugs = await sharedPagesFor(agent.id);
 
-  const index = await listWikiPages();
+  const principal = await getPrincipal();
+  const index = await listReadableWikiPages(principal);
   const bySlug = new Map(index.map((p) => [p.slug, p]));
   const titleFor = (slug: string) => bySlug.get(slug)?.title ?? slug;
 
@@ -59,7 +60,6 @@ export default async function AgentProfilePage({
   const discussionStats: Record<string, { total: number; open: number }> = {};
   for (const [slug, stats] of statsMap) discussionStats[slug] = stats;
 
-  const principal = await getPrincipal();
   const canManage = !!principal && agent.owner === principal.handle;
 
   return (

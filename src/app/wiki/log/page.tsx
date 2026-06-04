@@ -1,9 +1,35 @@
 import Link from "next/link";
-import { readLog } from "@/lib/wiki";
+import { readLog, listWikiPages } from "@/lib/wiki";
+import { canReadEntry } from "@/lib/authz";
+import { getPrincipal } from "@/lib/auth";
 import { MarkdownRenderer } from "@/components/MarkdownRenderer";
 
 export default async function LogPage() {
-  const logContent = await readLog();
+  const raw = await readLog();
+
+  // Redact log lines that mention a private page the viewer can't read — the
+  // log records titles/slugs, which would otherwise leak. Skipped entirely in
+  // the common case where there are no hidden pages.
+  let logContent = raw;
+  if (raw) {
+    const principal = await getPrincipal();
+    const hidden = (await listWikiPages()).filter(
+      (p) => !canReadEntry(p, principal),
+    );
+    if (hidden.length > 0) {
+      const needles = hidden
+        .flatMap((p) => [p.slug, p.title])
+        .filter((n): n is string => Boolean(n))
+        .map((n) => n.toLowerCase());
+      logContent = raw
+        .split("\n")
+        .filter((line) => {
+          const l = line.toLowerCase();
+          return !needles.some((n) => l.includes(n));
+        })
+        .join("\n");
+    }
+  }
 
   return (
     <main className="mx-auto max-w-3xl px-6 py-12">

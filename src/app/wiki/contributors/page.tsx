@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { listContributors } from "@/lib/contributors";
+import { getPrincipal } from "@/lib/auth";
 
 /** Map trust score to a colored dot. */
 function trustDot(score: number): { color: string; label: string } {
@@ -14,7 +15,7 @@ function formatDate(iso: string): string {
 }
 
 export default async function ContributorsPage() {
-  const contributors = await listContributors();
+  const contributors = await listContributors(await getPrincipal());
 
   return (
     <main className="mx-auto max-w-3xl px-6 py-12">

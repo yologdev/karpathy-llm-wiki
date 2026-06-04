@@ -9,10 +9,13 @@ import {
   readWikiPageWithFrontmatter,
   writeWikiPage,
   listWikiPages,
+  listReadableWikiPages,
   withPageCache,
   wikiRelPath,
   isAgentScopedType,
 } from "./wiki";
+import { canReadFrontmatter } from "./authz";
+import type { Principal } from "./auth";
 import { isEnoent } from "./errors";
 import { getAgent, resolveAgentPages, sharedPagesFor } from "./agents";
 import { getStorage } from "./storage";
@@ -139,9 +142,12 @@ export async function updateRelatedPages(
  */
 export async function findBacklinks(
   targetSlug: string,
+  principal: Principal | null = null,
 ): Promise<Array<{ slug: string; title: string }>> {
   return withPageCache(async () => {
-    const pages = await listWikiPages();
+    // Readable pages only — a private page must not surface as a backlink to
+    // viewers who can't see it.
+    const pages = await listReadableWikiPages(principal);
     const backlinks: Array<{ slug: string; title: string }> = [];
 
     for (const page of pages) {
@@ -300,6 +306,7 @@ export async function searchWikiContent(
   query: string,
   maxResults = 10,
   scope?: SearchScope,
+  principal: Principal | null = null,
 ): Promise<ContentSearchResult[]> {
   const terms = query
     .toLowerCase()
@@ -371,6 +378,8 @@ export async function searchWikiContent(
 
     // Extract summary from index-style content (first paragraph after heading)
     const parsed = parseFrontmatter(content);
+    // Read-gate: never return snippets from a private page the caller can't read.
+    if (!canReadFrontmatter(parsed.data, principal)) continue;
     const body = parsed.body;
     const summaryLine = body
       .replace(/^#\s+.+$/m, "")
@@ -419,9 +428,10 @@ export async function fuzzySearchWikiContent(
   query: string,
   maxResults = 10,
   scope?: SearchScope,
+  principal: Principal | null = null,
 ): Promise<ContentSearchResult[]> {
   // Start with exact search
-  const exactResults = await searchWikiContent(query, maxResults, scope);
+  const exactResults = await searchWikiContent(query, maxResults, scope, principal);
 
   // If we have enough exact results, just return them
   if (exactResults.length >= FUZZY_FALLBACK_THRESHOLD) {
@@ -485,6 +495,8 @@ export async function fuzzySearchWikiContent(
 
     // Extract summary
     const parsed = parseFrontmatter(content);
+    // Read-gate: never return snippets from a private page the caller can't read.
+    if (!canReadFrontmatter(parsed.data, principal)) continue;
     const body = parsed.body;
     const summaryLine = body
       .replace(/^#\s+.+$/m, "")

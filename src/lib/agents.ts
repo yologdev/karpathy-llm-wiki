@@ -142,6 +142,21 @@ export function agentShortName(agent: AgentProfile): string {
 }
 
 /**
+ * Recover the (slugified) human owner handle from an agent id, the inverse of
+ * the owner half of {@link agentIdFor}. The id is `slugify(owner)--slugify(name)`
+ * and slugify never emits `--`, so everything before the first `--` is the
+ * owner slug. Returns null for bare/legacy ids without a `--` delimiter.
+ *
+ * Used by read-authorization to decide whether a requester owns the human
+ * behind an agent-owned page (e.g. owner `yuanhao--yoyo` → `yuanhao`).
+ */
+export function agentOwnerHandle(agentId: string): string | null {
+  const idx = agentId.indexOf("--");
+  if (idx <= 0) return null;
+  return agentId.slice(0, idx);
+}
+
+/**
  * Build a "## Related" markdown block that links an agent section page to its
  * siblings, so the agent's pages form a connected cluster in the wiki graph
  * (graph edges come from `[text](slug.md)` links). Star topology: the hub (the

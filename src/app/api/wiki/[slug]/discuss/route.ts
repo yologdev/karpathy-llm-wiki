@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { decodeSlug } from "@/lib/slugify";
 import { listThreads, createThread } from "@/lib/talk";
 import { getPrincipal } from "@/lib/auth";
+import { canReadSlug } from "@/lib/authz";
 import { getErrorMessage } from "@/lib/errors";
 import { logger } from "@/lib/logger";
 
@@ -17,6 +18,9 @@ export async function GET(_req: Request, { params }: RouteParams) {
   try {
     const { slug: encodedSlug } = await params;
     const slug = decodeSlug(encodedSlug);
+    if (!(await canReadSlug(slug, await getPrincipal()))) {
+      return NextResponse.json({ error: "not found" }, { status: 404 });
+    }
     const threads = await listThreads(slug);
     return NextResponse.json({ threads });
   } catch (err) {

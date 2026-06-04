@@ -9,6 +9,7 @@ import { DeletePageButton } from "@/components/DeletePageButton";
 import { ReingestButton } from "@/components/ReingestButton";
 import { ShareWithYoyoButton } from "@/components/ShareWithYoyoButton";
 import { getPrincipal } from "@/lib/auth";
+import { canReadFrontmatter } from "@/lib/authz";
 import { agentIdFor, DEFAULT_AGENT_NAME, isAgentHandle } from "@/lib/agents";
 import { listRevisions } from "@/lib/revisions";
 import { AgentBadge } from "@/components/AgentBadge";
@@ -672,8 +673,11 @@ export default async function WikiPageView({ params }: WikiPageProps) {
   const { slug: encodedSlug } = await params;
   const slug = decodeSlug(encodedSlug);
   const page = await readWikiPageWithFrontmatter(slug);
+  const principal = await getPrincipal();
 
-  if (!page) {
+  // A private page the viewer can't read is indistinguishable from a missing
+  // one (same 404 UI) — never reveal that a private page exists.
+  if (!page || !canReadFrontmatter(page.frontmatter, principal)) {
     return (
       <main className="mx-auto max-w-3xl px-6 py-12">
         <Link
@@ -690,7 +694,7 @@ export default async function WikiPageView({ params }: WikiPageProps) {
     );
   }
 
-  const backlinks = await findBacklinks(slug);
+  const backlinks = await findBacklinks(slug, principal);
   const discussStats = await getDiscussionStats(slug);
   const hasSourceUrl =
     typeof page.frontmatter.source_url === "string" &&
@@ -702,7 +706,6 @@ export default async function WikiPageView({ params }: WikiPageProps) {
 
   // "Share with yoyo" is shown only to the page's owner/contributor, and we
   // pre-compute whether it's already shared into their yoyo.
-  const principal = await getPrincipal();
   const pageOwner =
     typeof page.frontmatter.owner === "string" ? page.frontmatter.owner : "";
   const pageContributors = Array.isArray(page.frontmatter.contributors)

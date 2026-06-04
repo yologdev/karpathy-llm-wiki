@@ -4,6 +4,7 @@ import {
   validateQuery,
   type DataviewQuery,
 } from "@/lib/dataview";
+import { getPrincipal } from "@/lib/auth";
 import { getErrorMessage } from "@/lib/errors";
 
 /**
@@ -45,7 +46,7 @@ export async function POST(req: Request) {
       );
     }
 
-    const results = await queryByFrontmatter(query);
+    const results = await queryByFrontmatter(query, await getPrincipal());
 
     return NextResponse.json({
       results,

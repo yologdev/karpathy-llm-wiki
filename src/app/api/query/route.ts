@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { query, type QueryFormat } from "@/lib/query";
+import { getPrincipal } from "@/lib/auth";
 import { getErrorMessage } from "@/lib/errors";
 import { logger } from "@/lib/logger";
 
@@ -51,6 +52,7 @@ export async function POST(request: NextRequest) {
       question.trim(),
       parseFormat(format),
       scope || undefined,
+      await getPrincipal(),
     );
 
     return NextResponse.json(result);

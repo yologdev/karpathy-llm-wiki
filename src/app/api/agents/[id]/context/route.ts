@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { getAgent, resolveAgentPages, sharedPagesFor } from "@/lib/agents";
 import { readWikiPageWithFrontmatter } from "@/lib/wiki";
+import { getPrincipal, type Principal } from "@/lib/auth";
+import { canReadFrontmatter } from "@/lib/authz";
 import { getErrorMessage } from "@/lib/errors";
 import { logger } from "@/lib/logger";
 
@@ -15,11 +17,17 @@ const PAGE_SEPARATOR = "\n\n---\n\n";
  * Read wiki pages by slug, concatenate their content with a separator.
  * Missing pages are silently skipped with a warning logged.
  */
-async function loadPages(slugs: string[]): Promise<{ content: string; count: number }> {
+async function loadPages(
+  slugs: string[],
+  principal: Principal | null,
+): Promise<{ content: string; count: number }> {
   const contents: string[] = [];
   for (const slug of slugs) {
     const page = await readWikiPageWithFrontmatter(slug);
     if (page) {
+      // Skip pages the caller can't read (an agent's list may reference a
+      // third party's private page).
+      if (!canReadFrontmatter(page.frontmatter, principal)) continue;
       contents.push(page.body);
     } else {
       logger.warn("agents", `Wiki page "${slug}" not found — skipping`);
@@ -79,12 +87,13 @@ export async function GET(_req: Request, { params }: RouteParams) {
     const pages = await resolveAgentPages(agent);
     const sharedSlugs = await sharedPagesFor(agent.id);
 
-    // Load all context sections in parallel
+    // Load all context sections in parallel (read-gated per page)
+    const principal = await getPrincipal();
     const [identity, learnings, social, shared] = await Promise.all([
-      loadPages(pages.identityPages),
-      loadPages(pages.learningPages),
-      loadPages(pages.socialPages),
-      loadPages(sharedSlugs),
+      loadPages(pages.identityPages, principal),
+      loadPages(pages.learningPages, principal),
+      loadPages(pages.socialPages, principal),
+      loadPages(sharedSlugs, principal),
     ]);
 
     const totalChars =

@@ -63,9 +63,10 @@ async function seedPage(slug: string): Promise<void> {
 // ===========================================================================
 
 describe("patchMetadata — visibility guard", () => {
-  it("rejects visibility: private with PRIVATE_NOT_SUPPORTED code", async () => {
+  it("rejects setting visibility: private without a paid plan (PLAN_REQUIRED)", async () => {
     await seedPage("guarded-page");
     try {
+      // No principal → not entitled → the paid gate fires before the owner check.
       await patchMetadata({
         slug: "guarded-page",
         metadata: { visibility: "private" },
@@ -73,9 +74,8 @@ describe("patchMetadata — visibility guard", () => {
       expect.unreachable("should have thrown");
     } catch (err) {
       const e = err as NodeJS.ErrnoException;
-      expect(e.code).toBe("PRIVATE_NOT_SUPPORTED");
-      expect(e.message).toContain("not yet enforced");
-      expect(e.message).toContain("publicly readable");
+      expect(e.code).toBe("PLAN_REQUIRED");
+      expect(e.message.toLowerCase()).toContain("paid plan");
     }
   });
 

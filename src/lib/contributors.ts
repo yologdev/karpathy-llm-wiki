@@ -12,7 +12,8 @@
 // ---------------------------------------------------------------------------
 
 import { getStorage } from "./storage";
-import { listWikiPages, isAgentScopedType } from "./wiki";
+import { listReadableWikiPages, isAgentScopedType } from "./wiki";
+import type { Principal } from "./auth";
 import { listRevisions } from "./revisions";
 import { getDiscussRelPrefix } from "./talk";
 import { isEnoent } from "./errors";
@@ -74,9 +75,11 @@ function emptyActivity(): AuthorActivity {
 }
 
 /** Collect all revision-based activity keyed by author handle. */
-async function scanRevisions(): Promise<Map<string, AuthorActivity>> {
+async function scanRevisions(
+  principal: Principal | null,
+): Promise<Map<string, AuthorActivity>> {
   const map = new Map<string, AuthorActivity>();
-  const pages = await listWikiPages();
+  const pages = await listReadableWikiPages(principal);
 
   for (const page of pages) {
     // Agent-scoped pages are authored by the agent itself (e.g. "yuanhao--yoyo",
@@ -138,9 +141,11 @@ const REVERT_SIZE_REDUCTION_THRESHOLD = 0.5;
  *
  * Returns a map from author handle → number of times their content was reverted.
  */
-async function detectReverts(): Promise<Map<string, number>> {
+async function detectReverts(
+  principal: Principal | null,
+): Promise<Map<string, number>> {
   const revertCounts = new Map<string, number>();
-  const pages = await listWikiPages();
+  const pages = await listReadableWikiPages(principal);
 
   for (const page of pages) {
     if (isAgentScopedType(page.type)) continue;
@@ -201,11 +206,13 @@ export interface ContributorScanData {
  * revert detection. Returns data that can be passed to profile builders
  * to avoid redundant scans.
  */
-export async function computeScanData(): Promise<ContributorScanData> {
-  const activityMap = await scanRevisions();
+export async function computeScanData(
+  principal: Principal | null = null,
+): Promise<ContributorScanData> {
+  const activityMap = await scanRevisions(principal);
   const threads = await loadAllThreads();
   mergeTalkActivity(activityMap, threads);
-  const revertCounts = await detectReverts();
+  const revertCounts = await detectReverts(principal);
   return { activityMap, revertCounts };
 }
 
@@ -253,8 +260,9 @@ function buildProfileFromActivity(
 export async function buildContributorProfile(
   handle: string,
   scanData?: ContributorScanData,
+  principal: Principal | null = null,
 ): Promise<ContributorProfile> {
-  const data = scanData ?? await computeScanData();
+  const data = scanData ?? await computeScanData(principal);
   const act = data.activityMap.get(handle) ?? emptyActivity();
   const revertCount = data.revertCounts.get(handle) ?? 0;
   return buildProfileFromActivity(handle, act, revertCount);
@@ -271,8 +279,9 @@ export async function buildContributorProfile(
 export async function buildContributorProfiles(
   handles: string[],
   scanData?: ContributorScanData,
+  principal: Principal | null = null,
 ): Promise<ContributorProfile[]> {
-  const data = scanData ?? await computeScanData();
+  const data = scanData ?? await computeScanData(principal);
   return handles.map((handle) => {
     const act = data.activityMap.get(handle) ?? emptyActivity();
     const revertCount = data.revertCounts.get(handle) ?? 0;
@@ -285,8 +294,10 @@ export async function buildContributorProfiles(
  *
  * Returns profiles sorted by `editCount` descending.
  */
-export async function listContributors(): Promise<ContributorProfile[]> {
-  const data = await computeScanData();
+export async function listContributors(
+  principal: Principal | null = null,
+): Promise<ContributorProfile[]> {
+  const data = await computeScanData(principal);
 
   const profiles: ContributorProfile[] = [];
   for (const [handle, act] of data.activityMap) {
