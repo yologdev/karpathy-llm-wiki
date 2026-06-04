@@ -91,19 +91,29 @@ export async function syncSiloForPage(
   if (await copyText(rawRelPath(`${slug}.md`), tenantRawRelPath(tenant, `${slug}.md`)))
     n++;
 
+  // Revision history + assets are IMMUTABLE (append-only, never rewritten), so
+  // copy only the ones not already mirrored. This bounds a per-write sync to the
+  // new files instead of re-copying the whole (unbounded) history each time —
+  // critical on the Workers runtime (subrequest budget). One list of the silo
+  // side does the diff; the migration's first run (empty silo) still copies all.
+
   // revision history: wiki/.revisions/<slug>/{<ts>.md,<ts>.meta.json}
-  for (const f of await listSafe(wikiRelPath(`.revisions/${slug}`))) {
-    if (f.isDirectory) continue;
+  const revRel = `.revisions/${slug}`;
+  const mirroredRevs = new Set(
+    (await listSafe(tenantWikiRelPath(tenant, revRel))).map((f) => f.name),
+  );
+  for (const f of await listSafe(wikiRelPath(revRel))) {
+    if (f.isDirectory || mirroredRevs.has(f.name)) continue;
     if (
       await copyText(
-        wikiRelPath(`.revisions/${slug}/${f.name}`),
-        tenantWikiRelPath(tenant, `.revisions/${slug}/${f.name}`),
+        wikiRelPath(`${revRel}/${f.name}`),
+        tenantWikiRelPath(tenant, `${revRel}/${f.name}`),
       )
     )
       n++;
   }
 
-  // discussion threads: discuss/<slug>.json
+  // discussion threads: discuss/<slug>.json (mutable — always overwrite)
   if (
     await copyText(
       `discuss/${slug}.json`,
@@ -112,13 +122,17 @@ export async function syncSiloForPage(
   )
     n++;
 
-  // binary assets: raw/assets/<slug>/<file>
-  for (const f of await listSafe(rawRelPath(`assets/${slug}`))) {
-    if (f.isDirectory) continue;
+  // binary assets: raw/assets/<slug>/<file> (immutable — copy only new)
+  const assetRel = `assets/${slug}`;
+  const mirroredAssets = new Set(
+    (await listSafe(tenantRawRelPath(tenant, assetRel))).map((f) => f.name),
+  );
+  for (const f of await listSafe(rawRelPath(assetRel))) {
+    if (f.isDirectory || mirroredAssets.has(f.name)) continue;
     if (
       await copyAsset(
-        rawRelPath(`assets/${slug}/${f.name}`),
-        tenantRawRelPath(tenant, `assets/${slug}/${f.name}`),
+        rawRelPath(`${assetRel}/${f.name}`),
+        tenantRawRelPath(tenant, `${assetRel}/${f.name}`),
       )
     )
       n++;

@@ -119,6 +119,19 @@ describe("ownerToTenant", () => {
     expect(ownerToTenant("")).toBe("yopedia");
     expect(ownerToTenant("   ")).toBe("yopedia");
   });
+
+  it("normalizes path-unsafe chars so the tenant is always a valid URL/folder", () => {
+    // whitespace / separators / dots → dash; result must be validateTenant-safe.
+    expect(ownerToTenant("Jean Luc")).toBe("jean-luc");
+    expect(ownerToTenant("bob/admin")).toBe("bob-admin");
+    expect(ownerToTenant("a.b")).toBe("a-b");
+    expect(ownerToTenant("..")).toBe("yopedia"); // ".." → trimmed empty → default
+  });
+
+  it("preserves the `--` in agent-style ids and unicode handles", () => {
+    expect(ownerToTenant("alice--yoyo")).toBe("alice--yoyo");
+    expect(ownerToTenant("检索增强")).toBe("检索增强");
+  });
 });
 
 describe("canonical URL builders", () => {

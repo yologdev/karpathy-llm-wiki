@@ -67,10 +67,23 @@ export const DEFAULT_TENANT = "yopedia";
  * The canonical tenant for an owner handle: lowercased (owner checks are
  * case-insensitive, so one owner never splits across "Alice"/"alice" silos),
  * falling back to {@link DEFAULT_TENANT} for ownerless/seed content. The SINGLE
- * place tenant-from-owner is derived.
+ * place tenant-from-owner is derived — used for the `/u/<tenant>/` URL, the
+ * commons key, AND the physical silo folder, so all three stay identical.
+ *
+ * Normalizes the path-unsafe characters a tenant key/URL/folder can't contain
+ * (whitespace, control chars, `/`, `\`, `.`) to `-`, so a free-form owner (e.g.
+ * an API/MCP-supplied `"Jean Luc"`) still yields a valid, routable tenant rather
+ * than a broken URL or a silo write that throws. Unicode (e.g. CJK handles) is
+ * preserved — only the unsafe set is touched. Normal handles (Clerk usernames,
+ * `alice--yoyo`) pass through unchanged apart from lowercasing.
  */
 export function ownerToTenant(owner?: string | null): string {
-  const t = typeof owner === "string" ? owner.trim().toLowerCase() : "";
+  if (typeof owner !== "string") return DEFAULT_TENANT;
+  const t = owner
+    .trim()
+    .toLowerCase()
+    .replace(/[\s\u0000-\u001f/\\.]+/g, "-")
+    .replace(/^-+|-+$/g, ""); // trim leading/trailing dashes
   return t.length > 0 ? t : DEFAULT_TENANT;
 }
 
