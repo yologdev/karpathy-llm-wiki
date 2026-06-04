@@ -91,10 +91,18 @@ export function validateTenant(tenant: string): void {
     throw new Error(`Invalid tenant: ${JSON.stringify(tenant)}`);
   }
 }
-// NOTE (P1): tenant is case-sensitive here while owner checks are
-// case-insensitive (owner.ts). When P1 derives the tenant from a handle,
-// normalize (e.g. lowercase) at that boundary so one owner can't split across
-// "Alice"/"alice" silos.
+
+/**
+ * The canonical tenant for a page owner. Lowercased (owner checks are
+ * case-insensitive — see owner.ts — so one owner must not split across
+ * "Alice"/"alice" silos), falling back to {@link DEFAULT_TENANT} for
+ * ownerless/seed content. This is the SINGLE place tenant-from-owner is
+ * derived; commons and the migration both use it so they stay consistent.
+ */
+export function tenantForOwner(owner: string | undefined | null): string {
+  const t = typeof owner === "string" ? owner.trim().toLowerCase() : "";
+  return t.length > 0 ? t : DEFAULT_TENANT;
+}
 
 /** Storage-relative path for a file in a tenant's wiki tree. */
 export function tenantWikiRelPath(tenant: string, filename: string): string {

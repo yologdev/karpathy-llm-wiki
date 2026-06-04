@@ -23,6 +23,9 @@ const IN_ROUTE_AUTH_PATHS = new Set([
   "/api/agents/seed",
   "/api/ingest",
   "/api/ingest/x-mention",
+  // Admin migration: authenticated in-route by the service token OR the site
+  // owner's session (it rejects everyone else with 403).
+  "/api/admin/migrate",
 ]);
 const AGENT_INGEST_RE = /^\/api\/agents\/[^/]+\/ingest$/;
 

@@ -11,7 +11,7 @@
 
 import { getStorage } from "./storage";
 import { withFileLock } from "./lock";
-import { listWikiPages, isAgentScopedType, DEFAULT_TENANT } from "./wiki";
+import { listWikiPages, isAgentScopedType, tenantForOwner } from "./wiki";
 
 /** KV/derived-index key (resolves to `_idx:commons` on R2, a JSON file on fs). */
 const COMMONS_KEY = "commons";
@@ -108,7 +108,7 @@ export async function syncCommonsForPage(
     confidence?: number;
   },
 ): Promise<void> {
-  const tenant = meta.owner?.trim() || DEFAULT_TENANT;
+  const tenant = tenantForOwner(meta.owner);
   if (belongsInCommons(meta)) {
     await upsertCommonsEntry({
       tenant,
@@ -136,7 +136,7 @@ export async function rebuildCommonsIndex(): Promise<number> {
   const entries: CommonsEntry[] = pages
     .filter((p) => belongsInCommons(p))
     .map((p) => ({
-      tenant: p.owner?.trim() || DEFAULT_TENANT,
+      tenant: tenantForOwner(p.owner),
       slug: p.slug,
       title: p.title,
       summary: p.summary,
