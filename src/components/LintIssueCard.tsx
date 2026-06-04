@@ -51,6 +51,8 @@ export interface LintIssueCardProps {
   isFixing: boolean;
   fixMessage: string | null;
   onFix: (issue: LintIssue, targetSlug?: string) => void;
+  /** Resolve a slug to its canonical `/u/<tenant>/<slug>` href (from useSlugTenants). */
+  hrefForSlug: (slug: string) => string;
 }
 
 export function LintIssueCard({
@@ -58,6 +60,7 @@ export function LintIssueCard({
   isFixing,
   fixMessage,
   onFix,
+  hrefForSlug,
 }: LintIssueCardProps) {
   const styles = severityClasses[issue.severity];
   const targetSlug = issue.target ?? null;
@@ -84,7 +87,7 @@ export function LintIssueCard({
       </span>
       {issue.slug ? (
         <Link
-          href={`/wiki/${issue.slug}`}
+          href={hrefForSlug(issue.slug)}
           className="inline-block rounded-full border border-foreground/20 bg-foreground/5 px-2.5 py-0.5 text-xs font-medium text-foreground hover:bg-foreground/10 transition-colors"
         >
           {issue.slug}

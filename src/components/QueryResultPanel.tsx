@@ -5,6 +5,7 @@ import Link from "next/link";
 import { MarkdownRenderer } from "@/components/MarkdownRenderer";
 import { SlidePreview } from "@/components/SlidePreview";
 import { Alert } from "@/components/Alert";
+import { useSlugTenants } from "@/hooks/useSlugTenants";
 import { logger } from "@/lib/logger";
 
 interface SaveState {
@@ -28,6 +29,7 @@ export function QueryResultPanel({
   currentHistoryId,
   onHistorySaved,
 }: QueryResultPanelProps) {
+  const { hrefForSlug } = useSlugTenants();
   const [saveState, setSaveState] = useState<SaveState>({ status: "idle" });
   const [saveTitle, setSaveTitle] = useState("");
   const [copyState, setCopyState] = useState<"idle" | "copied" | "error">(
@@ -142,7 +144,7 @@ export function QueryResultPanel({
             {result.sources.map((slug) => (
               <li key={slug}>
                 <Link
-                  href={`/wiki/${slug}`}
+                  href={hrefForSlug(slug)}
                   className="inline-block rounded-md border border-foreground/20 px-3 py-1 text-sm hover:bg-foreground/5 transition-colors"
                 >
                   {slug}
@@ -220,7 +222,7 @@ export function QueryResultPanel({
             <Alert variant="success">
               Saved!{" "}
               <Link
-                href={`/wiki/${saveState.slug}`}
+                href={hrefForSlug(saveState.slug)}
                 className="underline font-medium hover:opacity-80"
               >
                 View wiki page →

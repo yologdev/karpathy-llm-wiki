@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
+import { useSlugTenants } from "./useSlugTenants";
 
 export interface SearchNode {
   id: string;
@@ -38,6 +39,7 @@ export interface UseGlobalSearchReturn {
 
 export function useGlobalSearch(): UseGlobalSearchReturn {
   const router = useRouter();
+  const { hrefForSlug } = useSlugTenants();
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
   const [pages, setPages] = useState<SearchNode[]>([]);
@@ -192,7 +194,7 @@ export function useGlobalSearch(): UseGlobalSearchReturn {
     setOpen(false);
     setExpanded(false);
     setContentResults([]);
-    router.push(`/wiki/${slug}`);
+    router.push(hrefForSlug(slug));
   }
 
   function handleKeyDown(e: React.KeyboardEvent) {

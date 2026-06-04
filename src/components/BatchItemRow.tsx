@@ -22,9 +22,11 @@ function statusIcon(status: BatchItem["status"]) {
 
 interface BatchItemRowProps {
   item: BatchItem;
+  /** Resolve a slug to its canonical `/u/<tenant>/<slug>` href (from useSlugTenants). */
+  hrefForSlug: (slug: string) => string;
 }
 
-export function BatchItemRow({ item }: BatchItemRowProps) {
+export function BatchItemRow({ item, hrefForSlug }: BatchItemRowProps) {
   return (
     <li className="flex items-start gap-3 rounded-lg border border-foreground/10 px-4 py-3 text-sm">
       <span className="shrink-0 text-base leading-5">
@@ -38,7 +40,7 @@ export function BatchItemRow({ item }: BatchItemRowProps) {
           <p className="mt-1">
             Created{" "}
             <Link
-              href={`/wiki/${item.slug}`}
+              href={hrefForSlug(item.slug)}
               className="font-medium text-foreground hover:underline"
             >
               {item.slug}

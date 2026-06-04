@@ -1,4 +1,7 @@
+"use client";
+
 import Link from "next/link";
+import { useSlugTenants } from "@/hooks/useSlugTenants";
 
 interface IngestSuccessProps {
   slug: string;
@@ -7,13 +10,14 @@ interface IngestSuccessProps {
 }
 
 export function IngestSuccess({ slug, relatedUpdated, onReset }: IngestSuccessProps) {
+  const { hrefForSlug } = useSlugTenants();
   return (
     <main className="mx-auto max-w-3xl px-6 py-12">
       <div className="rounded-lg border border-foreground/10 p-8 text-center">
         <p className="text-2xl font-semibold">✓ Ingested as wiki page</p>
         <div className="mt-6 flex flex-col items-center gap-3">
           <Link
-            href={`/wiki/${slug}`}
+            href={hrefForSlug(slug)}
             className="inline-block rounded-lg bg-foreground px-6 py-3 text-sm font-medium text-background hover:opacity-90 transition-opacity"
           >
             View &ldquo;{slug}&rdquo; →
@@ -28,7 +32,7 @@ export function IngestSuccess({ slug, relatedUpdated, onReset }: IngestSuccessPr
                 {relatedUpdated.map((relatedSlug) => (
                   <li key={relatedSlug}>
                     <Link
-                      href={`/wiki/${relatedSlug}`}
+                      href={hrefForSlug(relatedSlug)}
                       className="text-sm text-foreground/70 hover:text-foreground hover:underline transition-colors"
                     >
                       {relatedSlug}

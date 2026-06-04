@@ -435,7 +435,7 @@ export function WikiEditor({
           {busy ? "Saving…" : "Save"}
         </button>
         <Link
-          href={`/wiki/${slug}`}
+          href={`/u/${tenant}/${slug}`}
           className="text-sm text-foreground/60 hover:text-foreground transition-colors"
         >
           Cancel

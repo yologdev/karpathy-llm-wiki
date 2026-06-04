@@ -7,8 +7,10 @@ import { Alert } from "@/components/Alert";
 import { BatchItemRow } from "@/components/BatchItemRow";
 import { BatchProgressBar } from "@/components/BatchProgressBar";
 import type { BatchItem } from "@/components/BatchItemRow";
+import { useSlugTenants } from "@/hooks/useSlugTenants";
 
 export function BatchIngestForm() {
+  const { hrefForSlug } = useSlugTenants();
   const [input, setInput] = useState("");
   const [items, setItems] = useState<BatchItem[]>([]);
   const [running, setRunning] = useState(false);
@@ -230,7 +232,7 @@ export function BatchIngestForm() {
           {/* Item list */}
           <ul className="space-y-2">
             {items.map((item, i) => (
-              <BatchItemRow key={i} item={item} />
+              <BatchItemRow key={i} item={item} hrefForSlug={hrefForSlug} />
             ))}
           </ul>
 

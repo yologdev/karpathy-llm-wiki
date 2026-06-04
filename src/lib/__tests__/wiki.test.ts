@@ -950,6 +950,41 @@ describe("/api/wiki/graph route", () => {
 });
 
 // ---------------------------------------------------------------------------
+// /api/wiki/routes — slug→tenant map for client canonical links (P3b)
+// ---------------------------------------------------------------------------
+describe("/api/wiki/routes route", () => {
+  it("maps readable slugs to their tenant and omits others' private pages", async () => {
+    await writeWikiPage(
+      "pub",
+      serializeFrontmatter(
+        { owner: "alice", visibility: "public" },
+        "# Pub\n\nbody",
+      ),
+    );
+    await writeWikiPage("seed", "# Seed\n\nbody"); // ownerless → yopedia
+    await writeWikiPage(
+      "bob-priv",
+      serializeFrontmatter(
+        { owner: "bob", visibility: "private" },
+        "# Priv\n\nsecret",
+      ),
+    );
+    await updateIndex([
+      { slug: "pub", title: "Pub", summary: "" },
+      { slug: "seed", title: "Seed", summary: "" },
+      { slug: "bob-priv", title: "Priv", summary: "" },
+    ]);
+
+    const { GET } = await import("../../app/api/wiki/routes/route");
+    const map = (await (await GET()).json()) as Record<string, string>;
+
+    // Owner→tenant (lowercased), ownerless→yopedia; another user's private page
+    // is absent (readability-gated) so its slug can't leak.
+    expect(map).toEqual({ pub: "alice", seed: "yopedia" });
+  });
+});
+
+// ---------------------------------------------------------------------------
 // YAML frontmatter parser + serializer
 // ---------------------------------------------------------------------------
 

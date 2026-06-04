@@ -4,8 +4,10 @@ import Link from "next/link";
 import { LintFilterControls } from "@/components/LintFilterControls";
 import { LintIssueCard } from "@/components/LintIssueCard";
 import { useLint } from "@/hooks/useLint";
+import { useSlugTenants } from "@/hooks/useSlugTenants";
 
 export function LintClient() {
+  const { hrefForSlug } = useSlugTenants();
   const {
     result,
     loading,
@@ -94,6 +96,7 @@ export function LintClient() {
                     isFixing={fixingSet.has(key)}
                     fixMessage={fixMessages.get(key) ?? null}
                     onFix={handleFix}
+                    hrefForSlug={hrefForSlug}
                   />
                 );
               })}
