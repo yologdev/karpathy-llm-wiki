@@ -17,6 +17,7 @@
     "batch_ingest_urls",
     "ingest_text",
     "ingest_x_mention",
+    "ingest_pdf",
     "query_wiki",
     "save_query_answer",
     "agent_context",

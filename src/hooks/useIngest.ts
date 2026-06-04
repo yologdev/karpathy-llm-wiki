@@ -3,7 +3,7 @@
 import { useState } from "react";
 import type { PreviewData } from "@/components/IngestPreview";
 
-export type Mode = "text" | "url" | "batch" | "image";
+export type Mode = "text" | "url" | "batch" | "image" | "pdf";
 export type Stage = "form" | "preview" | "success";
 
 export interface IngestResponse {
@@ -25,6 +25,8 @@ export interface UseIngestReturn {
   url: string;
   imageUrl: string;
   imageFile: File | null;
+  pdfUrl: string;
+  pdfFile: File | null;
   loading: boolean;
   error: string | null;
   result: IngestResponse | null;
@@ -37,10 +39,13 @@ export interface UseIngestReturn {
   setUrl: (v: string) => void;
   setImageUrl: (v: string) => void;
   setImageFile: (f: File | null) => void;
+  setPdfUrl: (v: string) => void;
+  setPdfFile: (f: File | null) => void;
   handlePreview: (e: React.FormEvent) => void;
   handleApprove: () => void;
   handleDirectIngest: (e: React.FormEvent) => void;
   handleImageIngest: (e: React.FormEvent) => void;
+  handlePdfIngest: (e: React.FormEvent) => void;
   reset: () => void;
   cancelPreview: () => void;
   toggleRawMarkdown: () => void;
@@ -84,6 +89,8 @@ export function useIngest(): UseIngestReturn {
   const [url, setUrl] = useState("");
   const [imageUrl, setImageUrl] = useState("");
   const [imageFile, setImageFile] = useState<File | null>(null);
+  const [pdfUrl, setPdfUrl] = useState("");
+  const [pdfFile, setPdfFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<IngestResponse | null>(null);
@@ -101,6 +108,9 @@ export function useIngest(): UseIngestReturn {
     } else if (newMode === "image") {
       setContent("");
       setUrl("");
+    } else if (newMode === "pdf") {
+      setContent("");
+      setUrl("");
     } else {
       setTitle("");
       setContent("");
@@ -109,6 +119,10 @@ export function useIngest(): UseIngestReturn {
     if (newMode !== "image") {
       setImageUrl("");
       setImageFile(null);
+    }
+    if (newMode !== "pdf") {
+      setPdfUrl("");
+      setPdfFile(null);
     }
   }
 
@@ -288,12 +302,68 @@ export function useIngest(): UseIngestReturn {
     }
   }
 
+  /** PDF ingest: extract text from a PDF, run through the ingest pipeline. No
+   *  preview stage (the body is the extracted text). */
+  async function handlePdfIngest(e: React.FormEvent) {
+    e.preventDefault();
+    setError(null);
+
+    if (!pdfFile && !pdfUrl.trim()) {
+      setError("Provide a PDF URL or choose a file");
+      return;
+    }
+    if (!pdfFile && pdfUrl.trim()) {
+      try {
+        new URL(pdfUrl.trim());
+      } catch {
+        setError("Please enter a valid PDF URL");
+        return;
+      }
+    }
+
+    setLoading(true);
+    setResult(null);
+
+    try {
+      let res: Response;
+      if (pdfFile) {
+        const fd = new FormData();
+        fd.append("file", pdfFile);
+        if (title.trim()) fd.append("title", title.trim());
+        res = await fetch("/api/ingest/pdf", { method: "POST", body: fd });
+      } else {
+        res = await fetch("/api/ingest/pdf", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            pdfUrl: pdfUrl.trim(),
+            title: title.trim() || undefined,
+          }),
+        });
+      }
+
+      const data: IngestResponse = await res.json();
+      if (!res.ok) {
+        setError(data.error || "Something went wrong");
+        return;
+      }
+      setResult(data);
+      setStage("success");
+    } catch {
+      setError("Network error — could not reach the server");
+    } finally {
+      setLoading(false);
+    }
+  }
+
   function reset() {
     setTitle("");
     setContent("");
     setUrl("");
     setImageUrl("");
     setImageFile(null);
+    setPdfUrl("");
+    setPdfFile(null);
     setError(null);
     setResult(null);
     setPreview(null);
@@ -320,6 +390,8 @@ export function useIngest(): UseIngestReturn {
     url,
     imageUrl,
     imageFile,
+    pdfUrl,
+    pdfFile,
     loading,
     error,
     result,
@@ -331,10 +403,13 @@ export function useIngest(): UseIngestReturn {
     setUrl,
     setImageUrl,
     setImageFile,
+    setPdfUrl,
+    setPdfFile,
     handlePreview,
     handleApprove,
     handleDirectIngest,
     handleImageIngest,
+    handlePdfIngest,
     reset,
     cancelPreview,
     toggleRawMarkdown,

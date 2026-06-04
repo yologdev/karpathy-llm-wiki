@@ -26,8 +26,8 @@ describe("MCP tool annotations", () => {
   const server = createMcpServer();
   const tools = getRegisteredTools(server);
 
-  it("registers exactly 31 tools", () => {
-    expect(Object.keys(tools)).toHaveLength(31);
+  it("registers exactly 32 tools", () => {
+    expect(Object.keys(tools)).toHaveLength(32);
   });
 
   it("every tool has explicit destructiveHint and idempotentHint", () => {
@@ -73,6 +73,7 @@ describe("MCP tool annotations", () => {
     "ingest_url",
     "batch_ingest_urls",
     "ingest_text",
+    "ingest_pdf",
     "save_query_answer",
     "seed_agent",
     "update_agent",

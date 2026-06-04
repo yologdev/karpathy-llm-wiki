@@ -41,7 +41,10 @@ import {
   MAX_LLM_INPUT_CHARS,
   INGEST_MAX_OUTPUT_TOKENS,
   MAX_APPENDED_IMAGES,
+  MAX_CONTENT_LENGTH,
+  MAX_PDF_SIZE,
 } from "./constants";
+import { ClientInputError } from "./errors";
 import { slugify } from "./slugify";
 import { loadPageConventions } from "./schema";
 import { getRawDir } from "./config";
@@ -267,6 +270,83 @@ export async function ingestImage(
     sourceUrl: imageUrl ?? "upload",
     sourceType: "image",
   });
+}
+
+/**
+ * Ingest a PDF — either from a URL or uploaded bytes.
+ *
+ * URL path: dedup check → fetchUrlContent (which handles application/pdf) → ingest().
+ * Upload path: extract text via unpdf → ingest() with sourceType "pdf".
+ */
+export async function ingestPdf(
+  input: { pdfUrl: string } | { bytes: ArrayBuffer; filename: string },
+  options?: Omit<IngestOptions, "sourceType"> & { title?: string; tags?: string[] },
+): Promise<IngestResult> {
+  // URL path: delegate to ingestUrl which already handles PDF content-type
+  if ("pdfUrl" in input) {
+    const url = input.pdfUrl;
+    // Dedup check
+    if (!options?.preview && !options?.generatedContent) {
+      const dupSlug = await resolveSourceUrl(url);
+      if (dupSlug) {
+        const result = await attachIngestTrigger(dupSlug, {
+          url,
+          type: "pdf",
+          triggeredBy: options?.triggeredBy,
+        });
+        if (result) return result;
+      }
+    }
+    // fetchUrlContent now handles application/pdf natively
+    const { title, content } = await fetchUrlContent(url);
+    return ingest(options?.title ?? title, content, {
+      ...options,
+      sourceUrl: url,
+      sourceType: "pdf",
+    });
+  }
+
+  // Upload path: extract text from bytes directly
+  const { bytes, filename } = input;
+  if (bytes.byteLength > MAX_PDF_SIZE) {
+    throw new ClientInputError(
+      `PDF too large (${(bytes.byteLength / 1024 / 1024).toFixed(1)} MB). Maximum: ${MAX_PDF_SIZE / 1024 / 1024} MB.`,
+    );
+  }
+
+  const { getDocumentProxy, extractText } = await import("unpdf");
+  const doc = await getDocumentProxy(new Uint8Array(bytes));
+  try {
+    const { text } = await extractText(doc, { mergePages: true });
+    const trimmed = text.trim();
+    if (!trimmed) {
+      throw new ClientInputError(
+        "PDF has no extractable text layer. Scanned/image-only PDFs are not supported yet.",
+      );
+    }
+    const content =
+      trimmed.length > MAX_CONTENT_LENGTH
+        ? trimmed.slice(0, MAX_CONTENT_LENGTH)
+        : trimmed;
+
+    // Derive title from first line or filename
+    const firstLine =
+      trimmed.split("\n").find((l) => l.trim().length > 0)?.trim() ?? "";
+    const derivedTitle =
+      firstLine.length > 200 ? firstLine.slice(0, 200) : firstLine;
+    const title =
+      options?.title ||
+      derivedTitle ||
+      filename.replace(/\.pdf$/i, "") ||
+      "PDF Document";
+
+    return ingest(title, content, {
+      ...options,
+      sourceType: "pdf",
+    });
+  } finally {
+    await doc.cleanup();
+  }
 }
 
 /**

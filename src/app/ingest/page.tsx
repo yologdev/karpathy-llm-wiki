@@ -16,6 +16,8 @@ export default function IngestPage() {
     url,
     imageUrl,
     imageFile,
+    pdfUrl,
+    pdfFile,
     loading,
     error,
     result,
@@ -27,10 +29,13 @@ export default function IngestPage() {
     setUrl,
     setImageUrl,
     setImageFile,
+    setPdfUrl,
+    setPdfFile,
     handlePreview,
     handleApprove,
     handleDirectIngest,
     handleImageIngest,
+    handlePdfIngest,
     reset,
     cancelPreview,
     toggleRawMarkdown,
@@ -83,7 +88,7 @@ export default function IngestPage() {
 
       {/* Mode tabs */}
       <div className="mb-6 flex gap-2 overflow-x-auto">
-        {(["text", "url", "image", "batch"] as const).map((m) => (
+        {(["text", "url", "image", "pdf", "batch"] as const).map((m) => (
           <button
             key={m}
             type="button"
@@ -100,7 +105,9 @@ export default function IngestPage() {
                 ? "From URL"
                 : m === "image"
                   ? "Image"
-                  : "Batch URLs"}
+                  : m === "pdf"
+                    ? "PDF"
+                    : "Batch URLs"}
           </button>
         ))}
       </div>
@@ -163,6 +170,66 @@ export default function IngestPage() {
             className="inline-block rounded-lg bg-foreground px-6 py-3 text-sm font-medium text-background hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {loading ? "Processing..." : "Ingest image"}
+          </button>
+        </form>
+      ) : /* PDF mode */
+      mode === "pdf" ? (
+        <form onSubmit={handlePdfIngest} className="space-y-6">
+          <div>
+            <label htmlFor="pdfUrl" className="block text-sm font-medium mb-2">
+              PDF URL
+            </label>
+            <input
+              id="pdfUrl"
+              type="url"
+              value={pdfUrl}
+              onChange={(e) => setPdfUrl(e.target.value)}
+              disabled={!!pdfFile}
+              placeholder="https://example.com/document.pdf"
+              className="w-full rounded-lg border border-foreground/20 bg-transparent px-4 py-2.5 text-sm placeholder:text-foreground/40 focus:border-foreground/50 focus:outline-none transition-colors disabled:opacity-50"
+            />
+          </div>
+
+          <div className="text-center text-xs text-foreground/40">— or —</div>
+
+          <div>
+            <label htmlFor="pdfFile" className="block text-sm font-medium mb-2">
+              Upload a PDF
+            </label>
+            <input
+              id="pdfFile"
+              type="file"
+              accept="application/pdf,.pdf"
+              onChange={(e) => setPdfFile(e.target.files?.[0] ?? null)}
+              className="w-full text-sm text-foreground/80 file:mr-3 file:rounded-lg file:border file:border-foreground/20 file:bg-transparent file:px-4 file:py-2 file:text-sm file:text-foreground hover:file:border-foreground/50"
+            />
+          </div>
+
+          <div>
+            <label htmlFor="pdfTitle" className="block text-sm font-medium mb-2">
+              Title <span className="text-foreground/40">(optional)</span>
+            </label>
+            <input
+              id="pdfTitle"
+              type="text"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              placeholder="Defaults to the first line of the PDF"
+              className="w-full rounded-lg border border-foreground/20 bg-transparent px-4 py-2.5 text-sm placeholder:text-foreground/40 focus:border-foreground/50 focus:outline-none transition-colors"
+            />
+            <p className="mt-2 text-xs text-foreground/40">
+              Text is extracted from the PDF and processed into a wiki page.
+            </p>
+          </div>
+
+          {error && <Alert variant="error">{error}</Alert>}
+
+          <button
+            type="submit"
+            disabled={loading}
+            className="inline-block rounded-lg bg-foreground px-6 py-3 text-sm font-medium text-background hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {loading ? "Processing..." : "Ingest PDF"}
           </button>
         </form>
       ) : /* Batch mode */

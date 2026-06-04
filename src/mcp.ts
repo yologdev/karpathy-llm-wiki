@@ -14,6 +14,7 @@
  *   batch_ingest_urls — Batch ingest multiple URLs with upfront validation
  *   ingest_text    — Ingest raw text content into the wiki (chunk → summarize → write)
  *   ingest_x_mention — Ingest an X/Twitter post into the wiki with mention provenance
+ *   ingest_pdf     — Ingest a PDF document into the wiki by URL
  *   query_wiki     — Ask the wiki a question with LLM synthesis
  *   save_query_answer — Save a query answer as a durable wiki page
  *   agent_context  — Get an agent's full context by agent ID
@@ -55,7 +56,7 @@ import {
   type Frontmatter,
 } from "./lib/wiki";
 import { canReadFrontmatter } from "./lib/authz";
-import { extractSummary, ingest, ingestUrl, ingestXMention, reingest, readLedger, type LedgerEntry } from "./lib/ingest";
+import { extractSummary, ingest, ingestUrl, ingestPdf, ingestXMention, reingest, readLedger, type LedgerEntry } from "./lib/ingest";
 import { query, saveAnswerToWiki, type QueryFormat } from "./lib/query";
 import { isUrl } from "./lib/fetch";
 import { MAX_BATCH_URLS } from "./lib/constants";
@@ -511,6 +512,49 @@ export async function handleIngestXMention(args: {
     title,
     summary,
     sourceUrl: args.url.trim(),
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Ingest PDF handler
+// ---------------------------------------------------------------------------
+
+export async function handleIngestPdf(args: {
+  pdf_url: string;
+  title?: string | undefined;
+  tags?: string[] | undefined;
+}): Promise<{
+  slug: string;
+  title: string;
+  summary: string;
+  sourceUrl: string;
+}> {
+  if (!args.pdf_url || !isUrl(args.pdf_url.trim())) {
+    throw new Error(
+      `Invalid URL: "${args.pdf_url}" — must start with http:// or https://`,
+    );
+  }
+
+  const result = await ingestPdf(
+    { pdfUrl: args.pdf_url.trim() },
+    {
+      ...(args.title ? { title: args.title } : {}),
+      ...(args.tags && args.tags.length > 0 ? { tags: args.tags } : {}),
+    },
+  );
+
+  // Read the written page to extract title and summary for the response
+  const page = await readWikiPageWithFrontmatter(result.primarySlug);
+  const pageTitle = page?.title ?? result.primarySlug;
+  const summary = page
+    ? extractSummary(page.body)
+    : `Ingested PDF from ${args.pdf_url}`;
+
+  return {
+    slug: result.primarySlug,
+    title: pageTitle,
+    summary,
+    sourceUrl: args.pdf_url.trim(),
   };
 }
 
@@ -1472,6 +1516,53 @@ export function createMcpServer(): McpServer {
   }, async (args) => {
     try {
       const result = await handleIngestXMention(args);
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: JSON.stringify(result, null, 2),
+          },
+        ],
+      };
+    } catch (err) {
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: (err as Error).message,
+          },
+        ],
+        isError: true,
+      };
+    }
+  });
+
+  // ingest_pdf — Ingest a PDF document into the wiki by URL
+  server.registerTool("ingest_pdf", {
+    description:
+      "Ingest a PDF document into the wiki by URL — downloads the PDF, extracts text, chunks the content, summarizes with an LLM, and creates/updates a wiki page with cross-references. Supports text-based PDFs up to 20 MB.",
+    inputSchema: {
+      pdf_url: z
+        .string()
+        .describe("URL of the PDF to ingest (must start with http:// or https://)"),
+      title: z
+        .string()
+        .optional()
+        .describe("Optional title for the wiki page (auto-derived from PDF content if omitted)"),
+      tags: z
+        .array(z.string())
+        .optional()
+        .describe("Optional tags to apply to the created page"),
+    },
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: false,
+      openWorldHint: true,
+    },
+  }, async (args) => {
+    try {
+      const result = await handleIngestPdf(args);
       return {
         content: [
           {
