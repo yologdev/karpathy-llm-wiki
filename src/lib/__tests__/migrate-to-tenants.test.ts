@@ -4,8 +4,9 @@ import os from "os";
 import path from "path";
 import { migrateToTenants, getRedirectMap } from "../migrate-to-tenants";
 import { getCommonsIndex } from "../commons";
-import { ensureDirectories, writeWikiPage } from "../wiki";
-import { _resetStorage } from "../storage";
+import { ensureDirectories, writeWikiPage, rawRelPath } from "../wiki";
+import { createThread } from "../talk";
+import { getStorage, _resetStorage } from "../storage";
 
 let tmpDir: string;
 const saved: Record<string, string | undefined> = {};
@@ -130,5 +131,28 @@ describe("migrateToTenants — live", () => {
     const r = await migrateToTenants({ dryRun: false });
     expect(r.tenants).toEqual({ alice: 1 });
     expect(await exists("tenants/alice/wiki/p.md")).toBe(true);
+  });
+
+  it("copies every per-page artifact (revisions, discuss, assets) into the silo", async () => {
+    await createPage("doc", "owner: alice\nvisibility: public", "Doc");
+    // Second write snapshots the first as a revision.
+    await writeWikiPage("doc", "---\nowner: alice\nvisibility: public\n---\n\n# Doc\n\nv2.");
+    // A discussion thread + a binary asset.
+    await createThread("doc", "Re: Doc", "alice", "first comment");
+    await getStorage().writeAsset(
+      rawRelPath("assets/doc/img.png"),
+      new Uint8Array([1, 2, 3, 4]).buffer,
+    );
+
+    const r = await migrateToTenants({ dryRun: false });
+    expect(r.errors).toEqual([]);
+
+    // Revision snapshot, discuss thread, and asset all land in alice's silo.
+    const revs = await fs.readdir(
+      path.join(tmpDir, "tenants/alice/wiki/.revisions/doc"),
+    );
+    expect(revs.length).toBeGreaterThan(0);
+    expect(await exists("tenants/alice/discuss/doc.json")).toBe(true);
+    expect(await exists("tenants/alice/raw/assets/doc/img.png")).toBe(true);
   });
 });

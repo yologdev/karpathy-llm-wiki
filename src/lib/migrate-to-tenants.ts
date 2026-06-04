@@ -11,6 +11,16 @@
  * Idempotent + resumable: re-running overwrites the same destinations. Run with
  * `{ dryRun: true }` first to see the per-tenant plan + redirect map with no
  * writes.
+ *
+ * READ-SWITCH PRECONDITIONS (the later phase that flips reads must honor these):
+ *  - Only switch when a live run returns `errors.length === 0`. On partial
+ *    failure a tenant's `index.md`/commons can list a page whose silo file
+ *    failed to copy — re-run until clean before switching.
+ *  - This only ADDS; a page deleted/renamed between runs leaves a stale orphan
+ *    file in the silo (absent from the rebuilt index, but directly reachable).
+ *    The read-switch should reconcile/clean orphans.
+ *  - Raw sources are assumed to be `<slug>.md` (always true today). If a
+ *    non-`.md` raw source ever exists, copy by stripped-extension match.
  */
 
 import { getStorage } from "./storage";
