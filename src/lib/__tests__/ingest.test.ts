@@ -34,6 +34,16 @@ vi.mock("../llm", () => ({
   callLLM: vi.fn(),
 }));
 
+// Mock unpdf for PDF extraction tests
+const mockIngestExtractText = vi.fn();
+const mockIngestCleanup = vi.fn();
+const mockIngestGetDocumentProxy = vi.fn();
+
+vi.mock("unpdf", () => ({
+  getDocumentProxy: (...args: unknown[]) => mockIngestGetDocumentProxy(...args),
+  extractText: (...args: unknown[]) => mockIngestExtractText(...args),
+}));
+
 // Import the mocked module so we can override per-test
 import { hasLLMKey, callLLM } from "../llm";
 const mockedHasLLMKey = vi.mocked(hasLLMKey);
@@ -1149,20 +1159,34 @@ describe("fetchUrlContent", () => {
     }
   });
 
-  it("throws on unsupported content type (application/pdf)", async () => {
+  it("extracts text from a PDF URL via unpdf", async () => {
     const originalFetch = global.fetch;
+    const pdfBytes = new ArrayBuffer(100);
+    mockIngestGetDocumentProxy.mockResolvedValue({ cleanup: mockIngestCleanup });
+    mockIngestExtractText.mockResolvedValue({
+      totalPages: 2,
+      text: "Introduction to AI\n\nArtificial intelligence is transforming the world.",
+    });
+
     global.fetch = vi.fn().mockResolvedValue({
       ok: true,
-      headers: mockHeaders({ "content-type": "application/pdf" }),
-      text: () => Promise.resolve("binary garbage"),
+      status: 200,
+      headers: new Headers({ "content-type": "application/pdf" }),
+      arrayBuffer: () => Promise.resolve(pdfBytes),
     });
 
     try {
-      await expect(
-        fetchUrlContent("https://example.com/doc.pdf"),
-      ).rejects.toThrow("Unsupported content type");
+      const result = await fetchUrlContent("https://example.com/doc.pdf");
+      expect(result.title).toBe("Introduction to AI");
+      expect(result.content).toContain("Artificial intelligence");
+      expect(mockIngestGetDocumentProxy).toHaveBeenCalled();
+      expect(mockIngestExtractText).toHaveBeenCalled();
+      expect(mockIngestCleanup).toHaveBeenCalled();
     } finally {
       global.fetch = originalFetch;
+      mockIngestGetDocumentProxy.mockReset();
+      mockIngestExtractText.mockReset();
+      mockIngestCleanup.mockReset();
     }
   });
 

@@ -3,7 +3,19 @@ import {
   isUrl,
   fetchUrlContent,
 } from "../fetch";
-import { MAX_RESPONSE_SIZE } from "../constants";
+import { MAX_RESPONSE_SIZE, MAX_PDF_SIZE } from "../constants";
+
+// ---------------------------------------------------------------------------
+// Mock unpdf — dynamic import is used in production, vitest hoists vi.mock
+// ---------------------------------------------------------------------------
+const mockExtractText = vi.fn();
+const mockCleanup = vi.fn();
+const mockGetDocumentProxy = vi.fn();
+
+vi.mock("unpdf", () => ({
+  getDocumentProxy: (...args: unknown[]) => mockGetDocumentProxy(...args),
+  extractText: (...args: unknown[]) => mockExtractText(...args),
+}));
 
 // ---------------------------------------------------------------------------
 // Helpers for mocking fetch
@@ -111,6 +123,9 @@ describe("isUrl", () => {
 describe("fetchUrlContent", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
+    mockGetDocumentProxy.mockReset();
+    mockExtractText.mockReset();
+    mockCleanup.mockReset();
   });
 
   it("extracts title and content from HTML response (happy path)", async () => {
@@ -130,18 +145,71 @@ describe("fetchUrlContent", () => {
     expect(result.content.length).toBeGreaterThan(0);
   });
 
-  it("rejects unsupported Content-Type (application/pdf)", async () => {
+  it("extracts text from a PDF response", async () => {
+    const pdfBytes = new ArrayBuffer(100);
+    const docProxy = { cleanup: mockCleanup };
+    mockGetDocumentProxy.mockResolvedValue(docProxy);
+    mockExtractText.mockResolvedValue({
+      totalPages: 2,
+      text: "Introduction to AI\n\nArtificial intelligence is transforming the world.",
+    });
+
     vi.stubGlobal(
       "fetch",
-      vi.fn().mockResolvedValue(
-        mockResponse("binary data", {
-          headers: { "content-type": "application/pdf" },
-        }),
-      ),
+      vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        headers: new Headers({ "content-type": "application/pdf" }),
+        arrayBuffer: () => Promise.resolve(pdfBytes),
+      }),
     );
 
-    await expect(fetchUrlContent("https://example.com/file.pdf")).rejects.toThrow(
-      /Unsupported content type.*pdf/i,
+    const result = await fetchUrlContent("https://example.com/doc.pdf");
+    expect(result.title).toBe("Introduction to AI");
+    expect(result.content).toContain("Artificial intelligence");
+    expect(mockGetDocumentProxy).toHaveBeenCalled();
+    expect(mockExtractText).toHaveBeenCalled();
+    expect(mockCleanup).toHaveBeenCalled();
+  });
+
+  it("rejects PDF with no extractable text layer", async () => {
+    const pdfBytes = new ArrayBuffer(100);
+    const docProxy = { cleanup: mockCleanup };
+    mockGetDocumentProxy.mockResolvedValue(docProxy);
+    mockExtractText.mockResolvedValue({ totalPages: 1, text: "" });
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        headers: new Headers({ "content-type": "application/pdf" }),
+        arrayBuffer: () => Promise.resolve(pdfBytes),
+      }),
+    );
+
+    await expect(fetchUrlContent("https://example.com/scan.pdf")).rejects.toThrow(
+      /no extractable text layer/i,
+    );
+    expect(mockCleanup).toHaveBeenCalled();
+  });
+
+  it("rejects PDF exceeding MAX_PDF_SIZE via Content-Length header", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        headers: new Headers({
+          "content-type": "application/pdf",
+          "content-length": String(MAX_PDF_SIZE + 1),
+        }),
+        arrayBuffer: () => Promise.resolve(new ArrayBuffer(0)),
+      }),
+    );
+
+    await expect(fetchUrlContent("https://example.com/huge.pdf")).rejects.toThrow(
+      /PDF too large/i,
     );
   });
 

@@ -10,6 +10,14 @@
 /** Maximum HTTP response body size in bytes (5 MB). */
 export const MAX_RESPONSE_SIZE = 5 * 1024 * 1024;
 
+/**
+ * Maximum PDF file size (bytes). PDFs are denser than HTML — allow up to 20 MB
+ * for text-based PDFs while staying well within Workers memory limits.
+ * Binary PDFs (scanned, image-heavy) will mostly be text-empty and handled
+ * gracefully by the no-text-layer check.
+ */
+export const MAX_PDF_SIZE = 20 * 1024 * 1024;
+
 /** Maximum extracted text content length passed downstream (100 K chars). */
 export const MAX_CONTENT_LENGTH = 100_000;
 

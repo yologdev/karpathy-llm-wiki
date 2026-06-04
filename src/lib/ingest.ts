@@ -595,7 +595,7 @@ export interface IngestOptions {
    * default `"url"` / `"text"` heuristic when building the `sources[]` entry.
    * Used by `ingestXMention()` to set `"x-mention"` provenance.
    */
-  sourceType?: "url" | "text" | "x-mention" | "image";
+  sourceType?: "url" | "text" | "x-mention" | "image" | "pdf";
   /**
    * Who triggered the ingest (user handle or agent ID). Defaults to `"system"`.
    * Passed through to the `triggered_by` field on the `SourceEntry`.
@@ -641,7 +641,7 @@ async function attachIngestTrigger(
   slug: string,
   source: {
     url: string;
-    type: "url" | "text" | "x-mention" | "wiki-ref" | "image";
+    type: SourceEntry["type"];
     triggeredBy?: string;
   },
 ): Promise<IngestResult | null> {

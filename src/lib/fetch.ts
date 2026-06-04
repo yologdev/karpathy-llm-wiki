@@ -13,6 +13,7 @@ import {
   MAX_CONTENT_LENGTH,
   FETCH_TIMEOUT_MS,
   MAX_IMAGES_PER_SOURCE,
+  MAX_PDF_SIZE,
 } from "./constants";
 import { logger } from "./logger";
 import {
@@ -47,8 +48,8 @@ export function isUrl(input: string): boolean {
 // ---------------------------------------------------------------------------
 
 // MIME types that fetchUrlContent will accept. Anything outside this list
-// (e.g. application/pdf, image/png) is rejected early to avoid feeding binary
-// garbage into the HTML-parsing pipeline.
+// (e.g. image/png) is rejected early to avoid feeding binary garbage into the
+// HTML-parsing pipeline. PDFs are handled via a dedicated extraction path.
 const ALLOWED_CONTENT_TYPES = [
   "text/html",
   "application/xhtml+xml",
@@ -56,7 +57,46 @@ const ALLOWED_CONTENT_TYPES = [
   "text/markdown",
   "application/xml",
   "text/xml",
+  "application/pdf",
 ];
+
+/**
+ * Extract text from a PDF ArrayBuffer using unpdf (serverless pdf.js).
+ * Returns { title, content } or throws on empty/unreadable PDFs.
+ * Uses dynamic import to avoid loading the ~1.6 MB pdf.js bundle on every request.
+ */
+async function extractPdfText(
+  buffer: ArrayBuffer,
+  fallbackTitle: string,
+): Promise<{ title: string; content: string }> {
+  const { getDocumentProxy, extractText } = await import("unpdf");
+  const doc = await getDocumentProxy(new Uint8Array(buffer));
+  try {
+    const { text } = await extractText(doc, { mergePages: true });
+
+    const trimmed = text.trim();
+    if (!trimmed) {
+      throw new ClientInputError(
+        "PDF has no extractable text layer. Scanned/image-only PDFs are not supported yet.",
+      );
+    }
+
+    // Try to derive title from first non-empty line (often the document title)
+    const firstLine =
+      trimmed.split("\n").find((l) => l.trim().length > 0)?.trim() ??
+      fallbackTitle;
+    const title = firstLine.length > 200 ? firstLine.slice(0, 200) : firstLine;
+
+    const content =
+      trimmed.length > MAX_CONTENT_LENGTH
+        ? trimmed.slice(0, MAX_CONTENT_LENGTH) + "\n\n[Content truncated]"
+        : trimmed;
+
+    return { title: title || fallbackTitle, content };
+  } finally {
+    await doc.cleanup();
+  }
+}
 
 /**
  * Fetch a URL and extract its text content and title.
@@ -133,6 +173,27 @@ export async function fetchUrlContent(
   if (mimeType && !ALLOWED_CONTENT_TYPES.includes(mimeType)) {
     throw new Error(
       `Unsupported content type: ${mimeType}. Only HTML and text content can be ingested.`,
+    );
+  }
+
+  // ---------- PDF: read as binary, extract text via unpdf ----------
+  if (mimeType === "application/pdf") {
+    const declared = Number(response.headers.get("Content-Length") ?? 0);
+    if (declared > MAX_PDF_SIZE) {
+      throw new ClientInputError(
+        `PDF too large (${(declared / 1024 / 1024).toFixed(1)} MB). Maximum: ${MAX_PDF_SIZE / 1024 / 1024} MB.`,
+      );
+    }
+    const buffer = await response.arrayBuffer();
+    if (buffer.byteLength > MAX_PDF_SIZE) {
+      throw new ClientInputError(
+        `PDF too large (${(buffer.byteLength / 1024 / 1024).toFixed(1)} MB). Maximum: ${MAX_PDF_SIZE / 1024 / 1024} MB.`,
+      );
+    }
+    return extractPdfText(
+      buffer,
+      new URL(url).pathname.split("/").pop()?.replace(/\.pdf$/i, "") ??
+        "PDF Document",
     );
   }
 
