@@ -24,18 +24,15 @@
  */
 
 import { getStorage } from "./storage";
-import { isEnoent } from "./errors";
 import { logger } from "./logger";
 import type { IndexEntry } from "./types";
 import {
   listWikiPages,
-  wikiRelPath,
-  rawRelPath,
   tenantWikiRelPath,
-  tenantRawRelPath,
   tenantForOwner,
 } from "./wiki";
 import { rebuildCommonsIndex } from "./commons";
+import { syncSiloForPage } from "./silo";
 
 /** The index + log are infrastructure, not pages — never migrated as pages. */
 const SKIP_SLUGS = new Set(["index", "log"]);
@@ -55,77 +52,6 @@ export interface MigrationResult {
   commonsCount: number;
   redirectCount: number;
   errors: string[];
-}
-
-async function copyText(src: string, dst: string): Promise<boolean> {
-  const storage = getStorage();
-  let content: string;
-  try {
-    content = await storage.readFile(src);
-  } catch (e) {
-    if (isEnoent(e)) return false;
-    throw e;
-  }
-  await storage.writeFile(dst, content);
-  return true;
-}
-
-async function copyAsset(src: string, dst: string): Promise<boolean> {
-  const storage = getStorage();
-  let data: ArrayBuffer;
-  try {
-    data = await storage.readAsset(src);
-  } catch (e) {
-    if (isEnoent(e)) return false;
-    throw e;
-  }
-  await storage.writeAsset(dst, data);
-  return true;
-}
-
-async function listSafe(prefix: string) {
-  try {
-    return await getStorage().listFiles(prefix);
-  } catch (e) {
-    if (isEnoent(e)) return [];
-    throw e;
-  }
-}
-
-/** Copy every per-page artifact for one slug into its tenant. */
-async function copyPageArtifacts(slug: string, tenant: string): Promise<number> {
-  let n = 0;
-  // wiki page + raw source
-  if (await copyText(wikiRelPath(`${slug}.md`), tenantWikiRelPath(tenant, `${slug}.md`))) n++;
-  if (await copyText(rawRelPath(`${slug}.md`), tenantRawRelPath(tenant, `${slug}.md`))) n++;
-
-  // revision history: wiki/.revisions/<slug>/{<ts>.md,<ts>.meta.json}
-  for (const f of await listSafe(wikiRelPath(`.revisions/${slug}`))) {
-    if (f.isDirectory) continue;
-    if (
-      await copyText(
-        wikiRelPath(`.revisions/${slug}/${f.name}`),
-        tenantWikiRelPath(tenant, `.revisions/${slug}/${f.name}`),
-      )
-    )
-      n++;
-  }
-
-  // discussion threads: discuss/<slug>.json
-  if (await copyText(`discuss/${slug}.json`, `tenants/${tenant}/discuss/${slug}.json`)) n++;
-
-  // binary assets: raw/assets/<slug>/<file>
-  for (const f of await listSafe(rawRelPath(`assets/${slug}`))) {
-    if (f.isDirectory) continue;
-    if (
-      await copyAsset(
-        rawRelPath(`assets/${slug}/${f.name}`),
-        tenantRawRelPath(tenant, `assets/${slug}/${f.name}`),
-      )
-    )
-      n++;
-  }
-  return n;
 }
 
 /** Migrate (copy) all flat content into per-tenant silos. Dry-run by default. */
@@ -152,7 +78,7 @@ export async function migrateToTenants(
 
     if (dryRun) continue;
     try {
-      artifactsCopied += await copyPageArtifacts(page.slug, tenant);
+      artifactsCopied += await syncSiloForPage(page.slug, tenant);
     } catch (e) {
       errors.push(`copy ${page.slug}: ${String(e)}`);
       logger.warn("migrate", `copy failed for "${page.slug}"`, e);

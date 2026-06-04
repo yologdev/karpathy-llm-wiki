@@ -6,13 +6,16 @@ import {
   validateSlug,
   writeWikiPage,
   readWikiPage,
+  readWikiPageWithFrontmatter,
   listWikiPages,
   updateIndexUnsafe,
   findRelatedPages,
   updateRelatedPages,
   appendToLog,
   wikiRelPath,
+  tenantForOwner,
 } from "./wiki";
+import { syncSiloForPage, removeSiloForPage } from "./silo";
 import { getStorage } from "./storage";
 import { withFileLock } from "./lock";
 import { escapeRegex } from "./links";
@@ -208,10 +211,23 @@ async function runPageLifecycleOp(
   //    fast before any filesystem mutation happens.
   validateSlug(slug);
 
+  // Capture the deleted page's owner BEFORE removing it, so step 3c knows which
+  // tenant silo to mirror the removal into (the flat file is gone afterward).
+  let deletedOwner: string | undefined;
+
   // 2. Mutate the page file.
   if (op.kind === "write") {
     await writeWikiPage(slug, op.content, op.author);
   } else {
+    try {
+      const pre = await readWikiPageWithFrontmatter(slug);
+      deletedOwner =
+        typeof pre?.frontmatter.owner === "string"
+          ? pre.frontmatter.owner
+          : undefined;
+    } catch {
+      // Owner unknown → falls back to the default tenant in step 3c.
+    }
     try {
       await getStorage().deleteFile(wikiRelPath(`${slug}.md`));
     } catch (err: unknown) {
@@ -349,6 +365,22 @@ async function runPageLifecycleOp(
     }
   } catch (err) {
     logger.warn("commons", `commons sync skipped for "${slug}":`, err);
+  }
+
+  // 3c. Mirror the page into its per-tenant silo — a live, self-contained vault
+  //     (`tenants/<tenant>/…`, Obsidian-servable). A derived per-page mirror of
+  //     flat (the write primary); fail-soft so a silo error never breaks the
+  //     write/delete. Reads from flat, so this runs AFTER the flat mutation.
+  try {
+    if (op.kind === "delete") {
+      await removeSiloForPage(slug, tenantForOwner(deletedOwner));
+    } else {
+      const o = parseFrontmatter(op.content).data.owner;
+      const owner = typeof o === "string" ? o : undefined;
+      await syncSiloForPage(slug, tenantForOwner(owner));
+    }
+  } catch (err) {
+    logger.warn("silo", `silo mirror skipped for "${slug}":`, err);
   }
 
   // 4. Cross-reference other pages.

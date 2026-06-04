@@ -18,6 +18,7 @@ import { updateIndex } from "../wiki";
 import { listRevisions, saveRevision } from "../revisions";
 import { resolveAlias, buildAliasIndex, resetAliasIndex } from "../alias-index";
 import { serializeFrontmatter } from "../frontmatter";
+import { getStorage, _resetStorage } from "../storage";
 
 // ---------------------------------------------------------------------------
 // Temp directory setup — mirrors wiki.test.ts approach
@@ -26,13 +27,19 @@ import { serializeFrontmatter } from "../frontmatter";
 let tmpDir: string;
 let originalWikiDir: string | undefined;
 let originalRawDir: string | undefined;
+let originalDataDir: string | undefined;
 
 beforeEach(async () => {
   tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "lifecycle-test-"));
   originalWikiDir = process.env.WIKI_DIR;
   originalRawDir = process.env.RAW_DIR;
+  originalDataDir = process.env.DATA_DIR;
   process.env.WIKI_DIR = path.join(tmpDir, "wiki");
   process.env.RAW_DIR = path.join(tmpDir, "raw");
+  // Isolate DATA_DIR so the per-tenant silo mirror (tenants/…, relative to the
+  // data dir) and derived indexes land under tmp, not the repo cwd.
+  process.env.DATA_DIR = tmpDir;
+  _resetStorage();
   await ensureDirectories();
 });
 
@@ -47,6 +54,12 @@ afterEach(async () => {
   } else {
     process.env.RAW_DIR = originalRawDir;
   }
+  if (originalDataDir === undefined) {
+    delete process.env.DATA_DIR;
+  } else {
+    process.env.DATA_DIR = originalDataDir;
+  }
+  _resetStorage();
   await fs.rm(tmpDir, { recursive: true, force: true });
   resetAliasIndex();
 });
@@ -667,5 +680,65 @@ describe("lifecycle write triggers alias index update", () => {
 
     const result = await resolveAlias("Svelte");
     expect(result).toBe("svelte");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Per-tenant silo mirror (P5a) — every write/delete mirrors the page into
+// tenants/<tenant>/, keeping each silo a live vault.
+// ---------------------------------------------------------------------------
+describe("per-tenant silo mirror", () => {
+  it("mirrors a written page into its owner's silo (tenants/<tenant>/wiki)", async () => {
+    await writeWikiPageWithSideEffects({
+      slug: "alpha",
+      title: "Alpha",
+      content: serializeFrontmatter(
+        { owner: "Alice", visibility: "public" },
+        "# Alpha\n\nBody.",
+      ),
+      summary: "first",
+      logOp: "ingest",
+      crossRefSource: null,
+    });
+
+    // Owner "Alice" → tenant "alice" (lowercased).
+    const mirrored = await getStorage().readFile(
+      "tenants/alice/wiki/alpha.md",
+    );
+    expect(mirrored).toContain("# Alpha");
+    expect(mirrored).toContain("owner: Alice");
+  });
+
+  it("ownerless pages mirror into the yopedia silo", async () => {
+    await writeWikiPageWithSideEffects({
+      slug: "seed",
+      title: "Seed",
+      content: "# Seed\n\nNo owner.",
+      summary: "seed",
+      logOp: "ingest",
+      crossRefSource: null,
+    });
+    expect(
+      await getStorage().fileExists("tenants/yopedia/wiki/seed.md"),
+    ).toBe(true);
+  });
+
+  it("deleting a page removes it from its silo", async () => {
+    await writeWikiPageWithSideEffects({
+      slug: "doomed",
+      title: "Doomed",
+      content: serializeFrontmatter({ owner: "bob" }, "# Doomed\n\nBye."),
+      summary: "x",
+      logOp: "ingest",
+      crossRefSource: null,
+    });
+    expect(
+      await getStorage().fileExists("tenants/bob/wiki/doomed.md"),
+    ).toBe(true);
+
+    await deleteWikiPage("doomed");
+    expect(
+      await getStorage().fileExists("tenants/bob/wiki/doomed.md"),
+    ).toBe(false);
   });
 });
