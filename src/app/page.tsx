@@ -6,7 +6,7 @@ import { ContributorBadge } from "@/components/ContributorBadge";
 import { GlobalSearch } from "@/components/GlobalSearch";
 import { StatCard } from "@/components/StatCard";
 import { TagChip } from "@/components/TagChip";
-import { listWikiPages } from "@/lib/wiki";
+import { listWikiPages, isAgentScopedType } from "@/lib/wiki";
 import { listContributors } from "@/lib/contributors";
 
 export default async function Home() {
@@ -15,9 +15,10 @@ export default async function Home() {
     listContributors(),
   ]);
 
-  // Match the public /wiki "all" view: hide agent-identity pages so the stats,
-  // recent grid, and topics reflect the human-facing commons.
-  const pages = allPages.filter((p) => p.type !== "agent-identity");
+  // Match the public /wiki "all" view: hide all agent-scoped pages (identity +
+  // knowledge) so the stats, recent grid, and topics reflect the human-facing
+  // commons rather than an agent's private workspace.
+  const pages = allPages.filter((p) => !isAgentScopedType(p.type));
 
   const pageCount = pages.length;
   const sourceCount = pages.reduce((n, p) => n + (p.sourceCount ?? 0), 0);

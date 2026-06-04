@@ -12,7 +12,7 @@
 // ---------------------------------------------------------------------------
 
 import { getStorage } from "./storage";
-import { listWikiPages } from "./wiki";
+import { listWikiPages, isAgentScopedType } from "./wiki";
 import { listRevisions } from "./revisions";
 import { getDiscussRelPrefix } from "./talk";
 import { isEnoent } from "./errors";
@@ -79,6 +79,9 @@ async function scanRevisions(): Promise<Map<string, AuthorActivity>> {
   const pages = await listWikiPages();
 
   for (const page of pages) {
+    // Agent-scoped pages are authored by the agent itself (e.g. "yuanhao--yoyo",
+    // "yoyo"); they're not human contributors, so don't count them.
+    if (isAgentScopedType(page.type)) continue;
     const revisions = await listRevisions(page.slug);
     for (const rev of revisions) {
       if (!rev.author) continue;
@@ -140,6 +143,7 @@ async function detectReverts(): Promise<Map<string, number>> {
   const pages = await listWikiPages();
 
   for (const page of pages) {
+    if (isAgentScopedType(page.type)) continue;
     const revisions = await listRevisions(page.slug);
     if (revisions.length < 2) continue;
 

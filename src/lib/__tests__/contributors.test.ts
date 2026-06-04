@@ -92,6 +92,24 @@ describe("contributors data layer", () => {
       expect(contributors[1].handle).toBe("bob");
       expect(contributors[1].editCount).toBe(1);
     });
+
+    it("excludes agent-scoped pages so agents aren't listed as contributors", async () => {
+      // A human page edited by a human...
+      await createPage("page-a", "Page A", "# Page A\n\nContent.");
+      await saveRevision("page-a", "# Page A\n\nv1", "alice");
+
+      // ...and an agent-scoped page authored by the agent itself. Its author
+      // (the agent's composite id) must NOT surface as a human contributor.
+      await createPage(
+        "agent-note",
+        "Agent Note",
+        "---\ntype: agent-knowledge\n---\n\n# Agent Note\n\nLearned.",
+      );
+      await saveRevision("agent-note", "# Agent Note\n\nv1", "yuanhao--yoyo");
+
+      const contributors = await listContributors();
+      expect(contributors.map((c) => c.handle)).toEqual(["alice"]);
+    });
   });
 
   describe("buildContributorProfile", () => {
