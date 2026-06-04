@@ -17,10 +17,17 @@ export default async function LogPage() {
       (p) => !canReadEntry(p, principal),
     );
     if (hidden.length > 0) {
-      // Match the precise link form (`slug.md`) plus the title — avoids the
-      // over-redaction a bare-slug substring match would cause.
+      // Match the slug in the forms the log actually uses — `](slug.md)`
+      // links, `slug: <slug>` ingest details, and `"<slug>"` dedup details —
+      // plus the title. Anchored forms avoid the over-redaction a bare-slug
+      // substring would cause, while still covering the bare-slug detail line.
       const needles = hidden
-        .flatMap((p) => [`${p.slug}.md`, p.title])
+        .flatMap((p) => [
+          `${p.slug}.md`,
+          `slug: ${p.slug}`,
+          `"${p.slug}"`,
+          p.title,
+        ])
         .filter((n): n is string => Boolean(n))
         .map((n) => n.toLowerCase());
       logContent = raw
