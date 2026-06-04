@@ -19,6 +19,7 @@ import { escapeRegex } from "./links";
 import { getErrorMessage } from "./errors";
 import { removeAliasForPage, updateAliasIndexForPage } from "./alias-index";
 import { removeSourceForPage } from "./source-index";
+import { syncCommonsForPage, removeCommonsEntryBySlug } from "./commons";
 import { parseFrontmatter } from "./frontmatter";
 import type { LogOperation } from "./wiki";
 import { logger } from "./logger";
@@ -305,6 +306,50 @@ async function runPageLifecycleOp(
     }
     await updateIndexUnsafe(postIndexEntries);
   });
+
+  // 3b. Mirror into the commons index (tenant-silos groundwork). Maintained
+  //     alongside the flat index; not yet read by any surface. Fail-soft — a
+  //     commons error must never break the page write/delete.
+  try {
+    if (op.kind === "delete") {
+      await removeCommonsEntryBySlug(slug);
+    } else {
+      const fm = parseFrontmatter(op.content).data;
+      const str = (v: unknown) => (typeof v === "string" ? v : undefined);
+      const num = (v: unknown) =>
+        typeof v === "number" && Number.isFinite(v) ? v : undefined;
+      // source_count is persisted as a string (see ingest.ts).
+      const sc = fm.source_count;
+      const sourceCount =
+        typeof sc === "number"
+          ? sc
+          : typeof sc === "string" && /^\d+$/.test(sc.trim())
+            ? Number.parseInt(sc, 10)
+            : undefined;
+      // confidence may be a number or a numeric string (mirror listWikiPages).
+      const cf = fm.confidence;
+      const confidence =
+        num(cf) ??
+        (typeof cf === "string" && /^-?\d+(\.\d+)?$/.test(cf.trim())
+          ? Number.parseFloat(cf)
+          : undefined);
+      await syncCommonsForPage(slug, {
+        owner: str(fm.owner),
+        visibility: str(fm.visibility),
+        type: str(fm.type),
+        title: op.title,
+        summary: op.summary,
+        tags: Array.isArray(fm.tags)
+          ? (fm.tags as unknown[]).filter((t): t is string => typeof t === "string")
+          : undefined,
+        updated: str(fm.updated),
+        sourceCount,
+        confidence,
+      });
+    }
+  } catch (err) {
+    logger.warn("commons", `commons sync skipped for "${slug}":`, err);
+  }
 
   // 4. Cross-reference other pages.
   //    - write: discover related pages and add backlinks TO this slug.
