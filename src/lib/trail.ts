@@ -37,54 +37,61 @@ export async function getTrail(limit = 12): Promise<TrailEvent[]> {
     .sort((a, b) => (b.updated ?? "").localeCompare(a.updated ?? ""))
     .slice(0, MAX_PAGES_SCANNED);
 
-  const events: TrailEvent[] = [];
+  // Gather each page's events concurrently — the per-page work is independent,
+  // so this avoids serializing the (bounded) page-read + revision-list I/O.
+  const perPage = await Promise.all(
+    pages.map(async (page): Promise<TrailEvent[]> => {
+      const evs: TrailEvent[] = [];
 
-  for (const page of pages) {
-    // Ingests — structured provenance entries.
-    try {
-      const full = await readWikiPageWithFrontmatter(page.slug);
-      const sources = parseSources(
-        full?.frontmatter.sources as string | string[] | undefined,
-      );
-      for (const s of sources) {
-        const ts = Date.parse(s.fetched);
-        if (Number.isNaN(ts)) continue;
-        const actor = s.triggered_by || "system";
-        events.push({
-          ts,
-          when: s.fetched,
-          actor,
-          isAgent: isAgentHandle(actor),
-          action: "ingested",
-          sourceType: s.type,
-          slug: page.slug,
-          title: page.title,
-        });
+      // Ingests — structured provenance entries.
+      try {
+        const full = await readWikiPageWithFrontmatter(page.slug);
+        const sources = parseSources(
+          full?.frontmatter.sources as string | string[] | undefined,
+        );
+        for (const s of sources) {
+          const ts = Date.parse(s.fetched);
+          if (Number.isNaN(ts)) continue;
+          const actor = s.triggered_by || "system";
+          evs.push({
+            ts,
+            when: s.fetched,
+            actor,
+            isAgent: isAgentHandle(actor),
+            action: "ingested",
+            sourceType: s.type,
+            slug: page.slug,
+            title: page.title,
+          });
+        }
+      } catch {
+        // Page unreadable — skip its ingests.
       }
-    } catch {
-      // Page unreadable — skip its ingests.
-    }
 
-    // Edits — attributed revisions.
-    try {
-      const revisions = await listRevisions(page.slug);
-      for (const r of revisions) {
-        if (!r.author) continue;
-        events.push({
-          ts: r.timestamp,
-          when: r.date,
-          actor: r.author,
-          isAgent: isAgentHandle(r.author),
-          action: "edited",
-          slug: page.slug,
-          title: page.title,
-        });
+      // Edits — attributed revisions.
+      try {
+        const revisions = await listRevisions(page.slug);
+        for (const r of revisions) {
+          if (!r.author) continue;
+          evs.push({
+            ts: r.timestamp,
+            when: r.date,
+            actor: r.author,
+            isAgent: isAgentHandle(r.author),
+            action: "edited",
+            slug: page.slug,
+            title: page.title,
+          });
+        }
+      } catch {
+        // No revisions — skip.
       }
-    } catch {
-      // No revisions — skip.
-    }
-  }
 
+      return evs;
+    }),
+  );
+
+  const events = perPage.flat();
   events.sort((a, b) => b.ts - a.ts);
 
   // Collapse near-duplicate events (same actor+action+page within ~2 min).
