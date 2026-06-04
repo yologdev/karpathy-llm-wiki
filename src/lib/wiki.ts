@@ -10,6 +10,7 @@ import {
   getRawDir as _getRawDir,
   getDataDir,
 } from "./config";
+import { getTenantWikiDir, getTenantRawDir } from "./paths";
 
 // ---------------------------------------------------------------------------
 // Configurable base directories — delegated to the config layer
@@ -57,6 +58,54 @@ export function isAgentScopedType(type: string | undefined): boolean {
  */
 export function rawRelPath(filename: string): string {
   return path.relative(getDataDir(), path.join(getRawDir(), filename));
+}
+
+// ---------------------------------------------------------------------------
+// Per-tenant path helpers (tenant-silos groundwork — see yopedia-concept.md).
+//
+// Additive and behavior-preserving: the legacy `wikiRelPath`/`rawRelPath`
+// above are unchanged, and nothing yet routes through these. Later phases
+// thread a `tenant` (the owner handle) through reads/writes and the migration
+// relocates existing content under `tenants/<tenant>/…`.
+// ---------------------------------------------------------------------------
+
+/** Catch-all tenant for ownerless / seed / system content. */
+export const DEFAULT_TENANT = "system";
+
+/**
+ * Guard a tenant name against path traversal before using it to build a key.
+ * Deliberately lighter than {@link validateSlug} (owner handles need not match
+ * the strict slug pattern) — it only blocks traversal and separators.
+ */
+export function validateTenant(tenant: string): void {
+  if (
+    typeof tenant !== "string" ||
+    tenant.trim().length === 0 ||
+    tenant.includes("\0") ||
+    tenant.includes("/") ||
+    tenant.includes("\\") ||
+    tenant.includes("..")
+  ) {
+    throw new Error(`Invalid tenant: ${JSON.stringify(tenant)}`);
+  }
+}
+
+/** Storage-relative path for a file in a tenant's wiki tree. */
+export function tenantWikiRelPath(tenant: string, filename: string): string {
+  validateTenant(tenant);
+  return path.relative(
+    getDataDir(),
+    path.join(getTenantWikiDir(tenant), filename),
+  );
+}
+
+/** Storage-relative path for a file in a tenant's raw-sources tree. */
+export function tenantRawRelPath(tenant: string, filename: string): string {
+  validateTenant(tenant);
+  return path.relative(
+    getDataDir(),
+    path.join(getTenantRawDir(tenant), filename),
+  );
 }
 
 // ---------------------------------------------------------------------------

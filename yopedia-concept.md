@@ -74,7 +74,9 @@ Two separate ideas: **`owner`** (who's accountable) and **actor `authors`/`contr
 - **`authors` / `contributors[]`** — the acting identities only. The **user** when they
   ingest manually; **yoyo** when mediated. The owner is not double-listed.
 - **`sources[].triggered_by`** — always traces back to the triggering user.
-- **`visibility`** — `public` by default. (Private is future.)
+- **`visibility`** — `public` by default. `private` is **read-enforced, owner-only**
+  (live; `canReadPage` on every read path) and gated on a **paid plan** (billing +
+  toggle UI pending). See *Tenant model & privacy* below.
 
 | Case | `owner` | actor `authors` | `triggered_by` |
 |------|---------|-----------------|----------------|
@@ -85,11 +87,53 @@ Two separate ideas: **`owner`** (who's accountable) and **actor `authors`/`contr
 
 ## The personal lens (live)
 
-Everything is public. On top of the public commons, logged-in users get a soft
-**Mine \| All** *view filter* (like GitHub "Your repositories" vs "Explore") — **not**
-access control. "Mine" = pages where `owner == me` **or** I'm a contributor. Public
-profiles live at **`/u/<handle>`** and show a user's owned/contributed pages. Search
-and query accept an `owner:`/`mine` scope. Anyone (guests included) can still view All.
+On top of the public commons, logged-in users get a soft **Mine \| All** *view filter*
+(like GitHub "Your repositories" vs "Explore") over **public** content — "Mine" = pages
+where `owner == me` **or** I'm a contributor. Public profiles live at **`/u/<handle>`**
+and show a user's owned/contributed pages. Search and query accept an `owner:`/`mine`
+scope. Guests can still view All.
+
+Separately — and unlike the Mine\|All *view* filter — **`visibility: private` is real
+access control** now (live): a private page is readable by the **owner only** (for an
+agent-owned page `<user>--yoyo`, the human `<user>`), enforced on **every** read surface
+(`canReadPage`: list, page, raw, revisions, discuss, query/search/graph context, trail,
+profiles, export). Defaults stay public, so the commons is unchanged. See *Tenant model
+& privacy* below.
+
+---
+
+## Tenant model & privacy (decided direction — logical layer live, physical pending)
+
+The next foundation: move from one shared namespace to **per-tenant silos**.
+
+- **Per-tenant isolation.** Each user gets their own namespace (`tenants/<handle>/…`) —
+  strong *physical* isolation, per-tenant scoped query/graph, and clean data management
+  (export / delete / quota one tenant without scanning others). Slugs become
+  **per-tenant**, so two users never collide on a title (no more one-page-per-slug
+  commons forcing a single owner).
+- **Free → public, paid → private.** Content a **free** user creates is **public** and
+  joins the **collective public commons** — the shared knowledge base of *all* users. A
+  **paid** plan unlocks **private** pages, sealed in the owner's silo, owner-only.
+  *Private is the paywall; the public commons is the collective KB.*
+- **The commons survives.** It's the **union of everyone's public pages** — what the
+  public homepage, graph, and global query show. Private content never enters it.
+- **Two layers of defense.** `canReadPage` is the **logical** access check (live);
+  per-tenant folders add the **physical** layer (a missed check can't cross a prefix).
+  Defense in depth for the paid-private tier.
+- **All content lives in tenant folders;** the commons is a **derived view** (a
+  lightweight public-pages index for fast listing/graph), not a separate shared folder.
+- **Homes for shared things.** The canonical base `yopedia/yoyo` agent and the
+  seed/karpathy commons live in a **`system`/`yopedia` tenant**; per-user yoyos fork into
+  the user's own tenant.
+
+**"Growing in public" is about the *product*, not user data** — yoyo building the
+yopedia repo autonomously (commits, journal, issues). It is orthogonal to whether a
+user's *knowledge* is public or private.
+
+**Status.** The **logical** layer is **live** (read-enforcement above; setting private
+gated on `canSetPrivate` → Clerk `publicMetadata.plan`). **Pending:** the **physical**
+per-tenant folder layout + **migration** of existing content, the commons index,
+per-tenant ingest/slug scoping, **Clerk Billing** checkout, and the private toggle UI.
 
 ---
 
@@ -131,7 +175,8 @@ with yoyo as the first agent.
 - **Profiles (live).** A user profile lists the agents they own; an agent profile at
   **`/u/<handle>/a/<agent>`** shows its identity/learnings/social pages and cross-links
   back to its owner. *(A user-content ↔ agent-content graph is future.)*
-- **Today:** all agent content is **public-readable** (private is future).
+- **Today:** agent content is **public by default** (joins the commons); a paid owner
+  can mark it **private** (owner-only, read-enforced) — see *Tenant model & privacy*.
 
 *Built so far:* the `AgentProfile` registry, `agent:<id>` scoped search, the
 agent-context endpoint, agent **`owner`** + owner-only mutation, the nested
@@ -150,7 +195,7 @@ Every page is markdown with frontmatter. The fields actually used today:
 
 ```yaml
 owner: alice                 # accountable principal (from the session)
-visibility: public           # public | private (private = future)
+visibility: public           # public | private — private is read-enforced (owner-only), paid
 authors: [yoyo]              # acting identities only
 contributors: [yoyo]
 sources: [{ type, url, fetched, triggered_by }]
@@ -171,8 +216,10 @@ where this differs.
 
 ## Roadmap (future)
 
-- **Private content + billing.** `visibility: private` gated on a paid plan (Clerk
-  billing); read/search enforcement so private pages never leak.
+- **Per-tenant silos + private billing.** See *Tenant model & privacy*. Read/search
+  enforcement so private pages never leak is **done** (`canReadPage`, live); **pending**
+  = the per-tenant folder layout + content migration, the commons index, per-tenant
+  ingest/slug scoping, Clerk Billing checkout, and the private toggle UI.
 - **Service / scheduled tokens.** A non-human write credential so yoyo (and scheduled
   jobs) can write without a human session — unblocks the base-yoyo seed and the
   **`@yoyoevolve` X-mention loop** (tweet a URL → yoyo ingests *for you*, only if your

@@ -17,3 +17,25 @@ export function getWikiDir(): string {
 export function getRawDir(): string {
   return process.env.RAW_DIR ?? `${getDataDir()}/raw`;
 }
+
+// ---------------------------------------------------------------------------
+// Per-tenant directories (tenant-silos groundwork — see yopedia-concept.md).
+// Every tenant's content will live under `tenants/<tenant>/…`. These helpers
+// are additive: nothing reads/writes these paths yet (later phases do). The
+// tenant is the owner handle.
+// ---------------------------------------------------------------------------
+
+/** Root holding every tenant silo: `<dataDir>/tenants`. */
+export function getTenantsDir(): string {
+  return `${getDataDir()}/tenants`;
+}
+
+/** A tenant's wiki directory: `<dataDir>/tenants/<tenant>/wiki`. */
+export function getTenantWikiDir(tenant: string): string {
+  return `${getTenantsDir()}/${tenant}/wiki`;
+}
+
+/** A tenant's raw-sources directory: `<dataDir>/tenants/<tenant>/raw`. */
+export function getTenantRawDir(tenant: string): string {
+  return `${getTenantsDir()}/${tenant}/raw`;
+}
