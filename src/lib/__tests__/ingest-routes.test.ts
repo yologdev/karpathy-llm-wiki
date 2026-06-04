@@ -7,6 +7,11 @@ import { NextRequest } from "next/server";
 vi.mock("@/lib/ingest", () => ({
   ingest: vi.fn(),
   ingestUrl: vi.fn(),
+  reingest: vi.fn(),
+}));
+
+vi.mock("@/lib/wiki", () => ({
+  readWikiPageWithFrontmatter: vi.fn(),
 }));
 
 vi.mock("@/lib/fetch", () => ({
@@ -22,15 +27,19 @@ vi.mock("@/lib/auth", () => ({
   getServicePrincipal: vi.fn(() => null),
 }));
 
-import { ingest, ingestUrl } from "@/lib/ingest";
+import { ingest, ingestUrl, reingest } from "@/lib/ingest";
+import { readWikiPageWithFrontmatter } from "@/lib/wiki";
 import { getPrincipal } from "@/lib/auth";
 import { getServicePrincipal } from "@/lib/auth";
 import { POST } from "@/app/api/ingest/route";
 import { POST as POST_BATCH } from "@/app/api/ingest/batch/route";
+import { POST as POST_REINGEST } from "@/app/api/ingest/reingest/route";
 import type { IngestResult } from "@/lib/types";
 
 const mockedIngest = vi.mocked(ingest);
 const mockedIngestUrl = vi.mocked(ingestUrl);
+const mockedReingest = vi.mocked(reingest);
+const mockedReadWikiPage = vi.mocked(readWikiPageWithFrontmatter);
 const mockedGetPrincipal = vi.mocked(getPrincipal);
 const mockedGetServicePrincipal = vi.mocked(getServicePrincipal);
 
@@ -47,6 +56,8 @@ function makeRequest(url: string, body: unknown, token?: string): NextRequest {
 beforeEach(() => {
   mockedIngest.mockReset();
   mockedIngestUrl.mockReset();
+  mockedReingest.mockReset();
+  mockedReadWikiPage.mockReset();
   mockedGetPrincipal.mockResolvedValue({ id: "test-user", handle: "test-user" });
   mockedGetServicePrincipal.mockReturnValue(null);
 });
@@ -366,6 +377,173 @@ describe("POST /api/ingest — service token auth", () => {
     expect(mockedIngestUrl).toHaveBeenCalledWith(
       "https://example.com/page",
       expect.objectContaining({ author: "alice", owner: "alice" }),
+    );
+  });
+});
+
+// ===========================================================================
+// POST /api/ingest/batch — service token auth
+// ===========================================================================
+describe("POST /api/ingest/batch — service token auth", () => {
+  it("accepts a valid service token when Clerk session is absent", async () => {
+    mockedGetPrincipal.mockResolvedValue(null);
+    mockedGetServicePrincipal.mockReturnValue({ id: "service:yopedia", handle: "yopedia" });
+    mockedIngestUrl.mockResolvedValue(fakeResult);
+
+    const res = await POST_BATCH(
+      makeRequest("http://localhost:3000/api/ingest/batch", {
+        urls: ["https://example.com/page"],
+      }, "valid-service-token"),
+    );
+    expect(res.status).toBe(200);
+
+    // Consume the stream to trigger ingestUrl calls
+    const reader = res.body!.getReader();
+    while (true) {
+      const { done } = await reader.read();
+      if (done) break;
+    }
+
+    expect(mockedIngestUrl).toHaveBeenCalledWith(
+      "https://example.com/page",
+      expect.objectContaining({ author: "yopedia", owner: "yopedia" }),
+    );
+  });
+
+  it("returns 401 when neither Clerk session nor service token is present", async () => {
+    mockedGetPrincipal.mockResolvedValue(null);
+    mockedGetServicePrincipal.mockReturnValue(null);
+
+    const res = await POST_BATCH(
+      makeRequest("http://localhost:3000/api/ingest/batch", {
+        urls: ["https://example.com/page"],
+      }),
+    );
+    expect(res.status).toBe(401);
+    expect(mockedIngestUrl).not.toHaveBeenCalled();
+  });
+
+  it("returns 401 when service token is invalid", async () => {
+    mockedGetPrincipal.mockResolvedValue(null);
+    mockedGetServicePrincipal.mockReturnValue(null);
+
+    const res = await POST_BATCH(
+      makeRequest("http://localhost:3000/api/ingest/batch", {
+        urls: ["https://example.com/page"],
+      }, "wrong-token"),
+    );
+    expect(res.status).toBe(401);
+    expect(mockedIngestUrl).not.toHaveBeenCalled();
+  });
+
+  it("prefers Clerk session when both are available", async () => {
+    mockedGetPrincipal.mockResolvedValue({ id: "clerk-user", handle: "alice" });
+    mockedGetServicePrincipal.mockReturnValue({ id: "service:yopedia", handle: "yopedia" });
+    mockedIngestUrl.mockResolvedValue(fakeResult);
+
+    const res = await POST_BATCH(
+      makeRequest("http://localhost:3000/api/ingest/batch", {
+        urls: ["https://example.com/page"],
+      }, "valid-service-token"),
+    );
+    expect(res.status).toBe(200);
+
+    // Consume the stream
+    const reader = res.body!.getReader();
+    while (true) {
+      const { done } = await reader.read();
+      if (done) break;
+    }
+
+    // Clerk principal wins
+    expect(mockedIngestUrl).toHaveBeenCalledWith(
+      "https://example.com/page",
+      expect.objectContaining({ author: "alice", owner: "alice" }),
+    );
+  });
+});
+
+// ===========================================================================
+// POST /api/ingest/reingest — service token auth
+// ===========================================================================
+describe("POST /api/ingest/reingest — service token auth", () => {
+  const fakeReingestResult: IngestResult = {
+    rawPath: "raw/test.md",
+    primarySlug: "test-page",
+    relatedUpdated: [],
+    wikiPages: ["test-page"],
+    indexUpdated: true,
+  };
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const fakePageWithFrontmatter: any = {
+    content: "# Test\nHello",
+    frontmatter: {
+      title: "Test",
+      source_url: "https://example.com/source",
+    },
+  };
+
+  it("accepts a valid service token when Clerk session is absent", async () => {
+    mockedGetPrincipal.mockResolvedValue(null);
+    mockedGetServicePrincipal.mockReturnValue({ id: "service:yopedia", handle: "yopedia" });
+    mockedReadWikiPage.mockResolvedValue(fakePageWithFrontmatter);
+    mockedReingest.mockResolvedValue(fakeReingestResult);
+
+    const res = await POST_REINGEST(
+      makeRequest("http://localhost:3000/api/ingest/reingest", {
+        slug: "test-page",
+      }, "valid-service-token"),
+    );
+    expect(res.status).toBe(200);
+    expect(mockedReingest).toHaveBeenCalledWith(
+      "test-page",
+      expect.objectContaining({ author: "yopedia", triggeredBy: "yopedia" }),
+    );
+  });
+
+  it("returns 401 when neither Clerk session nor service token is present", async () => {
+    mockedGetPrincipal.mockResolvedValue(null);
+    mockedGetServicePrincipal.mockReturnValue(null);
+
+    const res = await POST_REINGEST(
+      makeRequest("http://localhost:3000/api/ingest/reingest", {
+        slug: "test-page",
+      }),
+    );
+    expect(res.status).toBe(401);
+    expect(mockedReingest).not.toHaveBeenCalled();
+  });
+
+  it("returns 401 when service token is invalid", async () => {
+    mockedGetPrincipal.mockResolvedValue(null);
+    mockedGetServicePrincipal.mockReturnValue(null);
+
+    const res = await POST_REINGEST(
+      makeRequest("http://localhost:3000/api/ingest/reingest", {
+        slug: "test-page",
+      }, "wrong-token"),
+    );
+    expect(res.status).toBe(401);
+    expect(mockedReingest).not.toHaveBeenCalled();
+  });
+
+  it("prefers Clerk session when both are available", async () => {
+    mockedGetPrincipal.mockResolvedValue({ id: "clerk-user", handle: "alice" });
+    mockedGetServicePrincipal.mockReturnValue({ id: "service:yopedia", handle: "yopedia" });
+    mockedReadWikiPage.mockResolvedValue(fakePageWithFrontmatter);
+    mockedReingest.mockResolvedValue(fakeReingestResult);
+
+    const res = await POST_REINGEST(
+      makeRequest("http://localhost:3000/api/ingest/reingest", {
+        slug: "test-page",
+      }, "valid-service-token"),
+    );
+    expect(res.status).toBe(200);
+    // Clerk principal wins
+    expect(mockedReingest).toHaveBeenCalledWith(
+      "test-page",
+      expect.objectContaining({ author: "alice", triggeredBy: "alice" }),
     );
   });
 });

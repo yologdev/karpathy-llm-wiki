@@ -1,13 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { reingest } from "@/lib/ingest";
 import { readWikiPageWithFrontmatter } from "@/lib/wiki";
-import { getPrincipal } from "@/lib/auth";
+import { getPrincipal, getServicePrincipal } from "@/lib/auth";
 import { getErrorMessage } from "@/lib/errors";
 import { logger } from "@/lib/logger";
 
 export async function POST(request: NextRequest) {
   try {
-    const principal = await getPrincipal();
+    const principal = (await getPrincipal()) ?? getServicePrincipal(request);
     if (!principal) {
       return NextResponse.json({ error: "Sign in required." }, { status: 401 });
     }

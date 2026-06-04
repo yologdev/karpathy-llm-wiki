@@ -1,14 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { ingestUrl } from "@/lib/ingest";
 import { isUrl } from "@/lib/fetch";
-import { getPrincipal } from "@/lib/auth";
+import { getPrincipal, getServicePrincipal } from "@/lib/auth";
 import { MAX_BATCH_URLS } from "@/lib/constants";
 import { getErrorMessage } from "@/lib/errors";
 import { logger } from "@/lib/logger";
 
 export async function POST(request: NextRequest) {
   try {
-    const principal = await getPrincipal();
+    const principal = (await getPrincipal()) ?? getServicePrincipal(request);
     if (!principal) {
       return NextResponse.json({ error: "Sign in required." }, { status: 401 });
     }
