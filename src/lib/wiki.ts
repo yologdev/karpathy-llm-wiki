@@ -80,15 +80,21 @@ export const DEFAULT_TENANT = "system";
 export function validateTenant(tenant: string): void {
   if (
     typeof tenant !== "string" ||
-    tenant.trim().length === 0 ||
-    tenant.includes("\0") ||
+    tenant.length === 0 ||
+    tenant === "." || // a bare dot collapses the segment under path.join
+    tenant.includes("..") ||
     tenant.includes("/") ||
     tenant.includes("\\") ||
-    tenant.includes("..")
+    // any whitespace or control char would make a malformed/ambiguous key
+    /[\s\x00-\x1f]/.test(tenant)
   ) {
     throw new Error(`Invalid tenant: ${JSON.stringify(tenant)}`);
   }
 }
+// NOTE (P1): tenant is case-sensitive here while owner checks are
+// case-insensitive (owner.ts). When P1 derives the tenant from a handle,
+// normalize (e.g. lowercase) at that boundary so one owner can't split across
+// "Alice"/"alice" silos.
 
 /** Storage-relative path for a file in a tenant's wiki tree. */
 export function tenantWikiRelPath(tenant: string, filename: string): string {

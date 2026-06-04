@@ -66,8 +66,19 @@ describe("validateTenant — traversal guard", () => {
     }
   });
 
-  it("rejects traversal / separators / empties", () => {
-    for (const bad of ["", "  ", "..", "../x", "a/b", "a\\b", "a\0b"]) {
+  it("rejects traversal / separators / dots / whitespace / control chars", () => {
+    for (const bad of [
+      "",
+      "  ",
+      ".", // bare dot collapses the path segment under path.join
+      "..",
+      "../x",
+      "a/b",
+      "a\\b",
+      "a\0b",
+      "a b", // internal whitespace
+      "a\tb",
+    ]) {
       expect(() => validateTenant(bad)).toThrow(/Invalid tenant/);
     }
   });
