@@ -12,6 +12,7 @@ import {
 } from "@clerk/nextjs";
 import { GlobalSearch } from "./GlobalSearch";
 import { ThemeToggle } from "./ThemeToggle";
+import { Logo } from "./Logo";
 import { isOwnerHandle } from "@/lib/owner";
 
 // Primary actions — shown to everyone, always in the bar.
@@ -88,11 +89,8 @@ export function NavHeader() {
   return (
     <header className="sticky top-0 z-50 bg-background border-b border-border shadow-sm">
       <nav aria-label="Main navigation" className="mx-auto flex h-14 max-w-5xl items-center justify-between px-6">
-        <Link
-          href="/"
-          className="text-lg font-bold text-foreground tracking-tight hover:opacity-90 transition-opacity"
-        >
-          yopedia
+        <Link href="/" className="hover:opacity-90 transition-opacity">
+          <Logo />
         </Link>
 
         {/* Desktop nav */}

@@ -3,33 +3,32 @@ import { StatusBadge } from "@/components/StatusBadge";
 import { OnboardingWizard } from "@/components/OnboardingWizard";
 import { WikiPageCard } from "@/components/WikiPageCard";
 import { ContributorBadge } from "@/components/ContributorBadge";
-import { GlobalSearch } from "@/components/GlobalSearch";
-import { StatCard } from "@/components/StatCard";
 import { TagChip } from "@/components/TagChip";
+import { HomeAsk } from "@/components/HomeAsk";
+import { HomeGraph } from "@/components/HomeGraph";
+import { Trail } from "@/components/Trail";
 import { listWikiPages, isAgentScopedType } from "@/lib/wiki";
 import { listContributors } from "@/lib/contributors";
+import { getTrail } from "@/lib/trail";
 
 export default async function Home() {
-  const [allPages, contributors] = await Promise.all([
+  const [allPages, contributors, trail] = await Promise.all([
     listWikiPages(),
     listContributors(),
+    getTrail(10),
   ]);
 
-  // Match the public /wiki "all" view: hide all agent-scoped pages (identity +
-  // knowledge) so the stats, recent grid, and topics reflect the human-facing
-  // commons rather than an agent's private workspace.
+  // Public commons only — agent-scoped pages stay out of the stats/feeds.
   const pages = allPages.filter((p) => !isAgentScopedType(p.type));
 
   const pageCount = pages.length;
   const sourceCount = pages.reduce((n, p) => n + (p.sourceCount ?? 0), 0);
   const contributorCount = contributors.length;
 
-  // Recently updated (the content centerpiece).
   const recent = [...pages]
     .sort((a, b) => (b.updated ?? "").localeCompare(a.updated ?? ""))
     .slice(0, 6);
 
-  // Top topics by tag frequency.
   const tagFreq = new Map<string, number>();
   for (const p of pages) {
     for (const t of p.tags ?? []) tagFreq.set(t, (tagFreq.get(t) ?? 0) + 1);
@@ -43,78 +42,88 @@ export default async function Home() {
 
   return (
     <div className="mx-auto max-w-5xl px-6 py-12">
-      {/* Hero */}
+      {/* Hero — value prop + the live Ask box (the star) */}
       <section className="max-w-3xl">
-        <p className="text-sm font-medium text-accent">
-          A wiki for the agent age.
-        </p>
-        <h1 className="mt-2 text-5xl sm:text-6xl font-bold tracking-tight">
-          yopedia
+        <p className="label">a wiki for the agent age</p>
+        <h1 className="mt-3 text-4xl sm:text-5xl font-bold tracking-tight leading-[1.1]">
+          A second brain for humans and agents.
         </h1>
-        <p className="mt-4 text-lg text-foreground/70 leading-relaxed">
-          A shared second brain for humans and agents. Not RAG — it{" "}
-          <span className="font-medium text-foreground">accumulates</span>: new
-          sources update pages, contradictions reconcile, and lineage stays on
-          the page.
+        <p className="mt-4 text-lg text-muted leading-relaxed">
+          Not RAG — it{" "}
+          <span className="font-medium text-foreground">accumulates</span>:
+          sources become cited pages, contradictions reconcile, and lineage
+          stays visible.
         </p>
-        <div className="mt-4">
-          <StatusBadge />
-        </div>
-
-        {/* Primary actions + search */}
-        <div className="mt-6 flex flex-wrap items-center gap-3">
-          <Link
-            href="/wiki"
-            className="rounded-lg bg-accent px-5 py-2.5 text-sm font-medium text-accent-foreground hover:bg-accent-hover transition-colors"
-          >
-            Browse the wiki
-          </Link>
-          <Link
-            href="/query"
-            className="rounded-lg border border-foreground/20 px-5 py-2.5 text-sm font-medium hover:bg-foreground/5 transition-colors"
-          >
-            Ask a question
-          </Link>
-          <Link
-            href="/ingest"
-            className="rounded-lg border border-foreground/20 px-5 py-2.5 text-sm font-medium hover:bg-foreground/5 transition-colors"
-          >
-            Ingest a source
-          </Link>
-          <div className="ml-auto hidden sm:block">
-            <GlobalSearch />
-          </div>
-        </div>
-
-        {/* Live stats — proof of life */}
-        {pageCount > 0 && (
-          <div className="mt-8 flex flex-wrap items-end gap-8 border-t border-foreground/10 pt-6">
-            <StatCard value={pageCount} label={pageCount === 1 ? "page" : "pages"} />
-            <StatCard value={sourceCount} label={sourceCount === 1 ? "source" : "sources"} />
-            <StatCard
-              value={contributorCount}
-              label={contributorCount === 1 ? "contributor" : "contributors"}
-            />
-            <span className="text-xs text-foreground/40">growing in public</span>
-          </div>
-        )}
       </section>
 
+      <div className="mt-6 max-w-3xl">
+        <HomeAsk />
+      </div>
+
+      {/* Receipts — proof of life, in mono */}
+      {pageCount > 0 && (
+        <div className="receipt mt-6 flex flex-wrap items-center gap-x-5 gap-y-2 text-sm text-muted">
+          <span>
+            <span className="font-semibold text-foreground">{pageCount}</span>{" "}
+            {pageCount === 1 ? "page" : "pages"}
+          </span>
+          <span aria-hidden className="text-border">·</span>
+          <span>
+            <span className="font-semibold text-foreground">{sourceCount}</span>{" "}
+            {sourceCount === 1 ? "source" : "sources"}
+          </span>
+          <span aria-hidden className="text-border">·</span>
+          <span>
+            <span className="font-semibold text-foreground">{contributorCount}</span>{" "}
+            {contributorCount === 1 ? "contributor" : "contributors"}
+          </span>
+          <span className="ml-auto">
+            <StatusBadge />
+          </span>
+        </div>
+      )}
+
       {pageCount === 0 ? (
-        <div className="mt-10">
+        <div className="mt-12">
           <OnboardingWizard pageCount={0} />
         </div>
       ) : (
         <>
-          {/* Recently updated — the centerpiece */}
-          <section className="mt-14">
+          {/* The lab running: live trail + the substrate */}
+          <section className="mt-16 grid gap-10 lg:grid-cols-5">
+            <div className="lg:col-span-3">
+              <h2 className="label">the trail</h2>
+              <p className="mt-1 text-sm text-muted">
+                Every ingest and edit, humans and agents alike.
+              </p>
+              <div className="mt-4">
+                {trail.length > 0 ? (
+                  <Trail events={trail} />
+                ) : (
+                  <p className="text-sm text-muted">
+                    Nothing yet — ingest a source to start the trail.
+                  </p>
+                )}
+              </div>
+            </div>
+            <div className="lg:col-span-2">
+              <h2 className="label">the substrate</h2>
+              <p className="mt-1 text-sm text-muted">Pages, interlinked.</p>
+              <div className="mt-4">
+                <HomeGraph />
+              </div>
+            </div>
+          </section>
+
+          {/* Recently accumulated */}
+          <section className="mt-16">
             <div className="flex items-baseline justify-between">
-              <h2 className="text-xl font-semibold">Recently updated</h2>
+              <h2 className="label">recently accumulated</h2>
               <Link
                 href="/wiki"
-                className="text-sm text-foreground/60 hover:text-foreground transition-colors"
+                className="receipt text-xs text-muted hover:text-foreground transition-colors"
               >
-                Browse all →
+                browse all →
               </Link>
             </div>
             <ul className="mt-4 grid gap-3 sm:grid-cols-2">
@@ -124,10 +133,10 @@ export default async function Home() {
             </ul>
           </section>
 
-          {/* Browse by topic — hidden when sparse */}
+          {/* Browse by topic */}
           {topTags.length >= 3 && (
             <section className="mt-12">
-              <h2 className="text-xl font-semibold">Browse by topic</h2>
+              <h2 className="label">browse by topic</h2>
               <div className="mt-4 flex flex-wrap gap-2">
                 {topTags.map(({ tag, count }) => (
                   <TagChip
@@ -141,16 +150,16 @@ export default async function Home() {
             </section>
           )}
 
-          {/* Contributors — social proof, hidden when sparse */}
+          {/* Contributors (humans; agents shown distinctly in the trail) */}
           {contributorCount >= 2 && (
             <section className="mt-12">
               <div className="flex items-baseline justify-between">
-                <h2 className="text-xl font-semibold">Contributors</h2>
+                <h2 className="label">contributors</h2>
                 <Link
                   href="/wiki/contributors"
-                  className="text-sm text-foreground/60 hover:text-foreground transition-colors"
+                  className="receipt text-xs text-muted hover:text-foreground transition-colors"
                 >
-                  See all →
+                  see all →
                 </Link>
               </div>
               <div className="mt-4 flex flex-wrap gap-3">
@@ -166,11 +175,13 @@ export default async function Home() {
             </section>
           )}
 
-          {/* How it works — slim, replaces the old feature tiles */}
-          <section className="mt-14 border-t border-foreground/10 pt-6 text-sm text-foreground/60 leading-relaxed">
-            <span className="font-medium text-foreground/80">How it works:</span>{" "}
-            Ingest a source → it updates pages, preserves lineage, and reconciles
-            contradictions → Ask and get cited answers.
+          {/* How it works — slim */}
+          <section className="mt-16 border-t border-rule pt-6 text-sm text-muted leading-relaxed">
+            <span className="label align-middle">how it works</span>{" "}
+            <span className="ml-1">
+              Ingest a source → it updates pages, preserves lineage, and
+              reconciles contradictions → ask, and get cited answers.
+            </span>
           </section>
         </>
       )}

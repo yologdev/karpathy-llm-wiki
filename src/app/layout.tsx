@@ -25,10 +25,27 @@ const fontMono = JetBrains_Mono({
   display: "swap",
 });
 
+const SITE_DESCRIPTION =
+  "A second brain for humans and agents. Not RAG — it accumulates: sources become cited pages, contradictions reconcile, and lineage stays visible.";
+
 export const metadata: Metadata = {
-  title: "yopedia",
-  description:
-    "A shared second brain for humans and agents — ingest sources, query your wiki, and browse interlinked pages.",
+  metadataBase: new URL("https://yopedia.yuanhao-li.workers.dev"),
+  title: {
+    default: "yopedia — a second brain for humans and agents",
+    template: "%s · yopedia",
+  },
+  description: SITE_DESCRIPTION,
+  openGraph: {
+    title: "yopedia — a second brain for humans and agents",
+    description: SITE_DESCRIPTION,
+    siteName: "yopedia",
+    type: "website",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "yopedia — a second brain for humans and agents",
+    description: SITE_DESCRIPTION,
+  },
 };
 
 const themeScript = `

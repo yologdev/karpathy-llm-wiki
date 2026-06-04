@@ -113,6 +113,22 @@ export function baseAgentId(): string {
 }
 
 /**
+ * True when an author/actor handle denotes an agent rather than a human.
+ * Agents appear as the composite id `<owner>--<name>` (e.g. `yuanhao--yoyo`)
+ * or, in some legacy attributions, as the bare agent name (`yoyo`). Used to
+ * mark agent contributions distinctly across the UI — never to fold agents
+ * into the human contributor list.
+ */
+export function isAgentHandle(handle: string | null | undefined): boolean {
+  if (!handle) return false;
+  return (
+    handle.includes("--") ||
+    handle === DEFAULT_AGENT_NAME ||
+    handle.endsWith(`--${DEFAULT_AGENT_NAME}`)
+  );
+}
+
+/**
  * Recover an agent's short name from its composite id — the inverse of
  * {@link agentIdFor} for the clean `/u/<owner>/a/<name>` URL form. The id is
  * `slugify(owner)--slugify(name)`, so stripping the unambiguous `slugify(owner)--`

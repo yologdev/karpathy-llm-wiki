@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { ThemeToggle } from "./ThemeToggle";
+import { LogoMark } from "./Logo";
 
 const FOOTER_LINKS = [
   { href: "/wiki", label: "Browse" },
@@ -17,11 +18,14 @@ export function Footer() {
     <footer className="mt-16 border-t border-border">
       <div className="mx-auto flex max-w-5xl flex-col gap-4 px-6 py-8 text-sm sm:flex-row sm:items-center sm:justify-between">
         <div className="flex flex-col gap-1">
-          <span className="font-bold tracking-tight text-foreground">
-            yopedia
+          <span className="inline-flex items-center gap-2">
+            <LogoMark size={18} className="text-foreground" />
+            <span className="font-bold tracking-tight text-foreground">
+              yopedia
+            </span>
           </span>
           <span className="text-xs text-muted">
-            A shared second brain for humans and agents — growing in public.
+            A second brain for humans and agents — growing in public.
           </span>
         </div>
         <nav className="flex items-center gap-4">

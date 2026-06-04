@@ -1,4 +1,5 @@
 import Link from "next/link";
+import type { ReactNode } from "react";
 import { decodeSlug, slugify } from "@/lib/slugify";
 import { readWikiPageWithFrontmatter, findBacklinks, type Frontmatter } from "@/lib/wiki";
 import { parseSources } from "@/lib/sources";
@@ -8,7 +9,9 @@ import { DeletePageButton } from "@/components/DeletePageButton";
 import { ReingestButton } from "@/components/ReingestButton";
 import { ShareWithYoyoButton } from "@/components/ShareWithYoyoButton";
 import { getPrincipal } from "@/lib/auth";
-import { agentIdFor, DEFAULT_AGENT_NAME } from "@/lib/agents";
+import { agentIdFor, DEFAULT_AGENT_NAME, isAgentHandle } from "@/lib/agents";
+import { listRevisions } from "@/lib/revisions";
+import { AgentBadge } from "@/components/AgentBadge";
 import { RevisionHistory } from "@/components/RevisionHistory";
 import { DiscussionPanel } from "@/components/DiscussionPanel";
 import { AuthorBadges } from "@/components/AuthorBadges";
@@ -183,10 +186,14 @@ function SourceProvenance({
                   </span>
                 )}
 
-                {/* Triggered by */}
+                {/* Triggered by — agents marked distinctly */}
                 {entry.triggered_by && entry.triggered_by !== "system" && (
-                  <span className="text-foreground/40 text-xs">
-                    via {entry.triggered_by}
+                  <span className="receipt inline-flex items-center gap-1 text-foreground/40 text-xs">
+                    via{" "}
+                    {isAgentHandle(entry.triggered_by)
+                      ? entry.triggered_by.split("--").pop()
+                      : entry.triggered_by}
+                    {isAgentHandle(entry.triggered_by) && <AgentBadge />}
                   </span>
                 )}
               </div>
@@ -533,6 +540,134 @@ function stripLeadingH1(body: string): string {
   return body.replace(/^#\s+.+(?:\r?\n)?/m, "");
 }
 
+/** One labelled stop in the lineage strip. */
+function Stop({ label, value }: { label: string; value: ReactNode }) {
+  return (
+    <span className="inline-flex items-baseline gap-1.5 whitespace-nowrap">
+      <span className="text-[10px] uppercase tracking-wide text-muted">
+        {label}
+      </span>
+      <span className="font-medium text-foreground">{value}</span>
+    </span>
+  );
+}
+
+/**
+ * "How this page accumulated" — a compact mono lineage strip under the title:
+ * created → sources (typed, human/agent) → revisions → confidence → status.
+ * Makes the differentiator (accumulation with receipts) legible at a glance.
+ * Returns null when there's nothing to show.
+ */
+function LineageStrip({
+  frontmatter,
+  sources,
+  revisions,
+}: {
+  frontmatter: Frontmatter;
+  sources: SourceEntry[];
+  revisions: { author?: string; date: string }[];
+}) {
+  const created =
+    typeof frontmatter.created === "string" && frontmatter.created
+      ? frontmatter.created
+      : revisions.length > 0
+        ? revisions[revisions.length - 1].date
+        : null;
+
+  if (!created && sources.length === 0 && revisions.length === 0) return null;
+
+  const sourceTypes = [...new Set(sources.map((s) => s.type))];
+  const ingestedByAgent = sources.some((s) => isAgentHandle(s.triggered_by));
+  const lastEditor = revisions[0]?.author;
+  const lastByAgent = isAgentHandle(lastEditor);
+
+  const confidenceRaw = frontmatter.confidence;
+  const confidence =
+    typeof confidenceRaw === "number" && Number.isFinite(confidenceRaw)
+      ? confidenceRaw
+      : typeof confidenceRaw === "string" && /^-?\d+(\.\d+)?$/.test(confidenceRaw)
+        ? Number(confidenceRaw)
+        : null;
+
+  const disputed = frontmatter.disputed === true;
+  const superseded =
+    typeof frontmatter.supersedes === "string" &&
+    frontmatter.supersedes.length > 0;
+
+  const stops: ReactNode[] = [];
+  if (created) {
+    stops.push(<Stop key="c" label="created" value={formatDate(created)} />);
+  }
+  if (sources.length > 0) {
+    stops.push(
+      <Stop
+        key="s"
+        label="sources"
+        value={
+          <span className="inline-flex items-center gap-1.5">
+            {sources.length}
+            <span className="font-normal text-muted">
+              {sourceTypes.slice(0, 3).join(" · ")}
+            </span>
+            {ingestedByAgent && <AgentBadge />}
+          </span>
+        }
+      />,
+    );
+  }
+  if (revisions.length > 0) {
+    stops.push(
+      <Stop
+        key="r"
+        label="revisions"
+        value={
+          <span className="inline-flex items-center gap-1.5">
+            {revisions.length}
+            {lastEditor && !lastByAgent && (
+              <span className="font-normal text-muted">· last {lastEditor}</span>
+            )}
+            {lastByAgent && <AgentBadge />}
+          </span>
+        }
+      />,
+    );
+  }
+  if (confidence !== null) {
+    stops.push(
+      <Stop key="cf" label="confidence" value={confidence.toFixed(2)} />,
+    );
+  }
+  stops.push(
+    <Stop
+      key="st"
+      label="status"
+      value={
+        disputed ? (
+          <span className="text-amber-600 dark:text-amber-400">disputed</span>
+        ) : superseded ? (
+          "superseded"
+        ) : (
+          "current"
+        )
+      }
+    />,
+  );
+
+  return (
+    <section className="mt-5">
+      <h2 className="label">how this page accumulated</h2>
+      <div className="receipt mt-2 flex flex-wrap items-center gap-x-3 gap-y-2 text-xs">
+        {stops.map((s, i) => (
+          <span key={i} className="flex items-center gap-3">
+            {i > 0 && <span aria-hidden className="text-border">→</span>}
+            {s}
+          </span>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 export default async function WikiPageView({ params }: WikiPageProps) {
   const { slug: encodedSlug } = await params;
   const slug = decodeSlug(encodedSlug);
@@ -585,6 +720,11 @@ export default async function WikiPageView({ params }: WikiPageProps) {
     Array.isArray(page.frontmatter.sharedWith) &&
     (page.frontmatter.sharedWith as string[]).includes(myYoyoId);
 
+  const revisions = await listRevisions(slug);
+  const lineageSources = parseSources(
+    page.frontmatter.sources as string | string[] | undefined,
+  );
+
   const toc = buildToc(page.body);
   const articleBody = stripLeadingH1(page.body);
 
@@ -607,6 +747,11 @@ export default async function WikiPageView({ params }: WikiPageProps) {
             <PageByline
               frontmatter={page.frontmatter}
               discussionStats={discussStats}
+            />
+            <LineageStrip
+              frontmatter={page.frontmatter}
+              sources={lineageSources}
+              revisions={revisions}
             />
             <div className="mt-8">
               <MarkdownRenderer
