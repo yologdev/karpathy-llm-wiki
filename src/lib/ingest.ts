@@ -10,6 +10,7 @@ import {
 import { callLLM, hasLLMKey } from "./llm";
 import { fetchUrlContent, downloadImages, fetchImageBytes, storeImageBytes } from "./fetch";
 import { describeImage } from "./vision";
+import { isYouTubeUrl, fetchYouTubeContent } from "./youtube";
 import type { IngestResult, SourceEntry } from "./types";
 import {
   serializeSources,
@@ -155,6 +156,10 @@ export async function ingestUrl(
       });
       if (result) return result;
     }
+  }
+
+  if (isYouTubeUrl(url)) {
+    return ingestYouTube(url, options);
   }
 
   const { title, content } = await fetchUrlContent(url);
@@ -309,6 +314,27 @@ export async function ingestXMention(
     sourceType: "x-mention",
     triggeredBy,
     ...opts,
+  });
+}
+
+/**
+ * Ingest a YouTube video into the wiki.
+ *
+ * Fetches the video transcript and metadata, then delegates to the standard
+ * ingest pipeline with `youtube` provenance. Falls back to metadata-only
+ * when no transcript is available.
+ */
+export async function ingestYouTube(
+  url: string,
+  options?: IngestOptions,
+): Promise<IngestResult> {
+  const { title, content } = await fetchYouTubeContent(url);
+  // The content from fetchYouTubeContent already includes the thumbnail
+  // markdown, so pass it through the standard pipeline.
+  return ingest(title, content, {
+    ...options,
+    sourceUrl: url,
+    sourceType: "youtube",
   });
 }
 
@@ -595,7 +621,7 @@ export interface IngestOptions {
    * default `"url"` / `"text"` heuristic when building the `sources[]` entry.
    * Used by `ingestXMention()` to set `"x-mention"` provenance.
    */
-  sourceType?: "url" | "text" | "x-mention" | "image";
+  sourceType?: "url" | "text" | "x-mention" | "image" | "youtube";
   /**
    * Who triggered the ingest (user handle or agent ID). Defaults to `"system"`.
    * Passed through to the `triggered_by` field on the `SourceEntry`.
@@ -641,7 +667,7 @@ async function attachIngestTrigger(
   slug: string,
   source: {
     url: string;
-    type: "url" | "text" | "x-mention" | "wiki-ref" | "image";
+    type: SourceEntry["type"];
     triggeredBy?: string;
   },
 ): Promise<IngestResult | null> {
