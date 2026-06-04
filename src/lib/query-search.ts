@@ -177,10 +177,15 @@ export async function searchIndex(
     .sort((a, b) => b.score - a.score)
     .slice(0, MAX_CONTEXT_PAGES * 2); // Keep more candidates for fusion
 
-  // Phase 1b — Vector search (if an embedding provider is configured)
+  // Phase 1b — Vector search (if an embedding provider is configured).
+  // CRITICAL: the vector store is global; it must be intersected with the
+  // caller's `entries` (the readable + scoped set) or private pages would leak
+  // into fusion → rerank → context → sources. `entries` is authoritative.
+  const allowedSlugs = new Set(entries.map((e) => e.slug));
   let vectorResults: Array<{ slug: string; score: number }> = [];
   try {
-    vectorResults = await searchByVector(question, MAX_CONTEXT_PAGES * 2);
+    const raw = await searchByVector(question, MAX_CONTEXT_PAGES * 2);
+    vectorResults = raw.filter((r) => allowedSlugs.has(r.slug));
   } catch (err) {
     logger.warn("query", "searchIndex vector search failed:", err);
     // Vector search failure is non-fatal — fall back to BM25 only

@@ -101,14 +101,16 @@ export default async function AgentProfilePage({
         )}
       </section>
 
+      {/* Filter to readable slugs (bySlug is the readable set) so a private
+          identity/shared page's slug doesn't leak to non-owners. */}
       <LinkSection
         label="Identity"
-        slugs={resolved.identityPages}
+        slugs={resolved.identityPages.filter((s) => bySlug.has(s))}
         titleFor={titleFor}
       />
       <LinkSection
         label="Shared by owner"
-        slugs={sharedSlugs}
+        slugs={sharedSlugs.filter((s) => bySlug.has(s))}
         titleFor={titleFor}
       />
     </main>

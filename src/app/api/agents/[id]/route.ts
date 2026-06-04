@@ -7,6 +7,7 @@ import {
   AgentOwnershipError,
 } from "@/lib/agents";
 import type { UpdateAgentOptions } from "@/lib/agents";
+import { listReadableWikiPages } from "@/lib/wiki";
 import { getPrincipal } from "@/lib/auth";
 import { getErrorMessage } from "@/lib/errors";
 
@@ -38,7 +39,20 @@ export async function GET(_req: Request, { params }: RouteParams) {
       );
     }
 
-    return NextResponse.json({ agent });
+    // Drop page slugs the caller can't read — agent knowledge is public by
+    // default, but a private (paid) page's slug must not leak via the profile.
+    const readable = new Set(
+      (await listReadableWikiPages(await getPrincipal())).map((p) => p.slug),
+    );
+    const keep = (slugs: string[]) => slugs.filter((s) => readable.has(s));
+    const safeAgent = {
+      ...agent,
+      identityPages: keep(agent.identityPages),
+      learningPages: keep(agent.learningPages),
+      socialPages: keep(agent.socialPages),
+    };
+
+    return NextResponse.json({ agent: safeAgent });
   } catch (err) {
     const message = getErrorMessage(err);
     if (message.includes("Invalid agent ID")) {

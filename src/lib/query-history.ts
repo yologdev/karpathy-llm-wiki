@@ -27,6 +27,9 @@ export interface QueryHistoryEntry {
   timestamp: string;
   /** Slug of the wiki page if the answer was saved. */
   savedAs?: string;
+  /** Owner handle — history is private to the asker (answers may quote the
+   *  asker's own private pages, so it must never be served cross-user). */
+  owner?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -105,9 +108,16 @@ export async function appendQuery(
  */
 export async function listQueries(
   limit?: number,
+  owner?: string | null,
 ): Promise<QueryHistoryEntry[]> {
+  // History is per-asker. Without an owner (anonymous), return nothing rather
+  // than leak others' queries (whose answers may quote their private pages).
+  if (!owner) return [];
   const entries = await readHistory();
-  const reversed = entries.slice().reverse();
+  const reversed = entries
+    .slice()
+    .reverse()
+    .filter((e) => e.owner === owner);
   if (limit !== undefined && limit > 0) {
     return reversed.slice(0, limit);
   }
@@ -120,11 +130,16 @@ export async function listQueries(
  * @param id    The history entry id.
  * @param slug  The slug of the wiki page it was saved as.
  */
-export async function markSaved(id: string, slug: string): Promise<void> {
+export async function markSaved(
+  id: string,
+  slug: string,
+  owner?: string | null,
+): Promise<void> {
   await withFileLock(LOCK_KEY, async () => {
     const entries = await readHistory();
     const entry = entries.find((e) => e.id === id);
-    if (entry) {
+    // Only the entry's owner may mutate it.
+    if (entry && (!entry.owner || entry.owner === owner)) {
       entry.savedAs = slug;
       await writeHistory(entries);
     }

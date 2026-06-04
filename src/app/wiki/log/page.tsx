@@ -17,8 +17,10 @@ export default async function LogPage() {
       (p) => !canReadEntry(p, principal),
     );
     if (hidden.length > 0) {
+      // Match the precise link form (`slug.md`) plus the title — avoids the
+      // over-redaction a bare-slug substring match would cause.
       const needles = hidden
-        .flatMap((p) => [p.slug, p.title])
+        .flatMap((p) => [`${p.slug}.md`, p.title])
         .filter((n): n is string => Boolean(n))
         .map((n) => n.toLowerCase());
       logContent = raw

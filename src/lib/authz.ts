@@ -11,6 +11,7 @@
  */
 
 import { agentOwnerHandle } from "./agents";
+import { slugify } from "./slugify";
 import type { IndexEntry } from "./types";
 import type { Principal } from "./auth";
 
@@ -40,9 +41,13 @@ export function canReadPage(meta: PageReadMeta, principal: Reader): boolean {
   // Direct ownership.
   if (principal.handle === owner) return true;
 
-  // Agent ownership: the human behind an agent-owned page is the owner.
+  // Agent ownership: the human behind an agent-owned page is the owner. The id
+  // is `slugify(owner)--slugify(name)`, so compare the slugified handle against
+  // the slugified owner prefix (handles with caps/underscores slugify away).
   const agentHuman = agentOwnerHandle(owner);
-  if (agentHuman !== null && agentHuman === principal.handle) return true;
+  if (agentHuman !== null && agentHuman === slugify(principal.handle)) {
+    return true;
+  }
 
   return false;
 }
@@ -85,15 +90,6 @@ export async function canReadSlug(
   const page = await readWikiPageWithFrontmatter(slug);
   if (!page) return true;
   return canReadFrontmatter(page.frontmatter, principal);
-}
-
-/** Thrown when a read is denied; carries a stable code for callers to map to 404. */
-export class ReadAccessError extends Error {
-  readonly code = "PRIVATE_PAGE";
-  constructor(slug: string) {
-    super(`Page "${slug}" is private`);
-    this.name = "ReadAccessError";
-  }
 }
 
 /**

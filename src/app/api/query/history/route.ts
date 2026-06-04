@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { appendQuery, listQueries, markSaved } from "@/lib/query-history";
+import { getPrincipal } from "@/lib/auth";
 import { getErrorMessage } from "@/lib/errors";
 import { logger } from "@/lib/logger";
 
@@ -21,7 +22,8 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const entries = await listQueries(limit);
+    // History is per-asker — anonymous callers get nothing.
+    const entries = await listQueries(limit, (await getPrincipal())?.handle);
     return NextResponse.json({ entries });
   } catch (error) {
     logger.error("query", "Query history GET error", error);
@@ -62,7 +64,7 @@ export async function POST(request: NextRequest) {
           { status: 400 },
         );
       }
-      await markSaved(id, slug);
+      await markSaved(id, slug, (await getPrincipal())?.handle);
       return NextResponse.json({ success: true });
     }
 
@@ -87,6 +89,7 @@ export async function POST(request: NextRequest) {
       answer: answer.trim(),
       sources: Array.isArray(sources) ? sources : [],
       timestamp: new Date().toISOString(),
+      owner: (await getPrincipal())?.handle,
     });
 
     return NextResponse.json({ entry, success: true });
