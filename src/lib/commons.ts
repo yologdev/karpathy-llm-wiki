@@ -22,7 +22,10 @@ const COMMONS_LOCK = "commons-index";
 
 /** One public page in the commons, addressed by `(tenant, slug)`. */
 export interface CommonsEntry {
+  /** Lowercased owner handle — the storage key + silo identity. */
   tenant: string;
+  /** Original-case owner handle for display (`tenant` is the normalized key). */
+  owner?: string;
   slug: string;
   title: string;
   summary: string;
@@ -61,9 +64,10 @@ export async function getCommonsIndex(): Promise<CommonsEntry[]> {
  * public listing surfaces (homepage, `/wiki` "All", graph). Reads the derived
  * commons index when populated; FALLS BACK to deriving it from the flat wiki
  * index (public, non-agent) when the commons is empty — so this stays correct
- * and behavior-preserving before/independent of the migration. `owner` is set
- * to the entry's tenant (the commons is all-public; visibility is implicitly
- * public).
+ * and behavior-preserving before/independent of the migration. `owner` is the
+ * stored original-case handle when present, else the (lowercased) tenant — so
+ * the index path matches the fallback's display case (the commons is all-public;
+ * visibility is implicitly public).
  */
 export async function listCommonsPages(): Promise<IndexEntry[]> {
   const idx = await getCommonsIndex();
@@ -77,7 +81,7 @@ export async function listCommonsPages(): Promise<IndexEntry[]> {
       ...(e.sourceCount !== undefined ? { sourceCount: e.sourceCount } : {}),
       ...(e.confidence !== undefined ? { confidence: e.confidence } : {}),
       ...(e.type ? { type: e.type } : {}),
-      owner: e.tenant,
+      owner: e.owner ?? e.tenant,
     }));
   }
   // Fallback: derive the public, non-agent set from the flat index.
@@ -151,6 +155,7 @@ export async function syncCommonsForPage(
   if (belongsInCommons(meta)) {
     await upsertCommonsEntry({
       tenant,
+      owner: meta.owner?.trim() || undefined,
       slug,
       title: meta.title,
       summary: meta.summary,
@@ -176,6 +181,7 @@ export async function rebuildCommonsIndex(): Promise<number> {
     .filter((p) => belongsInCommons(p))
     .map((p) => ({
       tenant: tenantForOwner(p.owner),
+      owner: p.owner?.trim() || undefined,
       slug: p.slug,
       title: p.title,
       summary: p.summary,

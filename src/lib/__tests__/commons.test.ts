@@ -145,6 +145,17 @@ describe("rebuildCommonsIndex", () => {
     expect(p.tags).toEqual(["x"]);
   });
 
+  it("listCommonsPages preserves the original-case owner handle (tenant stays lowercased)", async () => {
+    await syncCommonsForPage("p", { owner: "Alice", title: "P", summary: "s" });
+    const idx = await getCommonsIndex();
+    // The storage key (tenant) is normalized to lowercase...
+    expect(idx[0].tenant).toBe("alice");
+    expect(idx[0].owner).toBe("Alice");
+    // ...but the displayed owner keeps the original case.
+    const pages = await listCommonsPages();
+    expect(pages.find((e) => e.slug === "p")!.owner).toBe("Alice");
+  });
+
   it("listCommonsPages falls back to the flat public set when the index is empty", async () => {
     await createPage("pub", "owner: alice\nvisibility: public", "Public");
     await createPage("priv", "owner: alice\nvisibility: private", "Private");
