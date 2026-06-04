@@ -867,7 +867,9 @@ describe("/api/wiki/graph route", () => {
     ]);
 
     const { GET } = await import("../../app/api/wiki/graph/route");
-    const res = await GET();
+    const res = await GET(
+      new Request("http://localhost/api/wiki/graph") as never,
+    );
     const data = (await res.json()) as {
       nodes: { id: string; label: string }[];
       edges: { source: string; target: string }[];
@@ -904,7 +906,9 @@ describe("/api/wiki/graph route", () => {
     ]);
 
     const { GET } = await import("../../app/api/wiki/graph/route");
-    const res = await GET();
+    const res = await GET(
+      new Request("http://localhost/api/wiki/graph") as never,
+    );
     const data = (await res.json()) as {
       edges: { source: string; target: string }[];
     };

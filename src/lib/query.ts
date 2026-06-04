@@ -24,7 +24,7 @@ import {
   buildContext,
 } from "./query-search";
 
-import { resolveScope } from "./search";
+import { resolveScopeSlugs } from "./search";
 
 // Re-export BM25 helpers so existing callers (and tests) that import them
 // from `./query` continue to work after the bm25 extraction.
@@ -178,23 +178,14 @@ export async function query(
   return withPageCache(async () => {
     let entries = readable;
 
-    // Resolve scope to a set of slugs when provided
-    let scopeSlugs: string[] | undefined;
-    if (scope) {
-      const resolved = await resolveScope(scope);
-      if (!resolved) {
-        return {
-          answer: `Invalid scope or agent not found: '${scope}'`,
-          sources: [],
-        };
-      }
-      scopeSlugs = resolved.slugs;
-      if (scopeSlugs.length === 0) {
-        return {
-          answer: `No pages found for scope '${scope}'`,
-          sources: [],
-        };
-      }
+    // Resolve scope to a set of slugs (handles the "mine" lens; empty "mine"
+    // falls back to the full commons). Errors surface as a friendly answer.
+    const { scopeSlugs, error: scopeError } = await resolveScopeSlugs(
+      scope,
+      principal,
+    );
+    if (scopeError) {
+      return { answer: scopeError, sources: [] };
     }
 
     // General (unscoped) query excludes agent-scoped pages — agent knowledge

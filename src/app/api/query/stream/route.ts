@@ -9,7 +9,7 @@ import {
   buildQuerySystemPrompt,
   type QueryFormat,
 } from "@/lib/query";
-import { resolveScope } from "@/lib/search";
+import { resolveScopeSlugs } from "@/lib/search";
 import { getErrorMessage } from "@/lib/errors";
 import { logger } from "@/lib/logger";
 
@@ -51,27 +51,19 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Resolve scope to a set of slugs when provided
-    let scopeSlugs: string[] | undefined;
-    if (scope) {
-      const resolved = await resolveScope(scope);
-      if (!resolved) {
-        return NextResponse.json(
-          { error: `Invalid scope or agent not found: '${scope}'` },
-          { status: 400 },
-        );
-      }
-      scopeSlugs = resolved.slugs;
-      if (scopeSlugs.length === 0) {
-        return NextResponse.json(
-          { error: `No pages found for scope '${scope}'` },
-          { status: 400 },
-        );
-      }
-    }
-
     const trimmedQuestion = question.trim();
     const principal = await getPrincipal();
+
+    // Resolve scope to a set of slugs (handles the "mine" lens; empty "mine"
+    // falls back to the full commons).
+    const { scopeSlugs, error: scopeError } = await resolveScopeSlugs(
+      scope,
+      principal,
+    );
+    if (scopeError) {
+      return NextResponse.json({ error: scopeError }, { status: 400 });
+    }
+
     const entries = await listReadableWikiPages(principal);
 
     // Empty wiki — nothing to query

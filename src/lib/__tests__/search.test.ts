@@ -24,8 +24,11 @@ import {
   levenshteinDistance,
   fuzzySearchWikiContent,
   resolveScope,
+  expandMineScope,
+  resolveScopeSlugs,
 } from "../search";
 import type { SearchScope } from "../search";
+import type { Principal } from "../auth";
 import { registerAgent, ensureAgentsDir } from "../agents";
 import { serializeFrontmatter } from "../frontmatter";
 import { isAgentScopedType } from "../wiki";
@@ -844,5 +847,64 @@ describe("resolveScope", () => {
     expect(result).not.toBeNull();
     expect(result!.agentId).toBe("yoyo");
     expect(result!.slugs).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// expandMineScope + resolveScopeSlugs — the Mine|All lens plumbing (P3)
+// ---------------------------------------------------------------------------
+
+describe("expandMineScope", () => {
+  const alice = { handle: "alice" } as Principal;
+
+  it("expands 'mine' to owner:<handle> for a signed-in principal", () => {
+    expect(expandMineScope("mine", alice)).toBe("owner:alice");
+  });
+
+  it("'mine' for a signed-out caller falls through to unscoped (undefined)", () => {
+    expect(expandMineScope("mine", null)).toBeUndefined();
+  });
+
+  it("passes other scopes through unchanged; empty/undefined → undefined", () => {
+    expect(expandMineScope("owner:bob", alice)).toBe("owner:bob");
+    expect(expandMineScope("agent:yoyo", null)).toBe("agent:yoyo");
+    expect(expandMineScope(undefined, alice)).toBeUndefined();
+    expect(expandMineScope("", alice)).toBeUndefined();
+  });
+});
+
+describe("resolveScopeSlugs", () => {
+  const alice = { handle: "alice" } as Principal;
+
+  it("no scope → unscoped (no slugs, no error)", async () => {
+    expect(await resolveScopeSlugs(undefined, alice)).toEqual({});
+  });
+
+  it("'mine' resolves to the principal's own pages", async () => {
+    await writeWikiPage(
+      "alice-pg",
+      serializeFrontmatter({ owner: "alice" }, "# A\n\nbody"),
+    );
+    await writeWikiPage("index", "# Index\n\n- [A](alice-pg.md) — body");
+    const r = await resolveScopeSlugs("mine", alice);
+    expect(r.error).toBeUndefined();
+    expect(r.scopeSlugs).toEqual(["alice-pg"]);
+  });
+
+  it("'mine' with NO own pages falls back to the commons (unscoped), not an error", async () => {
+    await ensureDirectories();
+    const r = await resolveScopeSlugs("mine", { handle: "nobody" } as Principal);
+    expect(r).toEqual({});
+  });
+
+  it("explicit owner:<h> with no pages IS an error (not a silent fallback)", async () => {
+    await ensureDirectories();
+    const r = await resolveScopeSlugs("owner:ghost", alice);
+    expect(r.error).toMatch(/No pages found/);
+  });
+
+  it("an unresolvable scope → error", async () => {
+    const r = await resolveScopeSlugs("user:bogus", alice);
+    expect(r.error).toMatch(/Invalid scope/);
   });
 });

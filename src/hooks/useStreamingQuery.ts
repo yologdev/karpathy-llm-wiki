@@ -14,6 +14,9 @@ export interface UseStreamingQueryReturn {
   setQuestion: (q: string) => void;
   format: "prose" | "table" | "slides";
   setFormat: (f: "prose" | "table" | "slides") => void;
+  /** Active scope sent with each query ("mine", "owner:<h>", or undefined=All). */
+  scope: string | undefined;
+  setScope: (s: string | undefined) => void;
   result: QueryResponse | null;
   setResult: (r: QueryResponse | null) => void;
   loading: boolean;
@@ -29,6 +32,8 @@ export interface UseStreamingQueryReturn {
 interface UseStreamingQueryOptions {
   onComplete?: (question: string, answer: string, sources: string[]) => void;
   onSubmitStart?: () => void;
+  /** Initial query scope (e.g. "mine" when signed in, or a deep-linked owner:<h>). */
+  initialScope?: string;
 }
 
 export function useStreamingQuery(
@@ -36,6 +41,7 @@ export function useStreamingQuery(
 ): UseStreamingQueryReturn {
   const [question, setQuestion] = useState("");
   const [format, setFormat] = useState<"prose" | "table" | "slides">("prose");
+  const [scope, setScope] = useState<string | undefined>(options.initialScope);
   const [result, setResult] = useState<QueryResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [streaming, setStreaming] = useState(false);
@@ -79,7 +85,7 @@ export function useStreamingQuery(
         const res = await fetch("/api/query/stream", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ question: trimmed, format }),
+          body: JSON.stringify({ question: trimmed, format, scope }),
           signal: controller.signal,
         });
 
@@ -92,7 +98,7 @@ export function useStreamingQuery(
           const fallbackRes = await fetch("/api/query", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ question: trimmed, format }),
+            body: JSON.stringify({ question: trimmed, format, scope }),
             signal: controller.signal,
           });
 
@@ -167,7 +173,7 @@ export function useStreamingQuery(
         setStreaming(false);
       }
     },
-    [question, format],
+    [question, format, scope],
   );
 
   const isProcessing = loading || streaming;
@@ -177,6 +183,8 @@ export function useStreamingQuery(
     setQuestion,
     format,
     setFormat,
+    scope,
+    setScope,
     result,
     setResult,
     loading,

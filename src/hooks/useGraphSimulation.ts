@@ -29,6 +29,8 @@ export interface UseGraphSimulationReturn {
 export function useGraphSimulation(
   canvasRef: RefObject<HTMLCanvasElement | null>,
   router: AppRouterInstance,
+  /** Optional scope ("mine"/"owner:<h>") → fetches that silo's graph; undefined = commons. */
+  scope?: string,
 ): UseGraphSimulationReturn {
   const dataRef = useRef<GraphData | null>(null);
   const animRef = useRef<number>(0);
@@ -85,9 +87,12 @@ export function useGraphSimulation(
     }
   }, [canvasRef]);
 
-  // Fetch graph data
+  // Fetch graph data (re-fetches when the scope lens changes)
   useEffect(() => {
-    fetch("/api/wiki/graph")
+    setLoading(true);
+    setEmpty(false);
+    setFetchError(null);
+    fetch(`/api/wiki/graph${scope ? `?scope=${encodeURIComponent(scope)}` : ""}`)
       .then((r) => {
         if (!r.ok) throw new Error(`Graph API error: ${r.status}`);
         return r.json();
@@ -145,7 +150,7 @@ export function useGraphSimulation(
         setFetchError(String(err));
         setLoading(false);
       });
-  }, []);
+  }, [scope]);
 
   // Detect color scheme and listen for changes
   useEffect(() => {

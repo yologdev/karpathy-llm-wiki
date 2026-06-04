@@ -36,6 +36,24 @@ export default async function UserPage({
         <p className="mt-1 text-foreground/60">
           Public pages owned or contributed by {handle}.
         </p>
+
+        {/* Silo actions — query/graph scoped to this handle's pages. */}
+        {pages.length > 0 && (
+          <div className="mt-3 flex flex-wrap gap-2">
+            <Link
+              href={`/query?scope=owner:${encodeURIComponent(handle)}`}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-foreground/10 px-3 py-1.5 text-sm text-foreground/70 hover:border-foreground/30 hover:text-foreground transition-colors"
+            >
+              💬 Ask these pages
+            </Link>
+            <Link
+              href={`/wiki/graph?scope=owner:${encodeURIComponent(handle)}`}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-foreground/10 px-3 py-1.5 text-sm text-foreground/70 hover:border-foreground/30 hover:text-foreground transition-colors"
+            >
+              🕸 Graph this silo
+            </Link>
+          </div>
+        )}
       </div>
 
       {agents.length > 0 && (

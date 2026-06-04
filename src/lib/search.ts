@@ -13,6 +13,7 @@ import {
   withPageCache,
   wikiRelPath,
   isAgentScopedType,
+  tenantForOwner,
 } from "./wiki";
 import { canReadFrontmatter } from "./authz";
 import type { Principal } from "./auth";
@@ -546,6 +547,10 @@ export async function fuzzySearchWikiContent(
  * the handle appears in `contributors`. Scans frontmatter (O(n), small scale).
  */
 export async function slugsForOwner(handle: string): Promise<string[]> {
+  // Compare by TENANT, not raw handle: owner matching is case-insensitive and,
+  // crucially, ownerless/seed pages (no `owner` field → DEFAULT_TENANT) belong
+  // to the `yopedia` silo. So `/u/yopedia` and `owner:yopedia` include them.
+  const wantTenant = tenantForOwner(handle);
   const pages = await listWikiPages();
   const out: string[] = [];
   for (const entry of pages) {
@@ -557,11 +562,55 @@ export async function slugsForOwner(handle: string): Promise<string[]> {
     const contributors = Array.isArray(page.frontmatter.contributors)
       ? (page.frontmatter.contributors as string[])
       : [];
-    if (owner === handle || contributors.includes(handle)) {
-      out.push(entry.slug);
-    }
+    const matchesOwner = tenantForOwner(owner) === wantTenant;
+    const matchesContributor = contributors.some(
+      (c) => typeof c === "string" && tenantForOwner(c) === wantTenant,
+    );
+    if (matchesOwner || matchesContributor) out.push(entry.slug);
   }
   return out;
+}
+
+/**
+ * Expand the client-facing `"mine"` scope to the concrete `owner:<handle>` of
+ * the signed-in principal (the Mine|All lens — see [[yopedia-tenant-silos]]).
+ * Signed-out callers asking for "mine" fall through to the unscoped commons.
+ * Any other scope string passes through unchanged. Pure — called at the route
+ * boundary before `query()`/`fuzzySearchWikiContent`/the graph route.
+ */
+export function expandMineScope(
+  scope: string | undefined | null,
+  principal: Principal | null,
+): string | undefined {
+  if (scope === "mine") {
+    return principal ? `owner:${principal.handle}` : undefined;
+  }
+  return scope || undefined;
+}
+
+/**
+ * Resolve a request's raw scope (incl. the `"mine"` convenience) to a concrete
+ * slug set, or an error. One source of truth for query + stream. Semantics:
+ * - no scope (or signed-out "mine") → `{}` (unscoped = full commons)
+ * - `"mine"` for a signed-in user with NO own pages → `{}` (fall back to the
+ *   commons rather than erroring — good first-run UX)
+ * - explicit `owner:`/`agent:` with no pages, or an unresolvable scope → error
+ */
+export async function resolveScopeSlugs(
+  rawScope: string | undefined | null,
+  principal: Principal | null,
+): Promise<{ scopeSlugs?: string[]; error?: string }> {
+  const scope = expandMineScope(rawScope, principal);
+  if (!scope) return {};
+  const resolved = await resolveScope(scope);
+  if (!resolved) {
+    return { error: `Invalid scope or agent not found: '${rawScope}'` };
+  }
+  if (resolved.slugs.length === 0) {
+    if (rawScope === "mine") return {}; // no own pages yet → full commons
+    return { error: `No pages found for scope '${rawScope}'` };
+  }
+  return { scopeSlugs: resolved.slugs };
 }
 
 export async function resolveScope(
