@@ -4,9 +4,9 @@ import os from "os";
 import path from "path";
 import { strFromU8, unzipSync } from "fflate";
 import { convertToObsidianLinks, normalizeVaultAssetPaths } from "../export";
-import { writeWikiPage, updateIndex, ensureDirectories } from "../wiki";
+import { writeWikiPage, updateIndex, ensureDirectories, rawRelPath } from "../wiki";
 import { serializeFrontmatter } from "../frontmatter";
-import { _resetStorage } from "../storage";
+import { getStorage, _resetStorage } from "../storage";
 
 describe("convertToObsidianLinks", () => {
   it("converts a basic internal link", () => {
@@ -156,5 +156,42 @@ describe("GET /api/wiki/export — scoped vault", () => {
     ]);
     const files = await exportZip("owner:alice");
     expect(files["a.md"]).toContain("[[b|B]]");
+  });
+
+  it("bundles a page's binary assets into the vault under assets/<slug>/", async () => {
+    await writeWikiPage(
+      "withimg",
+      serializeFrontmatter(
+        { owner: "alice" },
+        "# WithImg\n\n![pic](assets/withimg/pic.png)",
+      ),
+    );
+    await updateIndex([{ slug: "withimg", title: "WithImg", summary: "" }]);
+    await getStorage().writeAsset(
+      rawRelPath("assets/withimg/pic.png"),
+      new Uint8Array([0x89, 0x50, 0x4e, 0x47]).buffer,
+    );
+
+    const files = await exportZip("owner:alice");
+    expect(Object.keys(files)).toContain("assets/withimg/pic.png");
+  });
+
+  it("sanitizes the handle in Content-Disposition (no header injection)", async () => {
+    // Owner with a quote: ownerToTenant keeps `"`, so the scope resolves — the
+    // filename must NOT contain the raw quote that would break the header.
+    await writeWikiPage(
+      "q",
+      serializeFrontmatter({ owner: 'alice"x' }, "# Q"),
+    );
+    await updateIndex([{ slug: "q", title: "Q", summary: "" }]);
+
+    const { GET } = await import("../../app/api/wiki/export/route");
+    const res = await GET(
+      new Request('http://localhost/api/wiki/export?scope=owner:alice"x') as never,
+    );
+    const cd = res.headers.get("content-disposition") ?? "";
+    expect(res.status).toBe(200);
+    expect(cd).toContain('filename="alice-x-vault.zip"'); // sanitized
+    expect(cd).not.toContain('alice"x-vault.zip'); // raw quote not injected
   });
 });

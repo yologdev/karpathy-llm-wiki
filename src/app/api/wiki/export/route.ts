@@ -63,10 +63,14 @@ export async function GET(req: NextRequest) {
       }
       for (const f of assetFiles) {
         if (f.isDirectory) continue;
-        const data = await storage.readAsset(
-          rawRelPath(`assets/${entry.slug}/${f.name}`),
-        );
-        files[`assets/${entry.slug}/${f.name}`] = new Uint8Array(data);
+        try {
+          const data = await storage.readAsset(
+            rawRelPath(`assets/${entry.slug}/${f.name}`),
+          );
+          files[`assets/${entry.slug}/${f.name}`] = new Uint8Array(data);
+        } catch {
+          // Skip a single unreadable asset rather than fail the whole vault.
+        }
       }
     }
 
@@ -81,10 +85,18 @@ export async function GET(req: NextRequest) {
 
     const zipped = zipSync(files, { level: 9 });
 
+    // `vaultName` derives from the handle (user-controlled via ?scope=), so
+    // NEVER interpolate it raw into the header — a `"` would break the quoted
+    // filename. Sanitize to an ASCII-safe token for `filename=` and add an
+    // RFC 5987 `filename*` (percent-encoded) so unicode handles still display.
+    const fileBase = `${vaultName}-vault.zip`;
+    const asciiName =
+      `${vaultName.replace(/[^A-Za-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "")}` ||
+      "yopedia";
     return new Response(zipped.buffer as ArrayBuffer, {
       headers: {
         "Content-Type": "application/zip",
-        "Content-Disposition": `attachment; filename="${vaultName}-vault.zip"`,
+        "Content-Disposition": `attachment; filename="${asciiName}-vault.zip"; filename*=UTF-8''${encodeURIComponent(fileBase)}`,
       },
     });
   } catch (err) {
