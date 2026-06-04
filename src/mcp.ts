@@ -186,6 +186,7 @@ export async function handleCreatePage(args: {
   slug: string;
   content: string;
   author?: string;
+  owner?: string;
   tags?: string[];
 }): Promise<{ slug: string; title: string; created: true }> {
   validateSlug(args.slug);
@@ -216,6 +217,7 @@ export async function handleCreatePage(args: {
     contributors: [],
     aliases: [],
     tags: Array.isArray(args.tags) ? args.tags : [],
+    ...(args.owner ? { owner: args.owner } : {}),
   };
 
   const fullContent = serializeFrontmatter(frontmatter, args.content);
@@ -237,6 +239,7 @@ export async function handleUpdatePage(args: {
   slug: string;
   content: string;
   author?: string;
+  owner?: string;
 }): Promise<{ slug: string; title: string; updated: true }> {
   const existingPage = await readWikiPageWithFrontmatter(args.slug);
   if (!existingPage) {
@@ -253,6 +256,7 @@ export async function handleUpdatePage(args: {
     ...existingPage.frontmatter,
     title,
     updated: today,
+    ...(args.owner && !existingPage.frontmatter.owner ? { owner: args.owner } : {}),
   };
   if (!merged.created) {
     merged.created = today;
@@ -316,6 +320,8 @@ export async function handleDeletePage(args: {
 export async function handleIngestUrl(args: {
   url: string;
   tags?: string[] | undefined;
+  owner?: string;
+  triggeredBy?: string;
 }): Promise<{
   slug: string;
   title: string;
@@ -330,6 +336,8 @@ export async function handleIngestUrl(args: {
 
   const result: IngestResult = await ingestUrl(args.url, {
     ...(args.tags && args.tags.length > 0 ? { tags: args.tags } : {}),
+    ...(args.owner ? { owner: args.owner } : {}),
+    ...(args.triggeredBy ? { triggeredBy: args.triggeredBy } : {}),
   });
 
   // Read the written page to extract title and summary for the response
@@ -360,13 +368,15 @@ export interface BatchIngestResult {
 export async function handleBatchIngest(args: {
   urls: string[];
   tags?: string[] | undefined;
+  owner?: string;
+  triggeredBy?: string;
 }): Promise<{
   total: number;
   succeeded: number;
   failed: number;
   results: BatchIngestResult[];
 }> {
-  const { urls, tags } = args;
+  const { urls, tags, owner, triggeredBy } = args;
 
   // Enforce batch size limit
   if (urls.length > MAX_BATCH_URLS) {
@@ -398,6 +408,8 @@ export async function handleBatchIngest(args: {
     try {
       const result: IngestResult = await ingestUrl(url, {
         ...(tags && tags.length > 0 ? { tags } : {}),
+        ...(owner ? { owner } : {}),
+        ...(triggeredBy ? { triggeredBy } : {}),
       });
       results.push({ url, slug: result.primarySlug });
       succeeded++;
@@ -418,6 +430,8 @@ export async function handleIngestText(args: {
   content: string;
   title?: string | undefined;
   tags?: string[] | undefined;
+  owner?: string;
+  triggeredBy?: string;
 }): Promise<{
   slug: string;
   title: string;
@@ -433,6 +447,8 @@ export async function handleIngestText(args: {
   const result: IngestResult = await ingest(title, args.content, {
     ...(args.tags && args.tags.length > 0 ? { tags: args.tags } : {}),
     sourceType: "text",
+    ...(args.owner ? { owner: args.owner } : {}),
+    ...(args.triggeredBy ? { triggeredBy: args.triggeredBy } : {}),
   });
 
   // Read the written page to extract title and summary for the response
@@ -627,6 +643,7 @@ export async function handleSeedAgent(args: {
   agent_id: string;
   name: string;
   description: string;
+  owner?: string;
   sections: {
     slug: string;
     title: string;
@@ -646,6 +663,7 @@ export async function handleSeedAgent(args: {
     name: args.name,
     description: args.description,
     sections,
+    ...(args.owner ? { owner: args.owner } : {}),
   });
 }
 
@@ -984,8 +1002,8 @@ const SERVER_INSTRUCTIONS = `yopedia is a shared knowledge wiki for humans and a
 
 1. **Search first.** Use \`search_wiki\` before creating anything — the topic may already exist. Use \`dataview_query\` to filter pages by frontmatter fields (tags, confidence, authors).
 2. **Read before writing.** Use \`read_page\` to understand existing content, structure, and sources before making changes.
-3. **Contribute carefully.** Use \`create_page\` for new topics and \`update_page\` to improve existing pages. Always provide an \`author\` handle for attribution. Include sources when possible.
-4. **Ingest from URLs.** Use \`ingest_url\` or \`ingest_text\` to bring external knowledge into the wiki — the system chunks, summarizes, and creates/updates pages automatically.
+3. **Contribute carefully.** Use \`create_page\` for new topics and \`update_page\` to improve existing pages. Always provide an \`author\` handle for attribution and an \`owner\` handle to set page ownership. Include sources when possible.
+4. **Ingest from URLs.** Use \`ingest_url\` or \`ingest_text\` to bring external knowledge into the wiki — the system chunks, summarizes, and creates/updates pages automatically. Pass \`owner\` and \`triggeredBy\` so pages are properly attributed.
 5. **Ask questions.** Use \`query_wiki\` for LLM-synthesized answers grounded in wiki content. Use \`save_query_answer\` to promote good answers into durable wiki pages.
 
 ## Governance model
@@ -1006,7 +1024,8 @@ Agents can register with \`seed_agent\` and retrieve their full context (identit
 - Page slugs are kebab-case (e.g. \`machine-learning\`).
 - Cross-references use \`[[slug]]\` wikilinks or \`[Title](slug.md)\` markdown links.
 - Every page should link to at least one other page to avoid orphans.
-- Include an \`author\` field on writes so contributions are properly attributed.`;
+- Include an \`author\` field on writes so contributions are properly attributed.
+- Include an \`owner\` field on writes to assign page ownership — required for the "Mine" view, private visibility, and the tenant model.`;
 
 export function createMcpServer(): McpServer {
   const server = new McpServer({
@@ -1147,6 +1166,7 @@ export function createMcpServer(): McpServer {
       slug: z.string().describe("URL-safe page slug (e.g. 'neural-networks')"),
       content: z.string().describe("Markdown body for the new page (include a # Heading for the title)"),
       author: z.string().optional().describe("Author handle for attribution (defaults to 'agent')"),
+      owner: z.string().optional().describe("Owner handle — the accountable principal for this page. Required for 'Mine' view, private visibility, and tenant model. Typically your user handle."),
       tags: z.array(z.string()).optional().describe("Tags to categorize the page"),
     },
     annotations: {
@@ -1186,6 +1206,7 @@ export function createMcpServer(): McpServer {
       slug: z.string().describe("Slug of the page to update"),
       content: z.string().describe("New markdown body for the page"),
       author: z.string().optional().describe("Author handle for attribution"),
+      owner: z.string().optional().describe("Owner handle — set on pages that don't already have an owner. Existing ownership is preserved."),
     },
     annotations: {
       readOnlyHint: false,
@@ -1309,6 +1330,8 @@ export function createMcpServer(): McpServer {
         .array(z.string())
         .optional()
         .describe("Optional tags to apply to the created page"),
+      owner: z.string().optional().describe("Owner handle — the accountable principal for the resulting page. Sets frontmatter owner for tenant model."),
+      triggeredBy: z.string().optional().describe("Handle of the user or agent that triggered this ingest (for provenance tracking)"),
     },
     annotations: {
       readOnlyHint: false,
@@ -1352,6 +1375,8 @@ export function createMcpServer(): McpServer {
         .array(z.string())
         .optional()
         .describe("Optional tags to apply to all created pages"),
+      owner: z.string().optional().describe("Owner handle — the accountable principal for all resulting pages. Sets frontmatter owner for tenant model."),
+      triggeredBy: z.string().optional().describe("Handle of the user or agent that triggered this batch ingest (for provenance tracking)"),
     },
     annotations: {
       readOnlyHint: false,
@@ -1397,6 +1422,8 @@ export function createMcpServer(): McpServer {
         .array(z.string())
         .optional()
         .describe("Optional tags to apply to the created page"),
+      owner: z.string().optional().describe("Owner handle — the accountable principal for the resulting page. Sets frontmatter owner for tenant model."),
+      triggeredBy: z.string().optional().describe("Handle of the user or agent that triggered this ingest (for provenance tracking)"),
     },
     annotations: {
       readOnlyHint: false,
@@ -1606,6 +1633,7 @@ export function createMcpServer(): McpServer {
       agent_id: z.string().describe("Agent ID (lowercase alphanumeric + hyphens)"),
       name: z.string().describe("Agent display name"),
       description: z.string().describe("Short description of the agent"),
+      owner: z.string().optional().describe("Owner handle — the accountable principal claiming ownership of this agent. Ignored on re-seed if the agent already has an owner."),
       sections: z.array(z.object({
         slug: z.string().describe("Wiki page slug for this section"),
         title: z.string().describe("Page title"),
