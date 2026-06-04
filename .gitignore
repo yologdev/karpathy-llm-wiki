@@ -9,6 +9,10 @@ node_modules/
 /wiki/
 /discuss/
 /data/
+/.indexes/
+/tenants/
+/agents/
+/agent-secrets/
 .llm-wiki-config.json
 SESSION_PLAN.md
 ISSUE_RESPONSE.md

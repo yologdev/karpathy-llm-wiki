@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { listReadableWikiPages, readWikiPageWithFrontmatter } from "@/lib/wiki";
-import { getPrincipal } from "@/lib/auth";
+import { readWikiPageWithFrontmatter } from "@/lib/wiki";
+import { listCommonsPages } from "@/lib/commons";
 import { getErrorMessage } from "@/lib/errors";
 import { logger } from "@/lib/logger";
 
@@ -18,8 +18,8 @@ interface GraphEdge {
 
 export async function GET() {
   try {
-    const principal = await getPrincipal();
-    const pages = await listReadableWikiPages(principal);
+    // The graph is the public commons graph (read from the commons index).
+    const pages = await listCommonsPages();
     const slugSet = new Set(pages.map((p) => p.slug));
 
     const nodes: GraphNode[] = [];

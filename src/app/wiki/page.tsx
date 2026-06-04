@@ -1,5 +1,7 @@
 import Link from "next/link";
 import { listReadableWikiPages } from "@/lib/wiki";
+import { listCommonsPages } from "@/lib/commons";
+import type { IndexEntry } from "@/lib/types";
 import { slugsForOwner } from "@/lib/search";
 import { getDiscussionStatsForSlugs } from "@/lib/talk";
 import { getPrincipal } from "@/lib/auth";
@@ -27,14 +29,17 @@ export default async function WikiIndex({
         : null;
   const showingMine = ownerHandle !== null;
 
-  let pages = await listReadableWikiPages(principal);
+  let pages: IndexEntry[];
   if (ownerHandle) {
+    // "Mine"/owner scope: the user's own pages (public + their private),
+    // filtered to what the viewer may read.
     const mine = new Set(await slugsForOwner(ownerHandle));
-    pages = pages.filter((p) => mine.has(p.slug));
+    pages = (await listReadableWikiPages(principal)).filter((p) =>
+      mine.has(p.slug),
+    );
   } else {
-    // "All" scope: hide agent-identity pages so the public feed stays
-    // human-centric. Agent content is browsable under agent profiles.
-    pages = pages.filter((p) => p.type !== "agent-identity");
+    // "All" scope = the public commons (read from the commons index).
+    pages = await listCommonsPages();
   }
 
   // Optional topic filter (from the homepage "Browse by topic" chips).

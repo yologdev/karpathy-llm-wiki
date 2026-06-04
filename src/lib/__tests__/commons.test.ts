@@ -9,6 +9,7 @@ import {
   syncCommonsForPage,
   removeCommonsEntryBySlug,
   rebuildCommonsIndex,
+  listCommonsPages,
 } from "../commons";
 import { ensureDirectories, writeWikiPage } from "../wiki";
 import { _resetStorage } from "../storage";
@@ -131,5 +132,26 @@ describe("rebuildCommonsIndex", () => {
     expect(count).toBe(1);
     expect(slugs).toEqual(["pub"]);
     expect(idx[0].tenant).toBe("alice");
+  });
+
+  it("listCommonsPages reads the index (owner = tenant) when populated", async () => {
+    await syncCommonsForPage("p", { owner: "alice", title: "P", summary: "s", tags: ["x"] });
+    await syncCommonsForPage("q", { owner: "bob", title: "Q", summary: "t" });
+    const pages = await listCommonsPages();
+    expect(pages.map((p) => p.slug).sort()).toEqual(["p", "q"]);
+    const p = pages.find((e) => e.slug === "p")!;
+    expect(p.owner).toBe("alice");
+    expect(p.title).toBe("P");
+    expect(p.tags).toEqual(["x"]);
+  });
+
+  it("listCommonsPages falls back to the flat public set when the index is empty", async () => {
+    await createPage("pub", "owner: alice\nvisibility: public", "Public");
+    await createPage("priv", "owner: alice\nvisibility: private", "Private");
+    await createPage("ag", "owner: alice--yoyo\ntype: agent-knowledge", "Agent");
+    // No rebuild / sync → commons index is empty → derive from the flat index.
+    expect(await getCommonsIndex()).toEqual([]);
+    const pages = await listCommonsPages();
+    expect(pages.map((p) => p.slug).sort()).toEqual(["pub"]);
   });
 });
