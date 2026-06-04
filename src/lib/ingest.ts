@@ -10,6 +10,7 @@ import {
 import { callLLM, hasLLMKey } from "./llm";
 import { fetchUrlContent, downloadImages, fetchImageBytes, storeImageBytes } from "./fetch";
 import { describeImage } from "./vision";
+import { isYouTubeUrl, fetchYouTubeContent } from "./youtube";
 import type { IngestResult, SourceEntry } from "./types";
 import {
   serializeSources,
@@ -157,6 +158,10 @@ export async function ingestUrl(
     }
   }
 
+  if (isYouTubeUrl(url)) {
+    return ingestYouTube(url, options);
+  }
+
   const { title, content } = await fetchUrlContent(url);
   // Image downloading is centralized in ingest() so every path (url, text,
   // agent, X) captures embedded images uniformly.
@@ -286,6 +291,11 @@ export async function reingest(
     throw new Error("Cannot re-ingest: no source URL recorded");
   }
 
+  if (isYouTubeUrl(sourceUrl)) {
+    const { title, content } = await fetchYouTubeContent(sourceUrl);
+    return ingest(title, content, { sourceUrl, sourceType: "youtube", ...opts });
+  }
+
   const { title, content: rawContent } = await fetchUrlContent(sourceUrl);
   const content = await downloadImages(rawContent, slug, getRawDir());
   return ingest(title, content, { sourceUrl, ...opts });
@@ -309,6 +319,24 @@ export async function ingestXMention(
     sourceType: "x-mention",
     triggeredBy,
     ...opts,
+  });
+}
+
+/**
+ * Ingest a YouTube video into the wiki.
+ *
+ * Fetches the video transcript and metadata via the youtube module,
+ * then delegates to the standard ingest pipeline with `youtube` provenance.
+ */
+export async function ingestYouTube(
+  url: string,
+  options?: IngestOptions,
+): Promise<IngestResult> {
+  const { title, content } = await fetchYouTubeContent(url);
+  return ingest(title, content, {
+    ...options,
+    sourceUrl: url,
+    sourceType: "youtube",
   });
 }
 
@@ -595,7 +623,7 @@ export interface IngestOptions {
    * default `"url"` / `"text"` heuristic when building the `sources[]` entry.
    * Used by `ingestXMention()` to set `"x-mention"` provenance.
    */
-  sourceType?: "url" | "text" | "x-mention" | "image" | "pdf";
+  sourceType?: "url" | "text" | "x-mention" | "image" | "pdf" | "youtube";
   /**
    * Who triggered the ingest (user handle or agent ID). Defaults to `"system"`.
    * Passed through to the `triggered_by` field on the `SourceEntry`.

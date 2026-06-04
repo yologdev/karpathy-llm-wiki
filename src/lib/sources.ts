@@ -9,7 +9,7 @@
 import type { SourceEntry } from "./types";
 
 /** Valid provenance types. */
-const VALID_TYPES = new Set<SourceEntry["type"]>(["url", "text", "x-mention", "wiki-ref", "image", "pdf"]);
+const VALID_TYPES = new Set<SourceEntry["type"]>(["url", "text", "x-mention", "wiki-ref", "image", "pdf", "youtube"]);
 
 /**
  * Serialize a `SourceEntry[]` into a JSON string suitable for frontmatter.
