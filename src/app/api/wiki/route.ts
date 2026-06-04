@@ -151,7 +151,9 @@ export async function POST(req: Request) {
         `created · found ${ctx.updatedSlugs.length} cross-ref(s)`,
     });
 
-    return NextResponse.json(result, { status: 201 });
+    // Echo the owner so the client can navigate to the canonical
+    // `/u/<tenant>/<slug>` URL after creation (tenant-silos P2).
+    return NextResponse.json({ ...result, owner: authorStr }, { status: 201 });
   } catch (err) {
     const message = getErrorMessage(err);
     const status = message.toLowerCase().startsWith("invalid slug") ? 400 : 500;

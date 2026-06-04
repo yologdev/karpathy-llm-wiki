@@ -1,7 +1,22 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
+import type { Metadata } from "next";
+import { permanentRedirect } from "next/navigation";
 import { decodeSlug, slugify } from "@/lib/slugify";
-import { readWikiPageWithFrontmatter, findBacklinks, type Frontmatter } from "@/lib/wiki";
+import {
+  readWikiPageWithFrontmatter,
+  findBacklinks,
+  tenantForOwner,
+  buildSlugTenantMap,
+  type Frontmatter,
+} from "@/lib/wiki";
+import {
+  pagePath,
+  editPath,
+  rawPath,
+  resolveSlugPath,
+  type SlugTenantMap,
+} from "@/lib/links";
 import { parseSources } from "@/lib/sources";
 import type { SourceEntry } from "@/lib/types";
 import { MarkdownRenderer } from "@/components/MarkdownRenderer";
@@ -20,7 +35,51 @@ import { getDiscussionStats } from "@/lib/talk";
 import type { DiscussionStats } from "@/lib/talk";
 
 interface WikiPageProps {
-  params: Promise<{ slug: string }>;
+  params: Promise<{ handle: string; slug: string }>;
+}
+
+/**
+ * Per-page Open Graph / Twitter metadata (net-new in P2 — the app only had a
+ * global static title before). Private pages the viewer can't read get a
+ * neutral title so existence isn't leaked. Sets the canonical owner-qualified
+ * URL so shares/crawlers point at `/u/<tenant>/<slug>`.
+ */
+export async function generateMetadata({
+  params,
+}: WikiPageProps): Promise<Metadata> {
+  const { slug: encodedSlug } = await params;
+  const slug = decodeSlug(encodedSlug);
+  const page = await readWikiPageWithFrontmatter(slug);
+  if (!page || !canReadFrontmatter(page.frontmatter, await getPrincipal())) {
+    // The layout's title template appends " · yopedia".
+    return { title: "Page not found" };
+  }
+  const tenant = tenantForOwner(
+    typeof page.frontmatter.owner === "string"
+      ? page.frontmatter.owner
+      : undefined,
+  );
+  const description =
+    typeof page.frontmatter.summary === "string"
+      ? page.frontmatter.summary
+      : undefined;
+  const url = pagePath(tenant, slug);
+  return {
+    title: page.title, // layout template appends " · yopedia"
+    ...(description ? { description } : {}),
+    alternates: { canonical: url },
+    openGraph: {
+      title: page.title,
+      ...(description ? { description } : {}),
+      url,
+      type: "article",
+    },
+    twitter: {
+      card: "summary",
+      title: page.title,
+      ...(description ? { description } : {}),
+    },
+  };
 }
 
 /** Truncate a date-ish string to its `YYYY-MM-DD` prefix (no library). */
@@ -367,9 +426,14 @@ function PageByline({
 function PageInfo({
   frontmatter,
   className,
+  slugTenants,
+  tenant,
 }: {
   frontmatter: Frontmatter;
   className?: string;
+  slugTenants: SlugTenantMap;
+  /** The page's own tenant — fallback for resolving the `supersedes` link. */
+  tenant: string;
 }) {
   const expiryRaw = frontmatter.expiry;
   const expiryStr =
@@ -448,7 +512,7 @@ function PageInfo({
           <div className="text-muted">
             Replaces:{" "}
             <Link
-              href={`/wiki/${supersedes}`}
+              href={resolveSlugPath(supersedes, slugTenants, tenant)}
               className="text-accent hover:underline"
             >
               {supersedes}
@@ -676,7 +740,7 @@ function LineageStrip({
 }
 
 export default async function WikiPageView({ params }: WikiPageProps) {
-  const { slug: encodedSlug } = await params;
+  const { handle: encodedHandle, slug: encodedSlug } = await params;
   const slug = decodeSlug(encodedSlug);
   const page = await readWikiPageWithFrontmatter(slug);
   const principal = await getPrincipal();
@@ -699,6 +763,24 @@ export default async function WikiPageView({ params }: WikiPageProps) {
       </main>
     );
   }
+
+  // The page is addressed by slug (globally unique pre-P5); the handle segment
+  // is the canonical owner. If the URL handle doesn't match the page's real
+  // tenant (wrong owner, or stale/mixed-case), 308 to the canonical URL so
+  // every page has one indexable address.
+  const pageTenant = tenantForOwner(
+    typeof page.frontmatter.owner === "string"
+      ? page.frontmatter.owner
+      : undefined,
+  );
+  if (decodeSlug(encodedHandle).toLowerCase() !== pageTenant) {
+    permanentRedirect(pagePath(pageTenant, slug));
+  }
+
+  // Slug→tenant map so in-content links and backlinks resolve to each target's
+  // real owner (cross-owner links stay correct), falling back to this page's
+  // tenant for dangling targets.
+  const slugTenants = await buildSlugTenantMap();
 
   const backlinks = await findBacklinks(slug, principal);
   const discussStats = await getDiscussionStats(slug);
@@ -767,6 +849,8 @@ export default async function WikiPageView({ params }: WikiPageProps) {
                 content={articleBody}
                 className="prose-article"
                 headingIds={toc.map((t) => t.id)}
+                tenant={pageTenant}
+                slugTenants={slugTenants}
               />
             </div>
           </article>
@@ -777,6 +861,8 @@ export default async function WikiPageView({ params }: WikiPageProps) {
           <PageInfo
             frontmatter={page.frontmatter}
             className="mt-8 border-t border-border pt-6 lg:hidden"
+            slugTenants={slugTenants}
+            tenant={pageTenant}
           />
 
           {backlinks.length > 0 && (
@@ -788,7 +874,7 @@ export default async function WikiPageView({ params }: WikiPageProps) {
                 {backlinks.map((bl) => (
                   <li key={bl.slug}>
                     <Link
-                      href={`/wiki/${bl.slug}`}
+                      href={resolveSlugPath(bl.slug, slugTenants, pageTenant)}
                       className="text-sm text-accent hover:underline"
                     >
                       {bl.title}
@@ -804,14 +890,14 @@ export default async function WikiPageView({ params }: WikiPageProps) {
 
           <div className="mt-12 border-t border-border pt-6 flex flex-wrap items-center gap-3">
             <Link
-              href={`/wiki/${slug}/edit`}
+              href={editPath(pageTenant, slug)}
               className="rounded-md border border-border px-4 py-2 text-sm font-medium text-foreground hover:bg-foreground/5 transition-colors"
             >
               Edit page
             </Link>
             {hasRawSource && (
               <Link
-                href={`/raw/${slug}`}
+                href={rawPath(pageTenant, slug)}
                 className="rounded-md border border-border px-4 py-2 text-sm font-medium text-foreground hover:bg-foreground/5 transition-colors"
               >
                 View source
@@ -829,7 +915,11 @@ export default async function WikiPageView({ params }: WikiPageProps) {
         <aside className="hidden lg:block">
           <div className="sticky top-20 space-y-8">
             <TableOfContents items={toc} />
-            <PageInfo frontmatter={page.frontmatter} />
+            <PageInfo
+              frontmatter={page.frontmatter}
+              slugTenants={slugTenants}
+              tenant={pageTenant}
+            />
           </div>
         </aside>
       </div>

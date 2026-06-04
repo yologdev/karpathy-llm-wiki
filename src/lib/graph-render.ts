@@ -10,6 +10,8 @@
 export interface GraphNode {
   id: string;
   label: string;
+  /** Canonical tenant for navigating to `/u/<tenant>/<slug>` on click. */
+  tenant: string;
   linkCount: number;
   tags: string[];
   cluster: number;

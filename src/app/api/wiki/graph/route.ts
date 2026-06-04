@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { readWikiPageWithFrontmatter } from "@/lib/wiki";
+import { ownerToTenant } from "@/lib/links";
 import { listCommonsPages } from "@/lib/commons";
 import { getErrorMessage } from "@/lib/errors";
 import { logger } from "@/lib/logger";
@@ -7,6 +8,8 @@ import { logger } from "@/lib/logger";
 interface GraphNode {
   id: string;
   label: string;
+  /** Canonical tenant for the node, so clicks navigate to `/u/<tenant>/<slug>`. */
+  tenant: string;
   linkCount: number;
   tags: string[];
 }
@@ -38,6 +41,7 @@ export async function GET() {
       nodes.push({
         id: page.slug,
         label: wp?.title ?? page.title,
+        tenant: ownerToTenant(page.owner),
         linkCount: 0, // computed below
         tags,
       });

@@ -1,4 +1,4 @@
-import { listReadableWikiPages, readWikiPageWithFrontmatter, isAgentScopedType } from "./wiki";
+import { listReadableWikiPages, readWikiPageWithFrontmatter, isAgentScopedType, ownerToTenant } from "./wiki";
 import { listRevisions } from "./revisions";
 import { parseSources } from "./sources";
 import { isAgentHandle } from "./agents";
@@ -21,6 +21,8 @@ export interface TrailEvent {
   sourceType?: SourceEntry["type"];
   slug: string;
   title: string;
+  /** Canonical tenant for linking to `/u/<tenant>/<slug>`. */
+  tenant: string;
 }
 
 // Bound the work: only scan the most-recently-updated public pages.
@@ -66,6 +68,7 @@ export async function getTrail(
             sourceType: s.type,
             slug: page.slug,
             title: page.title,
+            tenant: ownerToTenant(page.owner),
           });
         }
       } catch {
@@ -85,6 +88,7 @@ export async function getTrail(
             action: "edited",
             slug: page.slug,
             title: page.title,
+            tenant: ownerToTenant(page.owner),
           });
         }
       } catch {

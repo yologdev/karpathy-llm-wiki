@@ -63,7 +63,7 @@ describe("migrateToTenants — dry run", () => {
 
     expect(r.dryRun).toBe(true);
     expect(r.totalPages).toBe(3);
-    expect(r.tenants).toEqual({ alice: 1, bob: 1, system: 1 });
+    expect(r.tenants).toEqual({ alice: 1, bob: 1, yopedia: 1 });
     expect(r.redirectCount).toBe(3);
     expect(r.artifactsCopied).toBe(0);
     expect(r.errors).toEqual([]);
@@ -90,10 +90,10 @@ describe("migrateToTenants — live", () => {
     expect(r.totalPages).toBe(3);
     expect(r.errors).toEqual([]);
 
-    // Pages copied into their owner's silo (ownerless → system).
+    // Pages copied into their owner's silo (ownerless → yopedia).
     expect(await exists("tenants/alice/wiki/pub.md")).toBe(true);
     expect(await exists("tenants/bob/wiki/priv.md")).toBe(true);
-    expect(await exists("tenants/system/wiki/seed.md")).toBe(true);
+    expect(await exists("tenants/yopedia/wiki/seed.md")).toBe(true);
 
     // Flat originals are untouched (copy, not move).
     expect(await exists("wiki/pub.md")).toBe(true);
@@ -110,12 +110,12 @@ describe("migrateToTenants — live", () => {
     const commons = await getCommonsIndex();
     expect(commons.map((e) => e.slug).sort()).toEqual(["pub", "seed"]);
     expect(commons.find((e) => e.slug === "pub")?.tenant).toBe("alice");
-    expect(commons.find((e) => e.slug === "seed")?.tenant).toBe("system");
+    expect(commons.find((e) => e.slug === "seed")?.tenant).toBe("yopedia");
 
     // Redirect map persisted, old → new.
     const map = await getRedirectMap();
     expect(map).toContainEqual({ from: "/wiki/pub", to: "/u/alice/pub" });
-    expect(map).toContainEqual({ from: "/wiki/seed", to: "/u/system/seed" });
+    expect(map).toContainEqual({ from: "/wiki/seed", to: "/u/yopedia/seed" });
   });
 
   it("is idempotent (re-running overwrites, same result)", async () => {

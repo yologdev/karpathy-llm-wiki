@@ -22,6 +22,8 @@ export interface MetadataValues {
 
 interface WikiEditorProps {
   slug: string;
+  /** The page's tenant — where to navigate after a successful save. */
+  tenant: string;
   initialContent: string;
   initialMetadata?: MetadataValues;
 }
@@ -154,6 +156,7 @@ const DEFAULT_METADATA: MetadataValues = {
 
 export function WikiEditor({
   slug,
+  tenant,
   initialContent,
   initialMetadata,
 }: WikiEditorProps) {
@@ -225,7 +228,7 @@ export function WikiEditor({
         }
       }
 
-      router.push(`/wiki/${slug}`);
+      router.push(`/u/${tenant}/${slug}`);
       router.refresh();
     } catch (err) {
       setError(getErrorMessage(err, "unknown error"));

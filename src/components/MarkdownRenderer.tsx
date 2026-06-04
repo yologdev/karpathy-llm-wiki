@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { slugify } from "@/lib/slugify";
+import { resolveSlugPath, type SlugTenantMap } from "@/lib/links";
 
 interface MarkdownRendererProps {
   content: string;
@@ -19,6 +20,19 @@ interface MarkdownRendererProps {
    * omitted (e.g. query answers), ids fall back to slugifying the heading text.
    */
   headingIds?: string[];
+  /**
+   * The linking page's tenant — the fallback for in-content `[x](slug.md)`
+   * links whose target isn't in {@link slugTenants} (a dangling/new page). When
+   * omitted, internal links fall back to the flat `/wiki/<slug>` route (which
+   * 308-redirects to canonical) — used by client callers without a resolver.
+   */
+  tenant?: string;
+  /**
+   * Slug→tenant map so in-content links resolve to the canonical
+   * `/u/<owner>/<slug>` even when the target belongs to another owner (pre-P5
+   * slugs are globally unique). Computed server-side and passed as plain data.
+   */
+  slugTenants?: SlugTenantMap;
 }
 
 /** Flatten ReactMarkdown heading children to plain text for anchor IDs. */
@@ -77,6 +91,8 @@ export function MarkdownRenderer({
   content,
   className,
   headingIds,
+  tenant,
+  slugTenants,
 }: MarkdownRendererProps) {
   const body = stripFrontmatter(content);
   // Headings render in document order; pull the next pre-computed id (which
@@ -127,11 +143,20 @@ export function MarkdownRenderer({
             );
           },
           a: ({ href, children, ...props }) => {
-            // Rewrite internal .md links to /wiki/ routes using Next.js Link
+            // Rewrite internal .md links to canonical owner-qualified routes.
+            // `[x](slug.md)` is tenant-local in storage; we resolve the target's
+            // real owner via slugTenants (cross-owner links stay correct), and
+            // fall back to the linking page's tenant for dangling targets. When
+            // no resolver/tenant is supplied (client callers), use the flat
+            // /wiki/<slug> route, which 308-redirects to canonical.
             if (href && href.endsWith(".md") && !href.startsWith("http")) {
               const slug = href.replace(/\.md$/, "");
+              const dest =
+                tenant || slugTenants
+                  ? resolveSlugPath(slug, slugTenants, tenant ?? "")
+                  : `/wiki/${slug}`;
               return (
-                <Link href={`/wiki/${slug}`} {...props}>
+                <Link href={dest} {...props}>
                   {children}
                 </Link>
               );

@@ -1,5 +1,15 @@
 import { describe, it, expect } from "vitest";
-import { escapeRegex, extractWikiLinks, hasLinkTo } from "../links";
+import {
+  escapeRegex,
+  extractWikiLinks,
+  hasLinkTo,
+  DEFAULT_TENANT,
+  ownerToTenant,
+  pagePath,
+  editPath,
+  rawPath,
+  resolveSlugPath,
+} from "../links";
 
 describe("escapeRegex", () => {
   it("escapes all special regex characters", () => {
@@ -93,5 +103,48 @@ describe("hasLinkTo", () => {
     const content = "See [Foobar](foobar.md) page.";
     // "foo" should not match "foobar.md"
     expect(hasLinkTo(content, "foo")).toBe(false);
+  });
+});
+
+describe("ownerToTenant", () => {
+  it("lowercases the handle (one owner, one silo)", () => {
+    expect(ownerToTenant("Alice")).toBe("alice");
+    expect(ownerToTenant("  Bob  ")).toBe("bob");
+  });
+
+  it("falls back to DEFAULT_TENANT (yopedia) when ownerless", () => {
+    expect(DEFAULT_TENANT).toBe("yopedia");
+    expect(ownerToTenant(undefined)).toBe("yopedia");
+    expect(ownerToTenant(null)).toBe("yopedia");
+    expect(ownerToTenant("")).toBe("yopedia");
+    expect(ownerToTenant("   ")).toBe("yopedia");
+  });
+});
+
+describe("canonical URL builders", () => {
+  it("build owner-qualified page/edit/raw paths", () => {
+    expect(pagePath("yuanhao", "transformers")).toBe("/u/yuanhao/transformers");
+    expect(editPath("yuanhao", "transformers")).toBe(
+      "/u/yuanhao/transformers/edit",
+    );
+    expect(rawPath("yuanhao", "transformers")).toBe(
+      "/u/yuanhao/raw/transformers",
+    );
+  });
+});
+
+describe("resolveSlugPath", () => {
+  const map = { foo: "alice", bar: "bob" };
+
+  it("resolves a target to its real owner (cross-owner links stay correct)", () => {
+    expect(resolveSlugPath("foo", map, "yuanhao")).toBe("/u/alice/foo");
+    expect(resolveSlugPath("bar", map, "yuanhao")).toBe("/u/bob/bar");
+  });
+
+  it("falls back to the linking page's tenant for unknown (dangling) targets", () => {
+    expect(resolveSlugPath("missing", map, "yuanhao")).toBe("/u/yuanhao/missing");
+    expect(resolveSlugPath("missing", undefined, "yopedia")).toBe(
+      "/u/yopedia/missing",
+    );
   });
 });

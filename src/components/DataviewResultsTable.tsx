@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 
+import { pagePath, ownerToTenant } from "@/lib/links";
 import type { DataviewResultRow } from "./DataviewFilterRow";
 
 // ---------------------------------------------------------------------------
@@ -59,7 +60,14 @@ export function DataviewResultsTable({
                 >
                   <td className="py-1.5 pr-3">
                     <Link
-                      href={`/wiki/${row.slug}`}
+                      href={pagePath(
+                        ownerToTenant(
+                          typeof row.frontmatter.owner === "string"
+                            ? row.frontmatter.owner
+                            : undefined,
+                        ),
+                        row.slug,
+                      )}
                       className="text-foreground underline underline-offset-2 hover:text-foreground/80 transition-colors"
                     >
                       {row.slug}

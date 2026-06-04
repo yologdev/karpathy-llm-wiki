@@ -5,7 +5,8 @@ import {
   resolveAgentPages,
   sharedPagesFor,
 } from "@/lib/agents";
-import { listReadableWikiPages } from "@/lib/wiki";
+import { listReadableWikiPages, ownerToTenant } from "@/lib/wiki";
+import { pagePath } from "@/lib/links";
 import { getDiscussionStatsForSlugs } from "@/lib/talk";
 import { decodeSlug } from "@/lib/slugify";
 import { getErrorMessage } from "@/lib/errors";
@@ -44,6 +45,8 @@ export default async function AgentProfilePage({
   const index = await listReadableWikiPages(principal);
   const bySlug = new Map(index.map((p) => [p.slug, p]));
   const titleFor = (slug: string) => bySlug.get(slug)?.title ?? slug;
+  const hrefFor = (slug: string) =>
+    pagePath(ownerToTenant(bySlug.get(slug)?.owner), slug);
 
   // Knowledge = the agent's accumulated learnings + social wisdom, rendered as
   // a card list (the same component the user profile uses).
@@ -107,11 +110,13 @@ export default async function AgentProfilePage({
         label="Identity"
         slugs={resolved.identityPages.filter((s) => bySlug.has(s))}
         titleFor={titleFor}
+        hrefFor={hrefFor}
       />
       <LinkSection
         label="Shared by owner"
         slugs={sharedSlugs.filter((s) => bySlug.has(s))}
         titleFor={titleFor}
+        hrefFor={hrefFor}
       />
     </main>
   );
@@ -122,10 +127,12 @@ function LinkSection({
   label,
   slugs,
   titleFor,
+  hrefFor,
 }: {
   label: string;
   slugs: string[];
   titleFor: (slug: string) => string;
+  hrefFor: (slug: string) => string;
 }) {
   if (slugs.length === 0) return null;
   return (
@@ -137,7 +144,7 @@ function LinkSection({
         {slugs.map((slug) => (
           <li key={slug}>
             <Link
-              href={`/wiki/${slug}`}
+              href={hrefFor(slug)}
               className="text-foreground hover:underline"
             >
               {titleFor(slug)}

@@ -36,8 +36,8 @@ describe("legacy path helpers are unchanged (behavior-preserving)", () => {
 });
 
 describe("tenant path helpers", () => {
-  it("DEFAULT_TENANT is 'system'", () => {
-    expect(DEFAULT_TENANT).toBe("system");
+  it("DEFAULT_TENANT is 'yopedia' (ownerless/seed content is the platform's)", () => {
+    expect(DEFAULT_TENANT).toBe("yopedia");
   });
 
   it("build storage-relative keys under tenants/<tenant>/…", () => {

@@ -97,6 +97,7 @@ export function useGraphSimulation(
           nodes: {
             id: string;
             label: string;
+            tenant?: string;
             linkCount?: number;
             tags?: string[];
           }[];
@@ -111,6 +112,7 @@ export function useGraphSimulation(
           const nodes: GraphNode[] = raw.nodes.map((n) => ({
             id: n.id,
             label: n.label,
+            tenant: n.tenant ?? "yopedia",
             linkCount: n.linkCount ?? 0,
             tags: n.tags ?? [],
             cluster: 0,
@@ -266,7 +268,7 @@ export function useGraphSimulation(
         const dx = n.x - mx;
         const dy = n.y - my;
         if (dx * dx + dy * dy <= (r + 4) ** 2) {
-          router.push(`/wiki/${n.id}`);
+          router.push(`/u/${n.tenant}/${n.id}`);
           return;
         }
       }

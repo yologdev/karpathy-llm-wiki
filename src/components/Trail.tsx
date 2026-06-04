@@ -41,7 +41,7 @@ export function Trail({ events }: { events: TrailEvent[] }) {
               </span>
             )}
             <Link
-              href={`/wiki/${e.slug}`}
+              href={`/u/${e.tenant}/${e.slug}`}
               className="text-accent hover:underline"
             >
               {e.title}

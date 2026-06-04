@@ -1,13 +1,14 @@
 import Link from "next/link";
 import { decodeSlug } from "@/lib/slugify";
-import { notFound } from "next/navigation";
-import { readRawSource } from "@/lib/wiki";
+import { notFound, permanentRedirect } from "next/navigation";
+import { readRawSource, readWikiPageWithFrontmatter, tenantForOwner } from "@/lib/wiki";
+import { pagePath, rawPath } from "@/lib/links";
 import { canReadSlug } from "@/lib/authz";
 import { getPrincipal } from "@/lib/auth";
 import { MarkdownRenderer } from "@/components/MarkdownRenderer";
 
 interface RawSourcePageProps {
-  params: Promise<{ slug: string }>;
+  params: Promise<{ handle: string; slug: string }>;
 }
 
 /** Hard ceiling on how much raw content we render inline in the browser. */
@@ -24,11 +25,23 @@ function formatSize(bytes: number): string {
 }
 
 export default async function RawSourcePage({ params }: RawSourcePageProps) {
-  const { slug: encodedSlug } = await params;
+  const { handle: encodedHandle, slug: encodedSlug } = await params;
   const slug = decodeSlug(encodedSlug);
   // A private page's raw source is owner-only — 404 (same as missing) otherwise.
   if (!(await canReadSlug(slug, await getPrincipal()))) {
     notFound();
+  }
+
+  // The owner segment is canonical: resolve it from the page's frontmatter so
+  // the "Back to page" link is correct regardless of the URL's handle.
+  const ownerPage = await readWikiPageWithFrontmatter(slug);
+  const pageTenant = tenantForOwner(
+    typeof ownerPage?.frontmatter.owner === "string"
+      ? ownerPage.frontmatter.owner
+      : undefined,
+  );
+  if (decodeSlug(encodedHandle).toLowerCase() !== pageTenant) {
+    permanentRedirect(rawPath(pageTenant, slug));
   }
   let source;
   try {
@@ -50,7 +63,7 @@ export default async function RawSourcePage({ params }: RawSourcePageProps) {
   return (
     <main className="mx-auto max-w-3xl px-6 py-12">
       <Link
-        href={`/wiki/${slug}`}
+        href={pagePath(pageTenant, slug)}
         className="text-sm text-foreground/60 hover:text-foreground transition-colors"
       >
         ← Back to page

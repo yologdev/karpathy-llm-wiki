@@ -52,7 +52,12 @@ export default function NewWikiPage() {
         setError(data.error ?? `Error ${res.status}`);
         return;
       }
-      router.push(`/wiki/${trimmedSlug}`);
+      // Navigate to the canonical owner-qualified URL (owner echoed by the API).
+      const tenant =
+        typeof data.owner === "string" && data.owner.trim()
+          ? data.owner.trim().toLowerCase()
+          : "yopedia";
+      router.push(`/u/${tenant}/${trimmedSlug}`);
     } catch (err) {
       setError(getErrorMessage(err, "Network error"));
     } finally {

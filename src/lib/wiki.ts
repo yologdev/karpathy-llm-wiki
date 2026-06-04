@@ -11,6 +11,7 @@ import {
   getDataDir,
 } from "./config";
 import { getTenantWikiDir, getTenantRawDir } from "./paths";
+import { DEFAULT_TENANT, ownerToTenant } from "./links";
 
 // ---------------------------------------------------------------------------
 // Configurable base directories — delegated to the config layer
@@ -69,8 +70,13 @@ export function rawRelPath(filename: string): string {
 // relocates existing content under `tenants/<tenant>/…`.
 // ---------------------------------------------------------------------------
 
-/** Catch-all tenant for ownerless / seed / system content. */
-export const DEFAULT_TENANT = "system";
+/**
+ * Catch-all tenant for ownerless / seed content (re-exported from the pure
+ * `links` module so client and server share one definition). yopedia is built
+ * in public by yoyo, so unattributed/seed pages are the platform's own — they
+ * belong to the `yopedia` tenant; "ownerless" never surfaces in a URL.
+ */
+export { DEFAULT_TENANT, ownerToTenant };
 
 /**
  * Guard a tenant name against path traversal before using it to build a key.
@@ -100,8 +106,19 @@ export function validateTenant(tenant: string): void {
  * derived; commons and the migration both use it so they stay consistent.
  */
 export function tenantForOwner(owner: string | undefined | null): string {
-  const t = typeof owner === "string" ? owner.trim().toLowerCase() : "";
-  return t.length > 0 ? t : DEFAULT_TENANT;
+  return ownerToTenant(owner);
+}
+
+/**
+ * Build a slug→tenant map over the whole flat index — used to resolve canonical
+ * `/u/<tenant>/<slug>` URLs for in-content wikilinks/backlinks where only the
+ * target slug is known. Pre-P5 slugs are globally unique, so each maps to one
+ * tenant. Cheap (tens of pages); computed once per server render.
+ */
+export async function buildSlugTenantMap(): Promise<Record<string, string>> {
+  const map: Record<string, string> = {};
+  for (const p of await listWikiPages()) map[p.slug] = tenantForOwner(p.owner);
+  return map;
 }
 
 /** Storage-relative path for a file in a tenant's wiki tree. */

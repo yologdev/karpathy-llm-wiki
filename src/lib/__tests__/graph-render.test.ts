@@ -15,6 +15,7 @@ import {
 function makeNode(overrides: Partial<GraphNode> & { id: string }): GraphNode {
   return {
     label: overrides.id,
+    tenant: "yopedia",
     linkCount: 1,
     tags: [],
     cluster: 0,

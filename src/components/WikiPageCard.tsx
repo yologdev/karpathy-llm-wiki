@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { IndexEntry } from "@/lib/types";
 import { formatRelativeTime } from "@/lib/format";
+import { pagePath, ownerToTenant } from "@/lib/links";
 
 interface WikiPageCardProps {
   page: IndexEntry;
@@ -23,7 +24,7 @@ export function WikiPageCard({ page, discussionCount }: WikiPageCardProps) {
   return (
     <li>
       <Link
-        href={`/wiki/${page.slug}`}
+        href={pagePath(ownerToTenant(page.owner), page.slug)}
         className="group block rounded-lg border border-border p-4 hover:border-accent/40 transition-colors"
       >
         <span className="font-medium group-hover:text-accent transition-colors">

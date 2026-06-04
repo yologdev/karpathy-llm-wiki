@@ -1,16 +1,18 @@
 import Link from "next/link";
+import { permanentRedirect } from "next/navigation";
 import { decodeSlug } from "@/lib/slugify";
-import { readWikiPageWithFrontmatter } from "@/lib/wiki";
+import { readWikiPageWithFrontmatter, tenantForOwner } from "@/lib/wiki";
+import { pagePath, editPath } from "@/lib/links";
 import { canReadFrontmatter } from "@/lib/authz";
 import { getPrincipal } from "@/lib/auth";
 import { WikiEditor } from "@/components/WikiEditor";
 
 interface EditPageProps {
-  params: Promise<{ slug: string }>;
+  params: Promise<{ handle: string; slug: string }>;
 }
 
 export default async function EditWikiPage({ params }: EditPageProps) {
-  const { slug: encodedSlug } = await params;
+  const { handle: encodedHandle, slug: encodedSlug } = await params;
   const slug = decodeSlug(encodedSlug);
   const page = await readWikiPageWithFrontmatter(slug);
 
@@ -32,6 +34,16 @@ export default async function EditWikiPage({ params }: EditPageProps) {
     );
   }
 
+  // Canonical owner segment; 308 to the canonical edit URL on mismatch.
+  const pageTenant = tenantForOwner(
+    typeof page.frontmatter.owner === "string"
+      ? page.frontmatter.owner
+      : undefined,
+  );
+  if (decodeSlug(encodedHandle).toLowerCase() !== pageTenant) {
+    permanentRedirect(editPath(pageTenant, slug));
+  }
+
   // Extract the 7 patchable metadata fields from frontmatter for the editor.
   const fm = page.frontmatter;
   const initialMetadata = {
@@ -47,7 +59,7 @@ export default async function EditWikiPage({ params }: EditPageProps) {
   return (
     <main className="mx-auto max-w-3xl px-6 py-12">
       <Link
-        href={`/wiki/${slug}`}
+        href={pagePath(pageTenant, slug)}
         className="text-sm text-foreground/60 hover:text-foreground transition-colors"
       >
         ← Back to page
@@ -57,6 +69,7 @@ export default async function EditWikiPage({ params }: EditPageProps) {
       </h1>
       <WikiEditor
         slug={slug}
+        tenant={pageTenant}
         initialContent={page.body}
         initialMetadata={initialMetadata}
       />
