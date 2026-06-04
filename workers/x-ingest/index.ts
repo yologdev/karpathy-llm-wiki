@@ -38,6 +38,12 @@ const SKIP_HOSTS = new Set([
   "www.twitter.com",
 ]);
 
+/** Max tweets to retrieve from a thread. Bounds API cost + ingest size. */
+const MAX_THREAD_TWEETS = 50;
+
+/** Max external links to ingest per thread. Prevents runaway link-heavy threads. */
+const MAX_THREAD_LINKS = 20;
+
 // The live query. `(to:HANDLE OR @HANDLE)` catches BOTH a reply directly to
 // @yoyoevolve's tweet (where the @mention is just the auto-prepended reply
 // prefix, which the bare `@HANDLE` keyword does not reliably match) AND a reply
@@ -83,6 +89,7 @@ interface XTweet {
   id: string;
   author_id?: string;
   text?: string;
+  conversation_id?: string;
   referenced_tweets?: { type: string; id: string }[];
   article?: { title?: string; text?: string; entities?: { urls?: XArticleEntityUrl[] } };
   entities?: { urls?: { expanded_url?: string; url?: string }[] };
@@ -167,10 +174,79 @@ function searchUrl(query: string, bound: string): string {
     `https://api.twitter.com/2/tweets/search/recent?query=${encodeURIComponent(query)}` +
     `&max_results=100${bound}` +
     `&expansions=referenced_tweets.id,author_id,referenced_tweets.id.author_id,attachments.media_keys` +
-    `&tweet.fields=entities,author_id,referenced_tweets,article,attachments,created_at` +
+    `&tweet.fields=entities,author_id,referenced_tweets,article,attachments,created_at,conversation_id` +
     `&media.fields=url,preview_image_url,type,alt_text` +
     `&user.fields=username`
   );
+}
+
+/**
+ * Fetch tweets in the same conversation by the same author, ordered oldest-newest.
+ * Returns [parent] on failure (graceful degradation to single-tweet behavior).
+ *
+ * Uses: GET /2/tweets/search/recent?query=conversation_id:<id> from:<author>
+ * This only covers the last 7 days (recent-search limitation), which is fine
+ * because our since_id cursor + 48h window means we only process recent mentions.
+ */
+async function fetchThreadTweets(
+  parent: XTweet,
+  parentAuthor: string | undefined,
+  xBearer: string,
+): Promise<XTweet[]> {
+  const convId = parent.conversation_id;
+  if (!convId || !parentAuthor) return [parent];
+
+  const query = `conversation_id:${convId} from:${parentAuthor}`;
+  const bound = `&max_results=${Math.min(MAX_THREAD_TWEETS, 100)}`;
+  const url = searchUrl(query, bound);
+
+  try {
+    const res = await fetch(url, {
+      headers: { Authorization: `Bearer ${xBearer}` },
+    });
+    if (!res.ok) {
+      console.warn(`Thread fetch failed (${res.status}) for conversation ${convId} — using parent only`);
+      return [parent];
+    }
+    const payload: XSearchPayload = await res.json();
+    const tweets = payload.data ?? [];
+    if (tweets.length === 0) return [parent];
+
+    // Sort by ID ascending (older tweets first — X IDs are monotonic snowflakes)
+    tweets.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+    return tweets;
+  } catch (err) {
+    console.warn(`Thread fetch error for conversation ${convId}:`, (err as Error)?.message ?? err);
+    return [parent];
+  }
+}
+
+/** Aggregate and dedup external links across all tweets in a thread. */
+function aggregateThreadLinks(threadTweets: XTweet[]): string[] {
+  const seen = new Set<string>();
+  const links: string[] = [];
+  for (const tweet of threadTweets) {
+    for (const link of externalLinks(tweet)) {
+      if (!seen.has(link)) {
+        seen.add(link);
+        links.push(link);
+      }
+    }
+  }
+  return links.slice(0, MAX_THREAD_LINKS);
+}
+
+/**
+ * Build concatenated thread text for ingestion (only if >1 tweet).
+ * Returns undefined for single-tweet threads (no extra text to ingest).
+ */
+function buildThreadText(threadTweets: XTweet[]): string | undefined {
+  if (threadTweets.length <= 1) return undefined;
+  const texts = threadTweets
+    .map((t) => (t.text ?? "").trim())
+    .filter((t) => t.length > 0);
+  if (texts.length <= 1) return undefined;
+  return texts.join("\n\n---\n\n");
 }
 
 async function run(env: Env): Promise<Summary> {
@@ -300,6 +376,10 @@ async function run(env: Env): Promise<Summary> {
     // wiki page links back to it. Author handle if expanded, else the
     // handle-agnostic /i/status/ form (which X redirects correctly).
     const parentAuthor = parent.author_id ? userById[parent.author_id] : undefined;
+
+    // Fetch the full thread (author's chain only). Falls back to [parent] on failure.
+    const threadTweets = await fetchThreadTweets(parent, parentAuthor, X_BEARER);
+
     const sourceUrl = parentAuthor
       ? `https://x.com/${parentAuthor}/status/${parent.id}`
       : `https://x.com/i/status/${parent.id}`;
@@ -322,7 +402,18 @@ async function run(env: Env): Promise<Summary> {
     } else if (article) {
       console.warn(`! @${handle}: parent 'article' has an unexpected shape — skipping the article`);
     }
-    for (const link of externalLinks(parent)) {
+    // If the thread has multiple tweets, ingest the concatenated thread text.
+    const threadText = buildThreadText(threadTweets);
+    if (threadText) {
+      const threadTitle = parentAuthor
+        ? `Thread by @${parentAuthor}`
+        : `X Thread`;
+      jobs.push({
+        body: { text: threadText, title: threadTitle, sourceUrl },
+        label: `thread (${threadTweets.length} tweets)`,
+      });
+    }
+    for (const link of aggregateThreadLinks(threadTweets)) {
       jobs.push({ body: { url: link }, label: link });
     }
     if (jobs.length === 0) {
@@ -414,6 +505,7 @@ async function probe(env: Env, hours: number): Promise<unknown> {
           parentMediaKeys: parent?.attachments?.media_keys ?? [],
           articleImageUrls: parent ? articleImageUrls(parent, mediaByKey) : [],
           includesMedia: payload.includes?.media ?? [],
+          parentConversationId: parent?.conversation_id ?? null,
         };
       }),
     };
