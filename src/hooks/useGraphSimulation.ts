@@ -87,8 +87,11 @@ export function useGraphSimulation(
     }
   }, [canvasRef]);
 
-  // Fetch graph data (re-fetches when the scope lens changes)
+  // Fetch graph data (re-fetches when the scope lens changes). A `cancelled`
+  // guard drops a stale in-flight response when the scope toggles again, so an
+  // older request can't overwrite a newer one's data.
   useEffect(() => {
+    let cancelled = false;
     setLoading(true);
     setEmpty(false);
     setFetchError(null);
@@ -108,6 +111,7 @@ export function useGraphSimulation(
           }[];
           edges: GraphEdge[];
         }) => {
+          if (cancelled) return;
           if (!raw.nodes || raw.nodes.length === 0) {
             setEmpty(true);
             setLoading(false);
@@ -147,9 +151,13 @@ export function useGraphSimulation(
         },
       )
       .catch((err) => {
+        if (cancelled) return;
         setFetchError(String(err));
         setLoading(false);
       });
+    return () => {
+      cancelled = true;
+    };
   }, [scope]);
 
   // Detect color scheme and listen for changes

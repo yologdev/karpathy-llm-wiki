@@ -915,6 +915,38 @@ describe("/api/wiki/graph route", () => {
 
     expect(data.edges).toHaveLength(0);
   });
+
+  it("a scoped graph excludes another owner's private page (readable ∩ scope)", async () => {
+    // bob has a public + a private page. An anonymous viewer (no principal in
+    // tests) scoping to owner:bob must see ONLY the public one — slugsForOwner
+    // is visibility-blind, but the readable-set intersection gates the private.
+    await writeWikiPage(
+      "bob-pub",
+      serializeFrontmatter(
+        { owner: "bob", visibility: "public" },
+        "# Bob Public\n\nShared.",
+      ),
+    );
+    await writeWikiPage(
+      "bob-priv",
+      serializeFrontmatter(
+        { owner: "bob", visibility: "private" },
+        "# Bob Private\n\nSecret.",
+      ),
+    );
+    await updateIndex([
+      { slug: "bob-pub", title: "Bob Public", summary: "shared" },
+      { slug: "bob-priv", title: "Bob Private", summary: "secret" },
+    ]);
+
+    const { GET } = await import("../../app/api/wiki/graph/route");
+    const res = await GET(
+      new Request("http://localhost/api/wiki/graph?scope=owner:bob") as never,
+    );
+    const data = (await res.json()) as { nodes: { id: string }[] };
+
+    expect(data.nodes.map((n) => n.id)).toEqual(["bob-pub"]);
+  });
 });
 
 // ---------------------------------------------------------------------------
