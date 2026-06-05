@@ -37,6 +37,8 @@
     "ingest_history",
     "dataview_query",
     "list_revisions",
-    "read_revision"
+    "read_revision",
+    "vault_curate",
+    "vault_uncurate"
   ]
 }

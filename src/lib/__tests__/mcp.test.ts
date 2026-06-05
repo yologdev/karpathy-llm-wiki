@@ -33,6 +33,8 @@ import {
   handleDataviewQuery,
   handleListRevisions,
   handleReadRevision,
+  handleVaultCurate,
+  handleVaultUncurate,
   createMcpServer,
 } from "../../mcp";
 import { _resetStorage } from "../storage";
@@ -3175,6 +3177,111 @@ describe("visibility enforcement", () => {
     const slugs = results.map((r) => r.slug);
     expect(slugs).toContain("public-page");
     expect(slugs).not.toContain("secret-page");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// vault_curate / vault_uncurate tests
+// ---------------------------------------------------------------------------
+
+describe("vault_curate", () => {
+  it("curates a public commons page into a user's vault", async () => {
+    // Create a public commons page (no visibility = public by default)
+    await writeTestPage(
+      "machine-learning",
+      "---\ntitle: Machine Learning\n---\n# Machine Learning\n\nML is a subset of AI.",
+    );
+
+    const result = await handleVaultCurate({
+      slug: "machine-learning",
+      owner: "alice",
+    });
+    expect(result).toEqual({
+      curated: true,
+      slug: "machine-learning",
+      owner: "alice",
+    });
+  });
+
+  it("throws for a non-existent page", async () => {
+    await expect(
+      handleVaultCurate({ slug: "does-not-exist", owner: "alice" }),
+    ).rejects.toThrow("Page not found: does-not-exist");
+  });
+
+  it("throws for a private page", async () => {
+    await writeTestPage(
+      "private-notes",
+      "---\ntitle: Private Notes\nvisibility: private\n---\n# Private Notes\n\nSecret stuff.",
+    );
+
+    await expect(
+      handleVaultCurate({ slug: "private-notes", owner: "alice" }),
+    ).rejects.toThrow("Only public commons pages can be curated into a vault.");
+  });
+
+  it("throws for an agent-scoped page", async () => {
+    await writeTestPage(
+      "agent-identity",
+      "---\ntitle: Agent Identity\ntype: agent-identity\n---\n# Agent Identity\n\nAgent stuff.",
+    );
+
+    await expect(
+      handleVaultCurate({ slug: "agent-identity", owner: "alice" }),
+    ).rejects.toThrow("Only public commons pages can be curated into a vault.");
+  });
+
+  it("is idempotent — curating twice succeeds without error", async () => {
+    await writeTestPage(
+      "deep-learning",
+      "---\ntitle: Deep Learning\n---\n# Deep Learning\n\nNeural networks with many layers.",
+    );
+
+    const first = await handleVaultCurate({
+      slug: "deep-learning",
+      owner: "bob",
+    });
+    expect(first.curated).toBe(true);
+
+    const second = await handleVaultCurate({
+      slug: "deep-learning",
+      owner: "bob",
+    });
+    expect(second.curated).toBe(true);
+  });
+});
+
+describe("vault_uncurate", () => {
+  it("uncurates a previously curated page", async () => {
+    // Create and curate a page first
+    await writeTestPage(
+      "transformers",
+      "---\ntitle: Transformers\n---\n# Transformers\n\nAttention is all you need.",
+    );
+
+    await handleVaultCurate({ slug: "transformers", owner: "alice" });
+
+    const result = await handleVaultUncurate({
+      slug: "transformers",
+      owner: "alice",
+    });
+    expect(result).toEqual({
+      curated: false,
+      slug: "transformers",
+      owner: "alice",
+    });
+  });
+
+  it("is a no-op when slug was never curated", async () => {
+    const result = await handleVaultUncurate({
+      slug: "never-curated",
+      owner: "alice",
+    });
+    expect(result).toEqual({
+      curated: false,
+      slug: "never-curated",
+      owner: "alice",
+    });
   });
 });
 
