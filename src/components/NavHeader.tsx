@@ -25,7 +25,10 @@ const secondaryLinks = [
 // Owner-only admin tools (also hard-gated server-side).
 const ownerLinks = [{ href: "/lint", label: "Lint" }];
 
-const utilityLinks = [{ href: "/settings", label: "Settings" }];
+// Settings is owner-only (admin) and lives under the user menu (UserButton),
+// not the public nav — so this is empty. Kept as the seam for any future
+// always-visible utility link.
+const utilityLinks: { href: string; label: string }[] = [];
 
 // Every link that can be "active" — used to highlight the matching nav item.
 const ALL_LINKS = [...primaryLinks, ...secondaryLinks, ...ownerLinks, ...utilityLinks];
@@ -217,13 +220,22 @@ export function NavHeader() {
             </Show>
             <Show when="signed-in">
               <UserButton>
-                {profileHref && (
+                {(profileHref || isOwner) && (
                   <UserButton.MenuItems>
-                    <UserButton.Link
-                      label="My pages"
-                      labelIcon={<span aria-hidden>📄</span>}
-                      href={profileHref}
-                    />
+                    {profileHref && (
+                      <UserButton.Link
+                        label="My pages"
+                        labelIcon={<span aria-hidden>📄</span>}
+                        href={profileHref}
+                      />
+                    )}
+                    {isOwner && (
+                      <UserButton.Link
+                        label="Settings"
+                        labelIcon={<span aria-hidden>⚙️</span>}
+                        href="/settings"
+                      />
+                    )}
                   </UserButton.MenuItems>
                 )}
               </UserButton>

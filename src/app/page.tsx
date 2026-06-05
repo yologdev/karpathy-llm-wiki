@@ -1,6 +1,5 @@
 import Link from "next/link";
 import { OnboardingWizard } from "@/components/OnboardingWizard";
-import { WikiPageCard } from "@/components/WikiPageCard";
 import { ContributorBadge } from "@/components/ContributorBadge";
 import { HomeAsk } from "@/components/HomeAsk";
 import { Trail } from "@/components/Trail";
@@ -25,10 +24,6 @@ export default async function Home() {
   const pageCount = pages.length;
   const sourceCount = pages.reduce((n, p) => n + (p.sourceCount ?? 0), 0);
   const contributorCount = contributors.length;
-
-  const recent = [...pages]
-    .sort((a, b) => (b.updated ?? "").localeCompare(a.updated ?? ""))
-    .slice(0, 6);
 
   const topContributors = contributors.slice(0, 6);
 
@@ -93,24 +88,6 @@ export default async function Home() {
                 </p>
               )}
             </div>
-          </section>
-
-          {/* Recently accumulated */}
-          <section className="mt-16">
-            <div className="flex items-baseline justify-between">
-              <h2 className="label">recently accumulated</h2>
-              <Link
-                href="/wiki"
-                className="receipt text-xs text-muted hover:text-foreground transition-colors"
-              >
-                browse all →
-              </Link>
-            </div>
-            <ul className="mt-4 grid gap-3 sm:grid-cols-2">
-              {recent.map((p) => (
-                <WikiPageCard key={p.slug} page={p} />
-              ))}
-            </ul>
           </section>
 
           {/* Contributors (humans; agents shown distinctly in the trail) */}
