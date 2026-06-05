@@ -13,6 +13,7 @@ describe("write-gate in-route auth exemptions", () => {
     // These authenticate in-route with a token (no Clerk session) — a missing
     // entry silently 401s the caller before it reaches the route.
     expect(authenticatesInRoute("/api/tasks/run")).toBe(true); // task-consumer
+    expect(authenticatesInRoute("/api/tasks/scan")).toBe(true); // maintenance cron
     expect(authenticatesInRoute("/api/ingest")).toBe(true);
     expect(authenticatesInRoute("/api/ingest/x-mention")).toBe(true);
     expect(authenticatesInRoute("/api/agents/seed")).toBe(true);

@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { getServicePrincipal } from "@/lib/auth";
 import { parseTask } from "@/lib/tasks";
 import { reconcileFromTalk } from "@/lib/reconcile";
-import { ingest, ingestUrl } from "@/lib/ingest";
+import { ingest, ingestUrl, reingest } from "@/lib/ingest";
 import { agentIdFor, DEFAULT_AGENT_NAME } from "@/lib/agents";
 import { getErrorMessage } from "@/lib/errors";
 import { logger } from "@/lib/logger";
@@ -55,6 +55,26 @@ export async function POST(req: Request) {
         author,
       });
       return NextResponse.json({ ok: true, ...result });
+    }
+
+    if (task.kind === "maintain") {
+      // Autonomous maintenance (Q2). Attributed to a generic yoyo (no requester).
+      if (task.op === "reconcile") {
+        if (typeof task.threadIndex !== "number") {
+          return NextResponse.json(
+            { error: "maintain:reconcile requires threadIndex" },
+            { status: 400 },
+          );
+        }
+        const result = await reconcileFromTalk(task.slug, task.threadIndex);
+        return NextResponse.json({ ok: true, ...result });
+      }
+      // op === "staleness": refresh an expired page from its source.
+      const result = await reingest(task.slug, {
+        author: DEFAULT_AGENT_NAME,
+        triggeredBy: DEFAULT_AGENT_NAME,
+      });
+      return NextResponse.json({ ok: true, slug: result.primarySlug });
     }
 
     // kind === "ingest"

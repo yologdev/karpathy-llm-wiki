@@ -13,9 +13,32 @@ would transitively pull Clerk/Next + require the OpenNext context it can't
 provide).
 
 **Producers** (who enqueues) live in the main app: the "Ask yoyo to address this"
-button (`/api/wiki/<slug>/discuss/<idx>/ask-yoyo`) today; autonomous maintenance
-crons and batch ingest later. `enqueueTask()` (`src/lib/tasks.ts`) sends to the
-`TASK_QUEUE` producer binding, and no-ops gracefully off the Workers runtime.
+button (`/api/wiki/<slug>/discuss/<idx>/ask-yoyo`), and this worker's **daily
+cron** → `POST /api/tasks/scan` (autonomous maintenance, Q2). `enqueueTask()`
+(`src/lib/tasks.ts`) sends to the `TASK_QUEUE` producer binding, and no-ops
+gracefully off the Workers runtime.
+
+This worker has two triggers: the **queue consumer** (drains `yopedia-tasks`) and
+a **cron** (`scheduled()`, daily) that POSTs `/api/tasks/scan`.
+
+### Autonomous maintenance (Q2)
+
+The cron scans the wiki for upkeep no human reports — a `disputed` page with an
+open thread awaiting a reply → reconcile; an expired page with a `source_url` →
+re-ingest — and enqueues `maintain` tasks. It is **off by default**: the scan
+**dry-runs** (logs what it *would* enqueue, enqueues nothing) until you set
+`AUTONOMOUS_MAINTENANCE="on"` on the **main** worker. So the cron is safe to ship
+before you enable it — watch a few dry-runs in the logs first, then enable:
+
+```sh
+# Inspect what it would do (dry-run, regardless of the flag):
+curl -s -X POST "https://yopedia.<sub>.workers.dev/api/tasks/scan?dry=1" \
+  -H "Authorization: Bearer <YOPEDIA_SERVICE_TOKEN>" | jq
+
+# Enable autonomous maintenance (set on the MAIN worker, then redeploy/restart):
+#   add  "AUTONOMOUS_MAINTENANCE": "on"  to wrangler.jsonc `vars`, or
+pnpm exec wrangler secret put AUTONOMOUS_MAINTENANCE   # value: on
+```
 
 **Ack/retry** maps onto Cloudflare Queues:
 - `2xx` → ack (done).

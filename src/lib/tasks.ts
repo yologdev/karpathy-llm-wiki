@@ -39,6 +39,15 @@ export type Task =
       content?: string;
       owner?: string;
       author?: string;
+    }
+  | {
+      /** Autonomous maintenance, enqueued by the scan cron (Q2): `reconcile` a
+       *  disputed page from its open thread, or `staleness` re-ingest an expired
+       *  page from its source. `threadIndex` is required for `reconcile`. */
+      kind: "maintain";
+      op: "reconcile" | "staleness";
+      slug: string;
+      threadIndex?: number;
     };
 
 /** Minimal Cloudflare Queue producer binding — we only ever call `send`. */
@@ -117,6 +126,18 @@ export function parseTask(body: unknown): Task | null {
         ...(typeof t.owner === "string" ? { owner: t.owner } : {}),
         ...(typeof t.author === "string" ? { author: t.author } : {}),
       };
+    }
+    case "maintain": {
+      if (t.op !== "reconcile" && t.op !== "staleness") return null;
+      if (typeof t.slug !== "string" || t.slug.trim() === "") return null;
+      // `reconcile` needs a thread to reconcile from.
+      if (t.op === "reconcile") {
+        if (typeof t.threadIndex !== "number" || !Number.isInteger(t.threadIndex)) {
+          return null;
+        }
+        return { kind: "maintain", op: "reconcile", slug: t.slug, threadIndex: t.threadIndex };
+      }
+      return { kind: "maintain", op: "staleness", slug: t.slug };
     }
     default:
       return null;

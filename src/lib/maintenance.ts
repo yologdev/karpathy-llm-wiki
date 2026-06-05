@@ -1,0 +1,90 @@
+/**
+ * Autonomous maintenance scan (Q2) — the producer side of the upkeep no human
+ * reports. A cron (on the task-consumer worker) calls `/api/tasks/scan`, which
+ * runs this scan and enqueues `maintain` tasks (or dry-runs when autonomous
+ * maintenance is off). Two ops, chosen for safety + reuse of proven engines:
+ *
+ *   - **reconcile**: a `disputed` page with an OPEN thread whose latest comment
+ *     is from a HUMAN (so yoyo hasn't already answered and is waiting) → run the
+ *     same `reconcileFromTalk` as the on-demand button.
+ *   - **staleness**: a page past its `expiry` with a `source_url` → re-ingest
+ *     from the source (the reconcile-on-merge step refreshes it).
+ *
+ * Guardrails (because no human is watching each one):
+ *   - **commons-only**: skip PRIVATE pages entirely. Autonomous maintenance
+ *     tends the shared commons; a private vault is the owner's, reached only via
+ *     the on-demand button (the owner asking). This also avoids a cost loop: a
+ *     private page reingested by a generic agent forks (the realm guard) instead
+ *     of refreshing, leaving the original to be re-flagged every scan;
+ *   - skip pages updated TODAY (don't act on a just-edited page);
+ *   - skip disputed threads yoyo already answered (last comment is an agent) —
+ *     avoids re-reconciling a stuck dispute on every scan;
+ *   - cap the number of tasks per scan (cost + blast-radius bound).
+ */
+
+import { listWikiPages, readWikiPageWithFrontmatter } from "./wiki";
+import { listThreads } from "./talk";
+import { isAgentHandle } from "./agents";
+import type { Task } from "./tasks";
+import { logger } from "./logger";
+
+/** Default cap on maintenance tasks enqueued per scan. */
+export const DEFAULT_MAINTENANCE_CAP = 10;
+
+/**
+ * Scan the wiki's state and return up to `cap` `maintain` tasks. Read-only — the
+ * caller enqueues (or dry-runs) the result. At most one task per page per scan.
+ */
+export async function scanForMaintenance(
+  cap: number = DEFAULT_MAINTENANCE_CAP,
+): Promise<Task[]> {
+  const today = new Date().toISOString().slice(0, 10);
+  const tasks: Task[] = [];
+  const pages = await listWikiPages();
+
+  for (const entry of pages) {
+    if (tasks.length >= cap) break;
+    const page = await readWikiPageWithFrontmatter(entry.slug);
+    if (!page) continue;
+    const fm = page.frontmatter;
+
+    // Commons-only: never autonomously touch a private vault page (privacy +
+    // avoids the reingest-fork cost loop). The owner reaches it via the button.
+    if (fm.visibility === "private") continue;
+
+    // Guardrail: skip a page edited today (let recent changes settle).
+    if (typeof fm.updated === "string" && fm.updated === today) continue;
+
+    // (1) Disputed → reconcile, but only when a HUMAN is awaiting a response
+    //     (the latest comment on an open thread isn't yoyo's).
+    if (fm.disputed === true) {
+      const threads = await listThreads(entry.slug);
+      const idx = threads.findIndex(
+        (t) =>
+          t.status === "open" &&
+          t.comments.length > 0 &&
+          !isAgentHandle(t.comments[t.comments.length - 1].author),
+      );
+      if (idx >= 0) {
+        tasks.push({ kind: "maintain", op: "reconcile", slug: entry.slug, threadIndex: idx });
+        continue; // one task per page
+      }
+    }
+
+    // (2) Stale (expiry passed) with a source to refresh from → re-ingest.
+    const expiry = fm.expiry;
+    const sourceUrl = fm.source_url;
+    if (
+      typeof expiry === "string" &&
+      expiry !== "" &&
+      expiry <= today &&
+      typeof sourceUrl === "string" &&
+      sourceUrl.trim() !== ""
+    ) {
+      tasks.push({ kind: "maintain", op: "staleness", slug: entry.slug });
+    }
+  }
+
+  logger.info("maintenance", `scan found ${tasks.length} task(s) (cap ${cap})`);
+  return tasks;
+}

@@ -2,16 +2,21 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 
 vi.mock("@/lib/auth", () => ({ getServicePrincipal: vi.fn() }));
 vi.mock("@/lib/reconcile", () => ({ reconcileFromTalk: vi.fn() }));
-vi.mock("@/lib/ingest", () => ({ ingest: vi.fn(), ingestUrl: vi.fn() }));
+vi.mock("@/lib/ingest", () => ({
+  ingest: vi.fn(),
+  ingestUrl: vi.fn(),
+  reingest: vi.fn(),
+}));
 
 import { getServicePrincipal } from "@/lib/auth";
 import { reconcileFromTalk } from "@/lib/reconcile";
-import { ingest, ingestUrl } from "@/lib/ingest";
+import { ingest, ingestUrl, reingest } from "@/lib/ingest";
 
 const mockedGetService = vi.mocked(getServicePrincipal);
 const mockedReconcile = vi.mocked(reconcileFromTalk);
 const mockedIngest = vi.mocked(ingest);
 const mockedIngestUrl = vi.mocked(ingestUrl);
+const mockedReingest = vi.mocked(reingest);
 
 async function run(body: unknown) {
   const { POST } = await import("@/app/api/tasks/run/route");
@@ -66,6 +71,21 @@ describe("POST /api/tasks/run", () => {
       expect.objectContaining({ owner: "alice" }),
     );
     expect(mockedIngest).not.toHaveBeenCalled();
+  });
+
+  it("dispatches maintain:reconcile (autonomous — generic yoyo, no requester)", async () => {
+    mockedReconcile.mockResolvedValue({ slug: "d", changed: true, disputed: false });
+    const res = await run({ kind: "maintain", op: "reconcile", slug: "d", threadIndex: 1 });
+    expect(res.status).toBe(200);
+    expect(mockedReconcile).toHaveBeenCalledWith("d", 1);
+  });
+
+  it("dispatches maintain:staleness via reingest", async () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    mockedReingest.mockResolvedValue({ primarySlug: "s" } as any);
+    const res = await run({ kind: "maintain", op: "staleness", slug: "s" });
+    expect(res.status).toBe(200);
+    expect(mockedReingest).toHaveBeenCalledWith("s", expect.objectContaining({ author: "yoyo" }));
   });
 
   it("maps a 'not found' failure to 422 (poison), other failures to 500 (retry)", async () => {

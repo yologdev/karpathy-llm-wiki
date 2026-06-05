@@ -77,6 +77,21 @@ describe("parseTask", () => {
     expect(parseTask({ kind: "ingest" })).toBeNull();
   });
 
+  it("accepts maintain tasks; reconcile needs a threadIndex", () => {
+    expect(parseTask({ kind: "maintain", op: "staleness", slug: "p" })).toEqual({
+      kind: "maintain",
+      op: "staleness",
+      slug: "p",
+    });
+    expect(
+      parseTask({ kind: "maintain", op: "reconcile", slug: "p", threadIndex: 1 }),
+    ).toEqual({ kind: "maintain", op: "reconcile", slug: "p", threadIndex: 1 });
+    // reconcile without a threadIndex, or a bad op, is rejected.
+    expect(parseTask({ kind: "maintain", op: "reconcile", slug: "p" })).toBeNull();
+    expect(parseTask({ kind: "maintain", op: "bogus", slug: "p" })).toBeNull();
+    expect(parseTask({ kind: "maintain", op: "staleness", slug: "" })).toBeNull();
+  });
+
   it("rejects unknown kinds and non-objects", () => {
     expect(parseTask({ kind: "nope" })).toBeNull();
     expect(parseTask(null)).toBeNull();

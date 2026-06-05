@@ -30,6 +30,10 @@ interface MessageBatch<T = unknown> {
   readonly queue: string;
   readonly messages: QueueMessage<T>[];
 }
+interface ScheduledEvent {
+  readonly scheduledTime: number;
+  readonly cron: string;
+}
 
 async function runTask(
   base: string,
@@ -85,6 +89,28 @@ export default {
     // app; serial processing keeps us within provider rate limits.
     for (const message of batch.messages) {
       await runTask(base, token, message);
+    }
+  },
+
+  // Autonomous-maintenance cron (Q2). POSTs the scanner, which enqueues
+  // `maintain` tasks — or dry-runs (logs only) when AUTONOMOUS_MAINTENANCE isn't
+  // "on" in the main app. So this is safe to run on schedule before it's enabled.
+  async scheduled(_event: ScheduledEvent, env: Env): Promise<void> {
+    const base = (env.YOPEDIA_URL ?? "").replace(/\/+$/, "");
+    const token = env.YOPEDIA_SERVICE_TOKEN;
+    if (!base || !token) {
+      console.error("task-consumer cron: missing YOPEDIA_URL or YOPEDIA_SERVICE_TOKEN");
+      return;
+    }
+    try {
+      const res = await fetch(`${base}/api/tasks/scan`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const body = (await res.text().catch(() => "")).slice(0, 400);
+      console.log(`task-consumer cron: scan → ${res.status} ${body}`);
+    } catch (err) {
+      console.error("task-consumer cron: scan failed", err);
     }
   },
 
