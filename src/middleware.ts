@@ -28,9 +28,16 @@ const IN_ROUTE_AUTH_PATHS = new Set([
   "/api/admin/migrate",
 ]);
 const AGENT_INGEST_RE = /^\/api\/agents\/[^/]+\/ingest$/;
+// Admin tenant delete: authenticated in-route by the service token, the site
+// owner, or the tenant's own owner (it 403s everyone else).
+const ADMIN_TENANT_RE = /^\/api\/admin\/tenant\/[^/]+$/;
 
 function authenticatesInRoute(pathname: string): boolean {
-  return IN_ROUTE_AUTH_PATHS.has(pathname) || AGENT_INGEST_RE.test(pathname);
+  return (
+    IN_ROUTE_AUTH_PATHS.has(pathname) ||
+    AGENT_INGEST_RE.test(pathname) ||
+    ADMIN_TENANT_RE.test(pathname)
+  );
 }
 
 export default clerkMiddleware(async (auth, req) => {
