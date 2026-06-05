@@ -5,6 +5,7 @@ import { useUser, useClerk, SignInButton } from "@clerk/nextjs";
 import { useStreamingQuery } from "@/hooks/useStreamingQuery";
 import { QueryResultPanel } from "./QueryResultPanel";
 import { Alert } from "./Alert";
+import { Icon } from "./folio/icons";
 
 const EXAMPLES = [
   "What is harness engineering?",
@@ -122,24 +123,78 @@ export function HomeAsk() {
               }
         }
       >
-        <div className="rounded-xl border border-border bg-surface/40 focus-within:border-accent/50 transition-colors">
-          <textarea
-            value={isSignedIn ? question : demoQuestion}
-            onChange={(e) => setQuestion(e.target.value)}
-            placeholder="Ask the accumulated brain a question…"
-            rows={2}
-            disabled={!isSignedIn || isProcessing}
-            className="w-full resize-none bg-transparent px-4 py-3.5 text-base outline-none placeholder:text-muted disabled:opacity-70"
-          />
-          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-rule px-3 py-2.5">
-            <div className="flex flex-wrap gap-1.5">
+        <div
+          style={{
+            border: "1px solid var(--rule-strong)",
+            borderRadius: 18,
+            background: "var(--paper-2)",
+            boxShadow: "var(--shadow)",
+            overflow: "hidden",
+          }}
+        >
+          <div
+            className="row"
+            style={{ gap: 14, padding: "20px 22px 6px", alignItems: "flex-start" }}
+          >
+            <span style={{ color: "var(--accent)", paddingTop: 3 }}>
+              <Icon.spark width="22" height="22" />
+            </span>
+            <textarea
+              value={isSignedIn ? question : demoQuestion}
+              onChange={(e) => setQuestion(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+                  e.preventDefault();
+                  e.currentTarget.form?.requestSubmit();
+                }
+              }}
+              placeholder="Consult the commons — ask, and get an answer cited to the pages it stands on…"
+              rows={2}
+              disabled={!isSignedIn || isProcessing}
+              style={{
+                flex: 1,
+                border: 0,
+                outline: 0,
+                resize: "none",
+                background: "transparent",
+                fontFamily: "var(--font-read)",
+                fontSize: 20,
+                lineHeight: 1.4,
+                color: "var(--ink)",
+                paddingTop: 2,
+              }}
+              className="placeholder:text-faint disabled:opacity-70"
+            />
+          </div>
+          <div
+            className="spread"
+            style={{
+              padding: "12px 16px 14px 22px",
+              borderTop: "1px solid var(--rule)",
+              gap: 12,
+              flexWrap: "wrap",
+            }}
+          >
+            <div
+              className="row"
+              style={{ gap: 8, flexWrap: "wrap", flex: "1 1 320px", minWidth: 0 }}
+            >
               {EXAMPLES.map((q) => (
                 <button
                   type="button"
                   key={q}
                   onClick={() => onChip(q)}
                   disabled={guestBusy}
-                  className="receipt rounded-full border border-border px-2.5 py-1 text-[11px] text-muted hover:border-accent/40 hover:text-foreground disabled:opacity-50 transition-colors"
+                  className="receipt folio-chip disabled:opacity-50"
+                  style={{
+                    fontSize: 11.5,
+                    color: "var(--muted)",
+                    background: "transparent",
+                    whiteSpace: "nowrap",
+                    border: "1px solid var(--rule)",
+                    borderRadius: 999,
+                    padding: "5px 11px",
+                  }}
                 >
                   {q}
                 </button>
@@ -149,19 +204,26 @@ export function HomeAsk() {
               <button
                 type="submit"
                 disabled={isProcessing || !question.trim()}
-                className="shrink-0 rounded-lg bg-accent px-5 py-2 text-sm font-medium text-accent-foreground hover:bg-accent-hover disabled:opacity-50 transition-colors"
+                className="btn primary shrink-0 disabled:opacity-50"
               >
-                {isProcessing ? "Thinking…" : "Ask →"}
+                {isProcessing ? "Thinking…" : "Ask"}
+                {!isProcessing && <Icon.arrow width="16" height="16" />}
               </button>
             ) : (
               <SignInButton mode="modal">
-                <button className="shrink-0 rounded-lg bg-accent px-5 py-2 text-sm font-medium text-accent-foreground hover:bg-accent-hover transition-colors">
-                  Sign in to ask
+                <button className="btn primary shrink-0">
+                  Ask <Icon.arrow width="16" height="16" />
                 </button>
               </SignInButton>
             )}
           </div>
         </div>
+        <p
+          className="receipt"
+          style={{ fontSize: 11.5, color: "var(--faint)", margin: "10px 2px 0" }}
+        >
+          Answers query the wiki live and cite their sources. ⌘↵ to ask.
+        </p>
       </form>
 
       {!isSignedIn && !demo && !demoLoading && !demoError && (

@@ -1,12 +1,18 @@
 import Link from "next/link";
 import { OnboardingWizard } from "@/components/OnboardingWizard";
-import { ContributorBadge } from "@/components/ContributorBadge";
 import { HomeAsk } from "@/components/HomeAsk";
 import { Trail } from "@/components/Trail";
+import { Avatar, Mark } from "@/components/folio/primitives";
 import { listCommonsPages } from "@/lib/commons";
 import { listContributors } from "@/lib/contributors";
 import { getTrail } from "@/lib/trail";
 import { getPrincipal } from "@/lib/auth";
+
+const HOW_IT_WORKS: [string, string][] = [
+  ["Ingest", "A source — URL, PDF, tweet — is synthesized into a cited page."],
+  ["Accumulate", "New sources update the page; contradictions reconcile on talk."],
+  ["Ask", "Query the commons; answers cite the pages they stand on."],
+];
 
 export default async function Home() {
   const principal = await getPrincipal();
@@ -20,108 +26,250 @@ export default async function Home() {
 
   // listCommonsPages already excludes private + agent-scoped pages.
   const pages = commonsPages;
-
   const pageCount = pages.length;
   const sourceCount = pages.reduce((n, p) => n + (p.sourceCount ?? 0), 0);
   const contributorCount = contributors.length;
+  const revisionCount = contributors.reduce((n, c) => n + (c.editCount ?? 0), 0);
+  const topContributors = contributors.slice(0, 5);
 
-  const topContributors = contributors.slice(0, 6);
+  const stats: [string, number][] = [
+    ["pages", pageCount],
+    ["sources", sourceCount],
+    ["contributors", contributorCount],
+    ["revisions", revisionCount],
+  ];
 
   return (
-    <div className="mx-auto max-w-5xl px-6 py-12">
-      {/* Hero — value prop + the live Ask box (the star) */}
-      <section className="max-w-3xl">
-        <p className="label">a wiki for the agent age</p>
-        <h1 className="mt-3 text-4xl sm:text-5xl font-bold tracking-tight leading-[1.1]">
-          A second brain for humans and agents.
+    <div className="fade">
+      {/* Hero */}
+      <section className="shell" style={{ paddingTop: 80, paddingBottom: 18 }}>
+        <p className="fmark rise" style={{ marginBottom: 26 }}>
+          a wiki for the agent age
+        </p>
+        <h1
+          className="display rise"
+          style={{
+            fontSize: "clamp(44px, 7.4vw, 96px)",
+            margin: 0,
+            maxWidth: "16ch",
+            animationDelay: ".05s",
+          }}
+        >
+          A second brain for humans{" "}
+          <span style={{ fontStyle: "italic", color: "var(--accent)" }}>and</span>{" "}
+          agents.
         </h1>
-        <p className="mt-4 text-lg text-muted leading-relaxed">
-          Not RAG — it{" "}
-          <span className="font-medium text-foreground">accumulates</span>:
-          sources become cited pages, contradictions reconcile, and lineage
-          stays visible.
+        <p
+          className="rise"
+          style={{
+            fontSize: 19,
+            color: "var(--ink-2)",
+            lineHeight: 1.6,
+            maxWidth: "52ch",
+            marginTop: 30,
+            animationDelay: ".1s",
+          }}
+        >
+          Not retrieval. yopedia{" "}
+          <em style={{ fontStyle: "normal", fontWeight: 600 }}>accumulates</em> —
+          sources become cited pages, contradictions reconcile, confidence and
+          staleness stay visible, and lineage is kept.
         </p>
       </section>
 
-      <div className="mt-6 max-w-3xl">
+      {/* Ask console — the star */}
+      <section className="shell" style={{ marginTop: 38, maxWidth: 880 }}>
         <HomeAsk />
-      </div>
-
-      {/* Receipts — proof of life, in mono */}
-      {pageCount > 0 && (
-        <div className="receipt mt-6 flex flex-wrap items-center gap-x-5 gap-y-2 text-sm text-muted">
-          <span>
-            <span className="font-semibold text-foreground">{pageCount}</span>{" "}
-            {pageCount === 1 ? "page" : "pages"}
-          </span>
-          <span aria-hidden className="text-border">·</span>
-          <span>
-            <span className="font-semibold text-foreground">{sourceCount}</span>{" "}
-            {sourceCount === 1 ? "source" : "sources"}
-          </span>
-          <span aria-hidden className="text-border">·</span>
-          <span>
-            <span className="font-semibold text-foreground">{contributorCount}</span>{" "}
-            {contributorCount === 1 ? "contributor" : "contributors"}
-          </span>
-        </div>
-      )}
+      </section>
 
       {pageCount === 0 ? (
-        <div className="mt-12">
+        <section className="shell" style={{ marginTop: 64 }}>
           <OnboardingWizard pageCount={0} />
-        </div>
+        </section>
       ) : (
         <>
-          {/* The lab running: the live trail */}
-          <section className="mt-16">
-            <h2 className="label">the trail</h2>
-            <p className="mt-1 text-sm text-muted">
-              Every ingest and edit, humans and agents alike.
-            </p>
-            <div className="mt-4">
-              {trail.length > 0 ? (
-                <Trail events={trail} />
-              ) : (
-                <p className="text-sm text-muted">
-                  Nothing yet — ingest a source to start the trail.
-                </p>
-              )}
+          {/* Receipts strip — proof of life, in mono */}
+          <section className="shell" style={{ marginTop: 28 }}>
+            <div
+              className="row rise"
+              style={{ gap: 0, flexWrap: "wrap", animationDelay: ".2s" }}
+            >
+              {stats.map(([k, v], i) => (
+                <div key={k} className="row" style={{ gap: 14 }}>
+                  {i > 0 && (
+                    <span
+                      aria-hidden
+                      style={{
+                        width: 1,
+                        height: 26,
+                        background: "var(--rule)",
+                        margin: "0 26px",
+                      }}
+                    />
+                  )}
+                  <span
+                    style={{ fontSize: 28, fontWeight: 600, letterSpacing: "-.02em" }}
+                  >
+                    {v}
+                  </span>
+                  <span className="fmark" style={{ alignSelf: "center" }}>
+                    {k}
+                  </span>
+                </div>
+              ))}
             </div>
           </section>
 
-          {/* Contributors (humans; agents shown distinctly in the trail) */}
-          {contributorCount >= 2 && (
-            <section className="mt-12">
-              <div className="flex items-baseline justify-between">
-                <h2 className="label">contributors</h2>
-                <Link
-                  href="/wiki/contributors"
-                  className="receipt text-xs text-muted hover:text-foreground transition-colors"
+          {/* Two-column: the live Trail + a contributors / how-it-works rail */}
+          <section
+            className="shell home-grid"
+            style={{
+              marginTop: 96,
+              display: "grid",
+              gridTemplateColumns: "1.55fr 1fr",
+              gap: 72,
+              alignItems: "start",
+            }}
+          >
+            <div>
+              <div className="spread" style={{ marginBottom: 18 }}>
+                <div>
+                  <p className="fmark" style={{ marginBottom: 8 }}>
+                    the trail
+                  </p>
+                  <p style={{ margin: 0, fontSize: 14, color: "var(--muted)" }}>
+                    Every ingest, edit, and reconciliation — humans and agents
+                    alike, live.
+                  </p>
+                </div>
+                <span className="row" style={{ gap: 6 }}>
+                  <span className="fresh ok pulse" />
+                  <span
+                    className="receipt"
+                    style={{ fontSize: 11, color: "var(--muted)" }}
+                  >
+                    live
+                  </span>
+                </span>
+              </div>
+
+              {trail.length > 0 ? (
+                <Trail events={trail} />
+              ) : (
+                <p
+                  style={{
+                    fontSize: 14,
+                    color: "var(--muted)",
+                    borderTop: "1px solid var(--rule)",
+                    paddingTop: 16,
+                  }}
                 >
-                  see all →
+                  Nothing yet — ingest a source to start the trail.
+                </p>
+              )}
+
+              <div style={{ borderTop: "1px solid var(--rule)", paddingTop: 16 }}>
+                <Link
+                  href="/wiki"
+                  className="receipt"
+                  style={{
+                    fontSize: 12.5,
+                    color: "var(--muted)",
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 6,
+                  }}
+                >
+                  browse all {pageCount} {pageCount === 1 ? "page" : "pages"} in
+                  the commons →
                 </Link>
               </div>
-              <div className="mt-4 flex flex-wrap gap-3">
-                {topContributors.map((c) => (
-                  <ContributorBadge
-                    key={c.handle}
-                    handle={c.handle}
-                    editCount={c.editCount}
-                    trustScore={c.trustScore}
-                  />
-                ))}
-              </div>
-            </section>
-          )}
+            </div>
 
-          {/* How it works — slim */}
-          <section className="mt-16 border-t border-rule pt-6 text-sm text-muted leading-relaxed">
-            <span className="label align-middle">how it works</span>{" "}
-            <span className="ml-1">
-              Ingest a source → it updates pages, preserves lineage, and
-              reconciles contradictions → ask, and get cited answers.
-            </span>
+            <aside className="home-rail" style={{ position: "sticky", top: 92 }}>
+              <div
+                style={{
+                  border: "1px solid var(--rule)",
+                  borderRadius: 16,
+                  padding: 24,
+                  background: "var(--paper-2)",
+                }}
+              >
+                <p className="fmark" style={{ marginBottom: 16 }}>
+                  contributors
+                </p>
+                <ul
+                  style={{
+                    listStyle: "none",
+                    margin: 0,
+                    padding: 0,
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: 14,
+                  }}
+                >
+                  {topContributors.map((c) => {
+                    const agent = c.handle.includes("--");
+                    return (
+                      <li key={c.handle} className="spread">
+                        <Link
+                          href={`/wiki/contributors/${c.handle}`}
+                          className="row"
+                          style={{ gap: 10 }}
+                        >
+                          <Avatar id={c.handle} agent={agent} size={28} />
+                          <Mark id={c.handle} agent={agent} />
+                        </Link>
+                        <span
+                          className="receipt"
+                          style={{ fontSize: 11.5, color: "var(--faint)" }}
+                        >
+                          {c.editCount} {c.editCount === 1 ? "edit" : "edits"}
+                        </span>
+                      </li>
+                    );
+                  })}
+                </ul>
+
+                <div className="rule" style={{ margin: "20px 0" }} />
+
+                <p className="fmark" style={{ marginBottom: 14 }}>
+                  how it works
+                </p>
+                <ol
+                  style={{
+                    margin: 0,
+                    padding: 0,
+                    listStyle: "none",
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: 14,
+                  }}
+                >
+                  {HOW_IT_WORKS.map(([h, b], i) => (
+                    <li
+                      key={h}
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns: "auto 1fr",
+                        gap: 12,
+                      }}
+                    >
+                      <span
+                        className="receipt"
+                        style={{ fontSize: 11, color: "var(--accent)", paddingTop: 2 }}
+                      >
+                        {i + 1}
+                      </span>
+                      <span style={{ fontSize: 13.5, lineHeight: 1.5 }}>
+                        <strong style={{ fontWeight: 600 }}>{h}.</strong>{" "}
+                        <span style={{ color: "var(--muted)" }}>{b}</span>
+                      </span>
+                    </li>
+                  ))}
+                </ol>
+              </div>
+            </aside>
           </section>
         </>
       )}

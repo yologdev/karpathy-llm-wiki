@@ -10,6 +10,13 @@ import {
 } from "@/components/QueryHistorySidebar";
 import { QueryResultPanel } from "@/components/QueryResultPanel";
 import { useStreamingQuery } from "@/hooks/useStreamingQuery";
+import { Icon } from "@/components/folio/icons";
+
+const EXAMPLES = [
+  "What is harness engineering?",
+  "How is yopedia different from RAG?",
+  "What are the agentic harness patterns?",
+];
 
 export default function QueryPage() {
   // History state
@@ -122,19 +129,9 @@ export default function QueryPage() {
   }
 
   return (
-    <main className="mx-auto max-w-4xl px-6 py-16">
-      <div className="mb-8">
-        <Link
-          href="/"
-          className="text-sm text-foreground/60 hover:text-foreground transition-colors"
-        >
-          ← Home
-        </Link>
-      </div>
-
-      <h1 className="text-3xl font-bold tracking-tight">Ask the Wiki</h1>
-      <p className="mt-2 text-foreground/60">
-        Ask a question and get a cited answer drawn from your wiki pages.
+    <main className="mx-auto max-w-4xl px-6" style={{ paddingTop: 56, paddingBottom: 80 }}>
+      <p className="fmark" style={{ marginBottom: 18 }}>
+        ask the accumulated brain
       </p>
 
       {/* Scope lens — pinned silo (deep-link) renders as a chip; otherwise a
@@ -198,63 +195,127 @@ export default function QueryPage() {
       <div className="mt-8 flex flex-col lg:flex-row gap-8">
         {/* Main query area */}
         <div className="flex-1 min-w-0">
-          <form onSubmit={submit} className="space-y-4">
-            <textarea
-              value={question}
-              onChange={(e) => setQuestion(e.target.value)}
-              placeholder="What would you like to know?"
-              aria-label="Your question"
-              rows={3}
-              className="w-full rounded-lg border border-foreground/20 bg-transparent px-4 py-3 text-sm placeholder:text-foreground/40 focus:outline-none focus:ring-2 focus:ring-foreground/30 resize-vertical"
-            />
-            <fieldset className="flex flex-wrap items-center gap-3 sm:gap-4 text-sm">
-              <legend className="sr-only">Answer format</legend>
-              <span className="text-foreground/60">Answer format:</span>
-              <label className="flex items-center gap-1.5 cursor-pointer">
-                <input
-                  type="radio"
-                  name="format"
-                  value="prose"
-                  checked={format === "prose"}
-                  onChange={() => setFormat("prose")}
-                  disabled={isProcessing}
-                />
-                <span>Prose</span>
-              </label>
-              <label className="flex items-center gap-1.5 cursor-pointer">
-                <input
-                  type="radio"
-                  name="format"
-                  value="table"
-                  checked={format === "table"}
-                  onChange={() => setFormat("table")}
-                  disabled={isProcessing}
-                />
-                <span>Table</span>
-              </label>
-              <label className="flex items-center gap-1.5 cursor-pointer">
-                <input
-                  type="radio"
-                  name="format"
-                  value="slides"
-                  checked={format === "slides"}
-                  onChange={() => setFormat("slides")}
-                  disabled={isProcessing}
-                />
-                <span>Slides</span>
-              </label>
-            </fieldset>
-            <button
-              type="submit"
-              disabled={isProcessing || !question.trim()}
-              className="rounded-lg bg-foreground px-6 py-3 text-sm font-medium text-background hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed"
+          <form onSubmit={submit}>
+            <div
+              style={{
+                border: "1px solid var(--rule-strong)",
+                borderRadius: 18,
+                background: "var(--paper-2)",
+                boxShadow: "var(--shadow)",
+                overflow: "hidden",
+              }}
             >
-              {loading
-                ? "Searching wiki..."
-                : streaming
-                  ? "Streaming answer..."
-                  : "Ask"}
-            </button>
+              <div
+                className="row"
+                style={{ gap: 14, padding: "20px 22px 8px", alignItems: "flex-start" }}
+              >
+                <span style={{ color: "var(--accent)", paddingTop: 4 }}>
+                  <Icon.spark width="22" height="22" />
+                </span>
+                <textarea
+                  value={question}
+                  onChange={(e) => setQuestion(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+                      e.preventDefault();
+                      e.currentTarget.form?.requestSubmit();
+                    }
+                  }}
+                  placeholder="Ask the commons a question…"
+                  aria-label="Your question"
+                  rows={2}
+                  style={{
+                    flex: 1,
+                    border: 0,
+                    outline: 0,
+                    resize: "none",
+                    background: "transparent",
+                    fontFamily: "var(--font-read)",
+                    fontSize: 22,
+                    lineHeight: 1.4,
+                    color: "var(--ink)",
+                  }}
+                  className="placeholder:text-faint"
+                />
+              </div>
+              <div
+                className="spread"
+                style={{
+                  padding: "12px 16px 14px 22px",
+                  borderTop: "1px solid var(--rule)",
+                  gap: 12,
+                  flexWrap: "wrap",
+                }}
+              >
+                <div
+                  className="row"
+                  style={{ gap: 8, flexWrap: "wrap", flex: "1 1 320px", minWidth: 0 }}
+                >
+                  {EXAMPLES.map((ex) => (
+                    <button
+                      type="button"
+                      key={ex}
+                      onClick={() => setQuestion(ex)}
+                      className="receipt folio-chip"
+                      style={{
+                        fontSize: 11.5,
+                        color: "var(--muted)",
+                        background: "transparent",
+                        whiteSpace: "nowrap",
+                        border: "1px solid var(--rule)",
+                        borderRadius: 999,
+                        padding: "5px 11px",
+                      }}
+                    >
+                      {ex}
+                    </button>
+                  ))}
+                </div>
+                <button
+                  type="submit"
+                  disabled={isProcessing || !question.trim()}
+                  className="btn primary shrink-0 disabled:opacity-50"
+                >
+                  {loading ? "Searching…" : streaming ? "Streaming…" : "Ask"}
+                  {!isProcessing && <Icon.arrow width="16" height="16" />}
+                </button>
+              </div>
+            </div>
+
+            {/* Answer format */}
+            <fieldset
+              className="row"
+              style={{ gap: 8, marginTop: 14, flexWrap: "wrap" }}
+            >
+              <legend className="sr-only">Answer format</legend>
+              <span className="fmark" style={{ marginRight: 4 }}>
+                format
+              </span>
+              {(["prose", "table", "slides"] as const).map((f) => {
+                const active = format === f;
+                return (
+                  <button
+                    type="button"
+                    key={f}
+                    onClick={() => setFormat(f)}
+                    disabled={isProcessing}
+                    className="receipt"
+                    style={{
+                      fontSize: 12,
+                      padding: "4px 12px",
+                      borderRadius: 999,
+                      textTransform: "capitalize",
+                      transition: "all .15s",
+                      border: `1px solid ${active ? "var(--ink)" : "var(--rule)"}`,
+                      background: active ? "var(--ink)" : "transparent",
+                      color: active ? "var(--paper)" : "var(--ink-2)",
+                    }}
+                  >
+                    {f}
+                  </button>
+                );
+              })}
+            </fieldset>
           </form>
 
           {error && (

@@ -3,95 +3,470 @@
 
 @custom-variant dark (&:where(.dark, .dark *));
 
+/* ===========================================================================
+   yopedia — "Folio"
+   A living commons: knowledge as a continuously-revised reference work.
+   Editorial · minimal · evidence-rich. Light & dark, equally weighted.
+
+   Exactly three semantic hues: blue = human/primary, graphite = agent,
+   rust = decay/dispute. Humans own the only vivid hue; agents are neutral.
+   =========================================================================== */
+
+/* ---- Tokens: light (the default — warm paper) ------------------------- */
 :root {
-  /* Warm paper + ink — a working lab notebook, not a white SaaS canvas. */
-  --background: #fafaf8;
-  --foreground: #1a1a17;
+  --paper: #fbfaf6; /* page background — warm paper       */
+  --paper-2: #f4f1e9; /* recessed surface                 */
+  --paper-3: #ece8dd; /* stronger surface / hover         */
+  --ink: #1b1a16; /* primary text — warm near-black       */
+  --ink-2: #423f38; /* secondary text                     */
+  --muted: #756f62; /* metadata, captions                 */
+  --faint: #a39c8c; /* faintest — placeholders            */
+  --rule: #e2ddd0; /* hairline rules                      */
+  --rule-strong: #d2cbb9;
 
-  /* Neutral surfaces & hairline rules. */
-  --surface: #f2f1ec;
-  --surface-strong: #e7e5de;
-  --border: #e2e0d8;
-  --rule: #e5e3db;
-  --muted: #6b6862;
+  /* Primary — DeepSeek blue (the model that synthesizes the wiki). */
+  --accent: #4d6bfe;
+  --accent-2: #3a57e0; /* hover */
+  --accent-soft: #e7ebff; /* tinted fill */
+  --on-accent: #fbfaf6;
 
-  /* Primary accent — indigo (human / primary actions, links, focus). */
-  --accent: #4f46e5;
-  --accent-hover: #4338ca;
-  --accent-foreground: #ffffff;
+  /* Agent — neutral graphite. The quiet "machine" layer. */
+  --agent: #6b7280;
+  --agent-soft: #ecedf0;
 
-  /* Signal accent — teal. Marks agent / system contributions, set apart
-     from human (indigo). Amber stays reserved for staleness / disputes. */
-  --agent: #0d9488;
-  --agent-foreground: #ffffff;
+  /* Decay / staleness / dispute — rust. Semantic only. */
+  --rust: #9a4a22;
+  --rust-soft: #f1e5dc;
+
+  --shadow: 0 1px 2px rgba(27, 26, 22, 0.04), 0 8px 30px rgba(27, 26, 22, 0.05);
+  --shadow-lg: 0 2px 6px rgba(27, 26, 22, 0.06), 0 24px 60px rgba(27, 26, 22, 0.1);
+
+  --maxw: 1180px;
+  --measure: 66ch;
+
+  /* Apple typography. Real SF Pro on Apple devices; Inter (next/font, set in
+     layout.tsx) is the web substitute. Weight 500 is deliberately absent. */
+  --font-display: -apple-system, BlinkMacSystemFont, "SF Pro Display",
+    var(--font-sans-next), "Inter", system-ui, sans-serif;
+  --font-read: -apple-system, BlinkMacSystemFont, "SF Pro Text",
+    var(--font-sans-next), "Inter", system-ui, sans-serif;
+  --read-size: 18px;
+  --read-lh: 1.7;
+
+  /* --- Legacy aliases: existing components reference these names. They now
+         resolve to the Folio palette so the whole app moves together. --- */
+  --background: var(--paper);
+  --foreground: var(--ink);
+  --surface: var(--paper-2);
+  --surface-strong: var(--paper-3);
+  --border: var(--rule);
+  --accent-hover: var(--accent-2);
+  --accent-foreground: var(--on-accent);
+  --agent-foreground: var(--on-accent);
+  --font-sans: var(--font-read);
+  --font-serif: var(--font-read);
+  --font-mono: var(--font-mono-next), ui-monospace, "SF Mono", "SFMono-Regular",
+    Menlo, monospace;
+
+  color-scheme: light;
 }
 
+/* ---- Tokens: dark (warm ink) ------------------------------------------ */
 .dark {
-  --background: #0a0a0b;
-  --foreground: #ededed;
+  --paper: #14130f;
+  --paper-2: #1c1b16;
+  --paper-3: #25231c;
+  --ink: #efebdf;
+  --ink-2: #c7c2b4;
+  --muted: #948e7f;
+  --faint: #635e51;
+  --rule: #2b281f;
+  --rule-strong: #3a372c;
 
-  --surface: #161618;
-  --surface-strong: #232325;
-  --border: #26262a;
-  --rule: #1f1f22;
-  --muted: #a1a1aa;
+  --accent: #93a6ff;
+  --accent-2: #b4c1ff;
+  --accent-soft: #1c2444;
+  --on-accent: #14130f;
 
-  /* Brighter indigo + dark text so fills keep AA contrast on near-ink. */
-  --accent: #818cf8;
-  --accent-hover: #a5b4fc;
-  --accent-foreground: #0a0a0b;
+  --agent: #8b93a1;
+  --agent-soft: #23262e;
 
-  /* Brighter teal for agent marks on ink. */
-  --agent: #2dd4bf;
-  --agent-foreground: #0a0a0b;
+  --rust: #d08a5e;
+  --rust-soft: #2b2017;
+
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 10px 30px rgba(0, 0, 0, 0.35);
+  --shadow-lg: 0 2px 8px rgba(0, 0, 0, 0.4), 0 30px 70px rgba(0, 0, 0, 0.5);
+
+  color-scheme: dark;
 }
 
-/* Fallback for when JS hasn't loaded yet */
+/* Fallback for when JS hasn't applied the theme class yet. */
 @media (prefers-color-scheme: dark) {
   :root:not(.light) {
-    --background: #0a0a0b;
-    --foreground: #ededed;
-
-    --surface: #161618;
-    --surface-strong: #232325;
-    --border: #26262a;
-    --rule: #1f1f22;
-    --muted: #a1a1aa;
-
-    --accent: #818cf8;
-    --accent-hover: #a5b4fc;
-    --accent-foreground: #0a0a0b;
-
-    --agent: #2dd4bf;
-    --agent-foreground: #0a0a0b;
+    --paper: #14130f;
+    --paper-2: #1c1b16;
+    --paper-3: #25231c;
+    --ink: #efebdf;
+    --ink-2: #c7c2b4;
+    --muted: #948e7f;
+    --faint: #635e51;
+    --rule: #2b281f;
+    --rule-strong: #3a372c;
+    --accent: #93a6ff;
+    --accent-2: #b4c1ff;
+    --accent-soft: #1c2444;
+    --on-accent: #14130f;
+    --agent: #8b93a1;
+    --agent-soft: #23262e;
+    --rust: #d08a5e;
+    --rust-soft: #2b2017;
+    color-scheme: dark;
   }
 }
 
+/* ---- Tailwind theme: expose tokens as utilities ----------------------- */
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --color-surface: var(--surface);
-  --color-surface-strong: var(--surface-strong);
-  --color-border: var(--border);
-  --color-rule: var(--rule);
+  /* Folio palette */
+  --color-paper: var(--paper);
+  --color-paper-2: var(--paper-2);
+  --color-paper-3: var(--paper-3);
+  --color-ink: var(--ink);
+  --color-ink-2: var(--ink-2);
   --color-muted: var(--muted);
+  --color-faint: var(--faint);
+  --color-rule: var(--rule);
+  --color-rule-strong: var(--rule-strong);
   --color-accent: var(--accent);
-  --color-accent-hover: var(--accent-hover);
-  --color-accent-foreground: var(--accent-foreground);
+  --color-accent-2: var(--accent-2);
+  --color-accent-soft: var(--accent-soft);
+  --color-on-accent: var(--on-accent);
   --color-agent: var(--agent);
-  --color-agent-foreground: var(--agent-foreground);
+  --color-agent-soft: var(--agent-soft);
+  --color-rust: var(--rust);
+  --color-rust-soft: var(--rust-soft);
 
-  /* Fonts — wired to the next/font CSS variables set in layout.tsx, with
-     graceful fallbacks before the web fonts load. */
-  --font-sans: var(--font-sans-next), system-ui, -apple-system, sans-serif;
-  --font-serif: var(--font-serif-next), Georgia, "Times New Roman", serif;
-  --font-mono: var(--font-mono-next), ui-monospace, SFMono-Regular, monospace;
+  /* Legacy aliases (existing components) */
+  --color-background: var(--paper);
+  --color-foreground: var(--ink);
+  --color-surface: var(--paper-2);
+  --color-surface-strong: var(--paper-3);
+  --color-border: var(--rule);
+  --color-accent-hover: var(--accent-2);
+  --color-accent-foreground: var(--on-accent);
+  --color-agent-foreground: var(--on-accent);
+
+  --font-sans: var(--font-read);
+  --font-serif: var(--font-read);
+  --font-mono: var(--font-mono);
 }
 
+* {
+  box-sizing: border-box;
+}
+html {
+  -webkit-text-size-adjust: 100%;
+}
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: var(--font-sans);
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-read);
+  font-size: 16px;
+  line-height: 1.5;
+  letter-spacing: -0.01em;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  transition:
+    background 0.4s ease,
+    color 0.4s ease;
+}
+::selection {
+  background: var(--accent-soft);
+  color: var(--ink);
+}
+
+/* ---- Type primitives -------------------------------------------------- */
+.display {
+  font-family: var(--font-display);
+  font-weight: 600;
+  letter-spacing: -0.026em;
+  line-height: 1.05;
+  font-optical-sizing: auto;
+}
+
+/* A "folio mark": small-caps mono label with a 14px accent index tick. */
+.fmark {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 400;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--muted);
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55em;
+}
+.fmark::before {
+  content: "";
+  width: 14px;
+  height: 1px;
+  background: var(--accent);
+  display: inline-block;
+}
+
+/* Receipts — tabular mono data (dates, counts, slugs, scores, urls). */
+.receipt {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+}
+
+/* ---- Focus ------------------------------------------------------------ */
+:where(a, button, input, textarea, [tabindex]):focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+  border-radius: 2px;
+}
+
+/* ---- Hairline divider ------------------------------------------------- */
+.rule {
+  height: 1px;
+  background: var(--rule);
+  border: 0;
+}
+
+/* ---- Confidence meter (segmented) ------------------------------------- */
+.conf {
+  display: inline-flex;
+  gap: 2px;
+  align-items: center;
+}
+.conf i {
+  width: 5px;
+  height: 11px;
+  border-radius: 1px;
+  background: var(--rule-strong);
+  display: inline-block;
+}
+.conf i.on {
+  background: var(--accent);
+}
+
+/* ---- Freshness dot (decays) ------------------------------------------- */
+.fresh {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  display: inline-block;
+}
+.fresh.ok {
+  background: var(--accent);
+}
+.fresh.warn {
+  background: var(--rust);
+}
+.fresh.cold {
+  background: var(--faint);
+}
+
+/* ---- Contributor marks ------------------------------------------------ */
+.mark {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4em;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: 0.01em;
+}
+.mark .dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+.mark.human .dot {
+  background: var(--accent);
+}
+.mark.agent .dot {
+  background: transparent;
+  border: 1.5px solid var(--agent);
+}
+.mark.agent {
+  color: var(--agent);
+}
+
+/* ---- Buttons ---------------------------------------------------------- */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5em;
+  font-family: var(--font-read);
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+  padding: 0.6em 1.1em;
+  border-radius: 999px;
+  border: 1px solid var(--rule-strong);
+  background: transparent;
+  color: var(--ink);
+  transition: all 0.18s ease;
+}
+.btn:hover {
+  border-color: var(--ink-2);
+}
+.btn.primary {
+  background: var(--accent);
+  color: var(--on-accent);
+  border-color: var(--accent);
+}
+.btn.primary:hover {
+  background: var(--accent-2);
+  border-color: var(--accent-2);
+}
+.btn.ghost {
+  border-color: transparent;
+}
+.btn.ghost:hover {
+  background: var(--paper-3);
+}
+
+/* ---- Scrollbar (subtle) ----------------------------------------------- */
+::-webkit-scrollbar {
+  width: 11px;
+  height: 11px;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--rule-strong);
+  border-radius: 999px;
+  border: 3px solid var(--paper);
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--muted);
+}
+
+/* ---- Entrance animations ---------------------------------------------- */
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+.rise {
+  animation: rise 0.6s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+.fade {
+  animation: fade 0.5s ease both;
+}
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+.pulse {
+  animation: pulse 2s ease-in-out infinite;
+}
+
+/* Example/filter chips — quiet pill that warms to the accent on hover. */
+.folio-chip {
+  transition:
+    border-color 0.15s,
+    color 0.15s,
+    background 0.15s;
+}
+.folio-chip:hover:not(:disabled) {
+  border-color: var(--accent) !important;
+  color: var(--ink) !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    transition-duration: 0.001ms !important;
+  }
+}
+
+/* ---- Layout helpers --------------------------------------------------- */
+.shell {
+  max-width: var(--maxw);
+  margin: 0 auto;
+  padding: 0 28px;
+}
+@media (max-width: 640px) {
+  .shell {
+    padding: 0 18px;
+  }
+}
+.stack {
+  display: flex;
+  flex-direction: column;
+}
+.row {
+  display: flex;
+  align-items: center;
+}
+.spread {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+/* Home two-column → single column on narrow viewports (rail un-sticks). */
+@media (max-width: 860px) {
+  .home-grid {
+    grid-template-columns: 1fr !important;
+    gap: 48px !important;
+  }
+  .home-rail {
+    position: static !important;
+  }
+}
+
+/* Article: marginalia rail drops below the prose on narrow viewports. */
+@media (max-width: 900px) {
+  .article-grid {
+    grid-template-columns: 1fr !important;
+    gap: 40px !important;
+  }
+  .article-margin {
+    position: static !important;
+    border-left: 0 !important;
+    padding-left: 0 !important;
+    border-top: 1px solid var(--rule);
+    padding-top: 28px !important;
+  }
+}
+
+/* Browse: filter rail collapses above the results on narrow viewports. */
+@media (max-width: 760px) {
+  .browse-layout {
+    grid-template-columns: 1fr !important;
+    gap: 28px !important;
+  }
+  .browse-rail {
+    position: static !important;
+  }
+  .browse-head {
+    grid-template-columns: 1fr !important;
+    gap: 10px !important;
+  }
 }
 
 /* Skip-nav link — visually hidden until focused */
@@ -118,40 +493,36 @@ body {
   font-size: 1rem;
 }
 
-/* Focus-visible ring for interactive elements — accent-colored. */
-a:focus-visible,
-button:focus-visible,
-input:focus-visible,
-select:focus-visible,
-textarea:focus-visible,
-[tabindex]:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-}
-
 /* ---------------------------------------------------------------------------
-   Article reading body — opt-in serif typography for long-form wiki pages.
-   Scoped to `.prose-article` so shared MarkdownRenderer consumers (query
-   answers, slide previews) keep the neutral sans look.
+   Article reading body — long-form wiki pages. Folio reads in the Apple text
+   font (not a serif) at 18px / 1.6, ~66ch measure.
    --------------------------------------------------------------------------- */
 .prose-article {
-  --tw-prose-body: var(--foreground);
-  --tw-prose-headings: var(--foreground);
-  --tw-prose-bold: var(--foreground);
-  --tw-prose-code: var(--foreground);
+  --tw-prose-body: var(--ink);
+  --tw-prose-headings: var(--ink);
+  --tw-prose-bold: var(--ink);
+  --tw-prose-code: var(--ink);
   --tw-prose-links: var(--accent);
   --tw-prose-quotes: var(--muted);
-  --tw-prose-quote-borders: var(--border);
-  --tw-prose-hr: var(--border);
-  --tw-prose-th-borders: var(--border);
-  --tw-prose-td-borders: var(--border);
-  font-family: var(--font-serif);
+  --tw-prose-quote-borders: var(--rule);
+  --tw-prose-hr: var(--rule);
+  --tw-prose-th-borders: var(--rule);
+  --tw-prose-td-borders: var(--rule);
+  font-family: var(--font-read);
 }
 
-/* Headings stay in the UI sans even inside the serif article. */
-.prose-article :is(h1, h2, h3, h4) {
-  font-family: var(--font-sans);
-  letter-spacing: -0.01em;
+/* Section headings in the article body: 15px/600 uppercase, muted. */
+.prose-article :is(h2, h3, h4) {
+  font-family: var(--font-read);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--muted);
+}
+.prose-article h1 {
+  font-family: var(--font-display);
+  letter-spacing: -0.026em;
 }
 
 /* Code uses the mono font on a subtle surface. */
@@ -159,41 +530,34 @@ textarea:focus-visible,
   font-family: var(--font-mono);
 }
 .prose-article :not(pre) > code {
-  background: var(--surface);
+  background: var(--paper-2);
   padding: 0.15em 0.35em;
   border-radius: 0.3rem;
-  font-weight: 500;
 }
 .prose-article :not(pre) > code::before,
 .prose-article :not(pre) > code::after {
   content: none; /* drop the typography plugin's backtick quotes */
 }
 .prose-article pre {
-  background: var(--surface);
-  border: 1px solid var(--border);
+  background: var(--paper-2);
+  border: 1px solid var(--rule);
 }
 
-/* Reading measure (~68ch) for text, left-aligned so the body shares a left
-   edge with the (full-width) page title; media/code/tables bleed to the full
-   column width. Re-imposes a measure that `max-w-none` removes. */
+/* Reading measure (~66ch); media/code/tables bleed to the full column. */
 .prose-article > * {
-  max-width: 68ch;
+  max-width: 66ch;
 }
 .prose-article > :is(img, figure, pre, table, hr) {
   max-width: 100%;
 }
 
 /* ---------------------------------------------------------------------------
-   Lab-instrument signature: mono section labels + mono "receipts" (data).
-   "Data is mono, prose is not." Used across the homepage, trail, and page
-   provenance to read like a working instrument rather than a magazine.
+   Legacy "lab-instrument" label — kept while screens migrate to .fmark.
    --------------------------------------------------------------------------- */
-
-/* Small-caps mono section label, e.g. `// THE TRAIL`. */
 .label {
   font-family: var(--font-mono);
   font-size: 0.6875rem; /* 11px */
-  font-weight: 500;
+  font-weight: 400;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--muted);
@@ -201,11 +565,4 @@ textarea:focus-visible,
 .label::before {
   content: "// ";
   color: var(--accent);
-}
-
-/* Receipts: counts, dates, confidence, slugs, source types, ids. */
-.receipt {
-  font-family: var(--font-mono);
-  font-variant-numeric: tabular-nums;
-  font-feature-settings: "tnum";
 }

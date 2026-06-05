@@ -8,17 +8,23 @@ import {
   findBacklinks,
   tenantForOwner,
   buildSlugTenantMap,
-  type Frontmatter,
 } from "@/lib/wiki";
 import {
   pagePath,
   editPath,
   rawPath,
   resolveSlugPath,
-  type SlugTenantMap,
 } from "@/lib/links";
 import { parseSources } from "@/lib/sources";
 import type { SourceEntry } from "@/lib/types";
+import { formatRelativeTime } from "@/lib/format";
+import { Icon } from "@/components/folio/icons";
+import {
+  Avatar,
+  Mark,
+  Confidence,
+  Freshness,
+} from "@/components/folio/primitives";
 import { MarkdownRenderer } from "@/components/MarkdownRenderer";
 import { DeletePageButton } from "@/components/DeletePageButton";
 import { ReingestButton } from "@/components/ReingestButton";
@@ -28,14 +34,9 @@ import { getPrincipal } from "@/lib/auth";
 import { canReadFrontmatter } from "@/lib/authz";
 import { belongsInCommons } from "@/lib/commons";
 import { isInVault } from "@/lib/vault";
-import { agentIdFor, DEFAULT_AGENT_NAME, isAgentHandle } from "@/lib/agents";
-import { listRevisions } from "@/lib/revisions";
-import { AgentBadge } from "@/components/AgentBadge";
+import { agentIdFor, DEFAULT_AGENT_NAME } from "@/lib/agents";
 import { RevisionHistory } from "@/components/RevisionHistory";
 import { DiscussionPanel } from "@/components/DiscussionPanel";
-import { AuthorBadges } from "@/components/AuthorBadges";
-import { getDiscussionStats } from "@/lib/talk";
-import type { DiscussionStats } from "@/lib/talk";
 
 interface WikiPageProps {
   params: Promise<{ handle: string; slug: string }>;
@@ -83,448 +84,6 @@ export async function generateMetadata({
       ...(description ? { description } : {}),
     },
   };
-}
-
-/** Truncate a date-ish string to its `YYYY-MM-DD` prefix (no library). */
-function formatDate(value: string): string {
-  return value.slice(0, 10);
-}
-
-const MONTH_NAMES = [
-  "Jan", "Feb", "Mar", "Apr", "May", "Jun",
-  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
-];
-
-/** Format a YYYY-MM-DD string as "May 2026". Returns the raw date on failure. */
-function formatMonthYear(value: string): string {
-  const d = new Date(value);
-  if (isNaN(d.getTime())) return value.slice(0, 10);
-  return `${MONTH_NAMES[d.getUTCMonth()]} ${d.getUTCFullYear()}`;
-}
-
-/** Map a numeric confidence score to a human-readable label + color class. */
-function confidenceDisplay(value: number): {
-  label: string;
-  className: string;
-} {
-  if (value >= 0.7) {
-    return {
-      label: `Confidence: ${value}`,
-      className:
-        "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400",
-    };
-  }
-  if (value >= 0.3) {
-    return {
-      label: `Confidence: ${value}`,
-      className:
-        "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400",
-    };
-  }
-  return {
-    label: `Confidence: ${value}`,
-    className:
-      "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400",
-  };
-}
-
-/** Map a source type to a display label + Tailwind color classes. */
-function sourceTypeBadge(type: SourceEntry["type"]): {
-  label: string;
-  className: string;
-} {
-  switch (type) {
-    case "url":
-      return {
-        label: "URL",
-        className:
-          "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400",
-      };
-    case "text":
-      return {
-        label: "Text",
-        className: "bg-surface text-muted",
-      };
-    case "x-mention":
-      return {
-        label: "𝕏 Mention",
-        className:
-          "bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-400",
-      };
-    case "wiki-ref":
-      return {
-        label: "Wiki Reference",
-        className:
-          "bg-teal-100 text-teal-800 dark:bg-teal-900/30 dark:text-teal-400",
-      };
-    case "image":
-      return {
-        label: "Image",
-        className:
-          "bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400",
-      };
-    case "pdf":
-      return {
-        label: "PDF",
-        className:
-          "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300",
-      };
-    default:
-      return {
-        label: String(type),
-        className: "bg-surface text-muted",
-      };
-  }
-}
-
-/**
- * Display structured provenance entries from the `sources[]` frontmatter
- * field. Falls back to showing the flat `source_url` when no structured
- * sources exist (backward compat for pre-yopedia pages).
- */
-function SourceProvenance({
-  frontmatter,
-}: {
-  frontmatter: Frontmatter;
-}) {
-  // Parse structured sources (stored as JSON string in frontmatter).
-  const rawSources = frontmatter.sources as
-    | string
-    | string[]
-    | undefined;
-  const sources = parseSources(rawSources);
-
-  // Flat legacy source_url (pre-yopedia pages).
-  const sourceUrl =
-    typeof frontmatter.source_url === "string" &&
-    frontmatter.source_url.trim().length > 0
-      ? frontmatter.source_url.trim()
-      : null;
-
-  // Nothing to show.
-  if (sources.length === 0 && !sourceUrl) return null;
-
-  // Structured sources available — render the rich provenance section.
-  if (sources.length > 0) {
-    return (
-      <section className="mt-8 border-t border-border pt-6">
-        <h2 className="text-sm font-medium text-muted uppercase tracking-wide mb-3">
-          Provenance
-        </h2>
-        <div className="space-y-2">
-          {sources.map((entry, idx) => {
-            const badge = sourceTypeBadge(entry.type);
-            const isLink =
-              entry.type !== "text" &&
-              entry.url !== "text-paste" &&
-              /^https?:\/\//.test(entry.url);
-
-            return (
-              <div
-                key={`${entry.url}-${idx}`}
-                className="flex flex-wrap items-center gap-2 text-sm"
-              >
-                {/* Type badge */}
-                <span
-                  className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${badge.className}`}
-                >
-                  {badge.label}
-                </span>
-
-                {/* URL or label */}
-                {isLink ? (
-                  <a
-                    href={entry.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-accent hover:underline truncate max-w-md"
-                    title={entry.url}
-                  >
-                    {entry.url}
-                  </a>
-                ) : (
-                  <span className="text-foreground/60">
-                    {entry.url === "text-paste" ? "Text paste" : entry.url}
-                  </span>
-                )}
-
-                {/* Fetch date */}
-                {entry.fetched && (
-                  <span className="text-foreground/40 text-xs">
-                    fetched {formatDate(entry.fetched)}
-                  </span>
-                )}
-
-                {/* Triggered by — agents marked distinctly */}
-                {entry.triggered_by && entry.triggered_by !== "system" && (
-                  <span className="receipt inline-flex items-center gap-1 text-foreground/40 text-xs">
-                    via{" "}
-                    {isAgentHandle(entry.triggered_by)
-                      ? entry.triggered_by.split("--").pop()
-                      : entry.triggered_by}
-                    {isAgentHandle(entry.triggered_by) && <AgentBadge />}
-                  </span>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      </section>
-    );
-  }
-
-  // Fallback: legacy flat source_url.
-  return (
-    <section className="mt-8 border-t border-foreground/10 pt-6">
-      <h2 className="text-sm font-medium text-foreground/50 uppercase tracking-wide mb-3">
-        Source
-      </h2>
-      <div className="flex items-center gap-2 text-sm">
-        <span className="inline-block rounded-full bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-800 dark:bg-blue-900/30 dark:text-blue-400">
-          URL
-        </span>
-        {/^https?:\/\//.test(sourceUrl!) ? (
-          <a
-            href={sourceUrl!}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-blue-600 hover:underline dark:text-blue-400 truncate max-w-md"
-            title={sourceUrl!}
-          >
-            {sourceUrl}
-          </a>
-        ) : (
-          <span className="text-foreground/60">{sourceUrl}</span>
-        )}
-      </div>
-    </section>
-  );
-}
-
-/**
- * Slim byline shown directly beneath the page title: the lightweight
- * who/when/how-confident line plus authors and topic tags. The heavier
- * reference fields (validity, aliases, supersedes) live in {@link PageInfo}.
- * Returns `null` when nothing applies, so frontmatter-less pages render only
- * the title.
- */
-function PageByline({
-  frontmatter,
-  discussionStats,
-}: {
-  frontmatter: Frontmatter;
-  discussionStats?: DiscussionStats;
-}) {
-  const updatedRaw = frontmatter.updated;
-  const createdRaw = frontmatter.created;
-  const dateLabel =
-    typeof updatedRaw === "string" && updatedRaw.length > 0
-      ? `Updated ${formatDate(updatedRaw)}`
-      : typeof createdRaw === "string" && createdRaw.length > 0
-        ? `Created ${formatDate(createdRaw)}`
-        : null;
-
-  // source_count is persisted as a string (see ingest.ts); parse defensively.
-  const sourceCountRaw = frontmatter.source_count;
-  const sourceCountNum =
-    typeof sourceCountRaw === "string" && sourceCountRaw.length > 0
-      ? Number.parseInt(sourceCountRaw, 10)
-      : NaN;
-  const sourceLabel =
-    Number.isFinite(sourceCountNum) && sourceCountNum >= 1
-      ? `${sourceCountNum} ${sourceCountNum === 1 ? "source" : "sources"}`
-      : null;
-
-  const tags = Array.isArray(frontmatter.tags)
-    ? frontmatter.tags.filter((t) => typeof t === "string" && t.length > 0)
-    : [];
-
-  // Confidence badge: show only when confidence is a finite number.
-  const confidenceRaw = frontmatter.confidence;
-  const confidenceNum =
-    typeof confidenceRaw === "number" && Number.isFinite(confidenceRaw)
-      ? confidenceRaw
-      : typeof confidenceRaw === "string" && /^-?\d+(\.\d+)?$/.test(confidenceRaw)
-        ? Number(confidenceRaw)
-        : null;
-  const confidence =
-    confidenceNum !== null && Number.isFinite(confidenceNum)
-      ? confidenceDisplay(confidenceNum)
-      : null;
-
-  const authors = Array.isArray(frontmatter.authors)
-    ? frontmatter.authors.filter((a) => typeof a === "string" && a.length > 0)
-    : [];
-  const contributors = Array.isArray(frontmatter.contributors)
-    ? frontmatter.contributors.filter(
-        (c) => typeof c === "string" && c.length > 0 && !authors.includes(c),
-      )
-    : [];
-
-  const disputed = frontmatter.disputed === true;
-  const hasOpenDiscussions = (discussionStats?.open ?? 0) > 0;
-
-  const hasMetaLine =
-    dateLabel !== null ||
-    sourceLabel !== null ||
-    confidence !== null ||
-    disputed ||
-    hasOpenDiscussions;
-
-  if (!hasMetaLine && authors.length === 0 && tags.length === 0) return null;
-
-  return (
-    <div className="mt-3 space-y-2">
-      {hasMetaLine && (
-        <div className="flex flex-wrap items-center gap-2 text-sm text-muted">
-          {dateLabel && <span>{dateLabel}</span>}
-          {dateLabel && sourceLabel && <span aria-hidden>·</span>}
-          {sourceLabel && <span>{sourceLabel}</span>}
-          {confidence && (
-            <span
-              className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${confidence.className}`}
-            >
-              {confidence.label}
-            </span>
-          )}
-          {disputed && (
-            <span className="inline-block rounded-full bg-orange-100 px-2 py-0.5 text-xs font-medium text-orange-800 dark:bg-orange-900/30 dark:text-orange-400">
-              ⚠ Disputed
-            </span>
-          )}
-          {hasOpenDiscussions && (
-            <span className="inline-flex items-center gap-0.5 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800 dark:bg-amber-900/30 dark:text-amber-400">
-              💬 {discussionStats!.open} open{" "}
-              {discussionStats!.open === 1 ? "thread" : "threads"}
-            </span>
-          )}
-        </div>
-      )}
-
-      {authors.length > 0 && (
-        <AuthorBadges authors={authors} contributors={contributors} />
-      )}
-
-      {tags.length > 0 && (
-        <div className="flex flex-wrap gap-1.5">
-          {tags.map((tag) => (
-            <span
-              key={tag}
-              className="inline-block rounded-full bg-surface px-2 py-0.5 text-xs text-muted"
-            >
-              {tag}
-            </span>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-/**
- * Demoted reference details (temporal validity, dispute note, aliases, the
- * superseded page). Rendered in the desktop sidebar rail and, on mobile,
- * inline below the article. Returns `null` when there's nothing to show.
- */
-function PageInfo({
-  frontmatter,
-  className,
-  slugTenants,
-  tenant,
-}: {
-  frontmatter: Frontmatter;
-  className?: string;
-  slugTenants: SlugTenantMap;
-  /** The page's own tenant — fallback for resolving the `supersedes` link. */
-  tenant: string;
-}) {
-  const expiryRaw = frontmatter.expiry;
-  const expiryStr =
-    typeof expiryRaw === "string" && expiryRaw.length >= 10 ? expiryRaw : null;
-  const expiryDate = expiryStr ? new Date(expiryStr) : null;
-  const isExpired =
-    expiryDate !== null && !isNaN(expiryDate.getTime()) && expiryDate < new Date();
-
-  const validFromRaw = frontmatter.valid_from;
-  const validFromStr =
-    typeof validFromRaw === "string" && validFromRaw.length >= 10
-      ? validFromRaw
-      : null;
-
-  const disputed = frontmatter.disputed === true;
-
-  const aliases = Array.isArray(frontmatter.aliases)
-    ? frontmatter.aliases.filter((a) => typeof a === "string" && a.length > 0)
-    : [];
-
-  const supersedes =
-    typeof frontmatter.supersedes === "string" &&
-    frontmatter.supersedes.length > 0
-      ? frontmatter.supersedes
-      : null;
-
-  const hasValidity =
-    validFromStr !== null ||
-    (expiryStr !== null && expiryDate !== null && !isNaN(expiryDate.getTime()));
-
-  if (!hasValidity && !disputed && aliases.length === 0 && !supersedes) {
-    return null;
-  }
-
-  return (
-    <section className={className}>
-      <h2 className="text-xs font-medium text-muted uppercase tracking-wide mb-2">
-        Page info
-      </h2>
-      <div className="space-y-2 text-sm">
-        {hasValidity && (
-          <div>
-            {isExpired ? (
-              <span className="text-amber-600 dark:text-amber-400">
-                ⚠{validFromStr ? ` Verified ${formatMonthYear(validFromStr)} ·` : ""} Expired {formatDate(expiryStr!)} — may be outdated
-              </span>
-            ) : validFromStr && expiryStr ? (
-              <span className="text-muted">
-                Verified {formatMonthYear(validFromStr)} · Review by {formatMonthYear(expiryStr)}
-              </span>
-            ) : validFromStr ? (
-              <span className="text-muted">
-                Verified {formatMonthYear(validFromStr)}
-              </span>
-            ) : (
-              <span className="text-muted">
-                Review by {formatMonthYear(expiryStr!)}
-              </span>
-            )}
-          </div>
-        )}
-
-        {disputed && (
-          <div className="text-orange-600 dark:text-orange-400">
-            This page has unresolved contradictions
-          </div>
-        )}
-
-        {aliases.length > 0 && (
-          <div className="text-muted">
-            Also known as: {aliases.join(", ")}
-          </div>
-        )}
-
-        {supersedes && (
-          <div className="text-muted">
-            Replaces:{" "}
-            <Link
-              href={resolveSlugPath(supersedes, slugTenants, tenant)}
-              className="text-accent hover:underline"
-            >
-              {supersedes}
-            </Link>
-          </div>
-        )}
-      </div>
-    </section>
-  );
 }
 
 /** A single Table-of-Contents entry parsed from the markdown body. */
@@ -614,134 +173,6 @@ function stripLeadingH1(body: string): string {
   return body.replace(/^#\s+.+(?:\r?\n)?/m, "");
 }
 
-/** One labelled stop in the lineage strip. */
-function Stop({ label, value }: { label: string; value: ReactNode }) {
-  return (
-    <span className="inline-flex items-baseline gap-1.5 whitespace-nowrap">
-      <span className="text-[10px] uppercase tracking-wide text-muted">
-        {label}
-      </span>
-      <span className="font-medium text-foreground">{value}</span>
-    </span>
-  );
-}
-
-/**
- * "How this page accumulated" — a compact mono lineage strip under the title:
- * created → sources (typed, human/agent) → revisions → confidence → status.
- * Makes the differentiator (accumulation with receipts) legible at a glance.
- * Returns null when there's nothing to show.
- */
-function LineageStrip({
-  frontmatter,
-  sources,
-  revisions,
-}: {
-  frontmatter: Frontmatter;
-  sources: SourceEntry[];
-  revisions: { author?: string; date: string }[];
-}) {
-  const created =
-    typeof frontmatter.created === "string" && frontmatter.created
-      ? frontmatter.created
-      : revisions.length > 0
-        ? revisions[revisions.length - 1].date
-        : null;
-
-  if (!created && sources.length === 0 && revisions.length === 0) return null;
-
-  const sourceTypes = [...new Set(sources.map((s) => s.type))];
-  const ingestedByAgent = sources.some((s) => isAgentHandle(s.triggered_by));
-  const lastEditor = revisions[0]?.author;
-  const lastByAgent = isAgentHandle(lastEditor);
-
-  const confidenceRaw = frontmatter.confidence;
-  const confidence =
-    typeof confidenceRaw === "number" && Number.isFinite(confidenceRaw)
-      ? confidenceRaw
-      : typeof confidenceRaw === "string" && /^-?\d+(\.\d+)?$/.test(confidenceRaw)
-        ? Number(confidenceRaw)
-        : null;
-
-  const disputed = frontmatter.disputed === true;
-  const superseded =
-    typeof frontmatter.supersedes === "string" &&
-    frontmatter.supersedes.length > 0;
-
-  const stops: ReactNode[] = [];
-  if (created) {
-    stops.push(<Stop key="c" label="created" value={formatDate(created)} />);
-  }
-  if (sources.length > 0) {
-    stops.push(
-      <Stop
-        key="s"
-        label="sources"
-        value={
-          <span className="inline-flex items-center gap-1.5">
-            {sources.length}
-            <span className="font-normal text-muted">
-              {sourceTypes.slice(0, 3).join(" · ")}
-            </span>
-            {ingestedByAgent && <AgentBadge />}
-          </span>
-        }
-      />,
-    );
-  }
-  if (revisions.length > 0) {
-    stops.push(
-      <Stop
-        key="r"
-        label="revisions"
-        value={
-          <span className="inline-flex items-center gap-1.5">
-            {revisions.length}
-            {lastEditor && !lastByAgent && (
-              <span className="font-normal text-muted">· last {lastEditor}</span>
-            )}
-            {lastByAgent && <AgentBadge />}
-          </span>
-        }
-      />,
-    );
-  }
-  if (confidence !== null) {
-    stops.push(
-      <Stop key="cf" label="confidence" value={confidence.toFixed(2)} />,
-    );
-  }
-  stops.push(
-    <Stop
-      key="st"
-      label="status"
-      value={
-        disputed ? (
-          <span className="text-amber-600 dark:text-amber-400">disputed</span>
-        ) : superseded ? (
-          "superseded"
-        ) : (
-          "current"
-        )
-      }
-    />,
-  );
-
-  return (
-    <section className="mt-5">
-      <h2 className="label">how this page accumulated</h2>
-      <div className="receipt mt-2 flex flex-wrap items-center gap-x-3 gap-y-2 text-xs">
-        {stops.map((s, i) => (
-          <span key={i} className="flex items-center gap-3">
-            {i > 0 && <span aria-hidden className="text-border">→</span>}
-            {s}
-          </span>
-        ))}
-      </div>
-    </section>
-  );
-}
-
 export default async function WikiPageView({ params }: WikiPageProps) {
   const { handle: encodedHandle, slug: encodedSlug } = await params;
   const slug = decodeSlug(encodedSlug);
@@ -786,7 +217,6 @@ export default async function WikiPageView({ params }: WikiPageProps) {
   const slugTenants = await buildSlugTenantMap();
 
   const backlinks = await findBacklinks(slug, principal);
-  const discussStats = await getDiscussionStats(slug);
   const hasSourceUrl =
     typeof page.frontmatter.source_url === "string" &&
     page.frontmatter.source_url.trim().length > 0;
@@ -833,7 +263,6 @@ export default async function WikiPageView({ params }: WikiPageProps) {
   const canCurate = !!principal && isCommonsPage && !canShare;
   const inVault = canCurate && (await isInVault(principal!.handle, slug));
 
-  const revisions = await listRevisions(slug);
   const lineageSources = parseSources(
     page.frontmatter.sources as string | string[] | undefined,
   );
@@ -841,63 +270,233 @@ export default async function WikiPageView({ params }: WikiPageProps) {
   const toc = buildToc(page.body);
   const articleBody = stripLeadingH1(page.body);
 
-  return (
-    <main className="mx-auto max-w-5xl px-6 py-12">
-      <Link
-        href="/wiki"
-        className="text-sm text-muted hover:text-foreground transition-colors"
-      >
-        ← Back to index
-      </Link>
+  // ---- Folio header / provenance values (from real frontmatter) ----------
+  const fm = page.frontmatter;
+  const tags = Array.isArray(fm.tags) ? (fm.tags as string[]) : [];
+  const summary = typeof fm.summary === "string" ? fm.summary : "";
+  const updatedRaw =
+    typeof fm.updated === "string"
+      ? fm.updated
+      : typeof fm.created === "string"
+        ? fm.created
+        : null;
+  const updatedRel = updatedRaw ? formatRelativeTime(updatedRaw) : null;
+  const confidenceRaw = fm.confidence;
+  const confidenceNum =
+    typeof confidenceRaw === "number" && Number.isFinite(confidenceRaw)
+      ? confidenceRaw
+      : typeof confidenceRaw === "string" && /^-?\d+(\.\d+)?$/.test(confidenceRaw)
+        ? Number(confidenceRaw)
+        : null;
+  const expiry = typeof fm.expiry === "string" ? fm.expiry : null;
+  const disputed = fm.disputed === true;
+  // Written-by: owner first, then contributors — deduped, real handles only.
+  const writtenBy = [pageOwner, ...pageContributors]
+    .map((h) => (typeof h === "string" ? h.trim() : ""))
+    .filter((h) => h && h !== "system")
+    .filter((h, i, a) => a.indexOf(h) === i);
 
-      <div className="mt-6 lg:grid lg:grid-cols-[minmax(0,1fr)_15rem] lg:gap-12">
-        {/* Reading column */}
+  // Provenance "stops" — only the ones we actually have data for.
+  const provStops: { label: string; node: ReactNode }[] = [];
+  if (writtenBy.length > 0) {
+    provStops.push({
+      label: "written by",
+      node: (
+        <div className="row" style={{ gap: 12, flexWrap: "wrap" }}>
+          {writtenBy.map((id) => {
+            const agent = id.includes("--");
+            return (
+              <span key={id} className="row" style={{ gap: 6 }}>
+                <Avatar id={id} agent={agent} size={22} />
+                <Mark id={id} agent={agent} />
+              </span>
+            );
+          })}
+        </div>
+      ),
+    });
+  }
+  if (confidenceNum !== null) {
+    provStops.push({
+      label: "confidence",
+      node: <Confidence value={confidenceNum} withLabel />,
+    });
+  }
+  if (expiry) {
+    provStops.push({ label: "freshness", node: <Freshness expiry={expiry} /> });
+  }
+  if (updatedRel) {
+    provStops.push({
+      label: "updated",
+      node: (
+        <span
+          className="receipt"
+          style={{ fontSize: 13, color: "var(--muted)" }}
+        >
+          {updatedRel}
+        </span>
+      ),
+    });
+  }
+
+  // Sources rail label: a readable host, or the paste sentinel.
+  const sourceLabel = (s: SourceEntry): string => {
+    if (!s.url || s.url === "text-paste") return "pasted text";
+    try {
+      return new URL(s.url).hostname.replace(/^www\./, "");
+    } catch {
+      return s.url;
+    }
+  };
+
+  const askHref = `/query?q=${encodeURIComponent(`About "${page.title}": `)}`;
+
+  return (
+    <div className="fade">
+      {/* breadcrumb */}
+      <div className="shell" style={{ paddingTop: 30 }}>
+        <div
+          className="row receipt"
+          style={{ gap: 8, fontSize: 12, color: "var(--muted)" }}
+        >
+          <Link href="/wiki" style={{ color: "var(--muted)" }}>
+            commons
+          </Link>
+          <span style={{ color: "var(--faint)" }}>/</span>
+          <span style={{ color: "var(--ink-2)" }}>{slug}</span>
+        </div>
+      </div>
+
+      {/* header */}
+      <header className="shell" style={{ paddingTop: 26, maxWidth: 1100 }}>
+        {tags.length > 0 && (
+          <div
+            className="row"
+            style={{ gap: 10, marginBottom: 18, flexWrap: "wrap" }}
+          >
+            {tags.map((t) => (
+              <span
+                key={t}
+                className="receipt"
+                style={{ fontSize: 11.5, color: "var(--accent)" }}
+              >
+                #{t}
+              </span>
+            ))}
+          </div>
+        )}
+        <h1
+          className="display"
+          style={{ fontSize: "clamp(34px,4.6vw,58px)", margin: 0, maxWidth: "20ch" }}
+        >
+          {page.title}
+        </h1>
+        {summary && (
+          <p
+            style={{
+              fontFamily: "var(--font-read)",
+              fontSize: 22,
+              lineHeight: 1.5,
+              letterSpacing: "-.015em",
+              color: "var(--ink-2)",
+              marginTop: 22,
+              maxWidth: "var(--measure)",
+            }}
+          >
+            {summary}
+          </p>
+        )}
+
+        {provStops.length > 0 && (
+          <div
+            className="row"
+            style={{
+              gap: 0,
+              marginTop: 30,
+              flexWrap: "wrap",
+              borderTop: "1px solid var(--rule)",
+              borderBottom: "1px solid var(--rule)",
+              padding: "16px 0",
+            }}
+          >
+            {provStops.map((s, i) => (
+              <div
+                key={s.label}
+                className="stack"
+                style={{
+                  gap: 7,
+                  paddingRight: 32,
+                  marginRight: 32,
+                  borderRight:
+                    i < provStops.length - 1 ? "1px solid var(--rule)" : "none",
+                  marginBottom: 4,
+                }}
+              >
+                <span className="fmark">{s.label}</span>
+                {s.node}
+              </div>
+            ))}
+          </div>
+        )}
+
+        {disputed && (
+          <div
+            className="row"
+            style={{
+              gap: 10,
+              marginTop: 16,
+              padding: "12px 16px",
+              borderRadius: 10,
+              background: "var(--rust-soft)",
+              color: "var(--rust)",
+              fontSize: 13.5,
+              alignItems: "flex-start",
+            }}
+          >
+            <span className="fresh warn" style={{ marginTop: 6 }} />
+            <span>
+              This page is <strong>disputed</strong> and low-confidence. A
+              reconciliation is open on the discussion. Read with care.
+            </span>
+          </div>
+        )}
+      </header>
+
+      {/* body + marginalia */}
+      <section
+        className="shell article-grid"
+        style={{
+          marginTop: 48,
+          display: "grid",
+          gridTemplateColumns: "minmax(0,1fr) 280px",
+          gap: 56,
+          alignItems: "start",
+          maxWidth: 1100,
+        }}
+      >
         <div className="min-w-0">
           <article>
-            <h1 className="text-3xl sm:text-4xl font-bold tracking-tight">
-              {page.title}
-            </h1>
-            <PageByline
-              frontmatter={page.frontmatter}
-              discussionStats={discussStats}
+            <MarkdownRenderer
+              content={articleBody}
+              className="prose-article"
+              headingIds={toc.map((t) => t.id)}
+              tenant={pageTenant}
+              slugTenants={slugTenants}
             />
-            <LineageStrip
-              frontmatter={page.frontmatter}
-              sources={lineageSources}
-              revisions={revisions}
-            />
-            <div className="mt-8">
-              <MarkdownRenderer
-                content={articleBody}
-                className="prose-article"
-                headingIds={toc.map((t) => t.id)}
-                tenant={pageTenant}
-                slugTenants={slugTenants}
-              />
-            </div>
           </article>
 
-          <SourceProvenance frontmatter={page.frontmatter} />
-
-          {/* Page info — inline on mobile; the rail shows it on desktop. */}
-          <PageInfo
-            frontmatter={page.frontmatter}
-            className="mt-8 border-t border-border pt-6 lg:hidden"
-            slugTenants={slugTenants}
-            tenant={pageTenant}
-          />
-
           {backlinks.length > 0 && (
-            <section className="mt-10 border-t border-border pt-6">
-              <h2 className="text-sm font-medium text-muted uppercase tracking-wide">
-                What links here
+            <section className="mt-10 border-t border-rule pt-6">
+              <h2 className="fmark" style={{ color: "var(--faint)" }}>
+                what links here
               </h2>
-              <ul className="mt-2 space-y-1">
+              <ul className="mt-3 space-y-1">
                 {backlinks.map((bl) => (
                   <li key={bl.slug}>
                     <Link
                       href={resolveSlugPath(bl.slug, slugTenants, pageTenant)}
-                      className="text-sm text-accent hover:underline"
+                      className="text-sm"
+                      style={{ color: "var(--accent)" }}
                     >
                       {bl.title}
                     </Link>
@@ -910,18 +509,12 @@ export default async function WikiPageView({ params }: WikiPageProps) {
           <DiscussionPanel slug={slug} />
           <RevisionHistory slug={slug} />
 
-          <div className="mt-12 border-t border-border pt-6 flex flex-wrap items-center gap-3">
-            <Link
-              href={editPath(pageTenant, slug)}
-              className="rounded-md border border-border px-4 py-2 text-sm font-medium text-foreground hover:bg-foreground/5 transition-colors"
-            >
+          <div className="mt-12 border-t border-rule pt-6 flex flex-wrap items-center gap-3">
+            <Link href={editPath(pageTenant, slug)} className="btn">
               Edit page
             </Link>
             {hasRawSource && (
-              <Link
-                href={rawPath(pageTenant, slug)}
-                className="rounded-md border border-border px-4 py-2 text-sm font-medium text-foreground hover:bg-foreground/5 transition-colors"
-              >
+              <Link href={rawPath(pageTenant, slug)} className="btn">
                 View source
               </Link>
             )}
@@ -936,18 +529,102 @@ export default async function WikiPageView({ params }: WikiPageProps) {
           </div>
         </div>
 
-        {/* Right rail — table of contents + page info (desktop only) */}
-        <aside className="hidden lg:block">
-          <div className="sticky top-20 space-y-8">
-            <TableOfContents items={toc} />
-            <PageInfo
-              frontmatter={page.frontmatter}
-              slugTenants={slugTenants}
-              tenant={pageTenant}
-            />
-          </div>
+        {/* marginalia rail — sources, ask, contents */}
+        <aside
+          className="article-margin"
+          style={{
+            position: "sticky",
+            top: 92,
+            borderLeft: "1px solid var(--rule)",
+            paddingLeft: 28,
+          }}
+        >
+          {lineageSources.length > 0 && (
+            <>
+              <p className="fmark" style={{ marginBottom: 16 }}>
+                sources · {lineageSources.length}
+              </p>
+              <ul
+                style={{
+                  listStyle: "none",
+                  margin: 0,
+                  padding: 0,
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 16,
+                }}
+              >
+                {lineageSources.map((r, i) => (
+                  <li
+                    key={i}
+                    style={{
+                      fontSize: 12.5,
+                      lineHeight: 1.5,
+                      paddingLeft: 14,
+                      borderLeft: "2px solid transparent",
+                    }}
+                  >
+                    <span
+                      className="receipt"
+                      style={{ color: "var(--accent)", marginRight: 6 }}
+                    >
+                      [{i + 1}]
+                    </span>
+                    <span style={{ color: "var(--ink-2)" }}>{sourceLabel(r)}</span>
+                    <div
+                      className="receipt"
+                      style={{
+                        fontSize: 10.5,
+                        color: "var(--faint)",
+                        marginTop: 4,
+                        wordBreak: "break-all",
+                      }}
+                    >
+                      {r.url && r.url !== "text-paste" ? (
+                        <a
+                          href={r.url}
+                          target="_blank"
+                          rel="noreferrer"
+                          style={{ color: "var(--faint)" }}
+                        >
+                          <Icon.link
+                            width="10"
+                            height="10"
+                            style={{ verticalAlign: "-1px", marginRight: 4 }}
+                          />
+                          {r.url}
+                        </a>
+                      ) : (
+                        <span>
+                          <Icon.link
+                            width="10"
+                            height="10"
+                            style={{ verticalAlign: "-1px", marginRight: 4 }}
+                          />
+                          text paste
+                        </span>
+                      )}
+                      {r.fetched ? ` · fetched ${r.fetched}` : ""}
+                    </div>
+                  </li>
+                ))}
+              </ul>
+              <div className="rule" style={{ margin: "24px 0" }} />
+            </>
+          )}
+
+          <Link
+            href={askHref}
+            className="btn"
+            style={{ width: "100%", justifyContent: "center", fontSize: 13 }}
+          >
+            <Icon.spark width="15" height="15" /> Ask about this page
+          </Link>
+
+          <div className="rule" style={{ margin: "24px 0" }} />
+          <TableOfContents items={toc} />
         </aside>
-      </div>
-    </main>
+      </section>
+    </div>
   );
 }

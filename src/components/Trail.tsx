@@ -1,48 +1,51 @@
 import Link from "next/link";
 import { formatRelativeTime } from "@/lib/format";
-import { AgentBadge } from "./AgentBadge";
+import { Mark, SrcChip } from "./folio/primitives";
 import type { TrailEvent } from "@/lib/trail";
 
-/** Short display name for an actor — agent ids collapse to their short name. */
-function actorName(actor: string, isAgent: boolean): string {
-  if (isAgent && actor.includes("--")) return actor.split("--").pop() || actor;
-  return actor;
-}
-
 /**
- * The Trail — the lab's running log of recent ingests and edits, with humans
- * (indigo) and agents (teal) marked distinctly. The "alive / receipts"
- * centerpiece of the homepage.
+ * The Trail — the lab's running ledger of recent ingests, edits, and
+ * reconciliations (Folio design). A 2-column grid: a mono timestamp, then the
+ * actor (human = accent, agent = graphite via {@link Mark}), the action, an
+ * optional source-type chip, and the linked page title.
  */
 export function Trail({ events }: { events: TrailEvent[] }) {
   if (events.length === 0) return null;
   return (
-    <ul className="divide-y divide-rule border-t border-rule">
+    <ul style={{ listStyle: "none", margin: 0, padding: 0 }}>
       {events.map((e, i) => (
         <li
           key={`${e.slug}-${e.action}-${e.ts}-${i}`}
-          className="flex items-baseline gap-3 py-2"
+          style={{
+            display: "grid",
+            gridTemplateColumns: "62px 1fr",
+            gap: 16,
+            alignItems: "baseline",
+            padding: "13px 0",
+            borderTop: "1px solid var(--rule)",
+          }}
         >
           <time
             dateTime={e.when}
-            className="receipt w-20 shrink-0 text-xs text-muted"
+            className="receipt"
+            style={{ fontSize: 11.5, color: "var(--faint)", whiteSpace: "nowrap" }}
           >
             {formatRelativeTime(e.when)}
           </time>
-          <div className="min-w-0 text-sm leading-snug">
-            <span className="font-medium text-foreground">
-              {actorName(e.actor, e.isAgent)}
-            </span>
-            {e.isAgent && <AgentBadge className="ml-1.5 align-middle" />}
-            <span className="text-muted"> {e.action} </span>
-            {e.sourceType && (
-              <span className="receipt mr-1 rounded bg-surface px-1 py-px text-[10px] text-muted">
-                {e.sourceType}
-              </span>
-            )}
+          <div
+            className="row"
+            style={{ gap: 8, flexWrap: "wrap", fontSize: 14, lineHeight: 1.5 }}
+          >
+            <Mark id={e.actor} agent={e.isAgent} />
+            <span style={{ color: "var(--muted)" }}>{e.action}</span>
+            {e.sourceType && <SrcChip type={e.sourceType} />}
             <Link
               href={`/u/${e.tenant}/${e.slug}`}
-              className="text-accent hover:underline"
+              style={{
+                color: "var(--accent)",
+                borderBottom: "1px solid var(--accent-soft)",
+                textDecoration: "none",
+              }}
             >
               {e.title}
             </Link>

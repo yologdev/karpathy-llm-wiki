@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { Alert } from "@/components/Alert";
 import { BatchIngestForm } from "@/components/BatchIngestForm";
 import { IngestSuccess } from "@/components/IngestSuccess";
@@ -75,41 +74,66 @@ export default function IngestPage() {
   // Stage: form (default)
   // -------------------------------------------------------------------------
   return (
-    <main className="mx-auto max-w-3xl px-6 py-12">
-      <div className="mb-8 flex items-center justify-between">
-        <h1 className="text-3xl font-bold tracking-tight">Ingest Content</h1>
-        <Link
-          href="/"
-          className="text-sm text-foreground/60 hover:text-foreground transition-colors"
-        >
-          ← Home
-        </Link>
-      </div>
+    <main className="mx-auto px-6" style={{ maxWidth: 820, paddingTop: 56, paddingBottom: 80 }}>
+      <p className="fmark" style={{ marginBottom: 18 }}>
+        contribute to the commons
+      </p>
+      <h1
+        className="display"
+        style={{ fontSize: "clamp(34px,4.6vw,56px)", margin: 0, maxWidth: "16ch" }}
+      >
+        Ingest a source.
+      </h1>
+      <p
+        style={{
+          fontFamily: "var(--font-read)",
+          fontSize: 19,
+          lineHeight: 1.55,
+          color: "var(--ink-2)",
+          marginTop: 18,
+          maxWidth: "48ch",
+          fontStyle: "italic",
+        }}
+      >
+        Drop a link, PDF, or post. yoyo synthesizes it into a cited page — and
+        merges it if the source already lives in the commons.
+      </p>
 
       {/* Mode tabs */}
-      <div className="mb-6 flex gap-2 overflow-x-auto">
-        {(["text", "url", "image", "pdf", "batch"] as const).map((m) => (
-          <button
-            key={m}
-            type="button"
-            onClick={() => switchMode(m)}
-            className={`rounded-lg px-4 py-2 text-sm font-medium transition-colors cursor-pointer ${
-              mode === m
-                ? "bg-foreground text-background"
-                : "border border-foreground/20 text-foreground/60 hover:text-foreground"
-            }`}
-          >
-            {m === "text"
-              ? "Paste Text"
-              : m === "url"
-                ? "From URL"
-                : m === "image"
-                  ? "Image"
-                  : m === "pdf"
-                    ? "PDF"
-                    : "Batch URLs"}
-          </button>
-        ))}
+      <div
+        className="row"
+        style={{ gap: 4, margin: "32px 0 24px", flexWrap: "wrap" }}
+      >
+        {(["text", "url", "image", "pdf", "batch"] as const).map((m) => {
+          const active = mode === m;
+          return (
+            <button
+              key={m}
+              type="button"
+              onClick={() => switchMode(m)}
+              style={{
+                fontSize: 13,
+                padding: "7px 14px",
+                borderRadius: 999,
+                border: 0,
+                cursor: "pointer",
+                background: active ? "var(--paper-3)" : "transparent",
+                color: active ? "var(--ink)" : "var(--muted)",
+                fontWeight: active ? 600 : 400,
+              }}
+            >
+              {m === "text"
+                ? "Paste text"
+                : m === "url"
+                  ? "URL"
+                  : m === "image"
+                    ? "Image"
+                    : m === "pdf"
+                      ? "PDF"
+                      : "Batch URLs"}
+            </button>
+          );
+        })}
       </div>
 
       {/* Image mode */}
@@ -167,7 +191,7 @@ export default function IngestPage() {
           <button
             type="submit"
             disabled={loading}
-            className="inline-block rounded-lg bg-foreground px-6 py-3 text-sm font-medium text-background hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed"
+            className="btn primary disabled:opacity-50"
           >
             {loading ? "Processing..." : "Ingest image"}
           </button>
@@ -227,7 +251,7 @@ export default function IngestPage() {
           <button
             type="submit"
             disabled={loading}
-            className="inline-block rounded-lg bg-foreground px-6 py-3 text-sm font-medium text-background hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed"
+            className="btn primary disabled:opacity-50"
           >
             {loading ? "Processing..." : "Ingest PDF"}
           </button>
@@ -308,7 +332,7 @@ export default function IngestPage() {
           <button
             type="submit"
             disabled={loading}
-            className="inline-block rounded-lg bg-foreground px-6 py-3 text-sm font-medium text-background hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed"
+            className="btn primary disabled:opacity-50"
           >
             {loading ? "Processing..." : "Preview"}
           </button>
@@ -323,6 +347,46 @@ export default function IngestPage() {
         </div>
       </form>
       )}
+
+      {/* What ingestion guarantees */}
+      <div
+        className="row"
+        style={{
+          gap: 18,
+          marginTop: 36,
+          paddingTop: 24,
+          borderTop: "1px solid var(--rule)",
+          flexWrap: "wrap",
+          alignItems: "flex-start",
+        }}
+      >
+        {(
+          [
+            ["One canonical page", "duplicate sources merge, never fork"],
+            ["Provenance kept", "every source traces to who triggered it"],
+            ["Agents welcome", "the same path powers the MCP + API"],
+          ] as const
+        ).map(([h, b]) => (
+          <div key={h} style={{ flex: "1 1 200px" }}>
+            <p
+              className="receipt"
+              style={{ fontSize: 12.5, color: "var(--ink)", margin: "0 0 4px" }}
+            >
+              {h}
+            </p>
+            <p
+              style={{
+                fontSize: 12.5,
+                color: "var(--muted)",
+                margin: 0,
+                lineHeight: 1.5,
+              }}
+            >
+              {b}
+            </p>
+          </div>
+        ))}
+      </div>
     </main>
   );
 }
