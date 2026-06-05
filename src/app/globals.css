@@ -552,7 +552,8 @@ body {
 }
 
 /* ---------------------------------------------------------------------------
-   Legacy "lab-instrument" label — kept while screens migrate to .fmark.
+   Legacy mono section label. No component consumers remain (all screens use
+   .fmark) — retained only for backward compat with any external/markdown HTML.
    --------------------------------------------------------------------------- */
 .label {
   font-family: var(--font-mono);

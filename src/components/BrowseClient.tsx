@@ -200,8 +200,9 @@ export function BrowseClient({
     return r;
   }, [pages, q, sort, tag]);
 
-  // Lens links preserve the active topic via the client `tag` (server tag is
-  // optional; the client filter is authoritative here).
+  // Lens links switch the All/Mine scope only (a server navigation that
+  // re-fetches the page set). The active topic is local UI state, so it
+  // intentionally resets when the scope changes.
   const lensHref = (scope: string) =>
     `/wiki?scope=${encodeURIComponent(scope)}`;
 

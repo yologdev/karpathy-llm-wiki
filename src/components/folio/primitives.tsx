@@ -1,3 +1,5 @@
+import type { SourceEntry } from "@/lib/types";
+
 /**
  * Folio provenance primitives — the visual language of the redesign
  * (`design/ui.jsx`). Pure presentational; the segmented/dot/chip styling lives
@@ -122,9 +124,19 @@ export function Avatar({
   );
 }
 
-/** Tiny source-type tag (URL / X / PDF / IMG). */
-export function SrcChip({ type }: { type: string }) {
-  const map: Record<string, string> = { url: "URL", x: "X", pdf: "PDF", img: "IMG" };
+/** Tiny source-type tag. Uses the same provenance union as the trail/sources so
+ *  every source type maps to a deliberate short label (the compiler enforces
+ *  exhaustiveness). */
+export function SrcChip({ type }: { type: SourceEntry["type"] }) {
+  const map: Record<SourceEntry["type"], string> = {
+    url: "URL",
+    text: "TXT",
+    "x-mention": "X",
+    "wiki-ref": "WIKI",
+    image: "IMG",
+    pdf: "PDF",
+    youtube: "YT",
+  };
   return (
     <span
       className="receipt"
@@ -137,7 +149,7 @@ export function SrcChip({ type }: { type: string }) {
         borderRadius: 3,
       }}
     >
-      {map[type] ?? type.toUpperCase()}
+      {map[type]}
     </span>
   );
 }
