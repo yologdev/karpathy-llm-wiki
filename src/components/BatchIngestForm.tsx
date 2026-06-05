@@ -15,6 +15,12 @@ export function BatchIngestForm() {
   const [items, setItems] = useState<BatchItem[]>([]);
   const [running, setRunning] = useState(false);
   const [validationError, setValidationError] = useState<string | null>(null);
+  // Async (queue) mode: enqueue and return immediately instead of streaming.
+  const [queueMode, setQueueMode] = useState(false);
+  const [queuedInfo, setQueuedInfo] = useState<{
+    queued: number;
+    total: number;
+  } | null>(null);
 
   const parseUrls = useCallback((text: string): string[] => {
     return text
@@ -49,6 +55,36 @@ export function BatchIngestForm() {
     const err = validateUrls(urls);
     if (err) {
       setValidationError(err);
+      return;
+    }
+
+    // Async (queue) mode: enqueue and return — no streaming.
+    if (queueMode) {
+      setRunning(true);
+      try {
+        const res = await fetch("/api/ingest/batch", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ urls, async: true }),
+        });
+        const data = (await res.json().catch(() => ({}))) as {
+          queued?: number;
+          total?: number;
+          error?: string;
+        };
+        if (!res.ok) {
+          setValidationError(data.error || "Batch request failed");
+          return;
+        }
+        setQueuedInfo({
+          queued: data.queued ?? urls.length,
+          total: data.total ?? urls.length,
+        });
+      } catch {
+        setValidationError("Network error — could not reach the server");
+      } finally {
+        setRunning(false);
+      }
       return;
     }
 
@@ -173,6 +209,7 @@ export function BatchIngestForm() {
     setItems([]);
     setValidationError(null);
     setRunning(false);
+    setQueuedInfo(null);
   }
 
   const successCount = items.filter((i) => i.status === "success").length;
@@ -182,7 +219,7 @@ export function BatchIngestForm() {
 
   return (
     <div className="space-y-6">
-      {!running && items.length === 0 && (
+      {!running && items.length === 0 && !queuedInfo && (
         <form onSubmit={handleSubmit} className="space-y-6">
           <div>
             <label
@@ -205,6 +242,24 @@ export function BatchIngestForm() {
             </p>
           </div>
 
+          {/* Async (queue) toggle — process in the background instead of
+              streaming. Good for large/bulk batches. */}
+          <label className="flex items-start gap-2 text-sm text-foreground/70">
+            <input
+              type="checkbox"
+              checked={queueMode}
+              onChange={(e) => setQueueMode(e.target.checked)}
+              className="mt-0.5"
+            />
+            <span>
+              Queue in background
+              <span className="block text-xs text-foreground/40">
+                Enqueue the batch and return immediately — pages appear as they
+                process. Best for large batches; doesn&rsquo;t stream progress.
+              </span>
+            </span>
+          </label>
+
           {validationError && (
             <Alert variant="error">
               {validationError}
@@ -215,9 +270,33 @@ export function BatchIngestForm() {
             type="submit"
             className="inline-block rounded-lg bg-foreground px-6 py-3 text-sm font-medium text-background hover:opacity-90 transition-opacity"
           >
-            Process All
+            {queueMode ? "Queue All" : "Process All"}
           </button>
         </form>
+      )}
+
+      {queuedInfo && (
+        <div className="space-y-4">
+          <Alert variant="success">
+            ✓ Queued {queuedInfo.queued} of {queuedInfo.total}{" "}
+            {queuedInfo.total === 1 ? "URL" : "URLs"} for background ingestion.
+            They&rsquo;ll appear in the wiki as they finish.
+          </Alert>
+          <div className="flex items-center gap-4">
+            <button
+              onClick={reset}
+              className="inline-block rounded-lg bg-foreground px-6 py-3 text-sm font-medium text-background hover:opacity-90 transition-opacity cursor-pointer"
+            >
+              Queue more
+            </button>
+            <Link
+              href="/wiki"
+              className="text-sm text-foreground/60 hover:text-foreground transition-colors"
+            >
+              View wiki →
+            </Link>
+          </div>
+        </div>
       )}
 
       {items.length > 0 && (

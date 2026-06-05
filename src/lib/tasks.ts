@@ -39,6 +39,7 @@ export type Task =
       content?: string;
       owner?: string;
       author?: string;
+      tags?: string[];
     }
   | {
       /** Autonomous maintenance, enqueued by the scan cron (Q2): `reconcile` a
@@ -118,6 +119,10 @@ export function parseTask(body: unknown): Task | null {
       const hasUrl = typeof t.url === "string" && t.url.trim() !== "";
       const hasContent = typeof t.content === "string" && t.content.trim() !== "";
       if (!hasUrl && !hasContent) return null; // need a source
+      const tags =
+        Array.isArray(t.tags) && t.tags.every((x) => typeof x === "string")
+          ? (t.tags as string[])
+          : undefined;
       return {
         kind: "ingest",
         ...(hasUrl ? { url: t.url as string } : {}),
@@ -125,6 +130,7 @@ export function parseTask(body: unknown): Task | null {
         ...(hasContent ? { content: t.content as string } : {}),
         ...(typeof t.owner === "string" ? { owner: t.owner } : {}),
         ...(typeof t.author === "string" ? { author: t.author } : {}),
+        ...(tags && tags.length > 0 ? { tags } : {}),
       };
     }
     case "maintain": {

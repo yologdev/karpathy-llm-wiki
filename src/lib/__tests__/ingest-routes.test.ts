@@ -27,7 +27,11 @@ vi.mock("@/lib/auth", () => ({
   getServicePrincipal: vi.fn(() => null),
 }));
 
+// The async batch path enqueues; default to "queued" (true).
+vi.mock("@/lib/tasks", () => ({ enqueueTask: vi.fn(async () => true) }));
+
 import { ingest, ingestUrl, reingest } from "@/lib/ingest";
+import { enqueueTask } from "@/lib/tasks";
 import { readWikiPageWithFrontmatter } from "@/lib/wiki";
 import { getPrincipal } from "@/lib/auth";
 import { getServicePrincipal } from "@/lib/auth";
@@ -42,6 +46,7 @@ const mockedReingest = vi.mocked(reingest);
 const mockedReadWikiPage = vi.mocked(readWikiPageWithFrontmatter);
 const mockedGetPrincipal = vi.mocked(getPrincipal);
 const mockedGetServicePrincipal = vi.mocked(getServicePrincipal);
+const mockedEnqueue = vi.mocked(enqueueTask);
 
 function makeRequest(url: string, body: unknown, token?: string): NextRequest {
   const headers: Record<string, string> = { "Content-Type": "application/json" };
@@ -384,6 +389,80 @@ describe("POST /api/ingest — service token auth", () => {
 // ===========================================================================
 // POST /api/ingest/batch — service token auth
 // ===========================================================================
+describe("POST /api/ingest/batch — async (queue) mode", () => {
+  beforeEach(() => {
+    mockedEnqueue.mockClear();
+    mockedIngestUrl.mockClear();
+    mockedEnqueue.mockResolvedValue(true);
+  });
+
+  it("enqueues one ingest task per URL and returns immediately (no streaming)", async () => {
+    const res = await POST_BATCH(
+      makeRequest("http://localhost:3000/api/ingest/batch", {
+        urls: ["https://example.com/a", "https://example.com/b"],
+        tags: ["docs"],
+        async: true,
+      }),
+    );
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(data).toMatchObject({ mode: "async", queued: 2, total: 2 });
+    // Did NOT run the synchronous ingest.
+    expect(mockedIngestUrl).not.toHaveBeenCalled();
+    expect(mockedEnqueue).toHaveBeenCalledTimes(2);
+    expect(mockedEnqueue).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: "ingest",
+        url: "https://example.com/a",
+        owner: "test-user",
+        author: "test-user",
+        tags: ["docs"],
+      }),
+    );
+  });
+
+  it("tolerates a mid-batch enqueue throw — reports queued + failed, not 500", async () => {
+    mockedEnqueue
+      .mockResolvedValueOnce(true)
+      .mockRejectedValueOnce(new Error("queue backpressure"))
+      .mockResolvedValueOnce(true);
+    const res = await POST_BATCH(
+      makeRequest("http://localhost:3000/api/ingest/batch", {
+        urls: [
+          "https://example.com/a",
+          "https://example.com/b",
+          "https://example.com/c",
+        ],
+        async: true,
+      }),
+    );
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ queued: 2, total: 3, failed: 1 });
+  });
+
+  it("503s when the queue is unavailable (nothing enqueued)", async () => {
+    mockedEnqueue.mockResolvedValue(false);
+    const res = await POST_BATCH(
+      makeRequest("http://localhost:3000/api/ingest/batch", {
+        urls: ["https://example.com/a"],
+        async: true,
+      }),
+    );
+    expect(res.status).toBe(503);
+  });
+
+  it("still validates URLs before enqueuing", async () => {
+    const res = await POST_BATCH(
+      makeRequest("http://localhost:3000/api/ingest/batch", {
+        urls: ["not-a-url"],
+        async: true,
+      }),
+    );
+    expect(res.status).toBe(400);
+    expect(mockedEnqueue).not.toHaveBeenCalled();
+  });
+});
+
 describe("POST /api/ingest/batch — service token auth", () => {
   it("accepts a valid service token when Clerk session is absent", async () => {
     mockedGetPrincipal.mockResolvedValue(null);

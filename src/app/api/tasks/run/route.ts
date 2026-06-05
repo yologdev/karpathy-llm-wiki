@@ -81,6 +81,7 @@ export async function POST(req: Request) {
     const opts = {
       ...(task.owner ? { owner: task.owner } : {}),
       ...(task.author ? { author: task.author, triggeredBy: task.author } : {}),
+      ...(task.tags && task.tags.length > 0 ? { tags: task.tags } : {}),
     };
     const result = task.url
       ? await ingestUrl(task.url, opts)
