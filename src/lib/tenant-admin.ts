@@ -2,7 +2,7 @@
  * Per-tenant admin ops (tenant-silos P5c).
  */
 
-import { listWikiPages, tenantForOwner } from "./wiki";
+import { listWikiPages, tenantForOwner, validateTenant } from "./wiki";
 import { deleteWikiPage } from "./lifecycle";
 import { getStorage } from "./storage";
 import { isEnoent } from "./errors";
@@ -27,6 +27,10 @@ export interface DeleteTenantResult {
  */
 export async function deleteTenant(handle: string): Promise<DeleteTenantResult> {
   const tenant = tenantForOwner(handle);
+  // Defense in depth before an irreversible prefix `rm -rf`: ownerToTenant
+  // already strips path-unsafe chars, but the storage layer has no traversal
+  // guard of its own, so assert the tenant can't contain a separator/`..`.
+  validateTenant(tenant);
   const errors: string[] = [];
 
   // Owner-only slugs — NOT contributors, so we never delete another tenant's

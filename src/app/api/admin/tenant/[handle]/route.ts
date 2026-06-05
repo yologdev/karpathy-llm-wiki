@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getServicePrincipal, getPrincipal } from "@/lib/auth";
 import { isOwnerHandle } from "@/lib/owner";
-import { tenantForOwner } from "@/lib/wiki";
+import { tenantForOwner, DEFAULT_TENANT } from "@/lib/wiki";
 import { deleteTenant } from "@/lib/tenant-admin";
 import { decodeSlug } from "@/lib/slugify";
 import { getErrorMessage } from "@/lib/errors";
@@ -30,9 +30,21 @@ export async function DELETE(
 
   const service = getServicePrincipal(req);
   const principal = service ?? (await getPrincipal());
+  // "self" = same TENANT, not same handle — distinct handles that normalize to
+  // the same tenant (e.g. "a.b"/"a-b") share a silo and can self-delete it.
   const isSelf = !!principal && tenantForOwner(principal.handle) === tenant;
-  if (!service && !isOwnerHandle(principal?.handle) && !isSelf) {
+  const isAdmin = !!service || isOwnerHandle(principal?.handle);
+  if (!isAdmin && !isSelf) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
+  // The platform tenant holds all seed/shared content — only admins (service
+  // token or site owner) may delete it, never a self-serve caller.
+  if (tenant === DEFAULT_TENANT && !isAdmin) {
+    return NextResponse.json(
+      { error: "Forbidden: the platform tenant can only be deleted by an admin." },
+      { status: 403 },
+    );
   }
 
   const confirm = new URL(req.url).searchParams.get("confirm");
@@ -51,7 +63,11 @@ export async function DELETE(
       `deleteTenant "${tenant}" requested by ${principal?.handle ?? "service"}`,
     );
     const result = await deleteTenant(handle);
-    return NextResponse.json(result);
+    // 200 = fully deleted; 207 = partial (some pages failed — see `errors`), so
+    // the caller doesn't read a clean 200 as complete success.
+    return NextResponse.json(result, {
+      status: result.errors.length > 0 ? 207 : 200,
+    });
   } catch (err) {
     logger.error("tenant-admin", "deleteTenant failed", err);
     return NextResponse.json({ error: getErrorMessage(err) }, { status: 500 });

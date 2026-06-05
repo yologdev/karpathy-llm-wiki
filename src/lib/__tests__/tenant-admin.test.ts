@@ -145,4 +145,15 @@ describe("DELETE /api/admin/tenant/[handle] — gating", () => {
     expect((await res.json()).deletedPages).toBe(1);
     expect(await readWikiPage("alice-1")).toBeNull();
   });
+
+  it("admins (service token) CAN delete the platform yopedia tenant", async () => {
+    process.env.YOPEDIA_SERVICE_TOKEN = "tok";
+    process.env.YOPEDIA_SERVICE_PRINCIPAL = "yopedia";
+    await write("seed", {}); // ownerless → yopedia
+
+    const res = await del("yopedia", { token: "tok", confirm: "yopedia" });
+    expect(res.status).toBe(200);
+    expect((await res.json()).deletedPages).toBe(1);
+    expect(await readWikiPage("seed")).toBeNull();
+  });
 });
