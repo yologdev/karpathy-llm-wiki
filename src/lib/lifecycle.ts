@@ -22,7 +22,8 @@ import { escapeRegex } from "./links";
 import { getErrorMessage } from "./errors";
 import { removeAliasForPage, updateAliasIndexForPage } from "./alias-index";
 import { removeSourceForPage } from "./source-index";
-import { syncCommonsForPage, removeCommonsEntryBySlug } from "./commons";
+import { syncCommonsForPage, removeCommonsEntryBySlug, belongsInCommons } from "./commons";
+import { addVaultRef } from "./vault";
 import { parseFrontmatter } from "./frontmatter";
 import type { LogOperation } from "./wiki";
 import { logger } from "./logger";
@@ -381,6 +382,27 @@ async function runPageLifecycleOp(
     }
   } catch (err) {
     logger.warn("silo", `silo mirror skipped for "${slug}":`, err);
+  }
+
+  // 3d. Auto-add the page into its owner's vault — the commons-first reference
+  //     lens. A contributor's own commons pages show in their vault without a
+  //     manual curate (ingest-into-my-vault). Owner-keyed, commons-only (public,
+  //     non-agent), humans-only (skip "system" and agent-owned `a--b` handles).
+  //     Idempotent + fail-soft — a vault error must never break the write.
+  try {
+    if (op.kind !== "delete") {
+      const fm = parseFrontmatter(op.content).data;
+      const owner = typeof fm.owner === "string" ? fm.owner.trim() : "";
+      const isCommons = belongsInCommons({
+        visibility: typeof fm.visibility === "string" ? fm.visibility : undefined,
+        type: typeof fm.type === "string" ? fm.type : undefined,
+      });
+      if (owner && owner !== "system" && !owner.includes("--") && isCommons) {
+        await addVaultRef(owner, slug);
+      }
+    }
+  } catch (err) {
+    logger.warn("vault", `vault auto-ref skipped for "${slug}":`, err);
   }
 
   // 4. Cross-reference other pages.
