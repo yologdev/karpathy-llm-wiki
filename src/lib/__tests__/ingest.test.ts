@@ -9,6 +9,8 @@ import {
   reingest,
   buildIngestSystemPrompt,
   chunkText,
+  parseConceptMarker,
+  parseDisputedMarker,
 } from "../ingest";
 import { slugify } from "../slugify";
 import { loadPageConventions } from "../schema";
@@ -26,13 +28,31 @@ import { MAX_LLM_INPUT_CHARS } from "../constants";
 import { listWikiPages, readWikiPage, writeWikiPage, readWikiPageWithFrontmatter } from "../wiki";
 import { resetSourceIndex } from "../source-index";
 import { resetAliasIndex } from "../alias-index";
+import { hasEmbeddingSupport, searchByVector } from "../embeddings";
 import type { IndexEntry } from "../types";
+
+const mockedHasEmbeddingSupport = vi.mocked(hasEmbeddingSupport);
+const mockedSearchByVector = vi.mocked(searchByVector);
 
 // Mock the LLM module so ingest never calls the real API
 vi.mock("../llm", () => ({
   hasLLMKey: vi.fn(() => false),
   callLLM: vi.fn(),
 }));
+
+// Partial-mock embeddings: keep every real export (contentHash, the no-op
+// embed/upsert behaviour, etc.) but make `hasEmbeddingSupport` and
+// `searchByVector` overridable so the concept resolver's SEMANTIC step (layer 3)
+// can be exercised. Defaults delegate to the real impls, so non-embedding tests
+// behave exactly as before (no provider → support false → semantic step skipped).
+vi.mock("../embeddings", async (orig) => {
+  const actual = await orig<typeof import("../embeddings")>();
+  return {
+    ...actual,
+    hasEmbeddingSupport: vi.fn(actual.hasEmbeddingSupport),
+    searchByVector: vi.fn(actual.searchByVector),
+  };
+});
 
 // Mock unpdf for PDF extraction tests
 const mockIngestExtractText = vi.fn();
@@ -1582,10 +1602,410 @@ describe("schema-aware ingest prompt", () => {
     // intact — graceful degradation rather than a crash on a fresh clone.
     const prompt = await buildIngestSystemPrompt();
     expect(prompt).toContain("You are a wiki editor");
-    expect(prompt).toContain("Output pure markdown and nothing else");
+    expect(prompt).toContain("then pure markdown, and nothing else");
+    // Asks the LLM to emit the leading CONCEPT marker (drives concept-slug
+    // convergence — see parseConceptMarker).
+    expect(prompt).toContain("CONCEPT: <canonical concept name>");
     // Fidelity section: the prompt asks for a Details section that preserves
     // substantive source content (not just a thin summary).
     expect(prompt).toContain("## Details");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// parseConceptMarker — pull the leading CONCEPT line out of synthesis output
+// ---------------------------------------------------------------------------
+
+describe("parseConceptMarker", () => {
+  it("extracts the concept and strips the marker line from the body", () => {
+    const { concept, aliases, body } = parseConceptMarker(
+      "CONCEPT: Transformer\n\n# Transformer\n\n## Summary\n\nAttention.",
+    );
+    expect(concept).toBe("Transformer");
+    expect(aliases).toEqual([]);
+    expect(body).toBe("# Transformer\n\n## Summary\n\nAttention.");
+    expect(body).not.toContain("CONCEPT:");
+  });
+
+  it("parses the ALIASES line into a synonym list and strips both headers", () => {
+    const { concept, aliases, body } = parseConceptMarker(
+      "CONCEPT: Retrieval-Augmented Generation\nALIASES: RAG, retrieval augmentation; RAG pipeline\n\n# RAG\n\nBody.",
+    );
+    expect(concept).toBe("Retrieval-Augmented Generation");
+    expect(aliases).toEqual(["RAG", "retrieval augmentation", "RAG pipeline"]);
+    expect(body).toBe("# RAG\n\nBody.");
+    expect(body).not.toContain("ALIASES:");
+  });
+
+  it("treats ALIASES: none as no aliases", () => {
+    const { concept, aliases, body } = parseConceptMarker(
+      "CONCEPT: Backpropagation\nALIASES: none\n\n# Backpropagation\n",
+    );
+    expect(concept).toBe("Backpropagation");
+    expect(aliases).toEqual([]);
+    expect(body).toBe("# Backpropagation\n");
+  });
+
+  it("returns concept '' and the unchanged body when no marker is present", () => {
+    const raw = "# Plain Page\n\n## Summary\n\nNo marker here.";
+    const { concept, aliases, body } = parseConceptMarker(raw);
+    expect(concept).toBe("");
+    expect(aliases).toEqual([]);
+    expect(body).toBe(raw);
+  });
+
+  it("is case-insensitive and tolerates leading whitespace / a BOM", () => {
+    const { concept, body } = parseConceptMarker(
+      "﻿  concept:   Self-Attention  \n# Title",
+    );
+    expect(concept).toBe("Self-Attention");
+    expect(body).toBe("# Title");
+  });
+
+  it("handles CRLF line endings", () => {
+    const { concept, body } = parseConceptMarker(
+      "CONCEPT: RAG\r\n\r\n# RAG\r\n",
+    );
+    expect(concept).toBe("RAG");
+    expect(body).toBe("# RAG\r\n");
+  });
+
+  it("only consumes a marker on the FIRST line, not mid-body", () => {
+    const raw = "# Title\n\nThe line CONCEPT: not-a-marker appears in prose.";
+    const { concept, body } = parseConceptMarker(raw);
+    expect(concept).toBe("");
+    expect(body).toBe(raw);
+  });
+});
+
+describe("parseDisputedMarker", () => {
+  it("detects a leading DISPUTED: yes line and strips it", () => {
+    const { disputed, body } = parseDisputedMarker(
+      "DISPUTED: yes\n\n# Topic\n\nBoth views.",
+    );
+    expect(disputed).toBe(true);
+    expect(body).toBe("# Topic\n\nBoth views.");
+    expect(body).not.toContain("DISPUTED:");
+  });
+
+  it("returns disputed=false and the unchanged body when no marker", () => {
+    const raw = "# Topic\n\nA reconciled, undisputed page.";
+    const { disputed, body } = parseDisputedMarker(raw);
+    expect(disputed).toBe(false);
+    expect(body).toBe(raw);
+  });
+
+  it("does not trip on the word disputed appearing mid-body", () => {
+    const raw = "# Topic\n\nThe sources are DISPUTED: yes, in prose.";
+    const { disputed, body } = parseDisputedMarker(raw);
+    expect(disputed).toBe(false);
+    expect(body).toBe(raw);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// ingest — concept-slug convergence (content-derived slug from CONCEPT marker)
+// ---------------------------------------------------------------------------
+
+describe("ingest — concept-slug convergence", () => {
+  beforeEach(() => {
+    resetSourceIndex();
+    resetAliasIndex();
+    mockedHasLLMKey.mockReturnValue(true);
+  });
+  afterEach(() => {
+    mockedHasLLMKey.mockReturnValue(false);
+    mockedCallLLM.mockReset();
+  });
+
+  it("derives the page slug from the CONCEPT marker, not the title", async () => {
+    mockedCallLLM.mockResolvedValue(
+      "CONCEPT: Transformer\n\n# Transformer\n\n## Summary\n\nSelf-attention architecture.",
+    );
+
+    const result = await ingest(
+      "An Illustrated Intro to Transformers",
+      "Transformers use self-attention. More detail about the architecture here.",
+    );
+
+    // Slug comes from the concept, not slugify(title).
+    expect(result.primarySlug).toBe("transformer");
+
+    const page = await readWikiPageWithFrontmatter("transformer");
+    expect(page).not.toBeNull();
+    // Marker line never leaks into the stored body.
+    expect(page!.content).not.toContain("CONCEPT:");
+    // The page is titled by the concept, and the source title becomes an alias
+    // so a later ingest under that title also converges here.
+    expect(page!.frontmatter.aliases).toContain(
+      "An Illustrated Intro to Transformers",
+    );
+  });
+
+  it("converges two differently-titled sources of one concept onto a single page", async () => {
+    mockedCallLLM.mockResolvedValue(
+      "CONCEPT: Transformer\n\n# Transformer\n\n## Summary\n\nThe attention architecture.",
+    );
+
+    await ingest("Intro to Transformers", "First source about transformers. Details.");
+    await ingest("The Transformer, Explained", "A second, differently-worded source. More.");
+
+    const entries = await listWikiPages();
+    expect(entries).toHaveLength(1);
+    expect(entries[0].slug).toBe("transformer");
+
+    const page = await readWikiPageWithFrontmatter("transformer");
+    // Both ingests counted as sources of the one concept page. (YAML may
+    // round-trip the count as a number, so compare numerically.)
+    expect(Number(page!.frontmatter.source_count)).toBe(2);
+    // Both source titles recorded as aliases.
+    expect(page!.frontmatter.aliases).toContain("Intro to Transformers");
+    expect(page!.frontmatter.aliases).toContain("The Transformer, Explained");
+  });
+
+  it("falls back to the title slug when the LLM emits no CONCEPT marker", async () => {
+    mockedCallLLM.mockResolvedValue(
+      "# Plain Page\n\n## Summary\n\nNo concept marker emitted.",
+    );
+
+    const result = await ingest("Plain Title", "Some content without a marker. More.");
+
+    expect(result.primarySlug).toBe("plain-title");
+    const page = await readWikiPageWithFrontmatter("plain-title");
+    // No self-alias when no convergence happened (concept == title route).
+    expect((page!.frontmatter.aliases ?? []) as string[]).not.toContain(
+      "Plain Title",
+    );
+  });
+
+  it("records the LLM-supplied concept synonyms as aliases", async () => {
+    mockedCallLLM.mockResolvedValue(
+      "CONCEPT: Retrieval-Augmented Generation\nALIASES: RAG, retrieval augmentation\n\n# RAG\n\n## Summary\n\nGrounded generation.",
+    );
+
+    const result = await ingest(
+      "A Deep Dive on RAG Systems",
+      "RAG grounds an LLM in retrieved documents. Architecture details here.",
+    );
+
+    expect(result.primarySlug).toBe("retrieval-augmented-generation");
+    const page = await readWikiPageWithFrontmatter(
+      "retrieval-augmented-generation",
+    );
+    const aliases = (page!.frontmatter.aliases ?? []) as string[];
+    expect(aliases).toContain("RAG");
+    expect(aliases).toContain("retrieval augmentation");
+    // Plus the source title.
+    expect(aliases).toContain("A Deep Dive on RAG Systems");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// ingest — semantic concept resolver (layer 3: embedding nearest-page merge)
+// ---------------------------------------------------------------------------
+
+describe("ingest — semantic concept resolver", () => {
+  beforeEach(() => {
+    resetSourceIndex();
+    resetAliasIndex();
+    mockedHasLLMKey.mockReturnValue(true);
+    // Each ingest's synthesis reports a concept derived from the source body, so
+    // two differently-worded sources get DIFFERENT concept slugs — only the
+    // embedding step can merge them.
+    mockedCallLLM.mockImplementation(async (_system: string, user: string) =>
+      user.includes("alpha")
+        ? "CONCEPT: Alpha Thing\nALIASES: none\n\n# Alpha Thing\n\n## Summary\n\nAbout alpha."
+        : "CONCEPT: Beta Thing\nALIASES: none\n\n# Beta Thing\n\n## Summary\n\nAbout beta.",
+    );
+  });
+  afterEach(() => {
+    mockedHasLLMKey.mockReturnValue(false);
+    mockedCallLLM.mockReset();
+    mockedHasEmbeddingSupport.mockReturnValue(false);
+    mockedSearchByVector.mockResolvedValue([]);
+  });
+
+  it("merges a differently-worded source into the nearest page above threshold", async () => {
+    mockedHasEmbeddingSupport.mockReturnValue(true);
+    // The nearest existing page is "alpha-thing" with a confident score.
+    mockedSearchByVector.mockResolvedValue([
+      { slug: "alpha-thing", score: 0.95 },
+    ]);
+
+    // First source forks its own page (no existing page to merge into yet —
+    // the search hit names a page that doesn't exist at that moment, so it's
+    // skipped and "alpha-thing" is created).
+    await ingest("Alpha Source", "First source, alpha topic. Details here.");
+    expect((await listWikiPages()).map((p) => p.slug)).toEqual(["alpha-thing"]);
+
+    // Second source's concept slug would be "beta-thing", but the embedding
+    // search points at "alpha-thing" ≥ threshold (same owner) → merge.
+    const result = await ingest("Beta Source", "Second source, beta wording. More.");
+
+    expect(result.primarySlug).toBe("alpha-thing");
+    const pages = await listWikiPages();
+    expect(pages).toHaveLength(1);
+    expect(pages[0].slug).toBe("alpha-thing");
+    expect(
+      Number(
+        (await readWikiPageWithFrontmatter("alpha-thing"))!.frontmatter
+          .source_count,
+      ),
+    ).toBe(2);
+  });
+
+  it("forks a new page when the nearest hit is below threshold", async () => {
+    mockedHasEmbeddingSupport.mockReturnValue(true);
+    // Nearest page exists but is NOT similar enough — err toward a new page.
+    mockedSearchByVector.mockResolvedValue([
+      { slug: "alpha-thing", score: 0.5 },
+    ]);
+
+    await ingest("Alpha Source", "First source, alpha topic. Details here.");
+    await ingest("Beta Source", "Second source, beta wording. More.");
+
+    const slugs = (await listWikiPages()).map((p) => p.slug).sort();
+    expect(slugs).toEqual(["alpha-thing", "beta-thing"]);
+  });
+
+  it("does NOT semantic-merge an agent-knowledge ingest into a public page (scope guard)", async () => {
+    mockedHasEmbeddingSupport.mockReturnValue(true);
+    mockedSearchByVector.mockResolvedValue([
+      { slug: "alpha-thing", score: 0.95 },
+    ]);
+
+    // Public page first (no `type`).
+    await ingest("Alpha Source", "First source, alpha topic. Details here.");
+    // Same owner, semantically near — but agent-scoped. The scope guard forks
+    // rather than folding agent-knowledge into the public feed page.
+    const result = await ingest("Beta Source", "Second source, beta wording. More.", {
+      pageType: "agent-knowledge",
+    });
+
+    expect(result.primarySlug).toBe("beta-thing");
+    expect(await readWikiPageWithFrontmatter("beta-thing")).not.toBeNull();
+    // The public page was left untouched (still a single source).
+    const alpha = await readWikiPageWithFrontmatter("alpha-thing");
+    expect(Number(alpha!.frontmatter.source_count)).toBe(1);
+  });
+
+  it("does NOT merge across owners even on a high-confidence hit", async () => {
+    mockedHasEmbeddingSupport.mockReturnValue(true);
+    mockedSearchByVector.mockResolvedValue([
+      { slug: "alpha-thing", score: 0.95 },
+    ]);
+
+    // Alice owns the alpha page.
+    await ingest("Alpha Source", "First source, alpha topic. Details here.", {
+      owner: "alice",
+      author: "alice",
+    });
+    // Bob ingests a semantically-near source — the same-silo guard must fork
+    // rather than attach Bob's source to Alice's page.
+    await ingest("Beta Source", "Second source, beta wording. More.", {
+      owner: "bob",
+      author: "bob",
+    });
+
+    const slugs = (await listWikiPages()).map((p) => p.slug).sort();
+    expect(slugs).toEqual(["alpha-thing", "beta-thing"]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// ingest — reconcile on merge (layer 4: accumulate-and-reconcile + disputed)
+// ---------------------------------------------------------------------------
+
+describe("ingest — reconcile on merge", () => {
+  // Synthesis emits a CONCEPT marker; the reconcile call (distinguished by its
+  // system prompt) returns the merged body. Keyed on the prompt so the two LLM
+  // roles never cross-contaminate.
+  function wire(reconcileOutput: string) {
+    mockedCallLLM.mockImplementation(async (system: string) =>
+      system.includes("canonical page about one concept")
+        ? reconcileOutput
+        : "CONCEPT: Topic\nALIASES: none\n\n# Topic\n\n## Summary\n\nA take on the topic.",
+    );
+  }
+
+  beforeEach(() => {
+    resetSourceIndex();
+    resetAliasIndex();
+    mockedHasLLMKey.mockReturnValue(true);
+  });
+  afterEach(() => {
+    mockedHasLLMKey.mockReturnValue(false);
+    mockedCallLLM.mockReset();
+  });
+
+  it("re-synthesizes existing + new into the merged body (not an overwrite)", async () => {
+    wire("# Topic\n\n## Summary\n\nMerged: both the first and second takes combined.");
+
+    await ingest("Topic A", "First source for the topic. Details one.");
+    const result = await ingest("Topic B", "Second complementary source. Details two.");
+
+    expect(result.primarySlug).toBe("topic");
+    const page = await readWikiPageWithFrontmatter("topic");
+    expect(page!.content).toContain("Merged: both the first and second takes combined.");
+    expect(page!.frontmatter.disputed).toBe(false);
+    // The merge counted both sources onto the one page.
+    expect(Number(page!.frontmatter.source_count)).toBe(2);
+
+    // Reconcile must see the frontmatter-STRIPPED existing body, never the YAML
+    // block — otherwise page metadata (owner/content_hash/…) leaks into the
+    // merge prompt and can bleed into the merged prose.
+    const reconcileCall = mockedCallLLM.mock.calls.find(([sys]) =>
+      (sys as string).includes("canonical page about one concept"),
+    );
+    expect(reconcileCall).toBeDefined();
+    const reconcileUser = reconcileCall![1] as string;
+    expect(reconcileUser).not.toContain("content_hash:");
+    expect(reconcileUser).not.toMatch(/^owner:/m);
+  });
+
+  it("flags the page disputed when reconcile reports a contradiction", async () => {
+    wire("DISPUTED: yes\n\n# Topic\n\n## Summary\n\nExisting says X; the new source says Y.");
+
+    await ingest("Topic A", "Original claim about the topic. Details.");
+    await ingest("Topic B", "A contradicting claim about the topic. Details.");
+
+    const page = await readWikiPageWithFrontmatter("topic");
+    expect(page!.frontmatter.disputed).toBe(true);
+    expect(page!.content).toContain("Existing says X; the new source says Y.");
+    // The DISPUTED marker is stripped from the stored body.
+    expect(page!.content).not.toContain("DISPUTED:");
+  });
+
+  it("does NOT reconcile (no extra LLM call) when there is no existing page", async () => {
+    wire("# Topic\n\nMerged body that must never appear for a brand-new page.");
+
+    await ingest("Topic A", "Only source. Details.");
+
+    // Exactly one page, and the reconcile output never reached it.
+    const page = await readWikiPageWithFrontmatter("topic");
+    expect(page!.content).not.toContain("Merged body that must never appear");
+    expect(page!.frontmatter.disputed).toBe(false);
+  });
+
+  it("degrades to the new body (ingest still succeeds) when reconcile throws", async () => {
+    // callLLM throws on API errors / empty output; the merge path must not let
+    // that fail an ingest whose synthesis already succeeded.
+    mockedCallLLM.mockImplementation(async (system: string) => {
+      if (system.includes("canonical page about one concept")) {
+        throw new Error("LLM response contained no text");
+      }
+      return "CONCEPT: Topic\nALIASES: none\n\n# Topic\n\n## Summary\n\nFresh synthesis body.";
+    });
+
+    await ingest("Topic A", "First source. Details one.");
+    const result = await ingest("Topic B", "Second source. Details two.");
+
+    expect(result.primarySlug).toBe("topic");
+    const page = await readWikiPageWithFrontmatter("topic");
+    // Reconcile failed → kept the freshly synthesized body; ingest succeeded.
+    expect(page!.content).toContain("Fresh synthesis body.");
+    expect(page!.frontmatter.disputed).toBe(false);
+    expect(Number(page!.frontmatter.source_count)).toBe(2);
   });
 });
 

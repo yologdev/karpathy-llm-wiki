@@ -54,7 +54,7 @@ import {
   resolveContentHash,
   updateSourceIndexForPage,
 } from "./source-index";
-import { contentHash } from "./embeddings";
+import { contentHash, searchByVector, hasEmbeddingSupport } from "./embeddings";
 import { getStorage } from "./storage";
 import { logger } from "./logger";
 
@@ -631,8 +631,14 @@ function splitSentences(text: string): string[] {
 // Conventions are documented in SCHEMA.md at the repo root.
 const INGEST_SYSTEM_PROMPT_BASE = `You are a wiki editor. Given a source document, generate a wiki article in markdown format.
 
-Include:
-- A title as a level-1 heading (# Title)
+Begin your output with these two header lines in EXACTLY this form:
+CONCEPT: <canonical concept name>
+ALIASES: <comma-separated alternative names / synonyms for the concept, or "none">
+CONCEPT names the one CANONICAL CONCEPT the document is about — the established term other writers on the same topic would also use (a concept, NOT the article's headline). Pick a granularity that is one coherent topic: general enough that other articles on the same subject would share it, specific enough not to lump distinct topics together.
+ALIASES lists other names the SAME concept is known by (acronyms, expansions, common synonyms) so future sources under those names converge here — not narrower sub-topics or related concepts. Use "none" if there are no real synonyms.
+
+Then, on the following lines, the wiki article. Include:
+- A title as a level-1 heading (# Title) — use the SAME canonical concept
 - A brief summary section (## Summary)
 - Key points or takeaways (## Key Points)
 - Notable entities, concepts, or terms worth remembering (## Concepts)
@@ -643,7 +649,7 @@ Include:
   stand in for the source. Do not pad, repeat the summary, or invent anything
   not supported by the source.
 
-Output pure markdown and nothing else. Do not wrap in code fences.`;
+Output the CONCEPT and ALIASES lines, then pure markdown, and nothing else. Do not wrap in code fences.`;
 
 /**
  * System prompt for continuation chunks when a long source document has been
@@ -656,6 +662,177 @@ const CONTINUATION_SYSTEM_PROMPT = `You are a wiki editor. You have already star
 Add new key points, concepts, and details from the additional source material. Do NOT repeat the title, summary, or any content already in the article. Only output the new sections or bullet points to append.
 
 Output pure markdown and nothing else. Do not wrap in code fences.`;
+
+/**
+ * System prompt for reconciling an existing page with a newly ingested source
+ * on the SAME concept (the accumulate-and-reconcile step). The LLM merges both
+ * into one canonical article rather than the new ingest overwriting the page,
+ * and surfaces contradictions instead of silently picking a side.
+ */
+const RECONCILE_SYSTEM_PROMPT = `You are a wiki editor maintaining a single canonical page about one concept. You are given the page's CURRENT content and a NEWLY INGESTED article about the same concept. Merge them into one cohesive, up-to-date wiki article.
+
+Rules:
+- Preserve all substantive information from BOTH versions; integrate the new material rather than discarding what's already on the page.
+- Remove redundancy; keep the existing section structure (## Summary, ## Key Points, ## Concepts, ## Details) and any image markdown, without duplicating images.
+- Do NOT invent anything not supported by either source.
+- If the new article CONTRADICTS the current page on any material fact, do not silently pick one side: keep both positions (attributing each) and begin your ENTIRE output with a single line, exactly:
+DISPUTED: yes
+  Otherwise do not emit a DISPUTED line.
+
+Output the optional DISPUTED line, then pure markdown, and nothing else. Do not wrap in code fences.`;
+
+/**
+ * The ingest synthesis prompt asks the LLM to begin its output with two header
+ * lines naming the canonical concept and its synonyms:
+ *
+ *     CONCEPT: <canonical concept name>
+ *     ALIASES: <comma/semicolon-separated synonyms, or "none">
+ *
+ * Parse those out and return the concept, the alias list, and the body with
+ * both header lines removed.
+ *
+ * Two articles about the same concept under different headlines (e.g. "Intro
+ * to Transformers" and "The Transformer Architecture Explained") both emit
+ * `CONCEPT: Transformer`, so they converge onto one content-derived slug
+ * instead of forking by title. The aliases widen the exact-match net (acronyms,
+ * expansions) so future sources under those names also converge.
+ *
+ * Returns `concept: ""` (and no aliases) when the marker is absent — the
+ * deterministic fallback page, a commit-from-preview body (already stripped),
+ * older pages, or test mocks — so callers keep the title-derived slug unchanged.
+ * The `ALIASES` line is optional even when `CONCEPT` is present.
+ */
+export function parseConceptMarker(raw: string): {
+  concept: string;
+  aliases: string[];
+  body: string;
+} {
+  const conceptM = raw.match(/^\uFEFF?\s*CONCEPT:[ \t]*(.+?)[ \t]*(?:\r?\n|$)/i);
+  if (!conceptM) return { concept: "", aliases: [], body: raw };
+
+  let rest = raw.slice(conceptM[0].length);
+  let aliases: string[] = [];
+  const aliasM = rest.match(/^\s*ALIASES:[ \t]*(.*?)[ \t]*(?:\r?\n|$)/i);
+  if (aliasM) {
+    rest = rest.slice(aliasM[0].length);
+    aliases = aliasM[1]
+      .split(/[;,]/)
+      .map((s) => s.trim())
+      .filter((s) => s !== "" && s.toLowerCase() !== "none");
+  }
+
+  return {
+    concept: conceptM[1].trim(),
+    aliases,
+    body: rest.replace(/^\s+/, ""),
+  };
+}
+
+/** Cosine-similarity floor for treating the nearest existing page as the SAME
+ *  concept on a semantic match. Deliberately conservative — a wrong merge is
+ *  harder to undo than a fork, so we err toward a new page when unsure. */
+export const CONCEPT_MERGE_THRESHOLD = 0.86;
+
+/**
+ * Resolve the slug an ingest should land on, given a content-derived concept.
+ * Convergence ladder — each step only redirects to an EXISTING page; otherwise
+ * the candidate concept slug is used and a new page is forked:
+ *
+ *   1. Exact — the candidate concept slug is already a page.
+ *   2. Alias — the concept or one of its synonyms resolves (via the alias
+ *      index) to an existing page.
+ *   3. Semantic — the nearest existing page by embedding similarity is at or
+ *      above {@link CONCEPT_MERGE_THRESHOLD}. Scoped to the SAME owner's silo so
+ *      a fuzzy match never attaches a source to another tenant's page.
+ *
+ * `embedBody` is the synthesized page body used for the semantic query. Returns
+ * the candidate concept slug unchanged when no confident existing match is
+ * found. Embedding-unavailable environments (e.g. tests) cleanly skip step 3.
+ */
+async function resolveConceptSlug(
+  candidateSlug: string,
+  concept: string,
+  aliases: string[],
+  embedBody: string,
+  owner: string,
+  pageType: string | undefined,
+): Promise<string> {
+  // 1. Exact concept-slug hit.
+  if (await readWikiPageWithFrontmatter(candidateSlug)) return candidateSlug;
+
+  // 2. Alias / slug index over the concept and its synonyms.
+  for (const term of [concept, ...aliases]) {
+    const hit = await resolveAlias(term);
+    if (
+      hit &&
+      hit !== candidateSlug &&
+      (await readWikiPageWithFrontmatter(hit))
+    ) {
+      return hit;
+    }
+  }
+
+  // 3. Semantic nearest-page (the robust catch for LLM wording drift).
+  if (hasEmbeddingSupport()) {
+    const hits = await searchByVector(`${concept}\n\n${embedBody}`, 3);
+    for (const { slug: hitSlug, score } of hits) {
+      if (score < CONCEPT_MERGE_THRESHOLD) break; // sorted desc — none closer
+      if (hitSlug === candidateSlug) continue;
+      const page = await readWikiPageWithFrontmatter(hitSlug);
+      if (!page) continue;
+      // Same-silo guard: only merge into a page this owner owns, AND only when
+      // the page scope matches — so a fuzzy match can't fold agent-knowledge
+      // into a public feed page (or vice versa). Conservative: err toward fork.
+      const sameOwner = (page.frontmatter.owner ?? "system") === owner;
+      const sameScope = (page.frontmatter.type ?? "") === (pageType ?? "");
+      if (sameOwner && sameScope) return hitSlug;
+    }
+  }
+
+  // 4. No confident match — fork onto the candidate concept slug.
+  return candidateSlug;
+}
+
+/**
+ * Parse a leading `DISPUTED: yes` line the reconcile prompt emits when the new
+ * source contradicts the existing page. Returns whether the page is disputed
+ * plus the body with the marker line stripped. Absent / "no" → not disputed.
+ */
+export function parseDisputedMarker(raw: string): {
+  disputed: boolean;
+  body: string;
+} {
+  const m = raw.match(/^﻿?\s*DISPUTED:[ \t]*(yes|true)[ \t]*(?:\r?\n|$)/i);
+  if (!m) return { disputed: false, body: raw };
+  return { disputed: true, body: raw.slice(m[0].length).replace(/^\s+/, "") };
+}
+
+/**
+ * Reconcile an existing page body with a newly ingested article on the same
+ * concept via a single LLM call (the accumulate-and-reconcile step). Returns
+ * the merged body and whether the new source contradicts the existing page
+ * (→ `disputed`).
+ *
+ * Defensive about the model's output: strips a `DISPUTED:` marker, then any
+ * echoed `CONCEPT:`/`ALIASES:` synthesis headers. Falls back to the new body on
+ * an empty/failed response so a reconcile hiccup never blanks the page.
+ */
+async function reconcilePage(
+  existingBody: string,
+  newBody: string,
+): Promise<{ body: string; disputed: boolean }> {
+  const user = `# Current page\n\n${existingBody}\n\n# Newly ingested article (same concept)\n\n${newBody}`;
+  const out = await callLLM(RECONCILE_SYSTEM_PROMPT, user, {
+    maxOutputTokens: INGEST_MAX_OUTPUT_TOKENS,
+  });
+  if (!out || out.trim() === "") {
+    return { body: newBody, disputed: false };
+  }
+  const { disputed, body: afterDisputed } = parseDisputedMarker(out);
+  // Guard against the model echoing the synthesis headers into the merged body.
+  const { body } = parseConceptMarker(afterDisputed);
+  return { body, disputed };
+}
 
 /**
  * Build the ingest system prompt by composing the base prompt with the
@@ -850,10 +1027,23 @@ export async function ingest(
   // This prevents duplicate pages when the same concept appears under different
   // names (e.g. "React.js" vs a page with aliases: ["React.js"]).
   const resolvedSlug = await resolveAlias(title);
-  const slug = resolvedSlug ?? rawSlug;
+  // Provisional slug from the title. On the direct ingest path this is later
+  // replaced by a content-derived *concept* slug (see the CONCEPT marker below),
+  // so the same concept under different headlines converges onto one page.
+  let slug = resolvedSlug ?? rawSlug;
+  // The page title written to the index/log. Becomes the canonical concept name
+  // when one is derived; otherwise stays the source title.
+  let pageTitle = title;
 
   const isPreview = options?.preview === true;
   const preGeneratedContent = options?.generatedContent;
+
+  // Acting identity + owner come from the authenticated session (set by the
+  // route), never from client input. Fall back to "system" for legacy/bootstrap.
+  // Resolved here (not just at frontmatter-build time) so the concept resolver
+  // can scope a semantic merge to the same owner's silo.
+  const actor = options?.author?.trim() || "system";
+  const owner = options?.owner?.trim() || actor;
 
   // Download any images referenced in the source to local storage and rewrite
   // their markdown refs to `assets/<slug>/...`. Centralized here (not in
@@ -916,6 +1106,38 @@ export async function ingest(
     wikiContent = generateFallbackPage(title, content);
   }
 
+  // Pull the leading `CONCEPT:` / `ALIASES:` header lines the synthesis prompt
+  // asks for (and strip them from the body so they never leak into the page or
+  // preview). Absent for the fallback page / commit-from-preview / test mocks →
+  // concept "" and no aliases.
+  const {
+    concept,
+    aliases: conceptSynonyms,
+    body: conceptStrippedBody,
+  } = parseConceptMarker(wikiContent);
+  wikiContent = conceptStrippedBody;
+
+  // Direct ingest path only: converge onto the content-derived concept slug so
+  // re-ingests of the same concept (under any headline) land on one page. The
+  // preview→commit path keeps the title-derived slug (commit carries no marker)
+  // — preview/commit slug consistency is handled separately.
+  let conceptAliases: string[] = [];
+  if (!isPreview && !preGeneratedContent && concept) {
+    const conceptSlug = slugify(concept);
+    if (conceptSlug !== "") {
+      slug = await resolveConceptSlug(
+        conceptSlug,
+        concept,
+        conceptSynonyms,
+        wikiContent,
+        owner,
+        options?.pageType,
+      );
+      pageTitle = concept;
+      conceptAliases = conceptSynonyms;
+    }
+  }
+
   // The LLM distills text and drops image refs, so deterministically append the
   // source's downloaded images as a trailing section — reliable, no LLM cost.
   wikiContent = appendSourceImages(wikiContent, content);
@@ -954,10 +1176,8 @@ export async function ingest(
   const expiry = new Date();
   expiry.setDate(expiry.getDate() + 90);
   const expiryDate = expiry.toISOString().slice(0, 10);
-  // Acting identity + owner come from the authenticated session (set by the
-  // route), never from client input. Fall back to "system" for legacy/bootstrap.
-  const actor = options?.author?.trim() || "system";
-  const owner = options?.owner?.trim() || actor;
+  // `actor`/`owner` are resolved near the top of ingest() (the concept resolver
+  // needs `owner` for its same-silo guard).
   const frontmatter: Frontmatter = {
     created: now,
     updated: now,
@@ -1098,6 +1318,54 @@ export async function ingest(
     }
   }
 
+  // Re-synthesize on merge (accumulate-and-reconcile): when this ingest lands on
+  // an EXISTING page, fold the existing body and the new article into one
+  // canonical page instead of overwriting — and escalate to `disputed` if the
+  // new source contradicts what's there. Skipped without an LLM key (fall back
+  // to the prior overwrite behaviour) and for commit-from-preview (the user
+  // already approved a body). The page summary is computed from the raw source,
+  // so it is unaffected.
+  if (existing && hasLLMKey() && !preGeneratedContent) {
+    try {
+      // Reconcile against the frontmatter-STRIPPED body (existing.content still
+      // carries the YAML block; existing.body is the markdown) so page metadata
+      // never bleeds into the merged prose.
+      const reconciled = await reconcilePage(existing.body, wikiContent);
+      wikiContent = reconciled.body;
+      // Only escalate — never clear a disputed flag preserved from the existing
+      // page above.
+      if (reconciled.disputed) frontmatter.disputed = true;
+    } catch (err) {
+      // A reconcile hiccup (LLM API error / empty response) must not fail an
+      // ingest whose synthesis already succeeded — degrade to the prior
+      // overwrite behaviour (keep the freshly synthesized body, disputed
+      // untouched).
+      logger.warn("ingest", "reconcile-on-merge failed; using new body", err);
+    }
+  }
+
+  // When the page converged onto a concept slug, record the source title AND
+  // the LLM-supplied concept synonyms as aliases so a later ingest arriving
+  // under any of those names resolves here (extends convergence beyond the
+  // content hash to the title/synonym routes). Merges with any existing
+  // aliases; deduped case-insensitively; never aliases the concept to itself.
+  if (pageTitle !== title) {
+    const aliasList = Array.isArray(frontmatter.aliases)
+      ? [...frontmatter.aliases]
+      : [];
+    const seen = new Set(aliasList.map((a) => a.toLowerCase()));
+    for (const candidate of [title, ...conceptAliases]) {
+      const trimmed = candidate.trim();
+      const key = trimmed.toLowerCase();
+      if (trimmed === "" || key === pageTitle.toLowerCase() || seen.has(key)) {
+        continue;
+      }
+      seen.add(key);
+      aliasList.push(trimmed);
+    }
+    frontmatter.aliases = aliasList;
+  }
+
   const contentWithFm = serializeFrontmatter(frontmatter, wikiContent);
 
   // 5. Hand off to the unified write pipeline. We pass the raw `content` as
@@ -1105,7 +1373,7 @@ export async function ingest(
   // pages, matching the previous behaviour.
   const { updatedSlugs } = await writeWikiPageWithSideEffects({
     slug,
-    title,
+    title: pageTitle,
     content: contentWithFm,
     summary,
     logOp: "ingest",
