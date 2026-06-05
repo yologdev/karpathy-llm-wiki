@@ -13,6 +13,9 @@ interface ThreadViewProps {
   onSubmitReply: (parentId: string, author: string, body: string) => Promise<void>;
   onResolve: (status: "open" | "resolved" | "wontfix") => void;
   onAddComment: (author: string, body: string) => Promise<void>;
+  /** Ask yoyo to address this thread (enqueue a reconcile task). Omitted when
+   *  the viewer isn't signed in. */
+  onAskYoyo?: () => Promise<void>;
   inputClasses: string;
 }
 
@@ -25,11 +28,23 @@ export function ThreadView({
   onSubmitReply,
   onResolve,
   onAddComment,
+  onAskYoyo,
   inputClasses,
 }: ThreadViewProps) {
   const [commentAuthor, setCommentAuthor] = useState("");
   const [commentBody, setCommentBody] = useState("");
   const [commenting, setCommenting] = useState(false);
+  const [asking, setAsking] = useState(false);
+
+  async function handleAskYoyo() {
+    if (!onAskYoyo) return;
+    setAsking(true);
+    try {
+      await onAskYoyo();
+    } finally {
+      setAsking(false);
+    }
+  }
 
   async function handleAddComment(e: React.FormEvent) {
     e.preventDefault();
@@ -62,9 +77,20 @@ export function ThreadView({
         ))}
       </div>
 
-      {/* Resolve / Won't Fix buttons for open threads */}
+      {/* Resolve / Won't Fix / Ask-yoyo buttons for open threads */}
       {thread.status === "open" && (
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
+          {onAskYoyo && (
+            <button
+              type="button"
+              onClick={handleAskYoyo}
+              disabled={asking}
+              title="Ask yoyo to read this thread and update the page"
+              className="rounded bg-accent px-3 py-1 text-xs font-medium text-accent-foreground hover:bg-accent-hover disabled:opacity-50"
+            >
+              {asking ? "Queuing…" : "🛠 Ask yoyo to address this"}
+            </button>
+          )}
           <button
             type="button"
             onClick={() => onResolve("resolved")}

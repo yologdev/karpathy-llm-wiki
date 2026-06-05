@@ -183,6 +183,24 @@ export function DiscussionPanel({ slug }: DiscussionPanelProps) {
     }
   }
 
+  async function handleAskYoyo(idx: number) {
+    setError(null);
+    try {
+      const res = await fetch(
+        `/api/wiki/${encodeURIComponent(slug)}/discuss/${idx}/ask-yoyo`,
+        { method: "POST" },
+      );
+      if (!res.ok) {
+        const body = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(body.error ?? `Failed to ask yoyo (${res.status})`);
+      }
+      await fetchThreads();
+      if (expandedIdx === idx) await refreshThread(idx);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unknown error");
+    }
+  }
+
   async function handleResolve(idx: number, newStatus: "open" | "resolved" | "wontfix") {
     setError(null);
     try {
@@ -288,6 +306,7 @@ export function DiscussionPanel({ slug }: DiscussionPanelProps) {
                       onSubmitReply={handleReplySubmit}
                       onResolve={(status) => handleResolve(idx, status)}
                       onAddComment={handleAddComment}
+                      onAskYoyo={() => handleAskYoyo(idx)}
                       inputClasses={inputClasses}
                     />
                   )}

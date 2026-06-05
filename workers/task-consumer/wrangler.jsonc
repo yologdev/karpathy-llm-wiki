@@ -1,0 +1,36 @@
+{
+  // Standalone consumer for the yopedia agent task queue. Separate from the main
+  // yopedia (OpenNext) Worker so we get a first-class Queues consumer without
+  // wrapping the OpenNext entry. It drains `yopedia-tasks` and POSTs each task to
+  // the deployed yopedia `/api/tasks/run` endpoint with the system token — a thin
+  // dispatcher; the actual work runs in the main app (full lib + OpenNext context).
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "yopedia-task-consumer",
+  "main": "index.ts",
+  "compatibility_date": "2025-01-01",
+
+  // The /api/tasks/run call targets the main yopedia Worker on the same zone. A
+  // plain same-zone Worker→Worker fetch is blocked (error 1042); this flag makes
+  // fetch() resolve as a normal public request (same as workers/x-ingest).
+  "compatibility_flags": ["global_fetch_strictly_public"],
+
+  // Queue consumer. One-time provisioning of the queue + dead-letter queue:
+  //   npx wrangler queues create yopedia-tasks
+  //   npx wrangler queues create yopedia-tasks-dlq
+  "queues": {
+    "consumers": [
+      {
+        "queue": "yopedia-tasks",
+        "dead_letter_queue": "yopedia-tasks-dlq",
+        "max_retries": 3,
+        "max_batch_size": 5,
+        "max_batch_timeout": 10
+      }
+    ]
+  },
+
+  "vars": { "YOPEDIA_URL": "https://yopedia.yuanhao-li.workers.dev" }
+
+  // Secret (set with `wrangler secret put --config workers/task-consumer/wrangler.jsonc`):
+  //   YOPEDIA_SERVICE_TOKEN — the system write credential (same value as the main Worker's)
+}

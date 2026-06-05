@@ -16,6 +16,8 @@ const WRITE_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 //   - /api/agents/<id>/ingest     — the agent's own per-agent token
 //   - /api/ingest                 — Clerk session OR the system service token
 //   - /api/ingest/x-mention       — Clerk session OR the system service token
+//   - /api/tasks/run              — the system service token ONLY (the task-
+//                                   consumer worker; has no Clerk session)
 // This is not a hole.
 //
 // The MCP server is stdio-only and not exposed over HTTP, so it is unaffected.
@@ -23,6 +25,10 @@ const IN_ROUTE_AUTH_PATHS = new Set([
   "/api/agents/seed",
   "/api/ingest",
   "/api/ingest/x-mention",
+  // Agent task-queue executor: authenticated in-route by the service token
+  // (getServicePrincipal); the sole caller is the task-consumer worker, which
+  // has no Clerk session. Rejects everyone else with 401.
+  "/api/tasks/run",
   // Admin migration: authenticated in-route by the service token OR the site
   // owner's session (it rejects everyone else with 403).
   "/api/admin/migrate",
@@ -32,7 +38,13 @@ const AGENT_INGEST_RE = /^\/api\/agents\/[^/]+\/ingest$/;
 // owner, or the tenant's own owner (it 403s everyone else).
 const ADMIN_TENANT_RE = /^\/api\/admin\/tenant\/[^/]+$/;
 
-function authenticatesInRoute(pathname: string): boolean {
+/**
+ * Whether a path authenticates in-route (token, not a Clerk session) and is
+ * therefore exempt from the middleware's Clerk write-gate. Exported so the
+ * exemption list is regression-tested (a missing entry silently 401s a
+ * service-token caller before it reaches the route — see /api/tasks/run).
+ */
+export function authenticatesInRoute(pathname: string): boolean {
   return (
     IN_ROUTE_AUTH_PATHS.has(pathname) ||
     AGENT_INGEST_RE.test(pathname) ||

@@ -51,6 +51,21 @@
     "binding": "AI"
   },
 
+  // --- Queues: producer for the agent task queue (async maintenance + ingest).
+  // The consumer is a separate worker (workers/task-consumer/). enqueueTask()
+  // (src/lib/tasks.ts) sends here; it no-ops gracefully when this binding is
+  // absent (local dev / next start / tests). One-time provisioning:
+  //   npx wrangler queues create yopedia-tasks
+  //   npx wrangler queues create yopedia-tasks-dlq
+  "queues": {
+    "producers": [
+      {
+        "binding": "TASK_QUEUE",
+        "queue": "yopedia-tasks"
+      }
+    ]
+  },
+
   // Public site-owner handle for runtime server gates (owner-only Lint). The
   // authoritative copy for the client is the build-time inline (deploy
   // workflow); this is runtime parity for server reads. Public, not a secret.

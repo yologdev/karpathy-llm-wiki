@@ -1,0 +1,78 @@
+import { describe, it, expect, beforeEach, vi } from "vitest";
+
+vi.mock("@/lib/auth", () => ({ getServicePrincipal: vi.fn() }));
+vi.mock("@/lib/reconcile", () => ({ reconcileFromTalk: vi.fn() }));
+vi.mock("@/lib/ingest", () => ({ ingest: vi.fn(), ingestUrl: vi.fn() }));
+
+import { getServicePrincipal } from "@/lib/auth";
+import { reconcileFromTalk } from "@/lib/reconcile";
+import { ingest, ingestUrl } from "@/lib/ingest";
+
+const mockedGetService = vi.mocked(getServicePrincipal);
+const mockedReconcile = vi.mocked(reconcileFromTalk);
+const mockedIngest = vi.mocked(ingest);
+const mockedIngestUrl = vi.mocked(ingestUrl);
+
+async function run(body: unknown) {
+  const { POST } = await import("@/app/api/tasks/run/route");
+  return POST(
+    new Request("http://localhost/api/tasks/run", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }),
+  );
+}
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  // Default: authenticated as the service principal.
+  mockedGetService.mockReturnValue({ id: "service:yopedia", handle: "yopedia" });
+});
+
+describe("POST /api/tasks/run", () => {
+  it("401s without the service token (no other side effects)", async () => {
+    mockedGetService.mockReturnValue(null);
+    const res = await run({ kind: "reconcile", slug: "p", threadIndex: 0 });
+    expect(res.status).toBe(401);
+    expect(mockedReconcile).not.toHaveBeenCalled();
+  });
+
+  it("400s a malformed task (poison → don't retry)", async () => {
+    const res = await run({ kind: "bogus" });
+    expect(res.status).toBe(400);
+    expect(mockedReconcile).not.toHaveBeenCalled();
+  });
+
+  it("dispatches a reconcile task, attributing to the requester's yoyo", async () => {
+    mockedReconcile.mockResolvedValue({ slug: "p", changed: true, disputed: false });
+    const res = await run({
+      kind: "reconcile",
+      slug: "p",
+      threadIndex: 3,
+      requestedBy: "alice",
+    });
+    expect(res.status).toBe(200);
+    expect(mockedReconcile).toHaveBeenCalledWith("p", 3, { author: "alice--yoyo" });
+  });
+
+  it("dispatches an ingest task by URL", async () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    mockedIngestUrl.mockResolvedValue({ primarySlug: "made" } as any);
+    const res = await run({ kind: "ingest", url: "https://example.com", owner: "alice" });
+    expect(res.status).toBe(200);
+    expect(mockedIngestUrl).toHaveBeenCalledWith(
+      "https://example.com",
+      expect.objectContaining({ owner: "alice" }),
+    );
+    expect(mockedIngest).not.toHaveBeenCalled();
+  });
+
+  it("maps a 'not found' failure to 422 (poison), other failures to 500 (retry)", async () => {
+    mockedReconcile.mockRejectedValueOnce(new Error('page "x" not found'));
+    expect((await run({ kind: "reconcile", slug: "x", threadIndex: 0 })).status).toBe(422);
+
+    mockedReconcile.mockRejectedValueOnce(new Error("LLM timeout"));
+    expect((await run({ kind: "reconcile", slug: "x", threadIndex: 0 })).status).toBe(500);
+  });
+});

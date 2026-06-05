@@ -1,0 +1,86 @@
+import { describe, it, expect, beforeEach, vi } from "vitest";
+
+// Mock the OpenNext context. Default: throws (off-Workers) → enqueue no-ops.
+// Workers tests opt in by setting a return value with a TASK_QUEUE binding.
+vi.mock("@opennextjs/cloudflare", () => ({
+  getCloudflareContext: vi.fn(() => {
+    throw new Error("no cloudflare context");
+  }),
+}));
+
+import { enqueueTask, parseTask } from "../tasks";
+import { getCloudflareContext } from "@opennextjs/cloudflare";
+
+const mockGetCfContext = getCloudflareContext as ReturnType<typeof vi.fn>;
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  mockGetCfContext.mockImplementation(() => {
+    throw new Error("no cloudflare context");
+  });
+});
+
+describe("enqueueTask", () => {
+  it("no-ops (returns false) off the Workers runtime", async () => {
+    const ok = await enqueueTask({ kind: "reconcile", slug: "p", threadIndex: 0 });
+    expect(ok).toBe(false);
+  });
+
+  it("no-ops when the TASK_QUEUE binding is absent on the runtime", async () => {
+    mockGetCfContext.mockReturnValue({ env: { AI: {} } }); // no TASK_QUEUE
+    const ok = await enqueueTask({ kind: "reconcile", slug: "p", threadIndex: 0 });
+    expect(ok).toBe(false);
+  });
+
+  it("sends to the queue binding and returns true when bound", async () => {
+    const send = vi.fn().mockResolvedValue(undefined);
+    mockGetCfContext.mockReturnValue({ env: { TASK_QUEUE: { send } } });
+
+    const task = { kind: "reconcile" as const, slug: "transformers", threadIndex: 2 };
+    const ok = await enqueueTask(task);
+
+    expect(ok).toBe(true);
+    expect(send).toHaveBeenCalledWith(task);
+  });
+});
+
+describe("parseTask", () => {
+  it("accepts a well-formed reconcile task", () => {
+    expect(
+      parseTask({ kind: "reconcile", slug: "p", threadIndex: 3, requestedBy: "alice" }),
+    ).toEqual({ kind: "reconcile", slug: "p", threadIndex: 3, requestedBy: "alice" });
+  });
+
+  it("accepts a reconcile task without requestedBy", () => {
+    expect(parseTask({ kind: "reconcile", slug: "p", threadIndex: 0 })).toEqual({
+      kind: "reconcile",
+      slug: "p",
+      threadIndex: 0,
+    });
+  });
+
+  it("rejects a reconcile task with a bad slug or threadIndex", () => {
+    expect(parseTask({ kind: "reconcile", slug: "", threadIndex: 0 })).toBeNull();
+    expect(parseTask({ kind: "reconcile", slug: "p", threadIndex: 1.5 })).toBeNull();
+    expect(parseTask({ kind: "reconcile", slug: "p" })).toBeNull();
+  });
+
+  it("accepts an ingest task with a url or content; rejects neither", () => {
+    expect(parseTask({ kind: "ingest", url: "https://x.com" })).toMatchObject({
+      kind: "ingest",
+      url: "https://x.com",
+    });
+    expect(parseTask({ kind: "ingest", content: "some text" })).toMatchObject({
+      kind: "ingest",
+      content: "some text",
+    });
+    expect(parseTask({ kind: "ingest" })).toBeNull();
+  });
+
+  it("rejects unknown kinds and non-objects", () => {
+    expect(parseTask({ kind: "nope" })).toBeNull();
+    expect(parseTask(null)).toBeNull();
+    expect(parseTask("string")).toBeNull();
+    expect(parseTask(42)).toBeNull();
+  });
+});
