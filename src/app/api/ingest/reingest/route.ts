@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { reingest } from "@/lib/ingest";
 import { readWikiPageWithFrontmatter } from "@/lib/wiki";
 import { getPrincipal, getServicePrincipal } from "@/lib/auth";
+import { canReadFrontmatter, canWriteFrontmatter } from "@/lib/authz";
 import { getErrorMessage } from "@/lib/errors";
 import { logger } from "@/lib/logger";
 
@@ -30,6 +31,21 @@ export async function POST(request: NextRequest) {
         { error: `Page "${trimmedSlug}" not found` },
         { status: 404 },
       );
+    }
+
+    // Realm-aware write ACL: re-ingest rewrites the page. Denied → cloak: a
+    // private page the caller can't read is 404 (no existence oracle); a
+    // readable-but-unwritable page is 403.
+    if (!canWriteFrontmatter(page.frontmatter, principal)) {
+      return canReadFrontmatter(page.frontmatter, principal)
+        ? NextResponse.json(
+            { error: "You don't have permission to re-ingest this page." },
+            { status: 403 },
+          )
+        : NextResponse.json(
+            { error: `Page "${trimmedSlug}" not found` },
+            { status: 404 },
+          );
     }
 
     // Check if page has a source_url

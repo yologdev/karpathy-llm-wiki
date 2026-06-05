@@ -4,12 +4,19 @@ import {
   canReadEntry,
   canReadFrontmatter,
   canSetPrivate,
+  canWritePage,
+  canWriteFrontmatter,
 } from "../authz";
 import { agentOwnerHandle } from "../agents";
 import type { IndexEntry } from "../types";
 
 const alice = { handle: "alice" };
 const bob = { handle: "bob" };
+
+// canWritePage needs the full Principal (it inspects `id` for the service case).
+const aliceP = { id: "user_alice", handle: "alice" };
+const bobP = { id: "user_bob", handle: "bob" };
+const service = { id: "service:yopedia", handle: "yopedia" };
 
 describe("agentOwnerHandle", () => {
   it("recovers the owner slug from a composite agent id", () => {
@@ -86,5 +93,61 @@ describe("canSetPrivate", () => {
   });
   it("denies service/token principals", async () => {
     expect(await canSetPrivate({ id: "service:ci", handle: "ci" })).toBe(false);
+  });
+});
+
+describe("canWritePage", () => {
+  it("public commons pages are collectively editable by any signed-in user", () => {
+    const pub = { owner: "alice", visibility: "public" };
+    expect(canWritePage(pub, aliceP)).toBe(true);
+    expect(canWritePage(pub, bobP)).toBe(true); // collective
+  });
+
+  it("public pages: the per-page ACL doesn't restrict (auth is the middleware's job)", () => {
+    // The write-gate middleware already rejected anon mutations; the per-page
+    // ACL only guards PRIVATE pages, so a public page passes here.
+    expect(canWritePage({ owner: "alice", visibility: "public" }, null)).toBe(true);
+  });
+
+  it("private pages fail closed for an anonymous principal", () => {
+    expect(canWritePage({ owner: "alice", visibility: "private" }, null)).toBe(false);
+  });
+
+  it("private pages are writable only by the owner", () => {
+    const priv = { owner: "alice", visibility: "private" };
+    expect(canWritePage(priv, aliceP)).toBe(true);
+    expect(canWritePage(priv, bobP)).toBe(false); // the security fix
+  });
+
+  it("a private agent-owned page is writable by the agent's human owner", () => {
+    const priv = {
+      owner: "alice--yoyo",
+      visibility: "private",
+      type: "agent-knowledge",
+    };
+    expect(canWritePage(priv, aliceP)).toBe(true); // alice owns the agent
+    expect(canWritePage(priv, bobP)).toBe(false);
+  });
+
+  it("the service principal may write anything (autonomous agents / jobs)", () => {
+    expect(canWritePage({ owner: "alice", visibility: "private" }, service)).toBe(true);
+    expect(canWritePage({ owner: "bob", visibility: "private" }, service)).toBe(true);
+  });
+
+  it("fails closed on a private page with no owner", () => {
+    expect(canWritePage({ visibility: "private" }, aliceP)).toBe(false);
+  });
+});
+
+describe("canWriteFrontmatter", () => {
+  it("coerces frontmatter fields and applies the same rule", () => {
+    expect(
+      canWriteFrontmatter({ owner: "alice", visibility: "private" }, aliceP),
+    ).toBe(true);
+    expect(
+      canWriteFrontmatter({ owner: "alice", visibility: "private" }, bobP),
+    ).toBe(false);
+    // Non-string fields → treated as public → collectively editable.
+    expect(canWriteFrontmatter({ owner: 123, visibility: 1 }, bobP)).toBe(true);
   });
 });

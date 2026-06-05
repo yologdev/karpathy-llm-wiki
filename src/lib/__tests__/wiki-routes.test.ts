@@ -5,6 +5,8 @@ import path from "path";
 
 vi.mock("@/lib/auth", () => ({
   getPrincipal: vi.fn(async () => ({ id: "test-user", handle: "test-user" })),
+  // The write routes resolve a service principal as a fallback; default to none.
+  getServicePrincipal: vi.fn(() => null),
 }));
 
 import {
@@ -14,6 +16,9 @@ import {
   writeWikiPageWithSideEffects,
 } from "../wiki";
 import type { Frontmatter } from "../frontmatter";
+import { getPrincipal } from "@/lib/auth";
+
+const mockedGetPrincipal = vi.mocked(getPrincipal);
 
 // ---------------------------------------------------------------------------
 // Temp directory setup — mirrors lifecycle.test.ts approach
@@ -538,6 +543,102 @@ describe("PATCH /api/wiki/[slug] — metadata updates", () => {
 // ---------------------------------------------------------------------------
 // GET /api/wiki — agent-identity filtering
 // ---------------------------------------------------------------------------
+
+describe("realm-aware write ACL — /api/wiki/[slug]", () => {
+  async function seed(slug: string, fm: Frontmatter) {
+    const today = new Date().toISOString().slice(0, 10);
+    const full: Frontmatter = {
+      created: today,
+      confidence: 0.5,
+      authors: [typeof fm.owner === "string" ? fm.owner : "system"],
+      contributors: [],
+      expiry: "2099-01-01",
+      sources: [],
+      ...fm,
+    };
+    await writeWikiPageWithSideEffects({
+      slug,
+      title: slug,
+      content: serializeFrontmatter(full, `# ${slug}\n\nOriginal secret.`),
+      summary: "a test page",
+      logOp: "ingest",
+      crossRefSource: null,
+    });
+  }
+  async function put(slug: string) {
+    const { PUT } = await import("@/app/api/wiki/[slug]/route");
+    return PUT(
+      new Request(`http://localhost/api/wiki/${slug}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ content: `# ${slug}\n\nEdited.` }),
+      }),
+      { params: Promise.resolve({ slug }) },
+    );
+  }
+  async function del(slug: string) {
+    const { DELETE } = await import("@/app/api/wiki/[slug]/route");
+    return DELETE(
+      new Request(`http://localhost/api/wiki/${slug}`, { method: "DELETE" }),
+      { params: Promise.resolve({ slug }) },
+    );
+  }
+  async function patch(slug: string) {
+    const { PATCH } = await import("@/app/api/wiki/[slug]/route");
+    return PATCH(
+      new Request(`http://localhost/api/wiki/${slug}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ metadata: { confidence: 0.9 } }),
+      }),
+      { params: Promise.resolve({ slug }) },
+    );
+  }
+
+  it("cloaks a non-owner editing a private page (PUT 404, no oracle); body unchanged", async () => {
+    await seed("alice-secret", { owner: "alice", visibility: "private" });
+    // Default mock principal is "test-user" — not the owner. A private page they
+    // can't read is 404 (indistinguishable from missing), not a 403 oracle.
+    const res = await put("alice-secret");
+    expect(res.status).toBe(404);
+    const page = await readWikiPageWithFrontmatter("alice-secret");
+    expect(page!.body).toContain("Original secret.");
+  });
+
+  it("cloaks a non-owner deleting a private page (DELETE 404)", async () => {
+    await seed("alice-secret-del", { owner: "alice", visibility: "private" });
+    const res = await del("alice-secret-del");
+    expect(res.status).toBe(404);
+    expect(await readWikiPageWithFrontmatter("alice-secret-del")).not.toBeNull();
+  });
+
+  it("cloaks a non-owner patching a private page's metadata (PATCH 404)", async () => {
+    await seed("alice-secret-patch", { owner: "alice", visibility: "private" });
+    const res = await patch("alice-secret-patch");
+    expect(res.status).toBe(404);
+  });
+
+  it("allows the owner to edit their own private page (PUT 200)", async () => {
+    await seed("alice-own", { owner: "alice", visibility: "private" });
+    mockedGetPrincipal.mockResolvedValueOnce({ id: "u_alice", handle: "alice" });
+    const res = await put("alice-own");
+    expect(res.status).toBe(200);
+  });
+
+  it("allows a private agent-owned page to be edited by the agent's human owner", async () => {
+    await seed("alice-agent-note", { owner: "alice--yoyo", visibility: "private" });
+    mockedGetPrincipal.mockResolvedValueOnce({ id: "u_alice", handle: "alice" });
+    const res = await put("alice-agent-note");
+    expect(res.status).toBe(200);
+  });
+
+  it("keeps PUBLIC pages collectively editable by any signed-in user (PUT 200)", async () => {
+    // Owner is someone else, but a public commons page stays collectively editable.
+    await seed("shared-public", { owner: "alice", visibility: "public" });
+    const res = await put("shared-public"); // principal = test-user (non-owner)
+    expect(res.status).toBe(200);
+  });
+});
 
 describe("GET /api/wiki — agent-identity filtering", () => {
   async function seedPage(slug: string, fm: Frontmatter = {}) {

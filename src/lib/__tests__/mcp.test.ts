@@ -1014,6 +1014,49 @@ describe("update_metadata", () => {
     expect(fileContent).toContain("Original body.");
   });
 
+  it("patches a PRIVATE page's metadata via the trusted MCP path (realm-aware ACL)", async () => {
+    // MCP is deployment-trusted; update_metadata must still work on a private
+    // page (the write ACL admits it via a service principal). Before the fix
+    // this threw NOT_OWNER because no principal was threaded through.
+    const { writeWikiPageWithSideEffects, serializeFrontmatter } = await import(
+      "../wiki"
+    );
+    await writeWikiPageWithSideEffects({
+      slug: "mcp-private",
+      title: "MCP Private",
+      content: serializeFrontmatter(
+        {
+          owner: "alice",
+          visibility: "private",
+          authors: ["alice"],
+          contributors: [],
+          created: "2026-01-01",
+          confidence: 0.5,
+          expiry: "2099-01-01",
+          sources: [],
+        },
+        "# MCP Private\n\nSecret body.",
+      ),
+      summary: "private",
+      logOp: "ingest",
+      crossRefSource: null,
+    });
+
+    const result = await handleUpdateMetadata({
+      slug: "mcp-private",
+      metadata: { confidence: 0.95 },
+    });
+    expect(result.updated).toBe(true);
+
+    const fileContent = await fs.readFile(
+      path.join(tmpDir, "wiki", "mcp-private.md"),
+      "utf-8",
+    );
+    expect(fileContent).toContain("confidence: 0.95");
+    expect(fileContent).toContain("Secret body.");
+    expect(fileContent).toContain("visibility: private");
+  });
+
   it("rejects lifecycle-managed fields", async () => {
     await handleCreatePage({
       slug: "meta-lifecycle",

@@ -92,6 +92,61 @@ export async function canReadSlug(
   return canReadFrontmatter(page.frontmatter, principal);
 }
 
+// ---------------------------------------------------------------------------
+// Write-path authorization (realm-aware writes)
+// ---------------------------------------------------------------------------
+
+/**
+ * True iff `principal` may WRITE a page (edit / patch / delete / re-ingest),
+ * mirroring the realm model and staying symmetric with {@link canReadPage}:
+ *
+ *   - The deployment-trusted **service principal** (bearer token) may write
+ *     anything — it is how autonomous agents and scheduled jobs write on an
+ *     owner's behalf (the caller sets `owner` explicitly).
+ *   - **Public** (commons) pages are collectively editable by any signed-in
+ *     user — the commons is a shared wiki.
+ *   - **Private** (vault) pages are writable ONLY by the set {@link canReadPage}
+ *     admits for a private page: the owner's human and that human's agents
+ *     (`<user>--<name>` resolves to `<user>`). So a user's agents can write
+ *     their owner's private vault, but no one else can.
+ *
+ * The per-page ACL only restricts **private** pages; authentication for public
+ * edits is the write-gate middleware's job (it rejects unauthenticated
+ * mutations), so a public page is writable by any caller that reached here.
+ * Private pages fail-closed for an anonymous principal.
+ */
+export function canWritePage(
+  meta: PageReadMeta,
+  principal: Principal | null,
+): boolean {
+  // Deployment-trusted automated caller — writes for owners (agents, cron).
+  if (principal?.id.startsWith("service:")) return true;
+  // Public / collective commons — editable by any caller the write-gate admits.
+  if (meta.visibility !== "private") return true;
+  // Private — exactly the owner-equivalence class that may READ it (requires an
+  // authenticated, matching principal).
+  if (!principal) return false;
+  return canReadPage(
+    { owner: meta.owner, visibility: "private", type: meta.type },
+    principal,
+  );
+}
+
+/** {@link canWritePage} over a parsed frontmatter record. */
+export function canWriteFrontmatter(
+  fm: { owner?: unknown; visibility?: unknown; type?: unknown },
+  principal: Principal | null,
+): boolean {
+  return canWritePage(
+    {
+      owner: typeof fm.owner === "string" ? fm.owner : undefined,
+      visibility: typeof fm.visibility === "string" ? fm.visibility : undefined,
+      type: typeof fm.type === "string" ? fm.type : undefined,
+    },
+    principal,
+  );
+}
+
 /**
  * True when the principal is entitled to create private (paid) content.
  *

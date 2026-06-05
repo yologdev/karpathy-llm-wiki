@@ -546,4 +546,29 @@ describe("POST /api/ingest/reingest — service token auth", () => {
       expect.objectContaining({ author: "alice", triggeredBy: "alice" }),
     );
   });
+
+  it("cloaks a non-owner re-ingesting a PRIVATE page (404), never calling reingest", async () => {
+    mockedGetPrincipal.mockResolvedValue({ id: "clerk-user", handle: "alice" });
+    mockedGetServicePrincipal.mockReturnValue(null);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const bobSecretPage: any = {
+      content: "# Secret",
+      frontmatter: {
+        title: "Secret",
+        source_url: "https://example.com/source",
+        owner: "bob",
+        visibility: "private",
+      },
+    };
+    mockedReadWikiPage.mockResolvedValue(bobSecretPage);
+
+    const res = await POST_REINGEST(
+      makeRequest("http://localhost:3000/api/ingest/reingest", {
+        slug: "bob-secret",
+      }),
+    );
+    // A private page the caller can't read is "not found" (no existence oracle).
+    expect(res.status).toBe(404);
+    expect(mockedReingest).not.toHaveBeenCalled();
+  });
 });

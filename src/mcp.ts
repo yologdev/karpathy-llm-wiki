@@ -301,6 +301,11 @@ export async function handleUpdateMetadata(args: {
     slug: args.slug,
     metadata: args.metadata,
     author: args.author,
+    // MCP is deployment-trusted (stdio-only). Act as a service principal so the
+    // realm-aware write ACL admits metadata patches on private pages (setting
+    // visibility:private stays paid-gated via canSetPrivate, which rejects
+    // service principals — unchanged from before).
+    principal: { id: "service:mcp", handle: args.author ?? "system" },
   });
 }
 

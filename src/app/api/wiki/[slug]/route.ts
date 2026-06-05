@@ -8,17 +8,46 @@ import {
   type Frontmatter,
 } from "@/lib/wiki";
 import { extractSummary } from "@/lib/ingest";
-import { getPrincipal } from "@/lib/auth";
+import { getPrincipal, getServicePrincipal } from "@/lib/auth";
+import { canReadFrontmatter, canWriteFrontmatter } from "@/lib/authz";
 import { getErrorMessage } from "@/lib/errors";
 import { patchMetadata } from "@/lib/patch-metadata";
 
 export async function DELETE(
-  _req: Request,
+  req: Request,
   { params }: { params: Promise<{ slug: string }> },
 ) {
   try {
     const { slug: encodedSlug } = await params;
     const slug = decodeSlug(encodedSlug);
+
+    // Realm-aware write ACL: a private page may be deleted only by its owner
+    // (or their agents / the service principal); public commons pages stay
+    // collectively manageable. (The middleware already blocks unauthenticated
+    // mutations; this is the per-page check on top.)
+    const principal = (await getPrincipal()) ?? getServicePrincipal(req);
+    const existing = await readWikiPageWithFrontmatter(slug);
+    if (!existing) {
+      return NextResponse.json(
+        { error: `page not found: ${slug}` },
+        { status: 404 },
+      );
+    }
+    // Realm-aware write ACL. When the write is denied, CLOAK: a private page the
+    // caller can't even read is 404 (no existence oracle, matching reads); a
+    // readable-but-unwritable page is 403.
+    if (!canWriteFrontmatter(existing.frontmatter, principal)) {
+      return canReadFrontmatter(existing.frontmatter, principal)
+        ? NextResponse.json(
+            { error: "You don't have permission to delete this page." },
+            { status: 403 },
+          )
+        : NextResponse.json(
+            { error: `page not found: ${slug}` },
+            { status: 404 },
+          );
+    }
+
     const result = await deleteWikiPage(slug);
     return NextResponse.json(result);
   } catch (err) {
@@ -78,7 +107,8 @@ export async function PUT(
     }
 
     // Attribution comes from the authenticated session, never the body.
-    const authorStr = (await getPrincipal())?.handle;
+    const principal = (await getPrincipal()) ?? getServicePrincipal(req);
+    const authorStr = principal?.handle;
 
     const existing = await readWikiPageWithFrontmatter(slug);
     if (!existing) {
@@ -86,6 +116,20 @@ export async function PUT(
         { error: `page not found: ${slug}` },
         { status: 404 },
       );
+    }
+
+    // Realm-aware write ACL. Denied → cloak: a private page the caller can't
+    // read is 404 (no existence oracle); readable-but-unwritable is 403.
+    if (!canWriteFrontmatter(existing.frontmatter, principal)) {
+      return canReadFrontmatter(existing.frontmatter, principal)
+        ? NextResponse.json(
+            { error: "You don't have permission to edit this page." },
+            { status: 403 },
+          )
+        : NextResponse.json(
+            { error: `page not found: ${slug}` },
+            { status: 404 },
+          );
     }
 
     // Derive title from the new body's first H1, falling back to the old title.

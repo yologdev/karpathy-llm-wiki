@@ -88,6 +88,23 @@ export async function patchMetadata(
     throw err;
   }
 
+  // Realm-aware write ACL: a private page's metadata may only be patched by its
+  // owner (or their agents / the service principal); public commons pages stay
+  // collectively editable. Enforced here so REST and MCP share the same gate.
+  // Denied → cloak: a private page the caller can't read is "not found" (no
+  // existence oracle, matching reads); a readable-but-unwritable page is 403.
+  const { canReadFrontmatter, canWriteFrontmatter } = await import("./authz");
+  if (!canWriteFrontmatter(existing.frontmatter, principal)) {
+    if (canReadFrontmatter(existing.frontmatter, principal)) {
+      const err = new Error("You don't have permission to edit this page.");
+      (err as NodeJS.ErrnoException).code = "NOT_OWNER";
+      throw err;
+    }
+    const err = new Error(`page not found: ${slug}`);
+    (err as NodeJS.ErrnoException).code = "NOT_FOUND";
+    throw err;
+  }
+
   // Making a page private is a paid, owner-only action — enforced here, the
   // single shared write path for both REST and MCP.
   if ("visibility" in metadata && metadata.visibility === "private") {
