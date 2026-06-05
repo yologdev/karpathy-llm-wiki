@@ -25,10 +25,17 @@ import {
 import { findRelatedPages, updateRelatedPages } from "../search";
 import { parseSources } from "../sources";
 import { MAX_LLM_INPUT_CHARS } from "../constants";
-import { listWikiPages, readWikiPage, writeWikiPage, readWikiPageWithFrontmatter } from "../wiki";
+import {
+  listWikiPages,
+  readWikiPage,
+  writeWikiPage,
+  readWikiPageWithFrontmatter,
+  serializeFrontmatter,
+  type Frontmatter,
+} from "../wiki";
 import { resetSourceIndex } from "../source-index";
 import { resetAliasIndex } from "../alias-index";
-import { hasEmbeddingSupport, searchByVector } from "../embeddings";
+import { hasEmbeddingSupport, searchByVector, contentHash } from "../embeddings";
 import type { IndexEntry } from "../types";
 
 const mockedHasEmbeddingSupport = vi.mocked(hasEmbeddingSupport);
@@ -2006,6 +2013,150 @@ describe("ingest — reconcile on merge", () => {
     expect(page!.content).toContain("Fresh synthesis body.");
     expect(page!.frontmatter.disputed).toBe(false);
     expect(Number(page!.frontmatter.source_count)).toBe(2);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// ingest — realm guard: never converge a non-owner onto a PRIVATE page
+// (private = owner-only; the Finding-1 fix)
+// ---------------------------------------------------------------------------
+
+describe("ingest — private-page convergence guard", () => {
+  beforeEach(() => {
+    resetSourceIndex();
+    resetAliasIndex();
+    mockedHasLLMKey.mockReturnValue(true);
+  });
+  afterEach(() => {
+    mockedHasLLMKey.mockReturnValue(false);
+    mockedCallLLM.mockReset();
+  });
+
+  /** Seed a PRIVATE page owned by `owner` with the given slug + body/hash. */
+  async function seedPrivate(
+    slug: string,
+    owner: string,
+    body: string,
+    extra: Partial<Frontmatter> = {},
+  ) {
+    const fm: Frontmatter = {
+      created: "2026-01-01",
+      updated: "2026-01-01",
+      owner,
+      visibility: "private",
+      authors: [owner],
+      contributors: [],
+      source_count: "1",
+      confidence: 0.7,
+      expiry: "2099-01-01",
+      tags: [],
+      content_hash: contentHash(body),
+      ...extra,
+    };
+    await writeWikiPage(slug, serializeFrontmatter(fm, `# ${slug}\n\n${body}`));
+    // Rebuild the source + alias indexes so the seeded page is resolvable.
+    resetSourceIndex();
+    resetAliasIndex();
+  }
+
+  it("does NOT dedup a non-owner's identical-content ingest into a private page", async () => {
+    const body = "Identical body for the private dedup test. More detail here.";
+    await seedPrivate("alice-secret", "alice", body);
+    mockedCallLLM.mockResolvedValue(
+      "CONCEPT: Bob Topic\nALIASES: none\n\n# Bob Topic\n\n## Summary\n\nBob's own.",
+    );
+
+    const result = await ingest("Bob Doc", body, {
+      owner: "bob",
+      author: "bob",
+    });
+
+    // Bob got his OWN page, not alice's private slug.
+    expect(result.primarySlug).not.toBe("alice-secret");
+    expect(result.deduped).toBeFalsy();
+    // Alice's private page is untouched (no new source, no bob contributor).
+    const priv = await readWikiPageWithFrontmatter("alice-secret");
+    expect(Number(priv!.frontmatter.source_count)).toBe(1);
+    expect(priv!.frontmatter.contributors).not.toContain("bob");
+  });
+
+  it("forks when a non-owner's concept slug collides with a private page", async () => {
+    await seedPrivate("transformer", "alice", "Alice's private notes on transformers.");
+    mockedCallLLM.mockResolvedValue(
+      "CONCEPT: Transformer\nALIASES: none\n\n# Transformer\n\n## Summary\n\nBob's public take.",
+    );
+
+    const result = await ingest("Bob On Transformers", "Bob's distinct source text about them.", {
+      owner: "bob",
+      author: "bob",
+    });
+
+    // Forked off the occupied private slug.
+    expect(result.primarySlug).not.toBe("transformer");
+    expect(result.primarySlug).toMatch(/^transformer-\d+$/);
+    // Alice's private page is untouched.
+    const priv = await readWikiPageWithFrontmatter("transformer");
+    expect(priv!.frontmatter.owner).toBe("alice");
+    expect(priv!.frontmatter.visibility).toBe("private");
+    expect(Number(priv!.frontmatter.source_count)).toBe(1);
+  });
+
+  it("lets the OWNER re-ingest into their own private page (merge, no fork)", async () => {
+    await seedPrivate("transformer", "alice", "Alice's first private take on transformers.");
+    mockedCallLLM.mockResolvedValue(
+      "CONCEPT: Transformer\nALIASES: none\n\n# Transformer\n\n## Summary\n\nAlice's refined take.",
+    );
+
+    const result = await ingest("Transformers", "Alice's second private source.", {
+      owner: "alice",
+      author: "alice",
+    });
+
+    expect(result.primarySlug).toBe("transformer");
+    const priv = await readWikiPageWithFrontmatter("transformer");
+    expect(Number(priv!.frontmatter.source_count)).toBe(2);
+    expect(priv!.frontmatter.visibility).toBe("private"); // stays private
+  });
+
+  it("lets the owner's AGENT write the owner's private page (agents of owner can write his vault)", async () => {
+    await seedPrivate("transformer", "alice", "Alice's first private take.");
+    mockedCallLLM.mockResolvedValue(
+      "CONCEPT: Transformer\nALIASES: none\n\n# Transformer\n\n## Summary\n\nAgent's addition.",
+    );
+
+    // The agent acts for alice (owner = alice--yoyo → same human owner).
+    const result = await ingest("Transformers", "A source the agent found.", {
+      owner: "alice--yoyo",
+      author: "alice--yoyo",
+    });
+
+    expect(result.primarySlug).toBe("transformer");
+    expect(Number((await readWikiPageWithFrontmatter("transformer"))!.frontmatter.source_count)).toBe(2);
+  });
+
+  it("does NOT leak a private page's slug via PREVIEW (forks before returning)", async () => {
+    await seedPrivate("transformer", "alice", "Alice's private notes on transformers.");
+    mockedCallLLM.mockResolvedValue(
+      "CONCEPT: Transformer\nALIASES: none\n\n# Transformer\n\n## Summary\n\nBob preview.",
+    );
+
+    // Bob previews under a title that resolves (via the alias index) to alice's
+    // private slug "transformer". The fork guard must run BEFORE the preview
+    // return, so the private slug never comes back.
+    const result = await ingest("Transformer", "Bob's distinct source text.", {
+      owner: "bob",
+      author: "bob",
+      preview: true,
+    });
+
+    expect(result.previewContent).toBeDefined();
+    expect(result.primarySlug).not.toBe("transformer");
+    expect(result.wikiPages).not.toContain("transformer");
+    expect(result.relatedUpdated).not.toContain("transformer");
+    // Nothing was written (preview): alice's page still has one source.
+    expect(
+      Number((await readWikiPageWithFrontmatter("transformer"))!.frontmatter.source_count),
+    ).toBe(1);
   });
 });
 

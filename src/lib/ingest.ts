@@ -55,6 +55,7 @@ import {
   updateSourceIndexForPage,
 } from "./source-index";
 import { contentHash, searchByVector, hasEmbeddingSupport } from "./embeddings";
+import { canReadEntry } from "./authz";
 import { getStorage } from "./storage";
 import { logger } from "./logger";
 
@@ -156,6 +157,7 @@ export async function ingestUrl(
         url,
         type: options?.sourceType ?? "url",
         triggeredBy: options?.triggeredBy,
+        actorOwner: options?.owner ?? options?.author,
       });
       if (result) return result;
     }
@@ -223,6 +225,7 @@ export async function ingestImage(
         url: imageUrl,
         type: "image",
         triggeredBy: options?.triggeredBy,
+        actorOwner: options?.owner ?? options?.author,
       });
       if (result) return result;
     }
@@ -293,6 +296,7 @@ export async function ingestPdf(
           url,
           type: "pdf",
           triggeredBy: options?.triggeredBy,
+          actorOwner: options?.owner ?? options?.author,
         });
         if (result) return result;
       }
@@ -922,16 +926,61 @@ export interface IngestOptions {
  * body is unchanged) any new embedding. Returns `null` if the page is missing
  * (stale index) so the caller can fall through to a normal ingest.
  */
+/**
+ * Reduce a handle to its human identity: an agent id `<user>--<name>` collapses
+ * to `<user>` (slugified), a plain handle slugifies as-is. Mirrors the
+ * owner-equivalence `canReadPage`/`canWritePage` use, at the handle level.
+ */
+function humanOf(handle: string): string {
+  const i = handle.indexOf("--");
+  return slugify(i >= 0 ? handle.slice(0, i) : handle);
+}
+
+/**
+ * True iff ingest actor `actorOwner` belongs to the same human-owner class as a
+ * page owned by `pageOwner` — i.e. the actor (or their agent) owns it. Used to
+ * decide whether an ingest may converge onto a PRIVATE page: private content is
+ * owner-only, so a non-owner must never dedup/merge into it.
+ */
+function sameHumanOwner(actorOwner: string | undefined, pageOwner: unknown): boolean {
+  if (typeof pageOwner !== "string" || pageOwner.trim() === "") return false;
+  if (!actorOwner || actorOwner.trim() === "") return false;
+  return humanOf(actorOwner) === humanOf(pageOwner);
+}
+
+/** Find a slug not taken by any existing page (`base`, `base-2`, `base-3`, …). */
+async function findFreeSlug(base: string): Promise<string> {
+  let candidate = base;
+  let n = 2;
+  while (await readWikiPageWithFrontmatter(candidate)) {
+    candidate = `${base}-${n++}`;
+  }
+  return candidate;
+}
+
 async function attachIngestTrigger(
   slug: string,
   source: {
     url: string;
     type: SourceEntry["type"];
     triggeredBy?: string;
+    /** The ingest's acting owner — used to gate dedup into a PRIVATE page. */
+    actorOwner?: string;
   },
 ): Promise<IngestResult | null> {
   const existing = await readWikiPageWithFrontmatter(slug);
   if (!existing) return null; // index drifted — let the caller ingest normally
+
+  // Realm-aware dedup: private content is owner-only, so a caller who isn't the
+  // owner (or their agent) must NOT dedup into a private page — no write, no
+  // slug leak. Return null so the caller falls through to a normal ingest that
+  // creates the actor's OWN page.
+  if (
+    existing.frontmatter.visibility === "private" &&
+    !sameHumanOwner(source.actorOwner, existing.frontmatter.owner)
+  ) {
+    return null;
+  }
 
   const frontmatter: Frontmatter = { ...existing.frontmatter };
   frontmatter.updated = new Date().toISOString().slice(0, 10);
@@ -1066,6 +1115,7 @@ export async function ingest(
         url: options?.sourceUrl ?? "text-paste",
         type: options?.sourceType ?? (options?.sourceUrl ? "url" : "text"),
         triggeredBy: options?.triggeredBy,
+        actorOwner: owner,
       });
       if (result) return result;
     }
@@ -1146,10 +1196,30 @@ export async function ingest(
   // the original document, not the LLM's reformatting.
   const summary = extractSummary(content);
 
+  // Realm guard: never converge onto a PRIVATE page this actor can't write
+  // (private = owner-only). If the resolved slug landed on someone else's
+  // private page — via the concept resolver, an alias, or a slug collision —
+  // FORK to a fresh slug so the ingest produces the actor's OWN page and never
+  // writes to (or leaks the slug of) the private one. Runs BEFORE the preview
+  // return too, so a non-owner's preview can't read back the private slug.
+  const resolvedExisting = await readWikiPageWithFrontmatter(slug);
+  if (
+    resolvedExisting &&
+    resolvedExisting.frontmatter.visibility === "private" &&
+    !sameHumanOwner(owner, resolvedExisting.frontmatter.owner)
+  ) {
+    slug = await findFreeSlug(slug);
+  }
+
   // --- Preview mode: return the generated content without writing ---
   if (isPreview) {
-    // Identify which related pages would be updated (read-only check)
-    const existingEntries = await listWikiPages();
+    // Identify which related pages would be updated — read-gated to the actor
+    // so a private page the actor can't read never leaks (title/summary/slug)
+    // into the preview's cross-ref set.
+    const reader = owner ? { handle: owner } : null;
+    const existingEntries = (await listWikiPages()).filter((e) =>
+      canReadEntry(e, reader),
+    );
     const relatedSlugs = await findRelatedPages(slug, content, existingEntries);
 
     return {
