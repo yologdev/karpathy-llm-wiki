@@ -46,24 +46,29 @@ export type Task =
        *  disputed page from its open thread; `staleness` re-ingest an expired
        *  page from its source; `fix` apply a deterministic lint auto-fix
        *  (`lintType`). `threadIndex` is required for `reconcile`; `lintType` for
-       *  `fix`. */
+       *  `fix`; `targetSlug` for `broken-link` (identifies which dead link to
+       *  remove). */
       kind: "maintain";
       op: "reconcile" | "staleness" | "fix";
       slug: string;
       threadIndex?: number;
       lintType?: MaintainFixType;
+      /** The target of a broken wiki link (for `broken-link` fixes). */
+      targetSlug?: string;
     };
 
 /** Deterministic, no-LLM lint fixes the maintenance scan may auto-apply. */
 export type MaintainFixType =
   | "unmigrated-page"
   | "stale-index"
-  | "supersedes-dangling";
+  | "supersedes-dangling"
+  | "broken-link";
 
 const MAINTAIN_FIX_TYPES = new Set<MaintainFixType>([
   "unmigrated-page",
   "stale-index",
   "supersedes-dangling",
+  "broken-link",
 ]);
 
 /** Minimal Cloudflare Queue producer binding — we only ever call `send`. */
@@ -163,11 +168,23 @@ export function parseTask(body: unknown): Task | null {
       // `fix` needs an allowed (deterministic) lint type.
       if (t.op === "fix") {
         if (!MAINTAIN_FIX_TYPES.has(t.lintType as MaintainFixType)) return null;
+        const lintType = t.lintType as MaintainFixType;
+        // `broken-link` additionally requires a targetSlug (which dead link to remove).
+        if (lintType === "broken-link") {
+          if (typeof t.targetSlug !== "string" || t.targetSlug.trim() === "") return null;
+          return {
+            kind: "maintain",
+            op: "fix",
+            slug: t.slug,
+            lintType,
+            targetSlug: t.targetSlug,
+          };
+        }
         return {
           kind: "maintain",
           op: "fix",
           slug: t.slug,
-          lintType: t.lintType as MaintainFixType,
+          lintType,
         };
       }
       return null;

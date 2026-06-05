@@ -92,7 +92,20 @@ describe("POST /api/tasks/run", () => {
       lintType: "unmigrated-page",
     });
     expect(res.status).toBe(200);
-    expect(mockedFixLint).toHaveBeenCalledWith("unmigrated-page", "p");
+    expect(mockedFixLint).toHaveBeenCalledWith("unmigrated-page", "p", undefined);
+  });
+
+  it("dispatches maintain:fix broken-link with targetSlug", async () => {
+    mockedFixLint.mockResolvedValue({ success: true, slug: "p", message: "removed dead link" });
+    const res = await run({
+      kind: "maintain",
+      op: "fix",
+      slug: "p",
+      lintType: "broken-link",
+      targetSlug: "dead-page",
+    });
+    expect(res.status).toBe(200);
+    expect(mockedFixLint).toHaveBeenCalledWith("broken-link", "p", "dead-page");
   });
 
   it("dispatches maintain:staleness via reingest", async () => {

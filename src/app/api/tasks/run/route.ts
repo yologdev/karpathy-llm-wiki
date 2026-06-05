@@ -78,7 +78,7 @@ export async function POST(req: Request) {
             { status: 400 },
           );
         }
-        const result = await fixLintIssue(task.lintType, task.slug);
+        const result = await fixLintIssue(task.lintType, task.slug, task.targetSlug);
         return NextResponse.json({ ok: true, ...result });
       }
       // op === "staleness": refresh an expired page from its source.

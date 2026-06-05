@@ -29,6 +29,7 @@
 import { listWikiPages, readWikiPageWithFrontmatter } from "./wiki";
 import { listThreads } from "./talk";
 import { isAgentHandle } from "./agents";
+import { extractWikiLinks } from "./links";
 import type { Task } from "./tasks";
 import { logger } from "./logger";
 
@@ -108,6 +109,27 @@ export async function scanForMaintenance(
       tasks.push({ kind: "maintain", op: "fix", slug: entry.slug, lintType: "supersedes-dangling" });
       continue;
     }
+
+    // (2b) Broken internal wiki links → one task per dead link (deterministic fix
+    //      removes the markdown link, leaving the anchor text). `extractWikiLinks`
+    //      finds `[text](slug.md)` patterns; we emit a task for each target slug
+    //      that doesn't exist.
+    const wikiLinks = extractWikiLinks(page.content);
+    let emittedBrokenLink = false;
+    for (const link of wikiLinks) {
+      if (tasks.length >= cap) break;
+      if (!pageSlugs.has(link.targetSlug)) {
+        tasks.push({
+          kind: "maintain",
+          op: "fix",
+          slug: entry.slug,
+          lintType: "broken-link",
+          targetSlug: link.targetSlug,
+        });
+        emittedBrokenLink = true;
+      }
+    }
+    if (emittedBrokenLink) continue;
 
     // (3) Stale (expiry passed) with a source to refresh from → re-ingest.
     const expiry = fm.expiry;

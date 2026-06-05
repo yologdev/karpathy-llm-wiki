@@ -124,6 +124,84 @@ describe("scanForMaintenance", () => {
     });
   });
 
+  it("enqueues a broken-link fix for each dead wiki link in a page", async () => {
+    // Seed a target page and a page that links to both a live and a dead slug.
+    await seed("target-exists");
+    // Write a page whose body has links to both an existing and a non-existing slug.
+    const fm: Frontmatter = {
+      created: PAST,
+      updated: PAST,
+      owner: "alice",
+      visibility: "public",
+      authors: ["alice"],
+      contributors: [],
+      confidence: 0.7,
+      expiry: "2099-01-01",
+      tags: [],
+      disputed: false,
+    };
+    await writeWikiPageWithSideEffects({
+      slug: "has-broken",
+      title: "has-broken",
+      content: serializeFrontmatter(
+        fm,
+        "# Has Broken\n\nSee [existing](target-exists.md) and [dead](no-such-page.md).",
+      ),
+      summary: "Has broken links.",
+      logOp: "ingest",
+      crossRefSource: null,
+    });
+    const tasks = await scanForMaintenance();
+    expect(tasks).toContainEqual({
+      kind: "maintain",
+      op: "fix",
+      slug: "has-broken",
+      lintType: "broken-link",
+      targetSlug: "no-such-page",
+    });
+    // The existing link should NOT produce a task.
+    expect(tasks).not.toContainEqual(
+      expect.objectContaining({ targetSlug: "target-exists" }),
+    );
+  });
+
+  it("emits multiple broken-link tasks for multiple dead links in one page", async () => {
+    const fm: Frontmatter = {
+      created: PAST,
+      updated: PAST,
+      owner: "alice",
+      visibility: "public",
+      authors: ["alice"],
+      contributors: [],
+      confidence: 0.7,
+      expiry: "2099-01-01",
+      tags: [],
+      disputed: false,
+    };
+    await writeWikiPageWithSideEffects({
+      slug: "multi-broken",
+      title: "multi-broken",
+      content: serializeFrontmatter(
+        fm,
+        "# Multi\n\n[a](dead-a.md) and [b](dead-b.md).",
+      ),
+      summary: "Multi broken.",
+      logOp: "ingest",
+      crossRefSource: null,
+    });
+    const tasks = await scanForMaintenance();
+    const brokenTasks = tasks.filter(
+      (t) => t.kind === "maintain" && t.op === "fix" && t.lintType === "broken-link",
+    );
+    expect(brokenTasks).toHaveLength(2);
+    expect(brokenTasks).toContainEqual(
+      expect.objectContaining({ slug: "multi-broken", targetSlug: "dead-a" }),
+    );
+    expect(brokenTasks).toContainEqual(
+      expect.objectContaining({ slug: "multi-broken", targetSlug: "dead-b" }),
+    );
+  });
+
   it("never flags a PRIVATE page (commons-only; avoids the reingest-fork loop)", async () => {
     await seed("priv-stale", {
       visibility: "private",

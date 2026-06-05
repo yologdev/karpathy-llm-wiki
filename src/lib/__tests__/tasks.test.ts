@@ -100,8 +100,31 @@ describe("parseTask", () => {
       parseTask({ kind: "maintain", op: "fix", slug: "p", lintType: "supersedes-dangling" }),
     ).toMatchObject({ op: "fix", lintType: "supersedes-dangling" });
     // A non-deterministic / unknown lint type (or none) is rejected.
-    expect(parseTask({ kind: "maintain", op: "fix", slug: "p", lintType: "broken-link" })).toBeNull();
+    expect(parseTask({ kind: "maintain", op: "fix", slug: "p", lintType: "orphan-page" })).toBeNull();
     expect(parseTask({ kind: "maintain", op: "fix", slug: "p" })).toBeNull();
+  });
+
+  it("accepts maintain:fix broken-link only with a targetSlug", () => {
+    expect(
+      parseTask({ kind: "maintain", op: "fix", slug: "p", lintType: "broken-link", targetSlug: "dead" }),
+    ).toEqual({
+      kind: "maintain",
+      op: "fix",
+      slug: "p",
+      lintType: "broken-link",
+      targetSlug: "dead",
+    });
+    // broken-link without targetSlug is rejected.
+    expect(
+      parseTask({ kind: "maintain", op: "fix", slug: "p", lintType: "broken-link" }),
+    ).toBeNull();
+    // broken-link with an empty targetSlug is rejected.
+    expect(
+      parseTask({ kind: "maintain", op: "fix", slug: "p", lintType: "broken-link", targetSlug: "" }),
+    ).toBeNull();
+    expect(
+      parseTask({ kind: "maintain", op: "fix", slug: "p", lintType: "broken-link", targetSlug: "  " }),
+    ).toBeNull();
   });
 
   it("rejects unknown kinds and non-objects", () => {
