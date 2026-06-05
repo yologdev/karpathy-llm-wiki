@@ -3,13 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState, useEffect, useRef } from "react";
-import {
-  Show,
-  SignInButton,
-  SignUpButton,
-  UserButton,
-  useUser,
-} from "@clerk/nextjs";
+import { Show, SignInButton, UserButton, useUser } from "@clerk/nextjs";
 import { GlobalSearch } from "./GlobalSearch";
 import { ThemeToggle } from "./ThemeToggle";
 import { Logo } from "./Logo";
@@ -211,16 +205,13 @@ export function NavHeader() {
           <li className="mx-1 h-4 w-px bg-foreground/10" aria-hidden="true" />
           <li className="flex items-center gap-2">
             <Show when="signed-out">
+              {/* SSO only: a single button — Clerk auto-creates the account on
+                  first "Continue with X", so a separate sign-up is redundant. */}
               <SignInButton mode="modal">
-                <button className="rounded-md px-3 py-1.5 text-sm text-foreground/60 hover:text-foreground hover:bg-foreground/5 transition-colors">
-                  Sign in
+                <button className="rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-accent-foreground hover:bg-accent-hover transition-colors">
+                  Sign in with X
                 </button>
               </SignInButton>
-              <SignUpButton mode="modal">
-                <button className="rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-accent-foreground hover:bg-accent-hover transition-colors">
-                  Sign up
-                </button>
-              </SignUpButton>
             </Show>
             <Show when="signed-in">
               <UserButton>
@@ -345,11 +336,8 @@ export function NavHeader() {
           <div className="px-6 py-2 flex items-center gap-3 text-sm">
             <Show when="signed-out">
               <SignInButton mode="modal">
-                <button className="text-foreground/60 hover:text-foreground">Sign in</button>
+                <button className="font-medium text-accent">Sign in with X</button>
               </SignInButton>
-              <SignUpButton mode="modal">
-                <button className="font-medium text-accent">Sign up</button>
-              </SignUpButton>
             </Show>
             <Show when="signed-in">
               <UserButton />
