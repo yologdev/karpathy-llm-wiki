@@ -4,6 +4,7 @@ import { slugsForOwner } from "@/lib/search";
 import { listAgentsForOwner, agentShortName } from "@/lib/agents";
 import { getDiscussionStatsForSlugs } from "@/lib/talk";
 import { getPrincipal } from "@/lib/auth";
+import { getVaultRefs } from "@/lib/vault";
 import { decodeSlug } from "@/lib/slugify";
 import { WikiIndexClient } from "@/components/WikiIndexClient";
 
@@ -22,7 +23,19 @@ export default async function UserPage({
   const pages = readable.filter((p) => mine.has(p.slug));
   const agents = await listAgentsForOwner(handle);
 
-  const statsMap = await getDiscussionStatsForSlugs(pages.map((p) => p.slug));
+  // Curated commons pages this handle referenced into their vault — the lens
+  // part of the vault. Dedup against pages they already own/contributed (those
+  // show above), and keep only what's still readable (a curated page that went
+  // private drops out for non-owners).
+  const curatedSet = new Set(await getVaultRefs(handle));
+  const curated = readable.filter(
+    (p) => curatedSet.has(p.slug) && !mine.has(p.slug),
+  );
+
+  const statsMap = await getDiscussionStatsForSlugs([
+    ...pages.map((p) => p.slug),
+    ...curated.map((p) => p.slug),
+  ]);
   const discussionStats: Record<string, { total: number; open: number }> = {};
   for (const [slug, stats] of statsMap) discussionStats[slug] = stats;
 
@@ -88,10 +101,24 @@ export default async function UserPage({
         </section>
       )}
 
-      {pages.length === 0 ? (
+      {pages.length === 0 && curated.length === 0 ? (
         <p className="text-foreground/60">No pages yet.</p>
       ) : (
-        <WikiIndexClient pages={pages} discussionStats={discussionStats} />
+        pages.length > 0 && (
+          <WikiIndexClient pages={pages} discussionStats={discussionStats} />
+        )
+      )}
+
+      {curated.length > 0 && (
+        <section className="mt-10">
+          <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-foreground/50">
+            Curated
+          </h2>
+          <p className="mb-3 text-sm text-foreground/50">
+            Commons pages {handle} saved to their vault — live references, not copies.
+          </p>
+          <WikiIndexClient pages={curated} discussionStats={discussionStats} />
+        </section>
       )}
     </main>
   );

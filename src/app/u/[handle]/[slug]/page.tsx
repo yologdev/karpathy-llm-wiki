@@ -23,8 +23,11 @@ import { MarkdownRenderer } from "@/components/MarkdownRenderer";
 import { DeletePageButton } from "@/components/DeletePageButton";
 import { ReingestButton } from "@/components/ReingestButton";
 import { ShareWithYoyoButton } from "@/components/ShareWithYoyoButton";
+import { SaveToVaultButton } from "@/components/SaveToVaultButton";
 import { getPrincipal } from "@/lib/auth";
 import { canReadFrontmatter } from "@/lib/authz";
+import { belongsInCommons } from "@/lib/commons";
+import { isInVault } from "@/lib/vault";
 import { agentIdFor, DEFAULT_AGENT_NAME, isAgentHandle } from "@/lib/agents";
 import { listRevisions } from "@/lib/revisions";
 import { AgentBadge } from "@/components/AgentBadge";
@@ -811,6 +814,25 @@ export default async function WikiPageView({ params }: WikiPageProps) {
     Array.isArray(page.frontmatter.sharedWith) &&
     (page.frontmatter.sharedWith as string[]).includes(myYoyoId);
 
+  // "Save to vault" — curate a commons (public, non-agent) page into the signed-in
+  // viewer's reference lens. Shown only on pages the viewer does NOT own or
+  // contribute to (those are already in their vault); curation is for pulling in
+  // OTHERS' commons pages.
+  const isCommonsPage = belongsInCommons({
+    visibility:
+      typeof page.frontmatter.visibility === "string"
+        ? page.frontmatter.visibility
+        : undefined,
+    type:
+      typeof page.frontmatter.type === "string"
+        ? page.frontmatter.type
+        : undefined,
+  });
+  // canShare is true when the viewer owns or contributed to the page — those are
+  // already in their vault, so the curate button is for everyone else's pages.
+  const canCurate = !!principal && isCommonsPage && !canShare;
+  const inVault = canCurate && (await isInVault(principal!.handle, slug));
+
   const revisions = await listRevisions(slug);
   const lineageSources = parseSources(
     page.frontmatter.sources as string | string[] | undefined,
@@ -904,6 +926,9 @@ export default async function WikiPageView({ params }: WikiPageProps) {
               </Link>
             )}
             {hasSourceUrl && <ReingestButton slug={slug} />}
+            {canCurate && (
+              <SaveToVaultButton slug={slug} initiallyInVault={inVault} />
+            )}
             {canShare && (
               <ShareWithYoyoButton slug={slug} initiallyShared={alreadyShared} />
             )}
