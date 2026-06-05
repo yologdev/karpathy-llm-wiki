@@ -13,6 +13,7 @@ import {
   handleIngestUrl,
   handleBatchIngest,
   handleIngestText,
+  handleIngestPdf,
   handleIngestXMention,
   handleQueryWiki,
   handleSaveQueryAnswer,
@@ -1348,6 +1349,74 @@ describe("ingest_text", () => {
       expect(result.slug).toBeTruthy();
       expect(result.title).toBeTruthy();
       expect(result.sourceUrl).toBe("");
+    } finally {
+      if (savedKey !== undefined) {
+        process.env.ANTHROPIC_API_KEY = savedKey;
+      }
+      _resetConfigCache();
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// ingest_pdf tests
+// ---------------------------------------------------------------------------
+
+describe("ingest_pdf", () => {
+  it("rejects invalid URLs", async () => {
+    await expect(
+      handleIngestPdf({ pdf_url: "not-a-url" }),
+    ).rejects.toThrow("Invalid URL");
+  });
+
+  it("rejects empty URL", async () => {
+    await expect(
+      handleIngestPdf({ pdf_url: "" }),
+    ).rejects.toThrow("Invalid URL");
+  });
+
+  it("passes owner and triggeredBy through to ingestPdf", async () => {
+    const savedKey = process.env.ANTHROPIC_API_KEY;
+    delete process.env.ANTHROPIC_API_KEY;
+    _resetConfigCache();
+    try {
+      const result = await handleIngestPdf({
+        pdf_url: "https://example.com/doc.pdf",
+        owner: "alice",
+        triggeredBy: "bob",
+      });
+
+      expect(result.slug).toBeTruthy();
+      expect(result.sourceUrl).toBe("https://example.com/doc.pdf");
+
+      // Verify the page was created with the correct owner in frontmatter
+      const page = await handleReadPage({ slug: result.slug });
+      expect(page.content).toBeTruthy();
+      expect(page.frontmatter.owner).toBe("alice");
+      // triggeredBy is recorded in the sources provenance entry
+      const sources = typeof page.frontmatter.sources === "string"
+        ? page.frontmatter.sources
+        : "";
+      expect(sources).toContain("bob");
+    } finally {
+      if (savedKey !== undefined) {
+        process.env.ANTHROPIC_API_KEY = savedKey;
+      }
+      _resetConfigCache();
+    }
+  });
+
+  it("works without owner/triggeredBy (backward-compatible)", async () => {
+    const savedKey = process.env.ANTHROPIC_API_KEY;
+    delete process.env.ANTHROPIC_API_KEY;
+    _resetConfigCache();
+    try {
+      const result = await handleIngestPdf({
+        pdf_url: "https://example.com/another.pdf",
+      });
+
+      expect(result.slug).toBeTruthy();
+      expect(result.sourceUrl).toBe("https://example.com/another.pdf");
     } finally {
       if (savedKey !== undefined) {
         process.env.ANTHROPIC_API_KEY = savedKey;

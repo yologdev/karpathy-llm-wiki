@@ -523,6 +523,8 @@ export async function handleIngestPdf(args: {
   pdf_url: string;
   title?: string | undefined;
   tags?: string[] | undefined;
+  owner?: string;
+  triggeredBy?: string;
 }): Promise<{
   slug: string;
   title: string;
@@ -540,6 +542,8 @@ export async function handleIngestPdf(args: {
     {
       ...(args.title ? { title: args.title } : {}),
       ...(args.tags && args.tags.length > 0 ? { tags: args.tags } : {}),
+      ...(args.owner ? { owner: args.owner } : {}),
+      ...(args.triggeredBy ? { triggeredBy: args.triggeredBy } : {}),
     },
   );
 
@@ -1553,6 +1557,8 @@ export function createMcpServer(): McpServer {
         .array(z.string())
         .optional()
         .describe("Optional tags to apply to the created page"),
+      owner: z.string().optional().describe("Owner handle — the accountable principal for the resulting page. Sets frontmatter owner for tenant model."),
+      triggeredBy: z.string().optional().describe("Handle of the user or agent that triggered this ingest (for provenance tracking)"),
     },
     annotations: {
       readOnlyHint: false,

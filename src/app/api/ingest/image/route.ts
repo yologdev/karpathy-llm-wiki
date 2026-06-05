@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { ingestImage } from "@/lib/ingest";
 import type { IngestOptions } from "@/lib/ingest";
 import { isUrl } from "@/lib/fetch";
-import { getPrincipal } from "@/lib/auth";
+import { getPrincipal, getServicePrincipal } from "@/lib/auth";
 import { ClientInputError, getErrorMessage } from "@/lib/errors";
 import { logger } from "@/lib/logger";
 import { MAX_RESPONSE_SIZE } from "@/lib/constants";
@@ -19,7 +19,7 @@ import { MAX_RESPONSE_SIZE } from "@/lib/constants";
  */
 export async function POST(request: NextRequest) {
   try {
-    const principal = await getPrincipal();
+    const principal = (await getPrincipal()) ?? getServicePrincipal(request);
     if (!principal) {
       return NextResponse.json({ error: "Sign in required." }, { status: 401 });
     }

@@ -1,14 +1,18 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-vi.mock("@/lib/auth", () => ({ getPrincipal: vi.fn() }));
+vi.mock("@/lib/auth", () => ({
+  getPrincipal: vi.fn(),
+  getServicePrincipal: vi.fn(() => null),
+}));
 vi.mock("@/lib/ingest", () => ({ ingestPdf: vi.fn() }));
 
-import { getPrincipal } from "@/lib/auth";
+import { getPrincipal, getServicePrincipal } from "@/lib/auth";
 import { ingestPdf } from "@/lib/ingest";
 import { ClientInputError } from "@/lib/errors";
 import { POST } from "@/app/api/ingest/pdf/route";
 
 const mockedPrincipal = vi.mocked(getPrincipal);
+const mockedServicePrincipal = vi.mocked(getServicePrincipal);
 const mockedIngestPdf = vi.mocked(ingestPdf);
 
 function jsonReq(body: unknown): Request {
@@ -96,5 +100,27 @@ describe("POST /api/ingest/pdf", () => {
     });
     const res = await POST(req as never);
     expect(res.status).toBe(400);
+  });
+
+  it("accepts service token when no Clerk session exists", async () => {
+    mockedPrincipal.mockResolvedValue(null);
+    mockedServicePrincipal.mockReturnValue({ id: "service:bot", handle: "bot" });
+    const res = await POST(jsonReq({ pdfUrl: "https://example.com/doc.pdf" }) as never);
+    expect(res.status).toBe(200);
+    expect(mockedIngestPdf).toHaveBeenCalledWith(
+      { pdfUrl: "https://example.com/doc.pdf" },
+      expect.objectContaining({ owner: "bot", author: "bot", triggeredBy: "bot" }),
+    );
+  });
+
+  it("prefers Clerk session over service token", async () => {
+    mockedServicePrincipal.mockReturnValue({ id: "service:bot", handle: "bot" });
+    // getPrincipal returns alice (Clerk session) — should use alice, not bot
+    const res = await POST(jsonReq({ pdfUrl: "https://example.com/doc.pdf" }) as never);
+    expect(res.status).toBe(200);
+    expect(mockedIngestPdf).toHaveBeenCalledWith(
+      { pdfUrl: "https://example.com/doc.pdf" },
+      expect.objectContaining({ owner: "alice", author: "alice" }),
+    );
   });
 });
