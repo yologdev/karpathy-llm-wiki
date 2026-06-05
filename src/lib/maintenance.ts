@@ -9,6 +9,10 @@
  *     same `reconcileFromTalk` as the on-demand button.
  *   - **staleness**: a page past its `expiry` with a `source_url` → re-ingest
  *     from the source (the reconcile-on-merge step refreshes it).
+ *   - **fix** (deterministic, no LLM): backfill a legacy page missing all
+ *     yopedia schema fields (`unmigrated-page`); clear a dangling `supersedes`
+ *     reference (`supersedes-dangling`); drop an index entry whose page file is
+ *     gone (`stale-index`). These reuse the lint auto-fixes (`lint-fix.ts`).
  *
  * Guardrails (because no human is watching each one):
  *   - **commons-only**: skip PRIVATE pages entirely. Autonomous maintenance
@@ -41,11 +45,25 @@ export async function scanForMaintenance(
   const today = new Date().toISOString().slice(0, 10);
   const tasks: Task[] = [];
   const pages = await listWikiPages();
+  const pageSlugs = new Set(pages.map((p) => p.slug));
 
   for (const entry of pages) {
     if (tasks.length >= cap) break;
+    if (entry.slug === "index" || entry.slug === "log") continue; // infra
+
     const page = await readWikiPageWithFrontmatter(entry.slug);
-    if (!page) continue;
+    if (!page) {
+      // Index entry with no page file → stale-index. The fix re-verifies the
+      // file is genuinely missing before dropping the entry, so a transient
+      // read miss is safe.
+      tasks.push({
+        kind: "maintain",
+        op: "fix",
+        slug: entry.slug,
+        lintType: "stale-index",
+      });
+      continue;
+    }
     const fm = page.frontmatter;
 
     // Commons-only: never autonomously touch a private vault page (privacy +
@@ -71,7 +89,27 @@ export async function scanForMaintenance(
       }
     }
 
-    // (2) Stale (expiry passed) with a source to refresh from → re-ingest.
+    // (2) Deterministic janitorial fixes (no LLM, safe): backfill a legacy page
+    //     missing ALL yopedia schema fields; clear a dangling `supersedes` ref.
+    if (
+      !("confidence" in fm) &&
+      !("authors" in fm) &&
+      !("expiry" in fm)
+    ) {
+      tasks.push({ kind: "maintain", op: "fix", slug: entry.slug, lintType: "unmigrated-page" });
+      continue;
+    }
+    const supersedes = fm.supersedes;
+    if (
+      typeof supersedes === "string" &&
+      supersedes !== "" &&
+      !pageSlugs.has(supersedes)
+    ) {
+      tasks.push({ kind: "maintain", op: "fix", slug: entry.slug, lintType: "supersedes-dangling" });
+      continue;
+    }
+
+    // (3) Stale (expiry passed) with a source to refresh from → re-ingest.
     const expiry = fm.expiry;
     const sourceUrl = fm.source_url;
     if (

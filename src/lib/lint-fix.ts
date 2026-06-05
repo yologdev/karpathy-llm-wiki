@@ -87,6 +87,17 @@ export async function fixStaleIndex(slug: string): Promise<FixResult> {
     throw new FixValidationError("Missing required field: slug");
   }
 
+  // Re-verify the page file is genuinely missing before dropping its index
+  // entry — never remove a valid entry on a transient read miss or a retry
+  // after the page was (re)created.
+  if (await readWikiPage(slug)) {
+    return {
+      success: false,
+      slug,
+      message: `Page "${slug}" exists — index entry is not stale`,
+    };
+  }
+
   const entries = await listWikiPages();
   const filtered = entries.filter((e) => e.slug !== slug);
 
@@ -570,6 +581,57 @@ export async function fixUnmigratedPage(slug: string): Promise<FixResult> {
   };
 }
 
+/**
+ * Fix a supersedes-dangling issue by CLEARING the dead reference — the page's
+ * `supersedes` points at a slug that no longer exists, so the pointer is stale.
+ * Re-verifies the target is still missing before clearing (idempotent / safe
+ * under queue retry), so a now-valid reference is never dropped.
+ */
+export async function fixSupersededDangling(slug: string): Promise<FixResult> {
+  if (!slug) {
+    throw new FixValidationError("Missing required field: slug");
+  }
+  const page = await readWikiPageWithFrontmatter(slug);
+  if (!page) {
+    throw new FixNotFoundError(`Page not found: ${slug}`);
+  }
+
+  const supersedes = page.frontmatter.supersedes;
+  if (typeof supersedes !== "string" || supersedes === "") {
+    return { success: false, slug, message: `No supersedes field to fix on "${slug}"` };
+  }
+  // Don't clear a reference that has since become valid.
+  if (await readWikiPageWithFrontmatter(supersedes)) {
+    return {
+      success: false,
+      slug,
+      message: `supersedes target "${supersedes}" now exists — nothing to fix`,
+    };
+  }
+
+  const fm = { ...page.frontmatter };
+  delete fm.supersedes;
+  await writeWikiPageWithSideEffects({
+    slug,
+    title: page.title,
+    content: serializeFrontmatter(fm, page.body),
+    summary: (() => {
+      const m = page.body.match(/^#\s+.+\n+(.+)/m);
+      return m ? m[1].slice(0, 120) : slug;
+    })(),
+    logOp: "edit",
+    logDetails: () => `auto-fix: cleared dangling supersedes "${supersedes}"`,
+    crossRefSource: null,
+    author: "lint-fix",
+  });
+
+  return {
+    success: true,
+    slug,
+    message: `Cleared dangling supersedes "${supersedes}" from "${slug}"`,
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Dispatcher
 // ---------------------------------------------------------------------------
@@ -628,9 +690,8 @@ export async function fixLintIssue(
         "Disputed pages cannot be auto-fixed. Review the page content and talk page to resolve the dispute through discussion.",
       );
     case "supersedes-dangling":
-      throw new FixValidationError(
-        "Supersedes-dangling pages require manual review. Update the supersedes field to point to a valid page or remove it.",
-      );
+      // Auto-fixable: clear the dead reference (re-verified missing first).
+      return fixSupersededDangling(slug);
     case "incomplete-coverage":
       throw new FixValidationError(
         "Incomplete coverage cannot be auto-fixed. Re-ingest the source URL to refresh the page content.",

@@ -42,14 +42,29 @@ export type Task =
       tags?: string[];
     }
   | {
-      /** Autonomous maintenance, enqueued by the scan cron (Q2): `reconcile` a
-       *  disputed page from its open thread, or `staleness` re-ingest an expired
-       *  page from its source. `threadIndex` is required for `reconcile`. */
+      /** Autonomous maintenance, enqueued by the scan cron (Q2). `reconcile` a
+       *  disputed page from its open thread; `staleness` re-ingest an expired
+       *  page from its source; `fix` apply a deterministic lint auto-fix
+       *  (`lintType`). `threadIndex` is required for `reconcile`; `lintType` for
+       *  `fix`. */
       kind: "maintain";
-      op: "reconcile" | "staleness";
+      op: "reconcile" | "staleness" | "fix";
       slug: string;
       threadIndex?: number;
+      lintType?: MaintainFixType;
     };
+
+/** Deterministic, no-LLM lint fixes the maintenance scan may auto-apply. */
+export type MaintainFixType =
+  | "unmigrated-page"
+  | "stale-index"
+  | "supersedes-dangling";
+
+const MAINTAIN_FIX_TYPES = new Set<MaintainFixType>([
+  "unmigrated-page",
+  "stale-index",
+  "supersedes-dangling",
+]);
 
 /** Minimal Cloudflare Queue producer binding — we only ever call `send`. */
 interface QueueBinding {
@@ -134,7 +149,6 @@ export function parseTask(body: unknown): Task | null {
       };
     }
     case "maintain": {
-      if (t.op !== "reconcile" && t.op !== "staleness") return null;
       if (typeof t.slug !== "string" || t.slug.trim() === "") return null;
       // `reconcile` needs a thread to reconcile from.
       if (t.op === "reconcile") {
@@ -143,7 +157,20 @@ export function parseTask(body: unknown): Task | null {
         }
         return { kind: "maintain", op: "reconcile", slug: t.slug, threadIndex: t.threadIndex };
       }
-      return { kind: "maintain", op: "staleness", slug: t.slug };
+      if (t.op === "staleness") {
+        return { kind: "maintain", op: "staleness", slug: t.slug };
+      }
+      // `fix` needs an allowed (deterministic) lint type.
+      if (t.op === "fix") {
+        if (!MAINTAIN_FIX_TYPES.has(t.lintType as MaintainFixType)) return null;
+        return {
+          kind: "maintain",
+          op: "fix",
+          slug: t.slug,
+          lintType: t.lintType as MaintainFixType,
+        };
+      }
+      return null;
     }
     default:
       return null;

@@ -154,6 +154,7 @@ describe("fixStaleIndex", () => {
   });
 
   it("returns no-op when slug is not in the index", async () => {
+    mockedReadWikiPage.mockResolvedValue(null); // page file genuinely missing
     mockedListWikiPages.mockResolvedValue([
       { slug: "other", title: "Other", summary: "..." },
     ]);
@@ -172,6 +173,7 @@ describe("fixStaleIndex", () => {
   });
 
   it("removes stale entry from index", async () => {
+    mockedReadWikiPage.mockResolvedValue(null); // page file genuinely missing
     mockedListWikiPages.mockResolvedValue([
       { slug: "good", title: "Good", summary: "keep" },
       { slug: "ghost", title: "Ghost", summary: "remove" },
@@ -765,6 +767,7 @@ describe("fixLintIssue", () => {
   });
 
   it("dispatches stale-index to fixStaleIndex", async () => {
+    mockedReadWikiPage.mockResolvedValue(null); // page file genuinely missing
     mockedListWikiPages.mockResolvedValue([
       { slug: "stale", title: "Stale", summary: "..." },
     ]);
@@ -918,13 +921,21 @@ describe("fixLintIssue", () => {
     );
   });
 
-  it("throws helpful FixValidationError for supersedes-dangling type", async () => {
-    await expect(fixLintIssue("supersedes-dangling", "some-slug")).rejects.toThrow(
-      FixValidationError,
+  it("dispatches supersedes-dangling to fixSupersededDangling (clears the dead ref)", async () => {
+    // Page declares supersedes: "ghost"; "ghost" has no page → dangling.
+    mockedReadWikiPageWithFrontmatter.mockImplementation(async (slug: string) =>
+      slug === "some-slug"
+        ? // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          ({ title: "Some", body: "# Some\n\nBody.", frontmatter: { supersedes: "ghost" } } as any)
+        : null,
     );
-    await expect(fixLintIssue("supersedes-dangling", "some-slug")).rejects.toThrow(
-      "Supersedes-dangling pages require manual review",
-    );
+
+    const result = await fixLintIssue("supersedes-dangling", "some-slug");
+    expect(result.success).toBe(true);
+    expect(mockedWriteWikiPageWithSideEffects).toHaveBeenCalledOnce();
+    // The dangling supersedes was removed from the written frontmatter.
+    const written = mockedWriteWikiPageWithSideEffects.mock.calls[0][0];
+    expect(written.content).not.toContain("supersedes");
   });
 
   it("throws helpful FixValidationError for incomplete-coverage type", async () => {

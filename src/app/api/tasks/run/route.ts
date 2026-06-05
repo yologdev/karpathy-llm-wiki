@@ -3,6 +3,7 @@ import { getServicePrincipal } from "@/lib/auth";
 import { parseTask } from "@/lib/tasks";
 import { reconcileFromTalk } from "@/lib/reconcile";
 import { ingest, ingestUrl, reingest } from "@/lib/ingest";
+import { fixLintIssue } from "@/lib/lint-fix";
 import { agentIdFor, DEFAULT_AGENT_NAME } from "@/lib/agents";
 import { getErrorMessage } from "@/lib/errors";
 import { logger } from "@/lib/logger";
@@ -67,6 +68,17 @@ export async function POST(req: Request) {
           );
         }
         const result = await reconcileFromTalk(task.slug, task.threadIndex);
+        return NextResponse.json({ ok: true, ...result });
+      }
+      if (task.op === "fix") {
+        // Deterministic, no-LLM lint auto-fix (backfill defaults, drop dead refs).
+        if (!task.lintType) {
+          return NextResponse.json(
+            { error: "maintain:fix requires lintType" },
+            { status: 400 },
+          );
+        }
+        const result = await fixLintIssue(task.lintType, task.slug);
         return NextResponse.json({ ok: true, ...result });
       }
       // op === "staleness": refresh an expired page from its source.

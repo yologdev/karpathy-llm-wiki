@@ -91,6 +91,39 @@ describe("scanForMaintenance", () => {
     expect(await scanForMaintenance()).toHaveLength(0);
   });
 
+  it("enqueues a fix for a legacy page missing all yopedia schema fields", async () => {
+    // Write a page with only owner/visibility/updated — no confidence/authors/expiry.
+    await writeWikiPageWithSideEffects({
+      slug: "legacy",
+      title: "legacy",
+      content: serializeFrontmatter(
+        { owner: "alice", visibility: "public", updated: PAST } as Frontmatter,
+        "# legacy\n\nOld page.",
+      ),
+      summary: "legacy",
+      logOp: "ingest",
+      crossRefSource: null,
+    });
+    const tasks = await scanForMaintenance();
+    expect(tasks).toContainEqual({
+      kind: "maintain",
+      op: "fix",
+      slug: "legacy",
+      lintType: "unmigrated-page",
+    });
+  });
+
+  it("enqueues a fix to clear a dangling supersedes reference", async () => {
+    await seed("rev", { supersedes: "deleted-page" }); // target not seeded → dangling
+    const tasks = await scanForMaintenance();
+    expect(tasks).toContainEqual({
+      kind: "maintain",
+      op: "fix",
+      slug: "rev",
+      lintType: "supersedes-dangling",
+    });
+  });
+
   it("never flags a PRIVATE page (commons-only; avoids the reingest-fork loop)", async () => {
     await seed("priv-stale", {
       visibility: "private",

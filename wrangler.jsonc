@@ -69,7 +69,13 @@
   // Public site-owner handle for runtime server gates (owner-only Lint). The
   // authoritative copy for the client is the build-time inline (deploy
   // workflow); this is runtime parity for server reads. Public, not a secret.
+  //
+  // AUTONOMOUS_MAINTENANCE="on" enables the daily maintenance cron to actually
+  // enqueue maintain tasks (reconcile disputes, refresh stale pages, and the
+  // deterministic janitorial fixes). Anything other than "on" = dry-run.
+  // See workers/task-consumer/README.md.
   "vars": {
-    "NEXT_PUBLIC_OWNER_HANDLE": "yuanhao"
+    "NEXT_PUBLIC_OWNER_HANDLE": "yuanhao",
+    "AUTONOMOUS_MAINTENANCE": "on"
   }
 }

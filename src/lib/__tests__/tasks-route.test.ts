@@ -7,16 +7,19 @@ vi.mock("@/lib/ingest", () => ({
   ingestUrl: vi.fn(),
   reingest: vi.fn(),
 }));
+vi.mock("@/lib/lint-fix", () => ({ fixLintIssue: vi.fn() }));
 
 import { getServicePrincipal } from "@/lib/auth";
 import { reconcileFromTalk } from "@/lib/reconcile";
 import { ingest, ingestUrl, reingest } from "@/lib/ingest";
+import { fixLintIssue } from "@/lib/lint-fix";
 
 const mockedGetService = vi.mocked(getServicePrincipal);
 const mockedReconcile = vi.mocked(reconcileFromTalk);
 const mockedIngest = vi.mocked(ingest);
 const mockedIngestUrl = vi.mocked(ingestUrl);
 const mockedReingest = vi.mocked(reingest);
+const mockedFixLint = vi.mocked(fixLintIssue);
 
 async function run(body: unknown) {
   const { POST } = await import("@/app/api/tasks/run/route");
@@ -78,6 +81,18 @@ describe("POST /api/tasks/run", () => {
     const res = await run({ kind: "maintain", op: "reconcile", slug: "d", threadIndex: 1 });
     expect(res.status).toBe(200);
     expect(mockedReconcile).toHaveBeenCalledWith("d", 1);
+  });
+
+  it("dispatches maintain:fix via fixLintIssue (deterministic lint fix)", async () => {
+    mockedFixLint.mockResolvedValue({ success: true, slug: "p", message: "fixed" });
+    const res = await run({
+      kind: "maintain",
+      op: "fix",
+      slug: "p",
+      lintType: "unmigrated-page",
+    });
+    expect(res.status).toBe(200);
+    expect(mockedFixLint).toHaveBeenCalledWith("unmigrated-page", "p");
   });
 
   it("dispatches maintain:staleness via reingest", async () => {
