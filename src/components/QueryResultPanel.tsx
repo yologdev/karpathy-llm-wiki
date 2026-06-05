@@ -20,6 +20,8 @@ export interface QueryResultPanelProps {
   question: string;
   currentHistoryId: string | null;
   onHistorySaved?: (id: string, slug: string) => void;
+  /** Hide the "Save to Wiki" action (e.g. the signed-out homepage demo). */
+  readOnly?: boolean;
 }
 
 export function QueryResultPanel({
@@ -28,6 +30,7 @@ export function QueryResultPanel({
   question,
   currentHistoryId,
   onHistorySaved,
+  readOnly = false,
 }: QueryResultPanelProps) {
   const { hrefForSlug } = useSlugTenants();
   const [saveState, setSaveState] = useState<SaveState>({ status: "idle" });
@@ -169,7 +172,7 @@ export function QueryResultPanel({
                   ? "Copy failed"
                   : "Copy as Markdown"}
             </button>
-            {saveState.status === "idle" && (
+            {!readOnly && saveState.status === "idle" && (
               <button
                 onClick={handleSaveClick}
                 className="rounded-lg border border-foreground/20 px-4 py-2 text-sm font-medium hover:bg-foreground/5 transition-colors"
