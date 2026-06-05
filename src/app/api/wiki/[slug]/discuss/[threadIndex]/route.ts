@@ -58,6 +58,13 @@ export async function PATCH(req: Request, { params }: RouteParams) {
   try {
     const { slug: encodedSlug, threadIndex } = await params;
     const slug = decodeSlug(encodedSlug);
+
+    // Realm-aware read ACL: a private page's discussions are invisible to
+    // non-owners (cloaked as 404 — no existence oracle).
+    if (!(await canReadSlug(slug, await getPrincipal()))) {
+      return NextResponse.json({ error: "not found" }, { status: 404 });
+    }
+
     const idx = parseInt(threadIndex, 10);
     if (!Number.isFinite(idx) || idx < 0) {
       return NextResponse.json(

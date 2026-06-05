@@ -723,3 +723,172 @@ describe("GET /api/wiki — agent-identity filtering", () => {
     expect(normal.type).toBeUndefined();
   });
 });
+
+// ---------------------------------------------------------------------------
+// Realm-aware ACL — discussion routes + revision revert
+// ---------------------------------------------------------------------------
+
+describe("realm-aware ACL — discussion and revision-revert routes", () => {
+  async function seed(slug: string, fm: Frontmatter) {
+    const today = new Date().toISOString().slice(0, 10);
+    const full: Frontmatter = {
+      created: today,
+      confidence: 0.5,
+      authors: [typeof fm.owner === "string" ? fm.owner : "system"],
+      contributors: [],
+      expiry: "2099-01-01",
+      sources: [],
+      ...fm,
+    };
+    await writeWikiPageWithSideEffects({
+      slug,
+      title: slug,
+      content: serializeFrontmatter(full, `# ${slug}\n\nOriginal secret.`),
+      summary: "a test page",
+      logOp: "ingest",
+      crossRefSource: null,
+    });
+  }
+
+  // --- Discussion: create thread ---
+
+  async function postDiscuss(slug: string) {
+    const { POST } = await import("@/app/api/wiki/[slug]/discuss/route");
+    return POST(
+      new Request(`http://localhost/api/wiki/${slug}/discuss`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title: "Question", body: "Is this right?" }),
+      }),
+      { params: Promise.resolve({ slug }) },
+    );
+  }
+
+  it("cloaks a non-owner creating a discussion on a private page (POST discuss 404)", async () => {
+    await seed("alice-priv-disc", { owner: "alice", visibility: "private" });
+    const res = await postDiscuss("alice-priv-disc");
+    expect(res.status).toBe(404);
+  });
+
+  it("allows the owner to create a discussion on their private page", async () => {
+    await seed("alice-own-disc", { owner: "alice", visibility: "private" });
+    mockedGetPrincipal.mockResolvedValueOnce({ id: "u_alice", handle: "alice" });
+    const res = await postDiscuss("alice-own-disc");
+    expect(res.status).toBe(201);
+  });
+
+  it("allows any signed-in user to create a discussion on a public page", async () => {
+    await seed("pub-disc", { owner: "alice", visibility: "public" });
+    const res = await postDiscuss("pub-disc");
+    expect(res.status).toBe(201);
+  });
+
+  // --- Discussion: resolve/reopen thread ---
+
+  async function patchDiscuss(slug: string) {
+    const { PATCH } = await import(
+      "@/app/api/wiki/[slug]/discuss/[threadIndex]/route"
+    );
+    return PATCH(
+      new Request(`http://localhost/api/wiki/${slug}/discuss/0`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: "resolved" }),
+      }),
+      { params: Promise.resolve({ slug, threadIndex: "0" }) },
+    );
+  }
+
+  it("cloaks a non-owner resolving a discussion on a private page (PATCH discuss 404)", async () => {
+    await seed("alice-priv-resolve", { owner: "alice", visibility: "private" });
+    const res = await patchDiscuss("alice-priv-resolve");
+    expect(res.status).toBe(404);
+  });
+
+  // --- Discussion: add comment ---
+
+  async function postComment(slug: string) {
+    const { POST } = await import(
+      "@/app/api/wiki/[slug]/discuss/[threadIndex]/comments/route"
+    );
+    return POST(
+      new Request(`http://localhost/api/wiki/${slug}/discuss/0/comments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ body: "Nice page!" }),
+      }),
+      { params: Promise.resolve({ slug, threadIndex: "0" }) },
+    );
+  }
+
+  it("cloaks a non-owner commenting on a private page (POST comment 404)", async () => {
+    await seed("alice-priv-comment", { owner: "alice", visibility: "private" });
+    const res = await postComment("alice-priv-comment");
+    expect(res.status).toBe(404);
+  });
+
+  // --- Revision revert ---
+
+  async function postRevert(slug: string, timestamp = 1000000) {
+    const { POST } = await import("@/app/api/wiki/[slug]/revisions/route");
+    return POST(
+      new Request(`http://localhost/api/wiki/${slug}/revisions`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "revert", timestamp }),
+      }),
+      { params: Promise.resolve({ slug }) },
+    );
+  }
+
+  it("cloaks a non-owner reverting a private page (POST revert 404)", async () => {
+    await seed("alice-priv-revert", { owner: "alice", visibility: "private" });
+    const res = await postRevert("alice-priv-revert");
+    expect(res.status).toBe(404);
+  });
+
+  it("allows the owner to revert their own private page", async () => {
+    await seed("alice-own-revert", { owner: "alice", visibility: "private" });
+    // Create a revision so the revert has something to restore.
+    const { saveRevision } = await import("@/lib/revisions");
+    await saveRevision("alice-own-revert", "# alice-own-revert\n\nOld content.");
+    const { listRevisions } = await import("@/lib/revisions");
+    const revs = await listRevisions("alice-own-revert");
+    expect(revs.length).toBeGreaterThan(0);
+
+    mockedGetPrincipal.mockResolvedValueOnce({ id: "u_alice", handle: "alice" });
+    const res = await postRevert("alice-own-revert", revs[0].timestamp);
+    expect(res.status).toBe(200);
+  });
+
+  it("allows a service principal to revert a private page", async () => {
+    await seed("svc-priv-revert", { owner: "alice", visibility: "private" });
+    const { saveRevision } = await import("@/lib/revisions");
+    await saveRevision("svc-priv-revert", "# svc-priv-revert\n\nOld content.");
+    const { listRevisions } = await import("@/lib/revisions");
+    const revs = await listRevisions("svc-priv-revert");
+    expect(revs.length).toBeGreaterThan(0);
+
+    // Simulate a service principal — getPrincipal returns null, but
+    // getServicePrincipal returns the trusted automated caller.
+    mockedGetPrincipal.mockResolvedValueOnce(null);
+    const { getServicePrincipal } = await import("@/lib/auth");
+    const mockedGetService = vi.mocked(getServicePrincipal);
+    mockedGetService.mockReturnValueOnce({ id: "service:alice", handle: "alice" });
+
+    const res = await postRevert("svc-priv-revert", revs[0].timestamp);
+    expect(res.status).toBe(200);
+  });
+
+  it("keeps PUBLIC pages collectively revertible (POST revert 200)", async () => {
+    await seed("pub-revert", { owner: "alice", visibility: "public" });
+    const { saveRevision } = await import("@/lib/revisions");
+    await saveRevision("pub-revert", "# pub-revert\n\nOld content.");
+    const { listRevisions } = await import("@/lib/revisions");
+    const revs = await listRevisions("pub-revert");
+    expect(revs.length).toBeGreaterThan(0);
+
+    const res = await postRevert("pub-revert", revs[0].timestamp);
+    expect(res.status).toBe(200);
+  });
+});

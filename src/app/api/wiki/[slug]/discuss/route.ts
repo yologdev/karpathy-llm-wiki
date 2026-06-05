@@ -68,6 +68,12 @@ export async function POST(req: Request, { params }: RouteParams) {
       return NextResponse.json({ error: "Sign in required." }, { status: 401 });
     }
 
+    // Realm-aware read ACL: a private page's discussions are invisible to
+    // non-owners (cloaked as 404 — no existence oracle).
+    if (!(await canReadSlug(slug, principal))) {
+      return NextResponse.json({ error: "not found" }, { status: 404 });
+    }
+
     if (typeof title !== "string" || title.trim().length === 0) {
       return NextResponse.json(
         { error: "title must be a non-empty string" },

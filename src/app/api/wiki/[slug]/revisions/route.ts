@@ -3,8 +3,8 @@ import { readWikiPage, readWikiPageWithFrontmatter, writeWikiPageWithSideEffects
 import { listRevisions, readRevision, readRevisionMeta } from "@/lib/revisions";
 import { extractSummary } from "@/lib/ingest";
 import { serializeFrontmatter } from "@/lib/frontmatter";
-import { getPrincipal } from "@/lib/auth";
-import { canReadSlug } from "@/lib/authz";
+import { getPrincipal, getServicePrincipal } from "@/lib/auth";
+import { canReadSlug, canWriteFrontmatter, canReadFrontmatter } from "@/lib/authz";
 import { getErrorMessage } from "@/lib/errors";
 
 type RouteParams = { params: Promise<{ slug: string }> };
@@ -136,6 +136,21 @@ export async function POST(req: Request, { params }: RouteParams) {
         { error: `page not found: ${slug}` },
         { status: 404 },
       );
+    }
+
+    // Realm-aware write ACL. A revert is a write — use the same cloak pattern
+    // as PUT: private page non-reader → 404, readable-but-unwritable → 403.
+    const principal = (await getPrincipal()) ?? getServicePrincipal(req);
+    if (!canWriteFrontmatter(existing.frontmatter, principal)) {
+      return canReadFrontmatter(existing.frontmatter, principal)
+        ? NextResponse.json(
+            { error: "You don't have permission to revert this page." },
+            { status: 403 },
+          )
+        : NextResponse.json(
+            { error: `page not found: ${slug}` },
+            { status: 404 },
+          );
     }
 
     // Load the revision content.

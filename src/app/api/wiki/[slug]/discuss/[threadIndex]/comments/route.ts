@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { decodeSlug } from "@/lib/slugify";
 import { addComment } from "@/lib/talk";
 import { getPrincipal } from "@/lib/auth";
+import { canReadSlug } from "@/lib/authz";
 import { getErrorMessage } from "@/lib/errors";
 import { logger } from "@/lib/logger";
 
@@ -26,6 +27,18 @@ export async function POST(req: Request, { params }: RouteParams) {
       );
     }
 
+    // Comment author is the authenticated principal, never the request body.
+    const principal = await getPrincipal();
+    if (!principal) {
+      return NextResponse.json({ error: "Sign in required." }, { status: 401 });
+    }
+
+    // Realm-aware read ACL: a private page's discussions are invisible to
+    // non-owners (cloaked as 404 — no existence oracle).
+    if (!(await canReadSlug(slug, principal))) {
+      return NextResponse.json({ error: "not found" }, { status: 404 });
+    }
+
     let body: unknown;
     try {
       body = await req.json();
@@ -45,11 +58,6 @@ export async function POST(req: Request, { params }: RouteParams) {
 
     const { body: commentBody, parentId } = body as Record<string, unknown>;
 
-    // Comment author is the authenticated principal, never the request body.
-    const principal = await getPrincipal();
-    if (!principal) {
-      return NextResponse.json({ error: "Sign in required." }, { status: 401 });
-    }
     const author = principal.handle;
 
     if (typeof commentBody !== "string" || commentBody.trim().length === 0) {
