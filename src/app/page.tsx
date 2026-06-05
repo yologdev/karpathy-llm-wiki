@@ -1,11 +1,8 @@
 import Link from "next/link";
-import { StatusBadge } from "@/components/StatusBadge";
 import { OnboardingWizard } from "@/components/OnboardingWizard";
 import { WikiPageCard } from "@/components/WikiPageCard";
 import { ContributorBadge } from "@/components/ContributorBadge";
-import { TagChip } from "@/components/TagChip";
 import { HomeAsk } from "@/components/HomeAsk";
-import { HomeGraph } from "@/components/HomeGraph";
 import { Trail } from "@/components/Trail";
 import { listCommonsPages } from "@/lib/commons";
 import { listContributors } from "@/lib/contributors";
@@ -32,15 +29,6 @@ export default async function Home() {
   const recent = [...pages]
     .sort((a, b) => (b.updated ?? "").localeCompare(a.updated ?? ""))
     .slice(0, 6);
-
-  const tagFreq = new Map<string, number>();
-  for (const p of pages) {
-    for (const t of p.tags ?? []) tagFreq.set(t, (tagFreq.get(t) ?? 0) + 1);
-  }
-  const topTags = [...tagFreq.entries()]
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 10)
-    .map(([tag, count]) => ({ tag, count }));
 
   const topContributors = contributors.slice(0, 6);
 
@@ -81,9 +69,6 @@ export default async function Home() {
             <span className="font-semibold text-foreground">{contributorCount}</span>{" "}
             {contributorCount === 1 ? "contributor" : "contributors"}
           </span>
-          <span className="ml-auto">
-            <StatusBadge />
-          </span>
         </div>
       )}
 
@@ -93,29 +78,20 @@ export default async function Home() {
         </div>
       ) : (
         <>
-          {/* The lab running: live trail + the substrate */}
-          <section className="mt-16 grid gap-10 lg:grid-cols-5">
-            <div className="lg:col-span-3">
-              <h2 className="label">the trail</h2>
-              <p className="mt-1 text-sm text-muted">
-                Every ingest and edit, humans and agents alike.
-              </p>
-              <div className="mt-4">
-                {trail.length > 0 ? (
-                  <Trail events={trail} />
-                ) : (
-                  <p className="text-sm text-muted">
-                    Nothing yet — ingest a source to start the trail.
-                  </p>
-                )}
-              </div>
-            </div>
-            <div className="lg:col-span-2">
-              <h2 className="label">the substrate</h2>
-              <p className="mt-1 text-sm text-muted">Pages, interlinked.</p>
-              <div className="mt-4">
-                <HomeGraph />
-              </div>
+          {/* The lab running: the live trail */}
+          <section className="mt-16">
+            <h2 className="label">the trail</h2>
+            <p className="mt-1 text-sm text-muted">
+              Every ingest and edit, humans and agents alike.
+            </p>
+            <div className="mt-4">
+              {trail.length > 0 ? (
+                <Trail events={trail} />
+              ) : (
+                <p className="text-sm text-muted">
+                  Nothing yet — ingest a source to start the trail.
+                </p>
+              )}
             </div>
           </section>
 
@@ -136,23 +112,6 @@ export default async function Home() {
               ))}
             </ul>
           </section>
-
-          {/* Browse by topic */}
-          {topTags.length >= 3 && (
-            <section className="mt-12">
-              <h2 className="label">browse by topic</h2>
-              <div className="mt-4 flex flex-wrap gap-2">
-                {topTags.map(({ tag, count }) => (
-                  <TagChip
-                    key={tag}
-                    tag={tag}
-                    count={count}
-                    href={`/wiki?scope=all&tag=${encodeURIComponent(tag)}`}
-                  />
-                ))}
-              </div>
-            </section>
-          )}
 
           {/* Contributors (humans; agents shown distinctly in the trail) */}
           {contributorCount >= 2 && (

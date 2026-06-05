@@ -6,6 +6,7 @@ import { slugsForOwner } from "@/lib/search";
 import { getDiscussionStatsForSlugs } from "@/lib/talk";
 import { getPrincipal } from "@/lib/auth";
 import { WikiIndexClient } from "@/components/WikiIndexClient";
+import { TagChip } from "@/components/TagChip";
 
 export default async function WikiIndex({
   searchParams,
@@ -42,7 +43,18 @@ export default async function WikiIndex({
     pages = await listCommonsPages();
   }
 
-  // Optional topic filter (from the homepage "Browse by topic" chips).
+  // Top topics across the current scope (computed BEFORE the tag filter so the
+  // chips always show every available topic). Drives the "browse by topic" row.
+  const tagFreq = new Map<string, number>();
+  for (const p of pages) {
+    for (const t of p.tags ?? []) tagFreq.set(t, (tagFreq.get(t) ?? 0) + 1);
+  }
+  const topTags = [...tagFreq.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 14)
+    .map(([t, count]) => ({ tag: t, count }));
+
+  // Optional topic filter (from a "browse by topic" chip).
   if (tag) {
     pages = pages.filter((p) => (p.tags ?? []).includes(tag));
   }
@@ -93,6 +105,23 @@ export default async function WikiIndex({
           All
         </Link>
       </div>
+
+      {/* Browse by topic — filter the current scope by tag. */}
+      {topTags.length >= 3 && !tag && (
+        <div className="mb-6">
+          <h2 className="label mb-2">browse by topic</h2>
+          <div className="flex flex-wrap gap-2">
+            {topTags.map(({ tag: t, count }) => (
+              <TagChip
+                key={t}
+                tag={t}
+                count={count}
+                href={`/wiki?scope=${encodeURIComponent(effectiveScope)}&tag=${encodeURIComponent(t)}`}
+              />
+            ))}
+          </div>
+        </div>
+      )}
 
       {tag && (
         <div className="mb-4 flex items-center gap-2 text-sm text-foreground/60">
