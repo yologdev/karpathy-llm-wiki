@@ -14,7 +14,9 @@ import {
   appendToLog,
   wikiRelPath,
   tenantForOwner,
+  enrichEntry,
 } from "./wiki";
+import { syncPageIndexForPage, removePageIndexForSlug } from "./page-index";
 import { syncSiloForPage, removeSiloForPage } from "./silo";
 import { getStorage } from "./storage";
 import { withFileLock } from "./lock";
@@ -461,6 +463,23 @@ async function runPageLifecycleOp(
     }
   } catch (err) {
     logger.warn("recent-index", `recent index sync skipped for "${slug}":`, err);
+  }
+
+  // 3b-vi. Page-metadata index (_idx:pages) — the enriched IndexEntry per slug,
+  //         so listWikiPages enriches with one KV read instead of reading every
+  //         page file. Holds ALL pages (visibility filtering is on the read side).
+  //         No-op until the daily rebuild has seeded it. Fail-soft.
+  try {
+    if (op.kind === "delete") {
+      await removePageIndexForSlug(slug);
+    } else {
+      const fm = parseFrontmatter(op.content).data;
+      await syncPageIndexForPage(
+        enrichEntry({ title: op.title, slug, summary: op.summary }, fm),
+      );
+    }
+  } catch (err) {
+    logger.warn("page-index", `page index sync skipped for "${slug}":`, err);
   }
 
   // 3c. Mirror the page into its per-tenant silo — a live, self-contained vault

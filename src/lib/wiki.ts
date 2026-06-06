@@ -365,14 +365,75 @@ export async function writeWikiPage(
 // Index management
 // ---------------------------------------------------------------------------
 
-/**
- * Parse `wiki/index.md` and return its entries.
- * Returns an empty array when the file doesn't exist.
- *
- * Expected format per line:
- *   - [Title](slug.md) — summary
- */
-export async function listWikiPages(): Promise<IndexEntry[]> {
+/** Build an enriched {@link IndexEntry} from a base (title/slug/summary) + the
+ *  page's frontmatter. The single source of the enrichment rules — used by the
+ *  per-page scan AND the `_idx:pages` rebuild so they can't drift. */
+export function enrichEntry(
+  base: IndexEntry,
+  fm: Frontmatter,
+): IndexEntry {
+  const tags = Array.isArray(fm.tags)
+    ? fm.tags.filter((t): t is string => typeof t === "string" && t.length > 0)
+    : undefined;
+
+  const updated =
+    typeof fm.updated === "string" && fm.updated.length > 0 ? fm.updated : undefined;
+
+  // source_count may be a number (new behavior) or a string (legacy).
+  const sourceCountRaw = fm.source_count;
+  const sourceCountNum =
+    typeof sourceCountRaw === "number"
+      ? sourceCountRaw
+      : typeof sourceCountRaw === "string" && sourceCountRaw.length > 0
+        ? Number.parseInt(sourceCountRaw, 10)
+        : NaN;
+  const sourceCount =
+    Number.isFinite(sourceCountNum) && sourceCountNum >= 0 ? sourceCountNum : undefined;
+
+  const sourceUrl =
+    typeof fm.source_url === "string" && fm.source_url.length > 0
+      ? fm.source_url
+      : undefined;
+
+  const owner =
+    typeof fm.owner === "string" && fm.owner.length > 0 ? fm.owner : undefined;
+
+  const pageType =
+    typeof fm.type === "string" && fm.type.length > 0 ? fm.type : undefined;
+
+  // Only "private" is meaningful for read-gating; everything else is public.
+  const visibility =
+    typeof fm.visibility === "string" && fm.visibility === "private"
+      ? "private"
+      : undefined;
+
+  const confidenceRaw = fm.confidence;
+  const confidenceNum =
+    typeof confidenceRaw === "number"
+      ? confidenceRaw
+      : typeof confidenceRaw === "string" && confidenceRaw.length > 0
+        ? Number.parseFloat(confidenceRaw)
+        : NaN;
+  const confidence =
+    Number.isFinite(confidenceNum) && confidenceNum >= 0 && confidenceNum <= 1
+      ? confidenceNum
+      : undefined;
+
+  return {
+    ...base,
+    ...(tags && tags.length > 0 ? { tags } : {}),
+    ...(updated ? { updated } : {}),
+    ...(sourceCount !== undefined ? { sourceCount } : {}),
+    ...(sourceUrl ? { sourceUrl } : {}),
+    ...(confidence !== undefined ? { confidence } : {}),
+    ...(owner ? { owner } : {}),
+    ...(pageType ? { type: pageType } : {}),
+    ...(visibility ? { visibility } : {}),
+  };
+}
+
+/** Parse the ordered base entries (title/slug/summary) from `wiki/index.md`. */
+async function readIndexBaseEntries(): Promise<IndexEntry[]> {
   const storagePath = wikiRelPath("index.md");
   let raw: string;
   try {
@@ -383,95 +444,29 @@ export async function listWikiPages(): Promise<IndexEntry[]> {
     }
     return [];
   }
-
   const baseEntries: IndexEntry[] = [];
   const lineRe = /^-\s+\[(.+?)]\((.+?)\.md\)\s*—\s*(.+)$/;
-
   for (const line of raw.split("\n")) {
     const m = line.match(lineRe);
-    if (m) {
-      baseEntries.push({ title: m[1], slug: m[2], summary: m[3].trim() });
-    }
+    if (m) baseEntries.push({ title: m[1], slug: m[2], summary: m[3].trim() });
   }
+  return baseEntries;
+}
 
-  // Enrich every entry in parallel with frontmatter-derived metadata
-  // (tags / updated / source_count). If any individual page fails to
-  // parse, we log a warning and fall back to the plain entry so that
-  // one malformed page never breaks the whole index.
-  const enriched = await Promise.all(
+/**
+ * The O(pages) scan: read `index.md` then EACH page's frontmatter to enrich.
+ * The fallback for {@link listWikiPages} and the source for the `_idx:pages`
+ * rebuild. A page that fails to parse falls back to its plain index entry so one
+ * malformed page never breaks the whole list.
+ */
+export async function scanWikiPagesUncached(): Promise<IndexEntry[]> {
+  const baseEntries = await readIndexBaseEntries();
+  return Promise.all(
     baseEntries.map(async (entry): Promise<IndexEntry> => {
       try {
         const page = await readWikiPageWithFrontmatter(entry.slug);
         if (!page) return entry;
-        const fm = page.frontmatter;
-
-        const tags =
-          Array.isArray(fm.tags)
-            ? fm.tags.filter((t): t is string => typeof t === "string" && t.length > 0)
-            : undefined;
-
-        const updated =
-          typeof fm.updated === "string" && fm.updated.length > 0
-            ? fm.updated
-            : undefined;
-
-        // source_count may be a number (new behavior) or a string (legacy); parse defensively.
-        const sourceCountRaw = fm.source_count;
-        const sourceCountNum =
-          typeof sourceCountRaw === "number"
-            ? sourceCountRaw
-            : typeof sourceCountRaw === "string" && sourceCountRaw.length > 0
-              ? Number.parseInt(sourceCountRaw, 10)
-              : NaN;
-        const sourceCount = Number.isFinite(sourceCountNum) && sourceCountNum >= 0
-          ? sourceCountNum
-          : undefined;
-
-        const sourceUrl =
-          typeof fm.source_url === "string" && fm.source_url.length > 0
-            ? fm.source_url
-            : undefined;
-
-        const owner =
-          typeof fm.owner === "string" && fm.owner.length > 0
-            ? fm.owner
-            : undefined;
-
-        const pageType =
-          typeof fm.type === "string" && fm.type.length > 0
-            ? fm.type
-            : undefined;
-
-        // Only "private" is meaningful for read-gating; everything else is public.
-        const visibility =
-          typeof fm.visibility === "string" && fm.visibility === "private"
-            ? "private"
-            : undefined;
-
-        // Parse confidence (0–1 number from frontmatter)
-        const confidenceRaw = fm.confidence;
-        const confidenceNum =
-          typeof confidenceRaw === "number"
-            ? confidenceRaw
-            : typeof confidenceRaw === "string" && confidenceRaw.length > 0
-              ? Number.parseFloat(confidenceRaw)
-              : NaN;
-        const confidence =
-          Number.isFinite(confidenceNum) && confidenceNum >= 0 && confidenceNum <= 1
-            ? confidenceNum
-            : undefined;
-
-        return {
-          ...entry,
-          ...(tags && tags.length > 0 ? { tags } : {}),
-          ...(updated ? { updated } : {}),
-          ...(sourceCount !== undefined ? { sourceCount } : {}),
-          ...(sourceUrl ? { sourceUrl } : {}),
-          ...(confidence !== undefined ? { confidence } : {}),
-          ...(owner ? { owner } : {}),
-          ...(pageType ? { type: pageType } : {}),
-          ...(visibility ? { visibility } : {}),
-        };
+        return enrichEntry(entry, page.frontmatter);
       } catch (err) {
         logger.warn(
           "wiki",
@@ -482,8 +477,31 @@ export async function listWikiPages(): Promise<IndexEntry[]> {
       }
     }),
   );
+}
 
-  return enriched;
+/**
+ * Parse `wiki/index.md` and return its entries with enriched metadata.
+ *
+ * Fast path: read the ordered base from `index.md` (1 read) and enrich from the
+ * `_idx:pages` metadata index (1 KV read) — O(1) instead of reading every page
+ * file. Falls back to the per-page {@link scanWikiPagesUncached} when the index
+ * isn't seeded, so behavior is identical with or without the index.
+ *
+ * Expected `index.md` line format: `- [Title](slug.md) — summary`
+ */
+export async function listWikiPages(): Promise<IndexEntry[]> {
+  const { getPageIndex } = await import("./page-index");
+  const meta = await getPageIndex();
+  if (meta === null) return scanWikiPagesUncached();
+
+  const baseEntries = await readIndexBaseEntries();
+  return baseEntries.map((b) => {
+    const m = meta[b.slug];
+    // index.md stays authoritative for title/summary; the metadata index
+    // supplies the enriched fields. A slug missing from the index (just added,
+    // pre-rebuild) falls back to its plain base entry.
+    return m ? { ...m, title: b.title, slug: b.slug, summary: b.summary } : b;
+  });
 }
 
 /**

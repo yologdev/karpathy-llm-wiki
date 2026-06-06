@@ -194,6 +194,9 @@ export async function rebuildDerivedIndexes(): Promise<
 > {
   const results: Record<string, { ok: boolean; error?: string }> = {};
   const steps: Array<[string, () => Promise<unknown>]> = [
+    // Pages first: listWikiPages' fast path reads this, so the rebuilds below
+    // (which list pages) benefit immediately once it's fresh.
+    ["pages", async () => (await import("./page-index")).rebuildPageIndex()],
     ["owner-slugs", async () => (await import("./owner-index")).rebuildOwnerIndex()],
     ["backlinks", async () => (await import("./backlink-index")).rebuildBacklinkIndex()],
     ["discuss-stats", async () => (await import("./discuss-stats-index")).rebuildDiscussStatsIndex()],
