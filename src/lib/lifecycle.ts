@@ -23,6 +23,9 @@ import { getErrorMessage } from "./errors";
 import { removeAliasForPage, updateAliasIndexForPage } from "./alias-index";
 import { removeSourceForPage } from "./source-index";
 import { syncCommonsForPage, removeCommonsEntryBySlug, belongsInCommons } from "./commons";
+import { syncOwnerIndexForPage, removeOwnerIndexForSlug } from "./owner-index";
+import { syncBacklinksForPage, removeBacklinksForSlug } from "./backlink-index";
+import { recordEditForAuthor } from "./contributor-index";
 import { addVaultRef } from "./vault";
 import { parseFrontmatter } from "./frontmatter";
 import type { LogOperation } from "./wiki";
@@ -216,8 +219,18 @@ async function runPageLifecycleOp(
   // tenant silo to mirror the removal into (the flat file is gone afterward).
   let deletedOwner: string | undefined;
 
+  // Capture the page's PREVIOUS content before overwrite so the backlink index
+  // can diff outbound links (write path). undefined for a brand-new page.
+  let prevContent: string | undefined;
+
   // 2. Mutate the page file.
   if (op.kind === "write") {
+    try {
+      const pre = await readWikiPage(slug);
+      prevContent = pre?.content;
+    } catch {
+      // No prior page (new) or unreadable → treat as no previous links.
+    }
     await writeWikiPage(slug, op.content, op.author);
   } else {
     try {
@@ -366,6 +379,54 @@ async function runPageLifecycleOp(
     }
   } catch (err) {
     logger.warn("commons", `commons sync skipped for "${slug}":`, err);
+  }
+
+  // 3b-ii. Owner→slugs index (Phase 2 precomputed indexes). Mirrors slugsForOwner's
+  //        membership (owner tenant + every contributor tenant). Fail-soft.
+  try {
+    if (op.kind === "delete") {
+      await removeOwnerIndexForSlug(slug);
+    } else {
+      const fm = parseFrontmatter(op.content).data;
+      const owner = typeof fm.owner === "string" ? fm.owner : undefined;
+      const contributors = Array.isArray(fm.contributors)
+        ? (fm.contributors as unknown[]).filter((c): c is string => typeof c === "string")
+        : undefined;
+      await syncOwnerIndexForPage(slug, owner, contributors);
+    }
+  } catch (err) {
+    logger.warn("owner-index", `owner index sync skipped for "${slug}":`, err);
+  }
+
+  // 3b-iii. Backlink (reverse-link) index. On write, diff this page's outbound
+  //         links against its previous content (captured before overwrite); on
+  //         delete, drop the slug as both target and source. Fail-soft.
+  try {
+    if (op.kind === "delete") {
+      await removeBacklinksForSlug(slug);
+    } else {
+      await syncBacklinksForPage(slug, op.content, prevContent);
+    }
+  } catch (err) {
+    logger.warn("backlink-index", `backlink index sync skipped for "${slug}":`, err);
+  }
+
+  // 3b-iv. Contributor index — incremental edit facts only. We bump editCount /
+  //         pagesEdited / firstSeen / lastSeen for op.author (decrement on
+  //         delete); revertCount and talk counts are left to the daily rebuild
+  //         (see contributor-index.ts header). No-op until the daily rebuild has
+  //         seeded the index (recordEditForAuthor returns early when absent).
+  //         Fail-soft.
+  try {
+    if (op.kind === "delete") {
+      // The author of the deleted revision isn't on the delete op; the daily
+      // rebuild reconciles per-author counts. We still drop the page from any
+      // author's pagesEdited via the rebuild. (No per-author decrement here.)
+    } else if (op.author) {
+      await recordEditForAuthor(op.author, slug);
+    }
+  } catch (err) {
+    logger.warn("contributor-index", `contributor index sync skipped for "${slug}":`, err);
   }
 
   // 3c. Mirror the page into its per-tenant silo — a live, self-contained vault

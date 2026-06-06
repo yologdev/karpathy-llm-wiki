@@ -20,6 +20,8 @@ import type { Principal } from "./auth";
 import { isEnoent } from "./errors";
 import { getAgent, resolveAgentPages } from "./agents";
 import { getStorage } from "./storage";
+import { getOwnerIndex } from "./owner-index";
+import { getBacklinkIndex } from "./backlink-index";
 
 // ---------------------------------------------------------------------------
 // Cross-referencing helpers
@@ -147,8 +149,28 @@ export async function findBacklinks(
 ): Promise<Array<{ slug: string; title: string }>> {
   return withPageCache(async () => {
     // Readable pages only — a private page must not surface as a backlink to
-    // viewers who can't see it.
+    // viewers who can't see it. Visibility is ALWAYS enforced here on READ; the
+    // backlink index never encodes it.
     const pages = await listReadableWikiPages(principal);
+
+    // Fast path: the precomputed reverse-link index gives the source slugs that
+    // link TO targetSlug in O(1). We then intersect with the readable set (the
+    // SAME filter the scan applies) and resolve titles from it. Falls back to
+    // the O(pages²) scan below when the index is empty/missing.
+    const backlinkIdx = await getBacklinkIndex();
+    if (Object.keys(backlinkIdx).length > 0) {
+      const sources = backlinkIdx[targetSlug];
+      if (!sources || sources.length === 0) return [];
+      const readable = new Map(pages.map((p) => [p.slug, p.title]));
+      const backlinks: Array<{ slug: string; title: string }> = [];
+      for (const slug of sources) {
+        if (slug === targetSlug || slug === "index" || slug === "log") continue;
+        const title = readable.get(slug);
+        if (title !== undefined) backlinks.push({ slug, title });
+      }
+      return backlinks;
+    }
+
     const backlinks: Array<{ slug: string; title: string }> = [];
 
     for (const page of pages) {
@@ -551,6 +573,15 @@ export async function slugsForOwner(handle: string): Promise<string[]> {
   // crucially, ownerless/seed pages (no `owner` field → DEFAULT_TENANT) belong
   // to the `yopedia` silo. So `/u/yopedia` and `owner:yopedia` include them.
   const wantTenant = tenantForOwner(handle);
+
+  // Fast path: read the precomputed owner→slugs index (O(1)). Falls through to
+  // the live frontmatter scan below when the index is empty/missing — keeps
+  // this behavior-preserving and safe to roll out.
+  const ownerIdx = await getOwnerIndex();
+  if (Object.keys(ownerIdx).length > 0) {
+    return ownerIdx[wantTenant] ?? [];
+  }
+
   const pages = await listWikiPages();
   const out: string[] = [];
   for (const entry of pages) {

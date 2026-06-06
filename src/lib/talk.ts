@@ -12,7 +12,42 @@ import { getStorage } from "./storage";
 import { getDataDir } from "./paths";
 import { withFileLock } from "./lock";
 import { isEnoent } from "./errors";
+import { logger } from "./logger";
 import type { TalkThread, TalkComment } from "./types";
+
+// ---------------------------------------------------------------------------
+// Derived-index hooks (Phase 2 precomputed indexes) — fail-soft. Talk mutations
+// bypass the page lifecycle op, so the discuss-stats index AND the contributor
+// index are maintained directly here. Dynamic-imported to avoid a circular
+// dependency (discuss-stats-index imports talk for the rebuild scan). A failed
+// index update must NEVER break the thread/comment write.
+// ---------------------------------------------------------------------------
+
+/** Upsert this slug's discussion stats from the in-memory threads array. */
+async function syncDiscussStatsHook(
+  pageSlug: string,
+  threads: TalkThread[],
+): Promise<void> {
+  try {
+    const { syncDiscussStatsForSlug } = await import("./discuss-stats-index");
+    await syncDiscussStatsForSlug(pageSlug, threads);
+  } catch (err) {
+    logger.warn("discuss-stats", `stats sync skipped for "${pageSlug}":`, err);
+  }
+}
+
+/** Bump the contributor index for a talk comment (and optionally a new thread). */
+async function recordTalkContributorHook(
+  author: string,
+  opts: { comment?: boolean; thread?: boolean; date?: string },
+): Promise<void> {
+  try {
+    const { recordTalkForAuthor } = await import("./contributor-index");
+    await recordTalkForAuthor(author, opts);
+  } catch (err) {
+    logger.warn("contributor-index", `talk contributor bump skipped for "${author}":`, err);
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Directory helpers
@@ -142,6 +177,10 @@ export async function createThread(
 
     threads.push(thread);
     await writeDiscussFile(pageSlug, threads);
+    // Maintain derived indexes (fail-soft, inside the discuss:<slug> lock):
+    // a new thread bumps this slug's stats and the creator's contributor counts.
+    await syncDiscussStatsHook(pageSlug, threads);
+    await recordTalkContributorHook(author, { comment: true, thread: true, date: now });
     return thread;
   });
 }
@@ -192,6 +231,10 @@ export async function addComment(
     thread.comments.push(comment);
     thread.updated = now;
     await writeDiscussFile(pageSlug, threads);
+    // Maintain derived indexes (fail-soft): open/total are unchanged by a
+    // comment, but re-syncing keeps the index self-healing; bump the commenter.
+    await syncDiscussStatsHook(pageSlug, threads);
+    await recordTalkContributorHook(author, { comment: true, date: now });
     return comment;
   });
 }
@@ -218,6 +261,8 @@ export async function resolveThread(
     thread.status = status;
     thread.updated = new Date().toISOString();
     await writeDiscussFile(pageSlug, threads);
+    // Status change moves the open count → re-sync this slug's stats (fail-soft).
+    await syncDiscussStatsHook(pageSlug, threads);
     return thread;
   });
 }
@@ -259,6 +304,23 @@ export async function getDiscussionStatsForSlugs(
   // Pre-populate with zeros so every requested slug has an entry.
   for (const slug of slugs) {
     result.set(slug, { total: 0, open: 0 });
+  }
+
+  // Fast path: project the requested slugs out of the precomputed discuss-stats
+  // index (O(1)). Falls through to the directory scan below when the index is
+  // empty/missing — keeps this behavior-preserving and safe to roll out.
+  try {
+    const { getDiscussStatsIndex } = await import("./discuss-stats-index");
+    const idx = await getDiscussStatsIndex();
+    if (Object.keys(idx).length > 0) {
+      for (const slug of slugs) {
+        const stat = idx[slug];
+        if (stat) result.set(slug, { total: stat.total, open: stat.open });
+      }
+      return result;
+    }
+  } catch {
+    // Fall through to the scan — the index is purely an accelerator.
   }
 
   // Read directory listing once to find which discuss files exist.
@@ -305,5 +367,12 @@ export async function deleteDiscussions(pageSlug: string): Promise<void> {
   } catch (err) {
     if (!isEnoent(err)) throw err;
     // File didn't exist — nothing to delete.
+  }
+  // Drop this slug's discuss-stats entry (fail-soft).
+  try {
+    const { removeDiscussStatsForSlug } = await import("./discuss-stats-index");
+    await removeDiscussStatsForSlug(pageSlug);
+  } catch (err) {
+    logger.warn("discuss-stats", `stats remove skipped for "${pageSlug}":`, err);
   }
 }

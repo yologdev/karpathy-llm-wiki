@@ -42,8 +42,22 @@ function resolveHandle(user: {
  */
 export async function getPrincipal(): Promise<Principal | null> {
   try {
-    const { userId } = await auth();
+    const { userId, sessionClaims } = await auth();
     if (!userId) return null;
+
+    // Fast path: resolve the handle straight from the session claims (the JWT)
+    // when present, avoiding the extra `currentUser()` round-trip to Clerk's API.
+    // Configure `YOPEDIA_HANDLE_CLAIM` to read a custom claim; otherwise we look
+    // at the standard `username` claim. Only fall back to `currentUser()` when
+    // claims don't carry a usable handle. Same return shape, same fail-closed
+    // behavior — a no-op (correct fallback) when claims never carry a handle.
+    const claimKey = process.env.YOPEDIA_HANDLE_CLAIM || "username";
+    const claims = sessionClaims as Record<string, unknown> | null | undefined;
+    const claimHandle = claims?.[claimKey];
+    if (typeof claimHandle === "string" && claimHandle.trim() !== "") {
+      return { id: userId, handle: claimHandle };
+    }
+
     const user = await currentUser();
     return { id: userId, handle: resolveHandle(user) ?? userId };
   } catch {

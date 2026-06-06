@@ -87,7 +87,18 @@ export function ownerToTenant(owner?: string | null): string {
   return t.length > 0 ? t : DEFAULT_TENANT;
 }
 
-/** Canonical page URL `/u/<tenant>/<slug>`. */
+/**
+ * Canonical PUBLIC commons page URL `/wiki/<slug>`. Commons content is global
+ * (not per-handle): a public, non-agent page is the same for everyone, so it
+ * lives at one context-free URL — which is also what makes it cacheable. The
+ * per-owner `/u/<tenant>/<slug>` form is reserved for private/owned pages (a
+ * page 308-redirects from there to `/wiki/<slug>` once it's public).
+ */
+export function commonsPath(slug: string): string {
+  return `/wiki/${slug}`;
+}
+
+/** Canonical owner-scoped page URL `/u/<tenant>/<slug>` (private/owned pages). */
 export function pagePath(tenant: string, slug: string): string {
   return `/u/${tenant}/${slug}`;
 }
@@ -110,14 +121,20 @@ export function rawPath(tenant: string, slug: string): string {
 export type SlugTenantMap = Record<string, string>;
 
 /**
- * Resolve a target slug to its canonical page path via a {@link SlugTenantMap},
- * falling back to `fallbackTenant` (typically the linking page's own tenant)
- * when the target isn't in the map — e.g. a dangling link to a missing page.
+ * Resolve a target slug to its canonical page path. A PUBLIC commons target
+ * (slug present in `commonsSlugs`) resolves to the global `/wiki/<slug>`;
+ * otherwise it falls back to the owner-scoped `/u/<tenant>/<slug>` via the
+ * {@link SlugTenantMap} (and `fallbackTenant` for dangling/missing targets).
+ *
+ * `commonsSlugs` is optional so existing callers stay correct: without it,
+ * every target resolves to the owner-scoped form (the prior behavior).
  */
 export function resolveSlugPath(
   slug: string,
   slugTenants: SlugTenantMap | undefined,
   fallbackTenant: string,
+  commonsSlugs?: ReadonlySet<string>,
 ): string {
+  if (commonsSlugs?.has(slug)) return `/wiki/${slug}`;
   return `/u/${slugTenants?.[slug] ?? fallbackTenant}/${slug}`;
 }

@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 import { getServicePrincipal } from "@/lib/auth";
-import { scanForMaintenance, DEFAULT_MAINTENANCE_CAP } from "@/lib/maintenance";
+import {
+  scanForMaintenance,
+  rebuildDerivedIndexes,
+  DEFAULT_MAINTENANCE_CAP,
+} from "@/lib/maintenance";
 import { enqueueTask } from "@/lib/tasks";
 import { getErrorMessage } from "@/lib/errors";
 import { logger } from "@/lib/logger";
@@ -35,6 +39,11 @@ export async function POST(req: Request) {
 
     const tasks = await scanForMaintenance(cap);
 
+    // Self-heal the precomputed KV indexes (Phase 2) once per scan run. This is
+    // read-derived and idempotent — it never edits pages or enqueues tasks — so
+    // it runs even in dry-run mode. Fully fail-soft (each rebuild is isolated).
+    const indexRebuild = await rebuildDerivedIndexes();
+
     let enqueued = 0;
     if (!dry) {
       for (const t of tasks) {
@@ -52,6 +61,7 @@ export async function POST(req: Request) {
       dry,
       found: tasks.length,
       enqueued,
+      indexRebuild,
       // The candidate list — for dry-run inspection of what it would do.
       tasks: tasks.map((t) =>
         t.kind === "maintain"

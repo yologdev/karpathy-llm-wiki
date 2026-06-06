@@ -3,16 +3,18 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 vi.mock("@/lib/auth", () => ({ getServicePrincipal: vi.fn() }));
 vi.mock("@/lib/maintenance", () => ({
   scanForMaintenance: vi.fn(),
+  rebuildDerivedIndexes: vi.fn(),
   DEFAULT_MAINTENANCE_CAP: 10,
 }));
 vi.mock("@/lib/tasks", () => ({ enqueueTask: vi.fn() }));
 
 import { getServicePrincipal } from "@/lib/auth";
-import { scanForMaintenance } from "@/lib/maintenance";
+import { scanForMaintenance, rebuildDerivedIndexes } from "@/lib/maintenance";
 import { enqueueTask } from "@/lib/tasks";
 
 const mockedGetService = vi.mocked(getServicePrincipal);
 const mockedScan = vi.mocked(scanForMaintenance);
+const mockedRebuild = vi.mocked(rebuildDerivedIndexes);
 const mockedEnqueue = vi.mocked(enqueueTask);
 
 const SAMPLE = [
@@ -34,6 +36,7 @@ beforeEach(() => {
   delete process.env.AUTONOMOUS_MAINTENANCE;
   mockedGetService.mockReturnValue({ id: "service:yopedia", handle: "yopedia" });
   mockedScan.mockResolvedValue(SAMPLE);
+  mockedRebuild.mockResolvedValue({});
   mockedEnqueue.mockResolvedValue(true);
 });
 afterEach(() => {
@@ -76,5 +79,13 @@ describe("POST /api/tasks/scan", () => {
   it("honors a ?cap override", async () => {
     await scan("?cap=3");
     expect(mockedScan).toHaveBeenCalledWith(3);
+  });
+
+  it("self-heals the derived indexes every run (even in dry-run)", async () => {
+    mockedRebuild.mockResolvedValue({ "owner-slugs": { ok: true } });
+    const res = await scan(); // dry (default)
+    const body = await res.json();
+    expect(mockedRebuild).toHaveBeenCalledTimes(1);
+    expect(body.indexRebuild).toEqual({ "owner-slugs": { ok: true } });
   });
 });

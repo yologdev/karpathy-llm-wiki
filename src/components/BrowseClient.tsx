@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useMemo, useState } from "react";
 import type { IndexEntry } from "@/lib/types";
 import { formatRelativeTime } from "@/lib/format";
-import { pagePath, ownerToTenant } from "@/lib/links";
+import { commonsPath, pagePath, ownerToTenant } from "@/lib/links";
 import { Icon } from "@/components/folio/icons";
 import { Confidence, Mark } from "@/components/folio/primitives";
 
@@ -29,11 +29,19 @@ function PageRow({
   const agentOwned = !!owner && owner.includes("--");
   const rel = page.updated ? formatRelativeTime(page.updated) : null;
   const openCount = discussion?.open ?? 0;
+  // The "Mine" lens can include the viewer's PRIVATE pages — those have no
+  // global URL (and `/wiki/<slug>` 404s them), so only PUBLIC commons pages link
+  // to the global `/wiki/<slug>`; private/agent pages stay owner-scoped.
+  const isCommons =
+    page.visibility !== "private" && !page.type?.startsWith("agent-");
+  const href = isCommons
+    ? commonsPath(page.slug)
+    : pagePath(ownerToTenant(page.owner), page.slug);
 
   return (
     <li>
       <Link
-        href={pagePath(ownerToTenant(page.owner), page.slug)}
+        href={href}
         style={{
           display: "grid",
           gridTemplateColumns: "1fr auto",

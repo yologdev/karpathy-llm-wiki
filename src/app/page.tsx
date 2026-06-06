@@ -5,6 +5,7 @@ import { Trail } from "@/components/Trail";
 import { Avatar, Mark } from "@/components/folio/primitives";
 import { listCommonsPages } from "@/lib/commons";
 import { listContributors } from "@/lib/contributors";
+import { getContributorIndex } from "@/lib/contributor-index";
 import { getTrail } from "@/lib/trail";
 import { getPrincipal } from "@/lib/auth";
 
@@ -28,9 +29,15 @@ export default async function Home() {
   const pages = commonsPages;
   const pageCount = pages.length;
   const sourceCount = pages.reduce((n, p) => n + (p.sourceCount ?? 0), 0);
-  const contributorCount = contributors.length;
-  const revisionCount = contributors.reduce((n, c) => n + (c.editCount ?? 0), 0);
   const topContributors = contributors.slice(0, 5);
+
+  // Stats totals come from the precomputed contributor index (O(1)); fall back
+  // to deriving them from the contributor list when the index is absent.
+  const totals = await getContributorIndex().catch(() => null);
+  const contributorCount = totals?.totals.contributorCount ?? contributors.length;
+  const revisionCount =
+    totals?.totals.revisionCount ??
+    contributors.reduce((n, c) => n + (c.editCount ?? 0), 0);
 
   const stats: [string, number][] = [
     ["pages", pageCount],

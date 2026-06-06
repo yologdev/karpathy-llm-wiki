@@ -60,6 +60,24 @@ export async function getCommonsIndex(): Promise<CommonsEntry[]> {
 }
 
 /**
+ * The set of slugs that live in the PUBLIC commons. Used by link resolution to
+ * decide whether a target resolves to the global `/wiki/<slug>` (public) vs the
+ * owner-scoped `/u/<tenant>/<slug>`, and by the public route to gate which slugs
+ * are even addressable globally. Fail-soft: a missing/corrupt index yields an
+ * empty set (no slug is treated as commons), which is the SECURE default — link
+ * resolution falls back to owner-scoped URLs rather than over-exposing.
+ */
+export async function getCommonsSlugSet(): Promise<Set<string>> {
+  try {
+    const entries = await getCommonsIndex();
+    return new Set(entries.map((e) => e.slug));
+  } catch (err) {
+    logger.warn("commons", "commons slug set unreadable; treating as empty:", err);
+    return new Set();
+  }
+}
+
+/**
  * The public commons as {@link IndexEntry}[] — the source of truth for the
  * public listing surfaces (homepage, `/wiki` "All", graph). Reads the derived
  * commons index when populated; FALLS BACK to deriving it from the flat wiki

@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { formatRelativeTime } from "@/lib/format";
+import { commonsPath } from "@/lib/links";
 import { Mark, SrcChip } from "./folio/primitives";
 import type { TrailEvent } from "@/lib/trail";
 
@@ -40,7 +41,7 @@ export function Trail({ events }: { events: TrailEvent[] }) {
             <span style={{ color: "var(--muted)" }}>{e.action}</span>
             {e.sourceType && <SrcChip type={e.sourceType} />}
             <Link
-              href={`/u/${e.tenant}/${e.slug}`}
+              href={commonsPath(e.slug)}
               style={{
                 color: "var(--accent)",
                 borderBottom: "1px solid var(--accent-soft)",

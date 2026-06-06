@@ -33,6 +33,13 @@ interface MarkdownRendererProps {
    * slugs are globally unique). Computed server-side and passed as plain data.
    */
   slugTenants?: SlugTenantMap;
+  /**
+   * The set of PUBLIC commons slugs. When a target slug is in this set, the link
+   * resolves to the global `/wiki/<slug>` instead of `/u/<tenant>/<slug>`.
+   * Optional so existing callers stay correct (without it, every target resolves
+   * to the owner-scoped form).
+   */
+  commonsSlugs?: ReadonlySet<string>;
 }
 
 /** Flatten ReactMarkdown heading children to plain text for anchor IDs. */
@@ -93,6 +100,7 @@ export function MarkdownRenderer({
   headingIds,
   tenant,
   slugTenants,
+  commonsSlugs,
 }: MarkdownRendererProps) {
   const body = stripFrontmatter(content);
   // Headings render in document order; pull the next pre-computed id (which
@@ -153,7 +161,7 @@ export function MarkdownRenderer({
               const slug = href.replace(/\.md$/, "");
               const dest =
                 tenant || slugTenants
-                  ? resolveSlugPath(slug, slugTenants, tenant ?? "")
+                  ? resolveSlugPath(slug, slugTenants, tenant ?? "", commonsSlugs)
                   : `/wiki/${slug}`;
               return (
                 <Link href={dest} {...props}>

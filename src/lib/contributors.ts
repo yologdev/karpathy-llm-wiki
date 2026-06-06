@@ -56,7 +56,7 @@ async function loadAllThreads(): Promise<TalkThread[]> {
 // Internal: aggregate raw activity data
 // ---------------------------------------------------------------------------
 
-interface AuthorActivity {
+export interface AuthorActivity {
   editCount: number;
   pagesEdited: Set<string>;
   commentCount: number;
@@ -64,7 +64,7 @@ interface AuthorActivity {
   dates: string[];
 }
 
-function emptyActivity(): AuthorActivity {
+export function emptyActivity(): AuthorActivity {
   return {
     editCount: 0,
     pagesEdited: new Set(),
@@ -76,7 +76,7 @@ function emptyActivity(): AuthorActivity {
 
 /** Reduce per-page revision lists into activity keyed by author handle. Pure —
  *  the storage reads happen once in {@link computeScanData}. */
-function reduceActivity(
+export function reduceActivity(
   revisionsPerPage: Revision[][],
 ): Map<string, AuthorActivity> {
   const map = new Map<string, AuthorActivity>();
@@ -97,7 +97,7 @@ function reduceActivity(
 }
 
 /** Merge talk-page activity into an existing activity map. */
-function mergeTalkActivity(
+export function mergeTalkActivity(
   map: Map<string, AuthorActivity>,
   threads: TalkThread[],
 ): void {
@@ -135,7 +135,7 @@ const REVERT_SIZE_REDUCTION_THRESHOLD = 0.5;
  *
  * Returns a map from author handle → number of times their content was reverted.
  */
-function reduceReverts(revisionsPerPage: Revision[][]): Map<string, number> {
+export function reduceReverts(revisionsPerPage: Revision[][]): Map<string, number> {
   const revertCounts = new Map<string, number>();
 
   for (const revisions of revisionsPerPage) {
@@ -172,7 +172,7 @@ function reduceReverts(revisionsPerPage: Revision[][]): Map<string, number> {
 /** Compute trust score from activity counts and revert rate.
  *  Formula: min(1, (editCount + commentCount) / 50) * (1 - min(0.5, revertCount * 0.1))
  *  Each revert reduces trust by 10%, capped at 50% reduction. */
-function computeTrustScore(editCount: number, commentCount: number, revertCount: number): number {
+export function computeTrustScore(editCount: number, commentCount: number, revertCount: number): number {
   const activityScore = Math.min(1, (editCount + commentCount) / 50);
   const revertPenalty = 1 - Math.min(0.5, revertCount * 0.1);
   return activityScore * revertPenalty;
@@ -302,6 +302,19 @@ export async function buildContributorProfiles(
 export async function listContributors(
   principal: Principal | null = null,
 ): Promise<ContributorProfile[]> {
+  // Fast path: build profiles from the precomputed contributor index (O(1) read)
+  // instead of re-scanning every page's revisions + every talk thread. Falls back
+  // to the full scan below when the index is absent — behavior-preserving.
+  try {
+    const { getContributorIndex, profilesFromIndex } = await import(
+      "./contributor-index"
+    );
+    const idx = await getContributorIndex();
+    if (idx) return profilesFromIndex(idx);
+  } catch {
+    // Fall through to the live scan — the index is purely an accelerator.
+  }
+
   const data = await computeScanData(principal);
 
   const profiles: ContributorProfile[] = [];

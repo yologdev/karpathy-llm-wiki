@@ -2,8 +2,24 @@
 
 import Link from "next/link";
 
-import { pagePath, ownerToTenant } from "@/lib/links";
+import { commonsPath, pagePath, ownerToTenant } from "@/lib/links";
 import type { DataviewResultRow } from "./DataviewFilterRow";
+
+/**
+ * Resolve a dataview result row to its canonical URL. PUBLIC commons pages live
+ * at the global `/wiki/<slug>`; private/agent pages (which a principal-scoped
+ * query can surface for the owner) have no global URL and stay owner-scoped.
+ */
+function rowHref(row: DataviewResultRow): string {
+  const fm = row.frontmatter;
+  const visibility = typeof fm.visibility === "string" ? fm.visibility : undefined;
+  const type = typeof fm.type === "string" ? fm.type : undefined;
+  if (visibility !== "private" && !type?.startsWith("agent-")) {
+    return commonsPath(row.slug);
+  }
+  const owner = typeof fm.owner === "string" ? fm.owner : undefined;
+  return pagePath(ownerToTenant(owner), row.slug);
+}
 
 // ---------------------------------------------------------------------------
 // DataviewResultsTable component
@@ -60,14 +76,7 @@ export function DataviewResultsTable({
                 >
                   <td className="py-1.5 pr-3">
                     <Link
-                      href={pagePath(
-                        ownerToTenant(
-                          typeof row.frontmatter.owner === "string"
-                            ? row.frontmatter.owner
-                            : undefined,
-                        ),
-                        row.slug,
-                      )}
+                      href={rowHref(row)}
                       className="text-foreground underline underline-offset-2 hover:text-foreground/80 transition-colors"
                     >
                       {row.slug}

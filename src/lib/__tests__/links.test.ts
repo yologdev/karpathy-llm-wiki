@@ -5,6 +5,7 @@ import {
   hasLinkTo,
   DEFAULT_TENANT,
   ownerToTenant,
+  commonsPath,
   pagePath,
   editPath,
   rawPath,
@@ -144,6 +145,13 @@ describe("canonical URL builders", () => {
       "/u/yuanhao/raw/transformers",
     );
   });
+
+  it("builds the global commons path /wiki/<slug>", () => {
+    expect(commonsPath("transformers")).toBe("/wiki/transformers");
+    expect(commonsPath("retrieval-augmented-generation")).toBe(
+      "/wiki/retrieval-augmented-generation",
+    );
+  });
 });
 
 describe("resolveSlugPath", () => {
@@ -159,5 +167,27 @@ describe("resolveSlugPath", () => {
     expect(resolveSlugPath("missing", undefined, "yopedia")).toBe(
       "/u/yopedia/missing",
     );
+  });
+
+  it("resolves a PUBLIC commons target to the global /wiki/<slug>", () => {
+    const commons = new Set(["foo"]);
+    // `foo` is in the commons set → global URL, regardless of its tenant in the map.
+    expect(resolveSlugPath("foo", map, "yuanhao", commons)).toBe("/wiki/foo");
+    // `bar` is NOT in the commons set → still owner-scoped.
+    expect(resolveSlugPath("bar", map, "yuanhao", commons)).toBe("/u/bob/bar");
+  });
+
+  it("keeps non-commons targets owner-scoped even with a commons set provided", () => {
+    const commons = new Set<string>();
+    expect(resolveSlugPath("foo", map, "yuanhao", commons)).toBe("/u/alice/foo");
+    // A dangling commons target still resolves global (existence in the set wins
+    // over the slug→tenant lookup).
+    expect(resolveSlugPath("ghost", map, "yopedia", new Set(["ghost"]))).toBe(
+      "/wiki/ghost",
+    );
+  });
+
+  it("ignores the commons set when undefined (prior behavior preserved)", () => {
+    expect(resolveSlugPath("foo", map, "yuanhao", undefined)).toBe("/u/alice/foo");
   });
 });
