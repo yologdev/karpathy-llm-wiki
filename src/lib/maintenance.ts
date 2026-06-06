@@ -197,6 +197,10 @@ export async function rebuildDerivedIndexes(): Promise<
     // Pages first: listWikiPages' fast path reads this, so the rebuilds below
     // (which list pages) benefit immediately once it's fresh.
     ["pages", async () => (await import("./page-index")).rebuildPageIndex()],
+    // Commons next: it lists pages (via the now-fresh page index) and powers the
+    // homepage's pageCount / commons feed. Without it in the rebuild set, a stale
+    // commons index survives a content wipe and the home keeps showing old pages.
+    ["commons", async () => (await import("./commons")).rebuildCommonsIndex()],
     ["owner-slugs", async () => (await import("./owner-index")).rebuildOwnerIndex()],
     ["backlinks", async () => (await import("./backlink-index")).rebuildBacklinkIndex()],
     ["discuss-stats", async () => (await import("./discuss-stats-index")).rebuildDiscussStatsIndex()],
