@@ -26,6 +26,8 @@ import { syncCommonsForPage, removeCommonsEntryBySlug, belongsInCommons } from "
 import { syncOwnerIndexForPage, removeOwnerIndexForSlug } from "./owner-index";
 import { syncBacklinksForPage, removeBacklinksForSlug } from "./backlink-index";
 import { recordEditForAuthor } from "./contributor-index";
+import { pushRecentEvent, removeRecentForSlug } from "./recent-index";
+import { isAgentHandle } from "./agents";
 import { addVaultRef } from "./vault";
 import { parseFrontmatter } from "./frontmatter";
 import type { LogOperation } from "./wiki";
@@ -427,6 +429,38 @@ async function runPageLifecycleOp(
     }
   } catch (err) {
     logger.warn("contributor-index", `contributor index sync skipped for "${slug}":`, err);
+  }
+
+  // 3b-v. Recent-activity index (the homepage Trail). PUBLIC, non-agent pages
+  //        only — the public trail never surfaces private activity. No-op until
+  //        the daily rebuild has seeded the index. Fail-soft.
+  try {
+    if (op.kind === "delete") {
+      await removeRecentForSlug(slug);
+    } else if (op.author) {
+      const fm = parseFrontmatter(op.content).data;
+      const isCommons = belongsInCommons({
+        visibility: typeof fm.visibility === "string" ? fm.visibility : undefined,
+        type: typeof fm.type === "string" ? fm.type : undefined,
+      });
+      if (isCommons) {
+        const now = Date.now();
+        await pushRecentEvent({
+          ts: now,
+          when: new Date(now).toISOString(),
+          actor: op.author,
+          isAgent: isAgentHandle(op.author),
+          action: logOp === "ingest" ? "ingested" : "edited",
+          slug,
+          title: op.title,
+          tenant: tenantForOwner(
+            typeof fm.owner === "string" ? fm.owner : undefined,
+          ),
+        });
+      }
+    }
+  } catch (err) {
+    logger.warn("recent-index", `recent index sync skipped for "${slug}":`, err);
   }
 
   // 3c. Mirror the page into its per-tenant silo — a live, self-contained vault

@@ -32,12 +32,34 @@ export interface TrailEvent {
 const MAX_PAGES_SCANNED = 30;
 
 /**
+ * The public activity trail. For anonymous reads (`principal == null` — the
+ * homepage path) it serves the precomputed `_idx:recent` index in O(1), falling
+ * back to {@link scanTrail} when the index isn't seeded yet. A signed-in caller
+ * always scans, so its own private-page activity is included (the index is
+ * built public-only — same anonymous-vs-scan split as the contributor index).
+ */
+export async function getTrail(
+  limit = 12,
+  principal: Principal | null = null,
+): Promise<TrailEvent[]> {
+  if (!principal) {
+    const { getRecentIndex } = await import("./recent-index");
+    const idx = await getRecentIndex();
+    if (idx !== null) return idx.slice(0, limit);
+  }
+  return scanTrail(limit, principal);
+}
+
+/**
  * Build the activity trail by merging recent ingests (from each page's
  * `sources[]` provenance) and edits (from revision metadata) into one
  * time-sorted feed. Agent-scoped pages are excluded; agent *actors* are kept
  * and flagged via {@link isAgentHandle} so the UI can mark them distinctly.
+ *
+ * This is the O(pages) scan — the fallback and the source for the `_idx:recent`
+ * rebuild. {@link getTrail} serves the index for anonymous reads.
  */
-export async function getTrail(
+export async function scanTrail(
   limit = 12,
   principal: Principal | null = null,
 ): Promise<TrailEvent[]> {
