@@ -6,6 +6,7 @@ import {
   ensureDirectories,
   writeWikiPageWithSideEffects,
   serializeFrontmatter,
+  getWikiDir,
   type Frontmatter,
 } from "../wiki";
 import { createThread, addComment } from "../talk";
@@ -53,7 +54,7 @@ async function seed(slug: string, over: Partial<Frontmatter> = {}) {
   await writeWikiPageWithSideEffects({
     slug,
     title: slug,
-    content: serializeFrontmatter(fm, `# ${slug}\n\nBody.`),
+    content: serializeFrontmatter(fm, `# ${slug}\n\nThis is a sufficiently long body paragraph that exceeds the fifty character empty-page threshold used by the maintenance scanner.`),
     summary: `Summary for ${slug}.`,
     logOp: "ingest",
     crossRefSource: null,
@@ -223,5 +224,69 @@ describe("scanForMaintenance", () => {
       await seed(`stale-${i}`, { expiry: PAST, source_url: `https://x.com/${i}` });
     }
     expect(await scanForMaintenance(2)).toHaveLength(2);
+  });
+
+  it("enqueues an orphan-page fix for a file on disk with no index entry", async () => {
+    // Seed a normal page (indexed), then write a raw .md file that bypasses the index.
+    await seed("indexed-page");
+    const wikiDir = getWikiDir();
+    await fs.writeFile(
+      path.join(wikiDir, "orphan-page.md"),
+      "# Orphan\n\nThis page exists on disk but is not in the index.",
+    );
+    const tasks = await scanForMaintenance();
+    expect(tasks).toContainEqual({
+      kind: "maintain",
+      op: "fix",
+      slug: "orphan-page",
+      lintType: "orphan-page",
+    });
+  });
+
+  it("does NOT flag an indexed page as orphan", async () => {
+    await seed("well-indexed");
+    const tasks = await scanForMaintenance();
+    expect(tasks).not.toContainEqual(
+      expect.objectContaining({ slug: "well-indexed", lintType: "orphan-page" }),
+    );
+  });
+
+  it("enqueues an empty-page fix for a page with trivially short content", async () => {
+    // Seed a page with very short body (under 50 chars after heading).
+    const fm: Frontmatter = {
+      created: PAST,
+      updated: PAST,
+      owner: "alice",
+      visibility: "public",
+      authors: ["alice"],
+      contributors: [],
+      confidence: 0.7,
+      expiry: "2099-01-01",
+      tags: [],
+      disputed: false,
+    };
+    await writeWikiPageWithSideEffects({
+      slug: "empty-stub",
+      title: "empty-stub",
+      content: serializeFrontmatter(fm, "# Empty Stub\n\nTiny."),
+      summary: "An empty stub.",
+      logOp: "ingest",
+      crossRefSource: null,
+    });
+    const tasks = await scanForMaintenance();
+    expect(tasks).toContainEqual({
+      kind: "maintain",
+      op: "fix",
+      slug: "empty-stub",
+      lintType: "empty-page",
+    });
+  });
+
+  it("does NOT flag a page with substantial content as empty", async () => {
+    await seed("substantial");
+    const tasks = await scanForMaintenance();
+    expect(tasks).not.toContainEqual(
+      expect.objectContaining({ slug: "substantial", lintType: "empty-page" }),
+    );
   });
 });

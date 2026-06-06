@@ -99,8 +99,14 @@ describe("parseTask", () => {
     expect(
       parseTask({ kind: "maintain", op: "fix", slug: "p", lintType: "supersedes-dangling" }),
     ).toMatchObject({ op: "fix", lintType: "supersedes-dangling" });
+    expect(
+      parseTask({ kind: "maintain", op: "fix", slug: "p", lintType: "orphan-page" }),
+    ).toEqual({ kind: "maintain", op: "fix", slug: "p", lintType: "orphan-page" });
+    expect(
+      parseTask({ kind: "maintain", op: "fix", slug: "p", lintType: "empty-page" }),
+    ).toEqual({ kind: "maintain", op: "fix", slug: "p", lintType: "empty-page" });
     // A non-deterministic / unknown lint type (or none) is rejected.
-    expect(parseTask({ kind: "maintain", op: "fix", slug: "p", lintType: "orphan-page" })).toBeNull();
+    expect(parseTask({ kind: "maintain", op: "fix", slug: "p", lintType: "contradictions" })).toBeNull();
     expect(parseTask({ kind: "maintain", op: "fix", slug: "p" })).toBeNull();
   });
 

@@ -27,6 +27,7 @@
  */
 
 import { listWikiPages, readWikiPageWithFrontmatter } from "./wiki";
+import { getOnDiskSlugs } from "./lint-checks";
 import { listThreads } from "./talk";
 import { isAgentHandle } from "./agents";
 import { extractWikiLinks } from "./links";
@@ -47,6 +48,20 @@ export async function scanForMaintenance(
   const tasks: Task[] = [];
   const pages = await listWikiPages();
   const pageSlugs = new Set(pages.map((p) => p.slug));
+
+  // ── Orphan-page detection (file on disk, no index entry) ──
+  const diskSlugs = await getOnDiskSlugs("");
+  for (const slug of diskSlugs) {
+    if (tasks.length >= cap) break;
+    if (!pageSlugs.has(slug)) {
+      tasks.push({
+        kind: "maintain",
+        op: "fix",
+        slug,
+        lintType: "orphan-page",
+      });
+    }
+  }
 
   for (const entry of pages) {
     if (tasks.length >= cap) break;
@@ -130,6 +145,19 @@ export async function scanForMaintenance(
       }
     }
     if (emittedBrokenLink) continue;
+
+    // (2c) Empty pages — no meaningful content (blank body or just a title).
+    //      The fix deletes the page. Match lint-checks' 50-char threshold.
+    const strippedBody = page.body.replace(/^#\s+.+$/m, "").trim();
+    if (strippedBody.length < 50) {
+      tasks.push({
+        kind: "maintain",
+        op: "fix",
+        slug: entry.slug,
+        lintType: "empty-page",
+      });
+      continue;
+    }
 
     // (3) Stale (expiry passed) with a source to refresh from → re-ingest.
     const expiry = fm.expiry;
