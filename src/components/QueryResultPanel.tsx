@@ -84,6 +84,7 @@ export function QueryResultPanel({
         body: JSON.stringify({
           title: saveTitle.trim(),
           content: result.answer,
+          sources: result.sources,
         }),
       });
 
