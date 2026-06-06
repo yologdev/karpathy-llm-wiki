@@ -176,7 +176,7 @@ export default function QueryPage() {
   }
 
   return (
-    <main className="mx-auto max-w-4xl px-6" style={{ paddingTop: 56, paddingBottom: 80 }}>
+    <main className="mx-auto max-w-4xl px-6" style={{ paddingTop: 64, paddingBottom: 88 }}>
       <p className="fmark" style={{ marginBottom: 18 }}>
         ask the accumulated brain
       </p>
@@ -254,9 +254,9 @@ export default function QueryPage() {
         )}
       </div>
 
-      <div className="mt-8 flex flex-col lg:flex-row gap-8">
-        {/* Main query area */}
-        <div className="flex-1 min-w-0">
+      {/* Centered single column (the right-hand history sidebar moved below). */}
+      <div className="mt-7">
+        <div>
           <form onSubmit={submit}>
             <div
               style={{
@@ -345,10 +345,27 @@ export default function QueryPage() {
               </div>
             </div>
 
+            {/* Why an answer here is trustworthy — grounded, cited, scored. */}
+            <p
+              style={{
+                fontFamily: "var(--font-read)",
+                fontStyle: "italic",
+                fontSize: 21,
+                lineHeight: 1.55,
+                color: "var(--ink-2)",
+                maxWidth: "62ch",
+                margin: "22px 4px 0",
+              }}
+            >
+              Unlike a chat, an answer here is grounded in the commons — it cites
+              the pages it stands on, with each page&apos;s confidence shown, so
+              you can trace and trust it.
+            </p>
+
             {/* Answer format */}
             <fieldset
               className="row"
-              style={{ gap: 8, marginTop: 14, flexWrap: "wrap" }}
+              style={{ gap: 8, marginTop: 18, flexWrap: "wrap" }}
             >
               <legend className="sr-only">Answer format</legend>
               <span className="fmark" style={{ marginRight: 4 }}>
@@ -398,13 +415,15 @@ export default function QueryPage() {
           )}
         </div>
 
-        {/* History sidebar */}
-        <QueryHistorySidebar
-          history={history}
-          loading={historyLoading}
-          currentId={currentHistoryId}
-          onSelect={loadHistoryEntry}
-        />
+        {/* Recent queries — below the answer (was a right-hand sidebar). */}
+        <div style={{ marginTop: 48 }}>
+          <QueryHistorySidebar
+            history={history}
+            loading={historyLoading}
+            currentId={currentHistoryId}
+            onSelect={loadHistoryEntry}
+          />
+        </div>
       </div>
     </main>
   );

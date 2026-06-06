@@ -25,10 +25,10 @@ function truncate(text: string, maxLen: number): string {
 
 export function QueryHistorySidebar({ history, loading, currentId, onSelect }: Props) {
   return (
-    <aside className="lg:w-72 shrink-0">
-      <h2 className="text-sm font-semibold text-foreground/60 uppercase tracking-wide mb-3">
-        Recent Queries
-      </h2>
+    <aside>
+      <p className="fmark" style={{ marginBottom: 14 }}>
+        recent queries
+      </p>
       {loading ? (
         <p className="text-xs text-foreground/40">Loading…</p>
       ) : history.length === 0 ? (
@@ -36,7 +36,7 @@ export function QueryHistorySidebar({ history, loading, currentId, onSelect }: P
           No queries yet. Ask something!
         </p>
       ) : (
-        <ul className="space-y-2">
+        <ul className="grid gap-2 sm:grid-cols-2">
           {history.map((entry) => (
             <li key={entry.id}>
               <button
