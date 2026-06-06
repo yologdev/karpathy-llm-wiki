@@ -44,6 +44,9 @@ const IN_ROUTE_AUTH_PATHS = new Set([
   // Admin migration: authenticated in-route by the service token OR the site
   // owner's session (it rejects everyone else with 403).
   "/api/admin/migrate",
+  // Admin content reset (destructive wipe): service-token only, in-route, with
+  // an explicit confirm body. Called with no Clerk session.
+  "/api/admin/reset",
   // Wiki page creation: authenticated in-route via Clerk session OR the
   // service token (agents create pages via REST).
   "/api/wiki",

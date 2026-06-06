@@ -23,6 +23,7 @@ describe("write-gate in-route auth exemptions", () => {
     expect(authenticatesInRoute("/api/agents/seed")).toBe(true);
     expect(authenticatesInRoute("/api/agents/alice--yoyo/ingest")).toBe(true);
     expect(authenticatesInRoute("/api/admin/migrate")).toBe(true);
+    expect(authenticatesInRoute("/api/admin/reset")).toBe(true);
     expect(authenticatesInRoute("/api/admin/tenant/alice")).toBe(true);
     // Wiki routes: POST /api/wiki (create) and PUT/PATCH/DELETE /api/wiki/:slug
     expect(authenticatesInRoute("/api/wiki")).toBe(true);
