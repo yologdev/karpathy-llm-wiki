@@ -1,5 +1,6 @@
 node_modules/
 .next/
+*.tsbuildinfo
 .open-next/
 .wrangler/
 .claude/
