@@ -11,6 +11,7 @@ import {
 import { QueryResultPanel } from "@/components/QueryResultPanel";
 import { useStreamingQuery } from "@/hooks/useStreamingQuery";
 import { Icon } from "@/components/folio/icons";
+import { logger } from "@/lib/logger";
 
 const EXAMPLES = [
   "What is harness engineering?",
@@ -76,11 +77,20 @@ export default function QueryPage() {
   useEffect(() => {
     let cancelled = false;
     fetch("/api/wiki")
-      .then((r) => (r.ok ? r.json() : { pages: [] }))
-      .then((d: { pages?: unknown[] }) => {
-        if (!cancelled) setHasContent((d.pages?.length ?? 0) > 0);
+      .then((r) => {
+        if (!r.ok) {
+          logger.warn("query", `/api/wiki returned ${r.status}; keeping chips`);
+          return null; // unknown — leave the default (shown), don't hide
+        }
+        return r.json();
       })
-      .catch(() => {});
+      .then((d: { pages?: unknown[] } | null) => {
+        // Only flip on a definitive answer; on error/uncertainty keep chips shown.
+        if (!cancelled && d) setHasContent((d.pages?.length ?? 0) > 0);
+      })
+      .catch((err) => {
+        if (!cancelled) logger.warn("query", "chip-gating /api/wiki fetch failed", err);
+      });
     return () => {
       cancelled = true;
     };
