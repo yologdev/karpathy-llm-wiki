@@ -18,7 +18,7 @@ import {
 import { canReadFrontmatter } from "./authz";
 import type { Principal } from "./auth";
 import { isEnoent } from "./errors";
-import { getAgent, resolveAgentPages, sharedPagesFor } from "./agents";
+import { getAgent, resolveAgentPages } from "./agents";
 import { getStorage } from "./storage";
 
 // ---------------------------------------------------------------------------
@@ -638,16 +638,13 @@ export async function resolveScope(
     if (!agent) return null;
 
     // Effective pages = own + inherited from the template chain, so an
-    // `agent:<fork>` scope also searches the base content the fork inherits,
-    // plus any pages the owner shared into this agent's context.
+    // `agent:<fork>` scope also searches the base content the fork inherits.
     const pages = await resolveAgentPages(agent);
-    const sharedSlugs = await sharedPagesFor(agent.id);
     const slugs = [
       ...new Set([
         ...pages.identityPages,
         ...pages.learningPages,
         ...pages.socialPages,
-        ...sharedSlugs,
       ]),
     ];
 

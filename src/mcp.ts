@@ -64,7 +64,7 @@ import { isUrl } from "./lib/fetch";
 import { MAX_BATCH_URLS } from "./lib/constants";
 import { getErrorMessage } from "./lib/errors";
 import { patchMetadata, type PatchMetadataResult } from "./lib/patch-metadata";
-import { getAgent, listAgents, updateAgent, deleteAgent, seedAgent, resolveAgentPages, sharedPagesFor } from "./lib/agents";
+import { getAgent, listAgents, updateAgent, deleteAgent, seedAgent, resolveAgentPages } from "./lib/agents";
 import { listContributors, buildContributorProfile } from "./lib/contributors";
 import type { SeedAgentSection, UpdateAgentOptions } from "./lib/agents";
 import type { AgentProfile, ContributorProfile, IngestResult, QueryResult, LintResult, LintIssue } from "./lib/types";
@@ -644,7 +644,6 @@ export async function handleAgentContext(args: {
     identity: string;
     learnings: string;
     socialWisdom: string;
-    shared: string;
   };
   meta: {
     totalChars: number;
@@ -657,25 +656,20 @@ export async function handleAgentContext(args: {
   }
 
   // Resolve effective pages (own + inherited from the template chain), so a
-  // forked per-user yoyo returns the base content it inherits. Plus the pages
-  // the owner shared into this agent's context (grant references).
+  // forked per-user yoyo returns the base content it inherits.
   const pages = await resolveAgentPages(agent);
-  const sharedSlugs = await sharedPagesFor(agent.id);
 
-  const [identity, learnings, social, shared] = await Promise.all([
+  const [identity, learnings, social] = await Promise.all([
     loadPages(pages.identityPages),
     loadPages(pages.learningPages),
     loadPages(pages.socialPages),
-    loadPages(sharedSlugs),
   ]);
 
   const totalChars =
     identity.content.length +
     learnings.content.length +
-    social.content.length +
-    shared.content.length;
-  const pageCount =
-    identity.count + learnings.count + social.count + shared.count;
+    social.content.length;
+  const pageCount = identity.count + learnings.count + social.count;
 
   return {
     agent,
@@ -683,7 +677,6 @@ export async function handleAgentContext(args: {
       identity: identity.content,
       learnings: learnings.content,
       socialWisdom: social.content,
-      shared: shared.content,
     },
     meta: {
       totalChars,

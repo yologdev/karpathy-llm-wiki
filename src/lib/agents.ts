@@ -15,7 +15,7 @@ import { isEnoent } from "./errors";
 import { serializeFrontmatter } from "./frontmatter";
 import { slugify } from "./slugify";
 import { writeWikiPageWithSideEffects } from "./lifecycle";
-import { readWikiPageWithFrontmatter, listWikiPages, writeWikiPage } from "./wiki";
+import { readWikiPageWithFrontmatter } from "./wiki";
 import { logger } from "./logger";
 import type { AgentProfile } from "./types";
 
@@ -175,79 +175,6 @@ function relatedSectionLinks(
   if (targets.length === 0) return "";
   const items = targets.map((s) => `- [${s.title}](${s.slug}.md)`).join("\n");
   return `\n\n## Related\n\n${items}`;
-}
-
-// ---------------------------------------------------------------------------
-// Sharing — "Share with yoyo" (feed-as-grant, recorded on the page)
-// ---------------------------------------------------------------------------
-//
-// A user shares one of their own pages INTO their agent's context by tagging
-// the page's frontmatter with `sharedWith: [<agentId>]`. This is a grant
-// (read-access reference), not a copy: the page stays the owner's and unchanged
-// in the wiki; the agent just also sees it. The relationship lives on the page
-// (like `owner`/`contributors`), so it self-cleans on delete and is found by a
-// frontmatter scan — and it does NOT inherit down the template chain (your
-// grants are yours, not the base's).
-
-/**
- * Slugs the owner has shared into an agent's context (frontmatter `sharedWith`
- * scan). Mirrors the personal-lens scan in {@link slugsForOwner}.
- */
-export async function sharedPagesFor(agentId: string): Promise<string[]> {
-  const pages = await listWikiPages();
-  const out: string[] = [];
-  for (const entry of pages) {
-    if (entry.slug === "index" || entry.slug === "log") continue;
-    // No .catch here — readWikiPage already returns null for missing/ENOENT,
-    // so the only thing a catch would swallow is a malformed-frontmatter throw.
-    // Let that propagate (same as slugsForOwner) rather than silently dropping
-    // a shared page from the agent's context.
-    const page = await readWikiPageWithFrontmatter(entry.slug);
-    if (!page) continue;
-    const shared = Array.isArray(page.frontmatter.sharedWith)
-      ? (page.frontmatter.sharedWith as string[])
-      : [];
-    if (shared.includes(agentId)) out.push(entry.slug);
-  }
-  return out;
-}
-
-/**
- * Add or remove an agent id from a page's `sharedWith` frontmatter. A no-op if
- * the page is already in the requested state. Frontmatter-only write (the body
- * is untouched), so no re-synthesis or re-embedding — just a cheap revision.
- *
- * Ownership/authorization is enforced by the caller: the route checks the actor
- * owns/contributed to the page, and derives the target agent from the session so
- * it is necessarily the actor's own yoyo.
- */
-export async function setPageShared(
-  slug: string,
-  agentId: string,
-  shared: boolean,
-): Promise<void> {
-  const page = await readWikiPageWithFrontmatter(slug);
-  if (!page) throw new Error(`Page "${slug}" not found`);
-
-  const current = Array.isArray(page.frontmatter.sharedWith)
-    ? (page.frontmatter.sharedWith as string[])
-    : [];
-  if (current.includes(agentId) === shared) return; // already in desired state
-
-  const next = shared
-    ? [...current, agentId]
-    : current.filter((a) => a !== agentId);
-
-  const frontmatter = { ...page.frontmatter };
-  if (next.length > 0) frontmatter.sharedWith = next;
-  else delete frontmatter.sharedWith;
-
-  await writeWikiPage(
-    slug,
-    serializeFrontmatter(frontmatter, page.body),
-    agentId,
-    shared ? "shared with agent" : "unshared from agent",
-  );
 }
 
 // ---------------------------------------------------------------------------

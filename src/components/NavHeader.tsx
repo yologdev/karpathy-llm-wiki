@@ -123,15 +123,22 @@ export function NavHeader() {
           <ThemeToggle />
 
           <Show when="signed-out">
-            {/* SSO only: Clerk auto-creates the account on first "Continue with X". */}
+            {/* SSO only: Clerk auto-creates the account on first "Continue with X".
+                Hidden below md — the hamburger menu carries auth on narrow widths. */}
             <SignInButton mode="modal">
-              <button className="btn primary" style={{ marginLeft: 2 }}>
+              <button
+                className="btn primary hidden md:inline-flex"
+                style={{ marginLeft: 2 }}
+              >
                 Sign in with X
               </button>
             </SignInButton>
           </Show>
           <Show when="signed-in">
-            <span className="hidden items-center sm:inline-flex" style={{ marginLeft: 2 }}>
+            <span
+              className="hidden items-center md:inline-flex"
+              style={{ marginLeft: 2 }}
+            >
               <UserButton>
                 {(profileHref || isOwner) && (
                   <UserButton.MenuItems>

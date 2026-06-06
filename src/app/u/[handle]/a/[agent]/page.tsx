@@ -1,10 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import {
-  getAgentByOwnerName,
-  resolveAgentPages,
-  sharedPagesFor,
-} from "@/lib/agents";
+import { getAgentByOwnerName, resolveAgentPages } from "@/lib/agents";
 import { listReadableWikiPages, ownerToTenant } from "@/lib/wiki";
 import { pagePath } from "@/lib/links";
 import { getDiscussionStatsForSlugs } from "@/lib/talk";
@@ -17,9 +13,9 @@ import type { AgentProfile, IndexEntry } from "@/lib/types";
 
 // Public agent profile, scoped under its owner's handle: /u/<handle>/a/<name>.
 // Layout: a Knowledge list (the agent's own + inherited learnings, shown like a
-// user's page list), a separate Identity section (the base identity it's forked
-// from), and a labeled "Shared by owner" section (pages the owner granted in).
-// The owner additionally sees the credential panel. Reads are public.
+// user's page list) and a separate Identity section (the base identity it's
+// forked from). The owner additionally sees the credential panel. Reads are
+// public.
 export default async function AgentProfilePage({
   params,
 }: {
@@ -39,7 +35,6 @@ export default async function AgentProfilePage({
   if (!agent) notFound();
 
   const resolved = await resolveAgentPages(agent);
-  const sharedSlugs = await sharedPagesFor(agent.id);
 
   const principal = await getPrincipal();
   const index = await listReadableWikiPages(principal);
@@ -105,16 +100,10 @@ export default async function AgentProfilePage({
       </section>
 
       {/* Filter to readable slugs (bySlug is the readable set) so a private
-          identity/shared page's slug doesn't leak to non-owners. */}
+          identity page's slug doesn't leak to non-owners. */}
       <LinkSection
         label="Identity"
         slugs={resolved.identityPages.filter((s) => bySlug.has(s))}
-        titleFor={titleFor}
-        hrefFor={hrefFor}
-      />
-      <LinkSection
-        label="Shared by owner"
-        slugs={sharedSlugs.filter((s) => bySlug.has(s))}
         titleFor={titleFor}
         hrefFor={hrefFor}
       />

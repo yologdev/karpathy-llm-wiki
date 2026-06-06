@@ -51,13 +51,13 @@ export const metadata: Metadata = {
 const themeScript = `
 (function() {
   try {
+    // Light is the default; dark only when explicitly chosen. (We no longer
+    // follow the OS prefers-color-scheme for unset visitors.)
     var t = localStorage.getItem('theme');
     if (t === 'dark') {
       document.documentElement.classList.add('dark');
-    } else if (t === 'light') {
+    } else {
       document.documentElement.classList.add('light');
-    } else if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
-      document.documentElement.classList.add('dark');
     }
   } catch(e) {}
 })();

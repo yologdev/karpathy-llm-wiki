@@ -827,44 +827,6 @@ describe("agent_context tool", () => {
     expect(result.meta.pageCount).toBe(3);
     expect(result.meta.totalChars).toBeGreaterThan(0);
   });
-
-  it("includes shared pages in the response", async () => {
-    const agentsDir = path.join(tmpDir, "agents");
-    await fs.mkdir(agentsDir, { recursive: true });
-
-    const profile = {
-      id: "shared-ctx-agent",
-      name: "Shared Context Agent",
-      description: "Agent with shared pages",
-      identityPages: ["shared-identity"],
-      learningPages: [] as string[],
-      socialPages: [] as string[],
-      registered: "2026-05-03",
-      lastUpdated: "2026-05-03",
-    };
-    await fs.writeFile(
-      path.join(agentsDir, "shared-ctx-agent.json"),
-      JSON.stringify(profile),
-      "utf-8",
-    );
-
-    await writeTestPage("shared-identity", "# Identity\n\nAgent identity.");
-    // Write a page with sharedWith frontmatter pointing to this agent
-    await writeTestPage(
-      "shared-note",
-      "---\nslug: shared-note\nsharedWith: [shared-ctx-agent]\n---\n# Shared Note\n\nThis was shared with the agent.",
-    );
-    // sharedPagesFor scans via listWikiPages which reads index.md
-    await writeIndex([
-      { title: "Shared Note", slug: "shared-note", summary: "A shared note" },
-    ]);
-
-    const result = await handleAgentContext({ agent_id: "shared-ctx-agent" });
-
-    expect(result.context.identity).toContain("Agent identity.");
-    expect(result.context.shared).toContain("This was shared with the agent.");
-    expect(result.meta.pageCount).toBe(2);
-  });
 });
 
 // ---------------------------------------------------------------------------

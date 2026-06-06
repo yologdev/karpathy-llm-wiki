@@ -100,30 +100,6 @@
   color-scheme: dark;
 }
 
-/* Fallback for when JS hasn't applied the theme class yet. */
-@media (prefers-color-scheme: dark) {
-  :root:not(.light) {
-    --paper: #14130f;
-    --paper-2: #1c1b16;
-    --paper-3: #25231c;
-    --ink: #efebdf;
-    --ink-2: #c7c2b4;
-    --muted: #948e7f;
-    --faint: #635e51;
-    --rule: #2b281f;
-    --rule-strong: #3a372c;
-    --accent: #93a6ff;
-    --accent-2: #b4c1ff;
-    --accent-soft: #1c2444;
-    --on-accent: #14130f;
-    --agent: #8b93a1;
-    --agent-soft: #23262e;
-    --rust: #d08a5e;
-    --rust-soft: #2b2017;
-    color-scheme: dark;
-  }
-}
-
 /* ---- Tailwind theme: expose tokens as utilities ----------------------- */
 @theme inline {
   /* Folio palette */

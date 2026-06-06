@@ -19,8 +19,6 @@ import {
   agentShortName,
   forkAgent,
   resolveAgentPages,
-  sharedPagesFor,
-  setPageShared,
   generateAgentToken,
   verifyAgentToken,
   revokeAgentToken,
@@ -28,8 +26,6 @@ import {
 } from "../agents";
 import type { UpdateAgentPage } from "../agents";
 import { readWikiPage, readWikiPageWithFrontmatter } from "../wiki";
-import { writeWikiPageWithSideEffects } from "../lifecycle";
-import { serializeFrontmatter } from "../frontmatter";
 import type { AgentProfile } from "../types";
 import { _resetStorage, getStorage } from "../storage";
 
@@ -1257,82 +1253,6 @@ describe("agent page interlinking", () => {
     expect(p!.content).not.toContain("## Related");
   });
 });
-
-describe("sharing (feed-as-grant via sharedWith)", () => {
-  async function writeUserPage(slug: string, owner: string) {
-    const content = serializeFrontmatter(
-      { owner, authors: [owner], contributors: [owner] },
-      `# ${slug}\n\nSome content.`,
-    );
-    await writeWikiPageWithSideEffects({
-      slug,
-      title: slug,
-      content,
-      summary: "s",
-      logOp: "other",
-      crossRefSource: null,
-      author: owner,
-    });
-  }
-
-  it("shares and unshares a page into an agent's context", async () => {
-    await writeUserPage("alice-note", "alice");
-    expect(await sharedPagesFor("alice--yoyo")).toEqual([]);
-
-    await setPageShared("alice-note", "alice--yoyo", true);
-    expect(await sharedPagesFor("alice--yoyo")).toEqual(["alice-note"]);
-
-    // Idempotent — sharing again is a no-op.
-    await setPageShared("alice-note", "alice--yoyo", true);
-    expect(await sharedPagesFor("alice--yoyo")).toEqual(["alice-note"]);
-
-    await setPageShared("alice-note", "alice--yoyo", false);
-    expect(await sharedPagesFor("alice--yoyo")).toEqual([]);
-  });
-
-  it("grants are scoped to one agent (no cross-leak)", async () => {
-    await writeUserPage("alice-note", "alice");
-    await setPageShared("alice-note", "alice--yoyo", true);
-    expect(await sharedPagesFor("alice--yoyo")).toEqual(["alice-note"]);
-    expect(await sharedPagesFor("bob--yoyo")).toEqual([]);
-  });
-
-  it("throws for a missing page", async () => {
-    await expect(setPageShared("nope", "alice--yoyo", true)).rejects.toThrow();
-  });
-
-  it("preserves body and other frontmatter through the share/unshare round-trip", async () => {
-    await writeUserPage("alice-note", "alice");
-
-    await setPageShared("alice-note", "alice--yoyo", true);
-    let page = await readWikiPageWithFrontmatter("alice-note");
-    expect(page!.body).toContain("Some content."); // body intact
-    expect(page!.frontmatter.owner).toBe("alice"); // other keys intact
-    expect(page!.frontmatter.contributors).toEqual(["alice"]);
-    expect(page!.frontmatter.sharedWith).toEqual(["alice--yoyo"]);
-
-    await setPageShared("alice-note", "alice--yoyo", false);
-    page = await readWikiPageWithFrontmatter("alice-note");
-    expect(page!.body).toContain("Some content.");
-    expect(page!.frontmatter.owner).toBe("alice");
-    // The key is fully removed once empty (not left as []).
-    expect(page!.frontmatter.sharedWith).toBeUndefined();
-  });
-
-  it("appends/removes one agent without clobbering other grants", async () => {
-    await writeUserPage("alice-note", "alice");
-    await setPageShared("alice-note", "bob--yoyo", true);
-    await setPageShared("alice-note", "alice--yoyo", true);
-
-    let page = await readWikiPageWithFrontmatter("alice-note");
-    expect(page!.frontmatter.sharedWith).toEqual(["bob--yoyo", "alice--yoyo"]);
-
-    // Removing one leaves the other.
-    await setPageShared("alice-note", "alice--yoyo", false);
-    page = await readWikiPageWithFrontmatter("alice-note");
-    expect(page!.frontmatter.sharedWith).toEqual(["bob--yoyo"]);
-  });
-})
 
 describe("per-agent credentials", () => {
   async function seedAgentRecord(id = "alice--yoyo", owner = "alice") {

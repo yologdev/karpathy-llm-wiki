@@ -28,13 +28,11 @@ import {
 import { MarkdownRenderer } from "@/components/MarkdownRenderer";
 import { DeletePageButton } from "@/components/DeletePageButton";
 import { ReingestButton } from "@/components/ReingestButton";
-import { ShareWithYoyoButton } from "@/components/ShareWithYoyoButton";
 import { SaveToVaultButton } from "@/components/SaveToVaultButton";
 import { getPrincipal } from "@/lib/auth";
 import { canReadFrontmatter } from "@/lib/authz";
 import { belongsInCommons } from "@/lib/commons";
 import { isInVault } from "@/lib/vault";
-import { agentIdFor, DEFAULT_AGENT_NAME } from "@/lib/agents";
 import { RevisionHistory } from "@/components/RevisionHistory";
 import { DiscussionPanel } from "@/components/DiscussionPanel";
 
@@ -225,24 +223,11 @@ export default async function WikiPageView({ params }: WikiPageProps) {
   const hasRawSource =
     hasSourceUrl || Number(page.frontmatter.source_count ?? 0) > 0;
 
-  // "Share with yoyo" is shown only to the page's owner/contributor, and we
-  // pre-compute whether it's already shared into their yoyo.
   const pageOwner =
     typeof page.frontmatter.owner === "string" ? page.frontmatter.owner : "";
   const pageContributors = Array.isArray(page.frontmatter.contributors)
     ? (page.frontmatter.contributors as string[])
     : [];
-  const canShare =
-    !!principal &&
-    (pageOwner === principal.handle ||
-      pageContributors.includes(principal.handle));
-  const myYoyoId = principal
-    ? agentIdFor(principal.handle, DEFAULT_AGENT_NAME)
-    : "";
-  const alreadyShared =
-    !!myYoyoId &&
-    Array.isArray(page.frontmatter.sharedWith) &&
-    (page.frontmatter.sharedWith as string[]).includes(myYoyoId);
 
   // "Save to vault" — curate a commons (public, non-agent) page into the signed-in
   // viewer's reference lens. Shown only on pages the viewer does NOT own or
@@ -258,9 +243,13 @@ export default async function WikiPageView({ params }: WikiPageProps) {
         ? page.frontmatter.type
         : undefined,
   });
-  // canShare is true when the viewer owns or contributed to the page — those are
-  // already in their vault, so the curate button is for everyone else's pages.
-  const canCurate = !!principal && isCommonsPage && !canShare;
+  // Pages the viewer already owns or contributed to are implicitly in their
+  // vault, so the curate button is for everyone else's commons pages.
+  const ownsOrContributes =
+    !!principal &&
+    (pageOwner === principal.handle ||
+      pageContributors.includes(principal.handle));
+  const canCurate = !!principal && isCommonsPage && !ownsOrContributes;
   const inVault = canCurate && (await isInVault(principal!.handle, slug));
 
   const lineageSources = parseSources(
@@ -521,9 +510,6 @@ export default async function WikiPageView({ params }: WikiPageProps) {
             {hasSourceUrl && <ReingestButton slug={slug} />}
             {canCurate && (
               <SaveToVaultButton slug={slug} initiallyInVault={inVault} />
-            )}
-            {canShare && (
-              <ShareWithYoyoButton slug={slug} initiallyShared={alreadyShared} />
             )}
             <DeletePageButton slug={slug} />
           </div>

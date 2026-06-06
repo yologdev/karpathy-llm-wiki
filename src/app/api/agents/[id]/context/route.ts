@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getAgent, resolveAgentPages, sharedPagesFor } from "@/lib/agents";
+import { getAgent, resolveAgentPages } from "@/lib/agents";
 import { readWikiPageWithFrontmatter } from "@/lib/wiki";
 import { getPrincipal, type Principal } from "@/lib/auth";
 import { canReadFrontmatter } from "@/lib/authz";
@@ -82,27 +82,22 @@ export async function GET(_req: Request, { params }: RouteParams) {
     }
 
     // Resolve effective pages (own + inherited from the template chain), so a
-    // forked per-user yoyo returns the base content it inherits. Plus the pages
-    // the owner shared into this agent's context (grant references).
+    // forked per-user yoyo returns the base content it inherits.
     const pages = await resolveAgentPages(agent);
-    const sharedSlugs = await sharedPagesFor(agent.id);
 
     // Load all context sections in parallel (read-gated per page)
     const principal = await getPrincipal();
-    const [identity, learnings, social, shared] = await Promise.all([
+    const [identity, learnings, social] = await Promise.all([
       loadPages(pages.identityPages, principal),
       loadPages(pages.learningPages, principal),
       loadPages(pages.socialPages, principal),
-      loadPages(sharedSlugs, principal),
     ]);
 
     const totalChars =
       identity.content.length +
       learnings.content.length +
-      social.content.length +
-      shared.content.length;
-    const pageCount =
-      identity.count + learnings.count + social.count + shared.count;
+      social.content.length;
+    const pageCount = identity.count + learnings.count + social.count;
 
     return NextResponse.json({
       agent,
@@ -110,7 +105,6 @@ export async function GET(_req: Request, { params }: RouteParams) {
         identity: identity.content,
         learnings: learnings.content,
         socialWisdom: social.content,
-        shared: shared.content,
       },
       meta: {
         totalChars,
