@@ -90,7 +90,7 @@ export default async function Home() {
 
       {/* Ask console — the star */}
       <section className="shell" style={{ marginTop: 38, maxWidth: 880 }}>
-        <HomeAsk />
+        <HomeAsk showExamples={pageCount > 0} />
       </section>
 
       {pageCount === 0 ? (

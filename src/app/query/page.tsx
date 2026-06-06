@@ -70,6 +70,22 @@ export default function QueryPage() {
     };
   }, [isSignedIn]);
 
+  // Example questions reference existing pages — hide them when the commons is
+  // empty (assume content until proven otherwise, so they don't flash away).
+  const [hasContent, setHasContent] = useState(true);
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/wiki")
+      .then((r) => (r.ok ? r.json() : { pages: [] }))
+      .then((d: { pages?: unknown[] }) => {
+        if (!cancelled) setHasContent((d.pages?.length ?? 0) > 0);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const {
     question,
     setQuestion,
@@ -287,7 +303,8 @@ export default function QueryPage() {
                   className="row"
                   style={{ gap: 8, flexWrap: "wrap", flex: "1 1 320px", minWidth: 0 }}
                 >
-                  {EXAMPLES.map((ex) => (
+                  {hasContent &&
+                    EXAMPLES.map((ex) => (
                     <button
                       type="button"
                       key={ex}

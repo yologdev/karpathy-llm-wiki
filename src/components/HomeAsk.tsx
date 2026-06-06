@@ -23,7 +23,7 @@ const DEMO_USED_KEY = "yopedia_demo_used";
  * — no LLM cost, served from /api/query/demo) with a simulated stream; the next
  * question enforces sign-in.
  */
-export function HomeAsk() {
+export function HomeAsk({ showExamples = true }: { showExamples?: boolean }) {
   const { isSignedIn } = useUser();
   const { openSignIn } = useClerk();
   const { question, setQuestion, result, streaming, error, submit, isProcessing } =
@@ -175,30 +175,33 @@ export function HomeAsk() {
               flexWrap: "wrap",
             }}
           >
+            {/* Example questions reference existing pages — hide them on an empty
+                commons (they'd ask about content that isn't there yet). */}
             <div
               className="row"
               style={{ gap: 8, flexWrap: "wrap", flex: "1 1 320px", minWidth: 0 }}
             >
-              {EXAMPLES.map((q) => (
-                <button
-                  type="button"
-                  key={q}
-                  onClick={() => onChip(q)}
-                  disabled={guestBusy}
-                  className="receipt folio-chip disabled:opacity-50"
-                  style={{
-                    fontSize: 11.5,
-                    color: "var(--muted)",
-                    background: "transparent",
-                    whiteSpace: "nowrap",
-                    border: "1px solid var(--rule)",
-                    borderRadius: 999,
-                    padding: "5px 11px",
-                  }}
-                >
-                  {q}
-                </button>
-              ))}
+              {showExamples &&
+                EXAMPLES.map((q) => (
+                  <button
+                    type="button"
+                    key={q}
+                    onClick={() => onChip(q)}
+                    disabled={guestBusy}
+                    className="receipt folio-chip disabled:opacity-50"
+                    style={{
+                      fontSize: 11.5,
+                      color: "var(--muted)",
+                      background: "transparent",
+                      whiteSpace: "nowrap",
+                      border: "1px solid var(--rule)",
+                      borderRadius: 999,
+                      padding: "5px 11px",
+                    }}
+                  >
+                    {q}
+                  </button>
+                ))}
             </div>
             {isSignedIn ? (
               <button
@@ -226,7 +229,7 @@ export function HomeAsk() {
         </p>
       </form>
 
-      {!isSignedIn && !demo && !demoLoading && !demoError && (
+      {showExamples && !isSignedIn && !demo && !demoLoading && !demoError && (
         <p className="mt-2 text-xs text-muted">
           Try a sample question for a taste — sign in to ask your own.
         </p>

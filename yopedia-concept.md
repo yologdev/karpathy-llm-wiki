@@ -16,9 +16,9 @@ co-built by people and their agents, with personal **vaults** as a lens on top �
 two surfaces (a human wiki, an agent API) over one substrate.
 
 **Commons-first.** The default destination for everything anyone ingests is the
-**commons**: one collective wiki, owned by no one and maintained by agents. A **vault**
-is a personal layer — your curated/contributed slice of the commons (public, by
-reference) plus your own sealed pages (private, paid).
+**commons**: one collective wiki, owned by no one and maintained by agents. **Vaults**
+are personal layers — you can keep **multiple named vaults**, each **public** (a
+reference lens over the commons) or **private** (your own sealed pages, paid).
 
 **Human surface: a wiki.** Markdown pages with YAML frontmatter, wikilinks between
 concepts, sources cited inline, confidence and expiry on every page. Trusted because
@@ -59,22 +59,28 @@ One substrate, two lenses: a collective **commons** and personal **vaults**.
   as a derived index (`src/lib/commons.ts`); the homepage, graph, and global query read
   it.
 
-### Vaults — your lens over the commons, plus a paid private space
+### Vaults — named lenses over the commons, plus paid private space
+
+A user keeps **multiple named vaults** (live; `src/lib/vault.ts`, stored per owner at
+`vaults:<tenant>`), each **public** or **private**. A vault is a collection of page
+**references**, and membership is **explicit** — you add pages deliberately; nothing
+auto-joins.
 
 - **Public vault = a reference lens** over the commons (no separate public storage).
   Both paths land the same way: **curating** a commons page adds a *reference*;
   **ingesting "into your vault"** creates the page **in the commons** (collective,
-  agent-maintained) and then references it. Everything public has one home — the
-  commons — and the vault is your curated/contributed slice of it, **by reference**, so
-  it's always **live, never stale**. The public vault feeds the commons by construction.
-  *(Curation / lens UI is **future**; today your vault view at `/u/<handle>` lists the
-  public pages you own or contributed to.)*
+  agent-maintained) and then references it. Everything public has one home — the commons
+  — so a referenced entry is always **live, never stale**. **Live today:** create/manage
+  vaults at **`/vault`**; curate via a page's "Save to vault" picker; and vaults are the
+  **Browse / Query / Graph lens** (a `vault:<id>` scope, replacing the old "Mine") —
+  *Public* plus one pill per vault.
 - **Private vault (paid) = owned clones.** Privacy is **not** an in-place flip of
-  collective content — you **clone** a commons page into your private vault (a sealed,
-  owner-only snapshot), or ingest privately. Staleness vs the commons is the accepted
-  price of sealing it off. `visibility: private` is **read-enforced today** (`canReadPage`
-  on every read surface) and gated on a **paid plan** (`canSetPrivate` → Clerk
-  `publicMetadata.plan`); **future:** Clerk Billing checkout + the clone-to-private flow.
+  collective content — curating a commons page into a *private* vault **clones** it (a
+  sealed, owner-only snapshot), or you ingest privately. `visibility: private` is
+  **read-enforced today** (`canReadPage` on every read surface) and gated on a **paid
+  plan** (`canSetPrivate` → Clerk `publicMetadata.plan`). **Future:** private-vault
+  creation, the clone-to-private flow, and Clerk Billing checkout. A private vault never
+  resolves via a public `vault:<id>` scope.
 
 **Public = always reference (live); private = always clone (copy).** Public content has
 one home; the public vault only points at it. Privacy requires a clone.
@@ -161,17 +167,19 @@ Physical isolation under the commons: each owner's pages are mirrored into their
 namespace `tenants/<handle>/{wiki,raw,discuss}/`.
 
 - **Live:** the tenant-parameterized storage layer, the **commons index** + migration,
-  **owner-qualified URLs** `/u/<handle>/<slug>` (legacy `/wiki/<slug>` 308-redirects),
-  scoped query/graph, the live **silo mirror** (every page mirrored to its tenant folder
-  on write — a self-contained, Obsidian-servable vault), per-tenant **export**
-  ("download my vault"), and **delete-tenant**. Reads are still served from the shared
-  layer; the silo is kept current but not yet the read primary.
+  **global commons URLs** `/wiki/<slug>` for public pages (context-free + cacheable; the
+  owner-scoped `/u/<handle>/<slug>` is for **private/owned** pages and 308-redirects a
+  public page to its `/wiki/<slug>` home), scoped query/graph **including the `vault:<id>`
+  vault lens**, the live **silo mirror** (every page mirrored to its tenant folder on
+  write — a self-contained, Obsidian-servable vault), per-tenant **export** ("download my
+  vault"), and **delete-tenant**. Reads are still served from the shared layer; the silo
+  is kept current but not yet the read primary.
 - **Why it matters:** strong *physical* isolation for the paid-private tier (a missed
   `canReadPage` check can't cross a prefix — defense in depth), per-tenant scoped
   query/graph, and clean per-tenant data ops (export / delete / quota one tenant without
   scanning others).
-- **Pending:** the vault **lens** (curation — referencing commons pages you don't own),
-  switching reads to silo-primary, **Clerk Billing**, and the **clone-to-private** flow.
+- **Pending:** switching reads to silo-primary, **Clerk Billing**, and the
+  **clone-to-private** / private-vault flow.
 
 **"Growing in public" is about the *product*, not user data** — yoyo building the
 yopedia repo autonomously (commits, journal, issues). It is orthogonal to whether a
@@ -217,8 +225,11 @@ with yoyo as the first agent.
 - **Agent ownership (live).** Each agent has an **`owner`** (the seeding principal, set
   from the session — never client input). **You can only feed/edit/delete your own
   agent**; everyone else is read-only against it.
-- **"Feed" = grant read-access, not copy.** An agent's task context = its **own
-  ingested pages** + the **owner's pages they chose to share**. No duplication.
+- **Agents read, they don't get copies.** An agent's task context is its **own
+  pages** (identity / learnings / social, inherited via its template by reference). To
+  use the owner's knowledge it queries the commons or the owner's vault over the **API /
+  MCP under its own credentials** — an auth concern, not in-code page-sharing. *(The
+  earlier per-page "share with yoyo" grant was retired.)*
 - **Agent content is scoped today.** An agent's ingested pages (`type: agent-knowledge`)
   are a private knowledge base — browsable under the agent profile, **excluded from the
   public commons** and the "All" feed.
@@ -259,21 +270,19 @@ where this differs.
 
 ## Roadmap (future)
 
-In rough order (commons-first model):
+In rough order (commons-first model). *(Shipped since the last revision: multiple named
+public vaults + curation + the `vault:<id>` Browse/Query/Graph lens; commons-global
+`/wiki/<slug>` URLs; the service-token + task-queue write path and the `@yoyoevolve`
+X-mention loop.)*
 
-- **Curation + the public vault lens.** Save/curate a commons page into your vault;
-  ingest-into-my-vault = a commons ingest + an auto-added reference; a vault view that
-  renders your contributed ∪ curated commons pages as a live lens.
 - **Realm-aware write model.** Retire direct prose-editing of commons pages; elevate
   **talk** as the human steering surface (dispute / merge / split signals); **owner-only
   writes** for private / vault pages (close the current edit-ACL gap).
 - **Agents as commons contributors.** A deliberate agent→commons publish path, distinct
   from the private agent-knowledge scratchpad.
-- **Private tier (billing).** Clerk Billing checkout → `plan="pro"`; **clone-to-private**
-  (snapshot a commons page into an owned private vault page); the clone/visibility UI.
-- **Service / scheduled tokens.** A non-human write credential so yoyo and scheduled jobs
-  can write without a human session — unblocks the base-yoyo seed and the
-  **`@yoyoevolve` X-mention loop** (tweet a URL → yoyo ingests *for you*).
+- **Private tier (billing).** Clerk Billing checkout → `plan="pro"`; **private-vault
+  creation** + **clone-to-private** (snapshot a commons page into an owned private vault
+  page); the clone/visibility UI.
 - **Switch reads to silo-primary**, then retire the flat originals.
 - **Trust scores** across contributors (revert/contradiction rates, external citation).
 - **Agent-surface research** — structured claims / fact triples / embeddings as a
