@@ -25,8 +25,11 @@ export interface TrailEvent {
   tenant: string;
 }
 
-// Bound the work: only scan the most-recently-updated public pages.
-const MAX_PAGES_SCANNED = 60;
+// Bound the work: only scan the most-recently-updated public pages. The trail
+// surfaces ~10-12 events and pages sort by `updated` (which every ingest/edit
+// bumps), so the freshest 30 pages reliably over-fill the list — reading more
+// is wasted I/O on the homepage path.
+const MAX_PAGES_SCANNED = 30;
 
 /**
  * Build the activity trail by merging recent ingests (from each page's

@@ -14,7 +14,7 @@
 import { getStorage } from "./storage";
 import { listReadableWikiPages, isAgentScopedType } from "./wiki";
 import type { Principal } from "./auth";
-import { listRevisions } from "./revisions";
+import { listRevisions, type Revision } from "./revisions";
 import { getDiscussRelPrefix } from "./talk";
 import { isEnoent } from "./errors";
 import type { ContributorProfile, TalkThread } from "./types";
@@ -74,18 +74,13 @@ function emptyActivity(): AuthorActivity {
   };
 }
 
-/** Collect all revision-based activity keyed by author handle. */
-async function scanRevisions(
-  principal: Principal | null,
-): Promise<Map<string, AuthorActivity>> {
+/** Reduce per-page revision lists into activity keyed by author handle. Pure —
+ *  the storage reads happen once in {@link computeScanData}. */
+function reduceActivity(
+  revisionsPerPage: Revision[][],
+): Map<string, AuthorActivity> {
   const map = new Map<string, AuthorActivity>();
-  const pages = await listReadableWikiPages(principal);
-
-  for (const page of pages) {
-    // Agent-scoped pages are authored by the agent itself (e.g. "yuanhao--yoyo",
-    // "yoyo"); they're not human contributors, so don't count them.
-    if (isAgentScopedType(page.type)) continue;
-    const revisions = await listRevisions(page.slug);
+  for (const revisions of revisionsPerPage) {
     for (const rev of revisions) {
       if (!rev.author) continue;
       let act = map.get(rev.author);
@@ -98,7 +93,6 @@ async function scanRevisions(
       act.dates.push(rev.date);
     }
   }
-
   return map;
 }
 
@@ -135,21 +129,16 @@ function mergeTalkActivity(
 const REVERT_SIZE_REDUCTION_THRESHOLD = 0.5;
 
 /**
- * Scan all revisions across all pages and detect "reverts" — cases where
- * revision N+1 by author B substantially reduces the content of revision N
- * by author A (>50% size reduction).
+ * Detect "reverts" from per-page revision lists — cases where revision N+1 by
+ * author B substantially reduces the content of revision N by author A (>50%
+ * size reduction). Pure; storage reads happen once in {@link computeScanData}.
  *
  * Returns a map from author handle → number of times their content was reverted.
  */
-async function detectReverts(
-  principal: Principal | null,
-): Promise<Map<string, number>> {
+function reduceReverts(revisionsPerPage: Revision[][]): Map<string, number> {
   const revertCounts = new Map<string, number>();
-  const pages = await listReadableWikiPages(principal);
 
-  for (const page of pages) {
-    if (isAgentScopedType(page.type)) continue;
-    const revisions = await listRevisions(page.slug);
+  for (const revisions of revisionsPerPage) {
     if (revisions.length < 2) continue;
 
     // listRevisions returns newest-first; we need chronological order.
@@ -209,10 +198,26 @@ export interface ContributorScanData {
 export async function computeScanData(
   principal: Principal | null = null,
 ): Promise<ContributorScanData> {
-  const activityMap = await scanRevisions(principal);
-  const threads = await loadAllThreads();
+  // Human pages only — agent-scoped pages are authored by the agent itself
+  // (e.g. "yuanhao--yoyo"), not a human contributor, so their revisions never
+  // factor in. Filtering here also means we never read them.
+  const pages = (await listReadableWikiPages(principal)).filter(
+    (p) => !isAgentScopedType(p.type),
+  );
+
+  // Read every page's revisions ONCE, in parallel, and reuse the result for
+  // both the activity scan and revert detection. Previously each of those
+  // re-read all revisions in a serial await-in-loop — N pages turned into N
+  // sequential storage round-trips, twice, the dominant cost on the homepage.
+  // Threads load concurrently in the same barrier.
+  const [revisionsPerPage, threads] = await Promise.all([
+    Promise.all(pages.map((p) => listRevisions(p.slug))),
+    loadAllThreads(),
+  ]);
+
+  const activityMap = reduceActivity(revisionsPerPage);
   mergeTalkActivity(activityMap, threads);
-  const revertCounts = await detectReverts(principal);
+  const revertCounts = reduceReverts(revisionsPerPage);
   return { activityMap, revertCounts };
 }
 
