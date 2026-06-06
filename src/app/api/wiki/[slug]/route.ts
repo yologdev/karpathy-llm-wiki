@@ -237,7 +237,7 @@ export async function PATCH(
     }
 
     // Attribution comes from the authenticated session, never the body.
-    const principal = await getPrincipal();
+    const principal = (await getPrincipal()) ?? getServicePrincipal(req);
 
     const result = await patchMetadata({
       slug,

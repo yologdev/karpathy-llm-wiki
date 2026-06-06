@@ -24,11 +24,16 @@ describe("write-gate in-route auth exemptions", () => {
     expect(authenticatesInRoute("/api/agents/alice--yoyo/ingest")).toBe(true);
     expect(authenticatesInRoute("/api/admin/migrate")).toBe(true);
     expect(authenticatesInRoute("/api/admin/tenant/alice")).toBe(true);
+    // Wiki routes: POST /api/wiki (create) and PUT/PATCH/DELETE /api/wiki/:slug
+    expect(authenticatesInRoute("/api/wiki")).toBe(true);
+    expect(authenticatesInRoute("/api/wiki/transformers")).toBe(true);
   });
 
   it("does NOT exempt normal write paths (they need a Clerk session)", () => {
-    expect(authenticatesInRoute("/api/wiki/transformers")).toBe(false);
     expect(authenticatesInRoute("/api/vault")).toBe(false);
     expect(authenticatesInRoute("/api/tasks/run/extra")).toBe(false);
+    // Sub-paths beyond /api/wiki/:slug still go through Clerk
+    expect(authenticatesInRoute("/api/wiki/transformers/discuss")).toBe(false);
+    expect(authenticatesInRoute("/api/wiki/transformers/revisions")).toBe(false);
   });
 });

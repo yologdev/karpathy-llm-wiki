@@ -23,6 +23,8 @@ const WRITE_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 //   - /api/tasks/run              — the system service token ONLY (the task-
 //                                   consumer worker; has no Clerk session)
 //   - /api/tasks/scan            — the system service token ONLY (the cron)
+//   - /api/wiki                   — Clerk session OR the system service token
+//   - /api/wiki/<slug>            — Clerk session OR the system service token
 // This is not a hole.
 //
 // The MCP server is stdio-only and not exposed over HTTP, so it is unaffected.
@@ -42,8 +44,14 @@ const IN_ROUTE_AUTH_PATHS = new Set([
   // Admin migration: authenticated in-route by the service token OR the site
   // owner's session (it rejects everyone else with 403).
   "/api/admin/migrate",
+  // Wiki page creation: authenticated in-route via Clerk session OR the
+  // service token (agents create pages via REST).
+  "/api/wiki",
 ]);
 const AGENT_INGEST_RE = /^\/api\/agents\/[^/]+\/ingest$/;
+// Wiki page mutations by slug: authenticated in-route via Clerk session OR the
+// service token (agents update/patch/delete pages via REST).
+const WIKI_SLUG_RE = /^\/api\/wiki\/[^/]+$/;
 // Admin tenant delete: authenticated in-route by the service token, the site
 // owner, or the tenant's own owner (it 403s everyone else).
 const ADMIN_TENANT_RE = /^\/api\/admin\/tenant\/[^/]+$/;
@@ -58,6 +66,7 @@ export function authenticatesInRoute(pathname: string): boolean {
   return (
     IN_ROUTE_AUTH_PATHS.has(pathname) ||
     AGENT_INGEST_RE.test(pathname) ||
+    WIKI_SLUG_RE.test(pathname) ||
     ADMIN_TENANT_RE.test(pathname)
   );
 }

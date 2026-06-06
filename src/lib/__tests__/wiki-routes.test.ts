@@ -892,3 +892,130 @@ describe("realm-aware ACL — discussion and revision-revert routes", () => {
     expect(res.status).toBe(200);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Service-token auth — PATCH /api/wiki/[slug] and POST /api/wiki
+// ---------------------------------------------------------------------------
+
+describe("PATCH /api/wiki/[slug] — service-token auth", () => {
+  async function callPatch(slug: string, body: Record<string, unknown>) {
+    const mod = await import("@/app/api/wiki/[slug]/route");
+    const req = new Request(`http://localhost:3000/api/wiki/${slug}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    return mod.PATCH(req, { params: Promise.resolve({ slug }) });
+  }
+
+  async function seedPage(slug: string, fm: Frontmatter = {}) {
+    const today = new Date().toISOString().slice(0, 10);
+    const defaults: Frontmatter = {
+      created: today,
+      confidence: 0.5,
+      authors: ["original-author"],
+      owner: "svc-user",
+      contributors: [],
+      expiry: "2099-01-01",
+      sources: [],
+      ...fm,
+    };
+    const content = serializeFrontmatter(defaults, `# ${slug}\n\nOriginal content.`);
+    await writeWikiPageWithSideEffects({
+      slug,
+      title: slug,
+      content,
+      summary: "A test page",
+      logOp: "ingest",
+      crossRefSource: null,
+    });
+  }
+
+  it("allows a service principal to PATCH metadata when Clerk session is absent", async () => {
+    await seedPage("svc-patch-test");
+
+    // Simulate service-token caller: no Clerk session, but valid service token.
+    mockedGetPrincipal.mockResolvedValueOnce(null);
+    const { getServicePrincipal } = await import("@/lib/auth");
+    const mockedGetService = vi.mocked(getServicePrincipal);
+    mockedGetService.mockReturnValueOnce({ id: "service:svc-user", handle: "svc-user" });
+
+    const res = await callPatch("svc-patch-test", {
+      metadata: { confidence: 0.9 },
+    });
+    expect(res.status).toBe(200);
+
+    const page = await readWikiPageWithFrontmatter("svc-patch-test");
+    expect(page).not.toBeNull();
+    expect(page!.frontmatter.confidence).toBe(0.9);
+  });
+
+  it("still works with a normal Clerk session (no service token needed)", async () => {
+    await seedPage("clerk-patch-test");
+
+    // Default mock returns test-user via getPrincipal — no service token.
+    const res = await callPatch("clerk-patch-test", {
+      metadata: { tags: ["test-tag"] },
+    });
+    expect(res.status).toBe(200);
+
+    const page = await readWikiPageWithFrontmatter("clerk-patch-test");
+    expect(page).not.toBeNull();
+    expect(page!.frontmatter.tags).toContain("test-tag");
+  });
+});
+
+describe("POST /api/wiki — service-token auth", () => {
+  async function callPost(body: Record<string, unknown>) {
+    const { POST } = await import("@/app/api/wiki/route");
+    const req = new Request("http://localhost:3000/api/wiki", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    return POST(req);
+  }
+
+  it("allows a service principal to create a page when Clerk session is absent", async () => {
+    // Simulate service-token caller: no Clerk session, but valid service token.
+    mockedGetPrincipal.mockResolvedValueOnce(null);
+    const { getServicePrincipal } = await import("@/lib/auth");
+    const mockedGetService = vi.mocked(getServicePrincipal);
+    mockedGetService.mockReturnValueOnce({ id: "service:bot", handle: "bot" });
+
+    const res = await callPost({
+      slug: "svc-created-page",
+      content: "# SVC Created\n\nAgent-created page.",
+    });
+    expect(res.status).toBe(201);
+
+    const page = await readWikiPageWithFrontmatter("svc-created-page");
+    expect(page).not.toBeNull();
+    expect(page!.frontmatter.owner).toBe("bot");
+    expect(page!.frontmatter.authors).toEqual(["bot"]);
+  });
+
+  it("returns 401 when neither Clerk session nor service token is present", async () => {
+    mockedGetPrincipal.mockResolvedValueOnce(null);
+    // getServicePrincipal default mock already returns null
+
+    const res = await callPost({
+      slug: "no-auth-page",
+      content: "# No Auth\n\nShould fail.",
+    });
+    expect(res.status).toBe(401);
+  });
+
+  it("still works with a normal Clerk session (no service token needed)", async () => {
+    // Default mock returns test-user via getPrincipal.
+    const res = await callPost({
+      slug: "clerk-created-page",
+      content: "# Clerk Created\n\nUser-created page.",
+    });
+    expect(res.status).toBe(201);
+
+    const page = await readWikiPageWithFrontmatter("clerk-created-page");
+    expect(page).not.toBeNull();
+    expect(page!.frontmatter.owner).toBe("test-user");
+  });
+});

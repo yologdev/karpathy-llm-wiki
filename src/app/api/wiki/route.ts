@@ -9,7 +9,7 @@ import {
   type Frontmatter,
 } from "@/lib/wiki";
 import { extractSummary } from "@/lib/ingest";
-import { getPrincipal } from "@/lib/auth";
+import { getPrincipal, getServicePrincipal } from "@/lib/auth";
 import { getErrorMessage } from "@/lib/errors";
 
 /**
@@ -51,7 +51,7 @@ export async function GET(req: Request) {
 export async function POST(req: Request) {
   try {
     // Attribution from the authenticated session, never the body.
-    const principal = await getPrincipal();
+    const principal = (await getPrincipal()) ?? getServicePrincipal(req);
     if (!principal) {
       return NextResponse.json({ error: "Sign in required." }, { status: 401 });
     }
