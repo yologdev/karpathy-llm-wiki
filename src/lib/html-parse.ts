@@ -243,6 +243,57 @@ export function extractTitle(html: string): string {
  * `htmlContent` (sanitised HTML that Readability produces, which preserves
  * images, links, and formatting).
  */
+/**
+ * Salvage plausible *content* image URLs from raw HTML — a generic fallback for
+ * figures Readability drops (lazy-loaded, empty-alt, `<picture>`/`<source>`, SVG
+ * diagrams). Parses with linkedom (the same DOM lib Readability uses here) rather
+ * than regex, so it's robust to attribute order/quoting on any site. Strips
+ * chrome (nav/header/footer/script/style/aside) so we don't grab logos/sprites,
+ * skips data URIs + icon/logo/avatar URLs + tiny declared sizes, and dedupes.
+ * Absolute http(s) URLs only, capped at `max`.
+ */
+export function extractImageUrls(html: string, max = 12): string[] {
+  let document: ReturnType<typeof parseHTML>["document"];
+  try {
+    document = parseHTML(html).document;
+  } catch (err) {
+    logger.warn("ingest", "extractImageUrls parse failed:", err);
+    return [];
+  }
+  document
+    .querySelectorAll("script,style,nav,header,footer,noscript,aside")
+    .forEach((el) => el.remove());
+
+  const urls: string[] = [];
+  const seen = new Set<string>();
+  const push = (u?: string | null) => {
+    const url = u?.trim();
+    if (!url || !/^https?:\/\//i.test(url)) return;
+    if (/(logo|sprite|icon|favicon|avatar|emoji)/i.test(url)) return;
+    if (seen.has(url)) return;
+    seen.add(url);
+    urls.push(url);
+  };
+  const firstSrcset = (s: string | null) =>
+    s?.split(",")[0]?.trim().split(/\s+/)[0] ?? null;
+
+  for (const img of Array.from(document.querySelectorAll("img"))) {
+    if (urls.length >= max) break;
+    const w = Number(img.getAttribute("width"));
+    const h = Number(img.getAttribute("height"));
+    if ((w && w < 80) || (h && h < 80)) continue; // icon-sized
+    push(img.getAttribute("src") || img.getAttribute("data-src"));
+    push(firstSrcset(img.getAttribute("srcset")));
+  }
+  for (const source of Array.from(
+    document.querySelectorAll("picture source, figure source"),
+  )) {
+    if (urls.length >= max) break;
+    push(firstSrcset(source.getAttribute("srcset")));
+  }
+  return urls.slice(0, max);
+}
+
 export function extractWithReadability(
   html: string,
 ): { title: string; textContent: string; htmlContent: string } | null {

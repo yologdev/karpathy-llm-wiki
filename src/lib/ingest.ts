@@ -450,7 +450,9 @@ function generateFallbackPage(title: string, content: string): string {
 function appendSourceImages(wikiBody: string, sourceContent: string): string {
   if (/^##\s+Images\s*$/m.test(wikiBody)) return wikiBody;
 
-  const re = /!\[([^\]]*)\]\((assets\/[^)\s]+)\)/g;
+  // Surface images the LLM dropped: both localized (assets/…) and ones kept as
+  // their original http(s) URL (download skipped/failed, e.g. salvaged figures).
+  const re = /!\[([^\]]*)\]\(((?:assets\/|https?:\/\/)[^)\s]+)\)/g;
   const seen = new Set<string>();
   const refs: { alt: string; ref: string }[] = [];
   let m: RegExpExecArray | null;
@@ -1191,6 +1193,25 @@ export async function ingest(
   // The LLM distills text and drops image refs, so deterministically append the
   // source's downloaded images as a trailing section — reliable, no LLM cost.
   wikiContent = appendSourceImages(wikiContent, content);
+
+  // Commit-from-preview carries no CONCEPT marker (preview stripped it), so the
+  // canonical slug would otherwise stay the source-TITLE slug even though the
+  // page H1 shows the synthesized concept — e.g. "Agentic systems" published at
+  // /wiki/building-effective-ai-agents. Re-derive slug + title from the body's
+  // first H1 so they match what the reader sees. Only when the concept slug is
+  // FREE — never clobber a different existing page (same-URL re-ingest already
+  // deduped before synthesis).
+  if (!isPreview && preGeneratedContent) {
+    const h1 = wikiContent.match(/^#\s+(.+?)\s*$/m)?.[1]?.trim();
+    const conceptSlug = h1 ? slugify(h1) : "";
+    if (h1 && conceptSlug && conceptSlug !== slug) {
+      const taken = await readWikiPageWithFrontmatter(conceptSlug);
+      if (!taken) {
+        slug = conceptSlug;
+        pageTitle = h1;
+      }
+    }
+  }
 
   // 2. Compute the index summary from the *raw* source so the index reflects
   // the original document, not the LLM's reformatting.

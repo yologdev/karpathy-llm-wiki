@@ -4,6 +4,7 @@ import {
   htmlToMarkdown,
   extractTitle,
   extractWithReadability,
+  extractImageUrls,
 } from "../html-parse";
 
 // ---------------------------------------------------------------------------
@@ -215,6 +216,58 @@ describe("extractWithReadability — images", () => {
     const md = htmlToMarkdown(result!.htmlContent);
     expect(md).toContain("![");
     expect(md).toContain("https://example.com/photo.jpg");
+  });
+});
+
+describe("extractImageUrls", () => {
+  it("captures lazy-loaded (data-src), srcset, and Next-style empty-alt SVG figures", () => {
+    const html = `<html><body><article>
+      <img alt="" loading="lazy" width="2554" height="2554" src="https://cdn.example.com/diagram.svg"/>
+      <img data-src="https://cdn.example.com/lazy.png" alt="lazy"/>
+      <img srcset="https://cdn.example.com/small.png 480w, https://cdn.example.com/big.png 1080w"/>
+    </article></body></html>`;
+    const urls = extractImageUrls(html);
+    expect(urls).toContain("https://cdn.example.com/diagram.svg");
+    expect(urls).toContain("https://cdn.example.com/lazy.png");
+    // srcset → first candidate URL only
+    expect(urls).toContain("https://cdn.example.com/small.png");
+    expect(urls).not.toContain("https://cdn.example.com/big.png");
+  });
+
+  it("reads <picture>/<figure> <source srcset>", () => {
+    const html = `<figure><picture>
+      <source srcset="https://cdn.example.com/fig.avif 1x"/>
+      <img src="https://cdn.example.com/fallback.png"/>
+    </picture></figure>`;
+    const urls = extractImageUrls(html);
+    expect(urls).toContain("https://cdn.example.com/fig.avif");
+    expect(urls).toContain("https://cdn.example.com/fallback.png");
+  });
+
+  it("drops chrome, icons/logos, tiny images, data URIs, and relative URLs; dedupes", () => {
+    const html = `<html><body>
+      <header><img src="https://x.com/logo.png" width="40" height="40"/></header>
+      <nav><img src="https://x.com/nav-sprite.svg"/></nav>
+      <article>
+        <img src="https://x.com/favicon-icon.png"/>
+        <img src="https://x.com/tiny.png" width="24" height="24"/>
+        <img src="data:image/png;base64,AAAA"/>
+        <img src="/relative/path.png"/>
+        <img src="https://x.com/real-diagram.png"/>
+        <img src="https://x.com/real-diagram.png"/>
+      </article>
+      <footer><img src="https://x.com/footer.png"/></footer>
+    </body></html>`;
+    const urls = extractImageUrls(html);
+    expect(urls).toEqual(["https://x.com/real-diagram.png"]);
+  });
+
+  it("respects the max cap", () => {
+    const imgs = Array.from(
+      { length: 20 },
+      (_, i) => `<img src="https://x.com/img${i}.png"/>`,
+    ).join("");
+    expect(extractImageUrls(`<article>${imgs}</article>`, 5)).toHaveLength(5);
   });
 });
 

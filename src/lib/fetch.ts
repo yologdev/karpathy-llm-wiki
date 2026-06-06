@@ -21,6 +21,7 @@ import {
   htmlToMarkdown,
   extractTitle,
   extractWithReadability,
+  extractImageUrls,
 } from "./html-parse";
 import { validateUrlSafety } from "./url-safety";
 import { getStorage } from "./storage";
@@ -266,6 +267,18 @@ export async function fetchUrlContent(
   // Truncate very long extracted text to a reasonable size for LLM processing
   if (content.length > MAX_CONTENT_LENGTH) {
     content = content.slice(0, MAX_CONTENT_LENGTH) + "\n\n[Content truncated]";
+  }
+
+  // Readability prunes figures that look decorative (lazy-loaded, empty alt, SVG
+  // diagrams), so technical posts often lose their diagrams. Salvage image URLs
+  // straight from the source DOM and reference any the extracted content is
+  // missing — downloadImages() then localizes them (or keeps the URL). Appended
+  // AFTER truncation so a long article never drops its figures. HTML path only.
+  if (mimeType !== "text/plain" && mimeType !== "text/markdown") {
+    const salvaged = extractImageUrls(body).filter((u) => !content.includes(u));
+    if (salvaged.length > 0) {
+      content += "\n\n" + salvaged.map((u) => `![](${u})`).join("\n\n");
+    }
   }
 
   return { title, content };

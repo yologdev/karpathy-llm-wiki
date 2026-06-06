@@ -110,7 +110,7 @@ export default async function Home() {
       ) : (
         <>
           {/* Receipts strip — proof of life, in mono */}
-          <section className="shell" style={{ marginTop: 28 }}>
+          <section className="shell" style={{ marginTop: 75 }}>
             <div
               className="row rise"
               style={{ gap: 0, flexWrap: "wrap", animationDelay: ".2s" }}
