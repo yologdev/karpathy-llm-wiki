@@ -15,6 +15,10 @@ const WRITE_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 //   - /api/agents/seed            — Clerk session OR the system service token
 //   - /api/agents/<id>/ingest     — the agent's own per-agent token
 //   - /api/ingest                 — Clerk session OR the system service token
+//   - /api/ingest/batch           — Clerk session OR the system service token
+//   - /api/ingest/image           — Clerk session OR the system service token
+//   - /api/ingest/pdf             — Clerk session OR the system service token
+//   - /api/ingest/reingest        — Clerk session OR the system service token
 //   - /api/ingest/x-mention       — Clerk session OR the system service token
 //   - /api/tasks/run              — the system service token ONLY (the task-
 //                                   consumer worker; has no Clerk session)
@@ -25,6 +29,10 @@ const WRITE_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 const IN_ROUTE_AUTH_PATHS = new Set([
   "/api/agents/seed",
   "/api/ingest",
+  "/api/ingest/batch",
+  "/api/ingest/image",
+  "/api/ingest/pdf",
+  "/api/ingest/reingest",
   "/api/ingest/x-mention",
   // Agent task-queue executor + maintenance scanner: authenticated in-route by
   // the service token (getServicePrincipal); the sole callers are the

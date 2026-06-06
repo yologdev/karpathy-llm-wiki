@@ -16,6 +16,10 @@ describe("write-gate in-route auth exemptions", () => {
     expect(authenticatesInRoute("/api/tasks/scan")).toBe(true); // maintenance cron
     expect(authenticatesInRoute("/api/ingest")).toBe(true);
     expect(authenticatesInRoute("/api/ingest/x-mention")).toBe(true);
+    expect(authenticatesInRoute("/api/ingest/batch")).toBe(true);
+    expect(authenticatesInRoute("/api/ingest/image")).toBe(true);
+    expect(authenticatesInRoute("/api/ingest/pdf")).toBe(true);
+    expect(authenticatesInRoute("/api/ingest/reingest")).toBe(true);
     expect(authenticatesInRoute("/api/agents/seed")).toBe(true);
     expect(authenticatesInRoute("/api/agents/alice--yoyo/ingest")).toBe(true);
     expect(authenticatesInRoute("/api/admin/migrate")).toBe(true);
