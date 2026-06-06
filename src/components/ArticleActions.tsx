@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useUser } from "@clerk/nextjs";
-import { editPath, rawPath } from "@/lib/links";
+import { rawPath } from "@/lib/links";
 import { ReingestButton } from "@/components/ReingestButton";
 import { DeletePageButton } from "@/components/DeletePageButton";
 import { SaveToVaultButton } from "@/components/SaveToVaultButton";
@@ -28,11 +28,13 @@ interface ArticleActionsProps {
  * context-free article for everyone (cacheable); this client island reads the
  * Clerk session and shows only the actions the signed-in viewer is allowed:
  *
- *   - Edit            — always (the edit route enforces auth).
- *   - View source     — when a raw source exists.
+ *   - View raw        — when a raw source exists.
  *   - Reingest        — owner/contributor, when a source URL exists.
  *   - Delete          — owner only.
  *   - Save to vault    — signed-in non-owner/contributor on a commons page.
+ *
+ * There is intentionally NO human "Edit page" button: in the commons-first
+ * model pages are maintained by agents (via API/MCP), not hand-edited here.
  *
  * These are CONVENIENCE gates only; every underlying route re-authorizes the
  * request server-side, so a stale/forged client never bypasses the real check.
@@ -71,12 +73,9 @@ export function ArticleActions({
 
   return (
     <div className="mt-12 border-t border-rule pt-6 flex flex-wrap items-center gap-3">
-      <Link href={editPath(tenant, slug)} className="btn">
-        Edit page
-      </Link>
       {hasRawSource && (
         <Link href={rawPath(tenant, slug)} className="btn">
-          View source
+          View raw
         </Link>
       )}
       {hasSourceUrl && ownsOrContributes && <ReingestButton slug={slug} />}

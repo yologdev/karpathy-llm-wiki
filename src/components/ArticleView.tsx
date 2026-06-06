@@ -81,12 +81,14 @@ function TableOfContents({
       <h2 className="text-xs font-medium text-muted uppercase tracking-wide mb-2">
         On this page
       </h2>
-      <ul className="space-y-1.5 border-l border-border">
+      {/* No left-border track here — the marginalia rail (the aside's borderLeft)
+          is the single sidebar line; a second one alongside the TOC was redundant. */}
+      <ul className="space-y-1.5">
         {items.map((it) => (
           <li key={it.id}>
             <a
               href={`#${it.id}`}
-              className={`block border-l border-transparent -ml-px py-0.5 text-muted hover:border-accent hover:text-accent transition-colors ${
+              className={`block py-0.5 text-muted hover:text-accent transition-colors ${
                 it.level === 3 ? "pl-6" : "pl-3"
               }`}
             >

@@ -68,7 +68,6 @@ export function IngestReview({ preview, loading, onApprove, onCancel, error }: P
   const [showDraft, setShowDraft] = useState(false);
   const meta = preview.meta;
   const title = meta?.title || preview.title || preview.slug;
-  const deduped = meta?.deduped ?? false;
 
   return (
     <div>
@@ -183,53 +182,13 @@ export function IngestReview({ preview, loading, onApprove, onCancel, error }: P
         )}
       </div>
 
-      {/* Canonical-page / merge note */}
-      <div
-        className="row"
-        style={{
-          gap: 12,
-          alignItems: "flex-start",
-          background: "var(--paper-3)",
-          borderRadius: 12,
-          padding: "14px 18px",
-          margin: "16px 0 0",
-        }}
-      >
-        <span
-          aria-hidden
-          style={{
-            width: 8,
-            height: 8,
-            borderRadius: 999,
-            border: "1.5px solid var(--muted)",
-            marginTop: 6,
-            flexShrink: 0,
-          }}
-        />
-        <p style={{ fontSize: 13.5, color: "var(--ink-2)", margin: 0, lineHeight: 1.55 }}>
-          One canonical page per source.{" "}
-          {deduped ? (
-            <>
-              This source already lives in the commons, so it will{" "}
-              <strong>merge into{meta?.existingTitle ? ` “${meta.existingTitle}”` : " the existing page"}</strong>{" "}
-              — kept live, never forked.
-            </>
-          ) : (
-            <>
-              This source is new to the commons, so a fresh page will be created.
-              You&apos;ll be added as <strong>owner</strong>.
-            </>
-          )}
-        </p>
-      </div>
-
       {/* Inspect the full draft before publishing */}
       <button
         type="button"
         onClick={() => setShowDraft((v) => !v)}
         className="receipt"
         style={{
-          marginTop: 16,
+          marginTop: 20,
           fontSize: 12.5,
           color: "var(--muted)",
           background: "transparent",
