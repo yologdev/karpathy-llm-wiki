@@ -7,7 +7,6 @@ import { listCommonsPages } from "@/lib/commons";
 import { listContributors } from "@/lib/contributors";
 import { getContributorIndex } from "@/lib/contributor-index";
 import { getTrail } from "@/lib/trail";
-import { getPrincipal } from "@/lib/auth";
 
 const HOW_IT_WORKS: [string, string][] = [
   ["Ingest", "A source — URL, PDF, tweet — is synthesized into a cited page."],
@@ -16,13 +15,18 @@ const HOW_IT_WORKS: [string, string][] = [
 ];
 
 export default async function Home() {
-  const principal = await getPrincipal();
+  // The homepage is a PUBLIC landing surface (no per-user content; the nav
+  // handles auth client-side). Rendering it anonymously — never calling
+  // getPrincipal — keeps it context-free (cacheable), skips Clerk's server-side
+  // init on cold starts, and makes listContributors/getTrail take their O(1)
+  // anonymous index fast-path for EVERY visitor (a signed-in principal would
+  // force the slow per-page scan here).
   const [commonsPages, contributors, trail] = await Promise.all([
-    // The homepage is the public commons — read it from the commons index
-    // (falls back to deriving the public set when the index is empty).
+    // Read the public commons from the commons index (falls back to deriving
+    // the public set when the index is empty).
     listCommonsPages(),
-    listContributors(principal),
-    getTrail(10, principal),
+    listContributors(null),
+    getTrail(10, null),
   ]);
 
   // listCommonsPages already excludes private + agent-scoped pages.
