@@ -28,6 +28,11 @@ export type PageMetaIndex = Record<string, IndexEntry>;
 export async function getPageIndex(): Promise<PageMetaIndex | null> {
   try {
     const idx = await getStorage().getIndex<PageMetaIndex>(PAGE_INDEX_KEY);
+    // Presence check only — per-entry shape is TRUSTED, not validated. Safe
+    // because `listWikiPages` drives membership + title/slug/summary from
+    // index.md and only pulls enriched (optional) fields from here, so a
+    // malformed entry can at worst mis-enrich, never drop or leak a page; the
+    // daily rebuild overwrites it.
     if (!idx || typeof idx !== "object") return null;
     return idx;
   } catch (err) {

@@ -209,7 +209,9 @@ export async function rebuildDerivedIndexes(): Promise<
       results[name] = { ok: true };
     } catch (err) {
       const error = err instanceof Error ? err.message : String(err);
-      logger.warn("maintenance", `index rebuild failed for "${name}":`, error);
+      // error-level: a persistent rebuild failure means the read fast-path
+      // serves indefinitely-stale data, so surface it (not just a warn).
+      logger.error("maintenance", `index rebuild failed for "${name}":`, error);
       results[name] = { ok: false, error };
     }
   }

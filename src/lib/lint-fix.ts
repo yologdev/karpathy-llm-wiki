@@ -110,6 +110,9 @@ export async function fixStaleIndex(slug: string): Promise<FixResult> {
   }
 
   await updateIndex(filtered);
+  // Keep the page-metadata index in sync (this removes index.md membership
+  // outside the lifecycle op). Harmless if absent — the entry is just dropped.
+  await (await import("./page-index")).removePageIndexForSlug(slug);
   await appendToLog(
     "edit",
     slug,

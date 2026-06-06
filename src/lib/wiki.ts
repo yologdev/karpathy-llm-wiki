@@ -440,7 +440,10 @@ async function readIndexBaseEntries(): Promise<IndexEntry[]> {
     raw = await getStorage().readFile(storagePath);
   } catch (err: unknown) {
     if (!isEnoent(err)) {
-      logger.warn("wiki", "listWikiPages failed to read index.md:", err);
+      // A transient read failure on index.md makes the WHOLE wiki look empty to
+      // every list surface — surface it at error level (ENOENT = genuinely no
+      // index yet, which is the normal empty-state and stays quiet).
+      logger.error("wiki", "listWikiPages failed to read index.md:", err);
     }
     return [];
   }
