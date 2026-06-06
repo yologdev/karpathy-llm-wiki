@@ -47,13 +47,14 @@ export type Task =
        *  page from its source; `fix` apply a deterministic lint auto-fix
        *  (`lintType`). `threadIndex` is required for `reconcile`; `lintType` for
        *  `fix`; `targetSlug` for `broken-link` (identifies which dead link to
-       *  remove). */
+       *  remove) and `missing-crossref` (identifies which page to link to). */
       kind: "maintain";
       op: "reconcile" | "staleness" | "fix";
       slug: string;
       threadIndex?: number;
       lintType?: MaintainFixType;
-      /** The target of a broken wiki link (for `broken-link` fixes). */
+      /** The target slug for `broken-link` (dead link to remove) or
+       *  `missing-crossref` (page that should be linked to). */
       targetSlug?: string;
     };
 
@@ -64,7 +65,8 @@ export type MaintainFixType =
   | "supersedes-dangling"
   | "broken-link"
   | "orphan-page"
-  | "empty-page";
+  | "empty-page"
+  | "missing-crossref";
 
 const MAINTAIN_FIX_TYPES = new Set<MaintainFixType>([
   "unmigrated-page",
@@ -73,6 +75,7 @@ const MAINTAIN_FIX_TYPES = new Set<MaintainFixType>([
   "broken-link",
   "orphan-page",
   "empty-page",
+  "missing-crossref",
 ]);
 
 /** Minimal Cloudflare Queue producer binding — we only ever call `send`. */
@@ -174,7 +177,8 @@ export function parseTask(body: unknown): Task | null {
         if (!MAINTAIN_FIX_TYPES.has(t.lintType as MaintainFixType)) return null;
         const lintType = t.lintType as MaintainFixType;
         // `broken-link` additionally requires a targetSlug (which dead link to remove).
-        if (lintType === "broken-link") {
+        // `missing-crossref` additionally requires a targetSlug (which page to link to).
+        if (lintType === "broken-link" || lintType === "missing-crossref") {
           if (typeof t.targetSlug !== "string" || t.targetSlug.trim() === "") return null;
           return {
             kind: "maintain",

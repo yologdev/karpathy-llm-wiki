@@ -289,4 +289,51 @@ describe("scanForMaintenance", () => {
       expect.objectContaining({ slug: "substantial", lintType: "empty-page" }),
     );
   });
+
+  it("enqueues a missing-crossref fix when a page mentions another page's title without linking", async () => {
+    // Seed two pages: "machine-learning" mentions "artificial intelligence" by title
+    // but doesn't link to it.
+    const fm: Frontmatter = {
+      created: PAST,
+      updated: PAST,
+      owner: "alice",
+      visibility: "public",
+      authors: ["alice"],
+      contributors: [],
+      confidence: 0.7,
+      expiry: "2099-01-01",
+      tags: [],
+      disputed: false,
+    };
+    await writeWikiPageWithSideEffects({
+      slug: "artificial-intelligence",
+      title: "Artificial Intelligence",
+      content: serializeFrontmatter(
+        fm,
+        "# Artificial Intelligence\n\nArtificial intelligence is the simulation of human intelligence by machines, covering a broad range of techniques and applications.",
+      ),
+      summary: "AI overview.",
+      logOp: "ingest",
+      crossRefSource: null,
+    });
+    await writeWikiPageWithSideEffects({
+      slug: "machine-learning",
+      title: "Machine Learning",
+      content: serializeFrontmatter(
+        fm,
+        "# Machine Learning\n\nMachine learning is a subfield of artificial intelligence that uses statistical methods to learn patterns from data.",
+      ),
+      summary: "ML overview.",
+      logOp: "ingest",
+      crossRefSource: null,
+    });
+    const tasks = await scanForMaintenance();
+    expect(tasks).toContainEqual({
+      kind: "maintain",
+      op: "fix",
+      slug: "machine-learning",
+      lintType: "missing-crossref",
+      targetSlug: "artificial-intelligence",
+    });
+  });
 });

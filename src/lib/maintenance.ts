@@ -27,7 +27,7 @@
  */
 
 import { listWikiPages, readWikiPageWithFrontmatter } from "./wiki";
-import { getOnDiskSlugs } from "./lint-checks";
+import { getOnDiskSlugs, checkMissingCrossRefs } from "./lint-checks";
 import { listThreads } from "./talk";
 import { isAgentHandle } from "./agents";
 import { extractWikiLinks } from "./links";
@@ -48,6 +48,9 @@ export async function scanForMaintenance(
   const tasks: Task[] = [];
   const pages = await listWikiPages();
   const pageSlugs = new Set(pages.map((p) => p.slug));
+
+  // Track slugs eligible for cross-page checks (passed guardrails).
+  const eligibleSlugs = new Set<string>();
 
   // ── Orphan-page detection (file on disk, no index entry) ──
   const diskSlugs = await getOnDiskSlugs("");
@@ -88,6 +91,9 @@ export async function scanForMaintenance(
 
     // Guardrail: skip a page edited today (let recent changes settle).
     if (typeof fm.updated === "string" && fm.updated === today) continue;
+
+    // Page passed all guardrails — eligible for cross-page checks later.
+    eligibleSlugs.add(entry.slug);
 
     // (1) Disputed → reconcile, but only when a HUMAN is awaiting a response
     //     (the latest comment on an open thread isn't yoyo's).
@@ -170,6 +176,27 @@ export async function scanForMaintenance(
       sourceUrl.trim() !== ""
     ) {
       tasks.push({ kind: "maintain", op: "staleness", slug: entry.slug });
+    }
+  }
+
+  // ── Missing cross-references (deterministic, no LLM) ──
+  // Run after the per-page loop so we can skip pages that already have tasks.
+  // Only consider pages that passed the guardrails (public, not edited today).
+  if (tasks.length < cap) {
+    const taskedSlugs = new Set(tasks.map((t) => t.kind === "maintain" ? t.slug : ""));
+    const crossRefIssues = await checkMissingCrossRefs(diskSlugs);
+    for (const issue of crossRefIssues) {
+      if (tasks.length >= cap) break;
+      if (!issue.target) continue;
+      if (!eligibleSlugs.has(issue.slug)) continue;
+      if (taskedSlugs.has(issue.slug)) continue;
+      tasks.push({
+        kind: "maintain",
+        op: "fix",
+        slug: issue.slug,
+        lintType: "missing-crossref",
+        targetSlug: issue.target,
+      });
     }
   }
 
