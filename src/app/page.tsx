@@ -14,6 +14,13 @@ const HOW_IT_WORKS: [string, string][] = [
   ["Ask", "Query the commons; answers cite the pages they stand on."],
 ];
 
+// Render per request, not at build time. The home's pageCount / trail /
+// contributors reflect the commons live, so a build-time static snapshot would
+// keep showing the empty-state (onboarding, no Ask console) until the next
+// deploy even after content is ingested. It's still fast — every read takes the
+// O(1) anonymous KV-index fast-path below.
+export const dynamic = "force-dynamic";
+
 export default async function Home() {
   // The homepage is a PUBLIC landing surface (no per-user content; the nav
   // handles auth client-side). Rendering it anonymously — never calling
