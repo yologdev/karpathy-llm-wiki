@@ -96,19 +96,6 @@ export function QueryResultPanel({
 
       setSaveState({ status: "saved", slug: data.slug });
 
-      // Commons-first: a saved answer is a public commons page; also curate it
-      // into the saver's vault so it shows in their personal lens. Best-effort —
-      // the save already succeeded, so a vault hiccup must not surface an error.
-      try {
-        await fetch("/api/vault", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ slug: data.slug }),
-        });
-      } catch {
-        // Non-critical — the page is saved either way.
-      }
-
       // Mark the history entry as saved
       if (currentHistoryId) {
         try {

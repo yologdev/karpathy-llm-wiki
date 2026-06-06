@@ -37,6 +37,7 @@ import {
   handleVaultUncurate,
   createMcpServer,
 } from "../../mcp";
+import { vaultIdFor, listVaults, getVault } from "../vault";
 import { _resetStorage } from "../storage";
 import { _resetConfigCache } from "../config";
 import { parseFrontmatter } from "../frontmatter";
@@ -3147,7 +3148,7 @@ describe("visibility enforcement", () => {
 // ---------------------------------------------------------------------------
 
 describe("vault_curate", () => {
-  it("curates a public commons page into a user's vault", async () => {
+  it("curates a public commons page into a named vault, creating it on first use", async () => {
     // Create a public commons page (no visibility = public by default)
     await writeTestPage(
       "machine-learning",
@@ -3157,17 +3158,27 @@ describe("vault_curate", () => {
     const result = await handleVaultCurate({
       slug: "machine-learning",
       owner: "alice",
+      vault: "AI Reading",
     });
     expect(result).toEqual({
       curated: true,
       slug: "machine-learning",
       owner: "alice",
+      vault: "AI Reading",
     });
+
+    // The named vault was created and now contains the page.
+    const id = vaultIdFor("alice", "AI Reading");
+    const vaults = await listVaults("alice");
+    expect(vaults.map((v) => v.id)).toContain(id);
+    const vault = await getVault(id);
+    expect(vault?.visibility).toBe("public");
+    expect(vault?.slugs).toContain("machine-learning");
   });
 
   it("throws for a non-existent page", async () => {
     await expect(
-      handleVaultCurate({ slug: "does-not-exist", owner: "alice" }),
+      handleVaultCurate({ slug: "does-not-exist", owner: "alice", vault: "v" }),
     ).rejects.toThrow("Page not found: does-not-exist");
   });
 
@@ -3178,7 +3189,7 @@ describe("vault_curate", () => {
     );
 
     await expect(
-      handleVaultCurate({ slug: "private-notes", owner: "alice" }),
+      handleVaultCurate({ slug: "private-notes", owner: "alice", vault: "v" }),
     ).rejects.toThrow("Only public commons pages can be curated into a vault.");
   });
 
@@ -3189,11 +3200,11 @@ describe("vault_curate", () => {
     );
 
     await expect(
-      handleVaultCurate({ slug: "agent-identity", owner: "alice" }),
+      handleVaultCurate({ slug: "agent-identity", owner: "alice", vault: "v" }),
     ).rejects.toThrow("Only public commons pages can be curated into a vault.");
   });
 
-  it("is idempotent — curating twice succeeds without error", async () => {
+  it("is idempotent — curating twice keeps a single membership in the named vault", async () => {
     await writeTestPage(
       "deep-learning",
       "---\ntitle: Deep Learning\n---\n# Deep Learning\n\nNeural networks with many layers.",
@@ -3202,47 +3213,63 @@ describe("vault_curate", () => {
     const first = await handleVaultCurate({
       slug: "deep-learning",
       owner: "bob",
+      vault: "ML",
     });
     expect(first.curated).toBe(true);
 
     const second = await handleVaultCurate({
       slug: "deep-learning",
       owner: "bob",
+      vault: "ML",
     });
     expect(second.curated).toBe(true);
+
+    const vault = await getVault(vaultIdFor("bob", "ML"));
+    expect(vault?.slugs).toEqual(["deep-learning"]);
   });
 });
 
 describe("vault_uncurate", () => {
-  it("uncurates a previously curated page", async () => {
+  it("uncurates a previously curated page from the named vault", async () => {
     // Create and curate a page first
     await writeTestPage(
       "transformers",
       "---\ntitle: Transformers\n---\n# Transformers\n\nAttention is all you need.",
     );
 
-    await handleVaultCurate({ slug: "transformers", owner: "alice" });
+    await handleVaultCurate({
+      slug: "transformers",
+      owner: "alice",
+      vault: "AI Reading",
+    });
 
     const result = await handleVaultUncurate({
       slug: "transformers",
       owner: "alice",
+      vault: "AI Reading",
     });
     expect(result).toEqual({
       curated: false,
       slug: "transformers",
       owner: "alice",
+      vault: "AI Reading",
     });
+
+    const vault = await getVault(vaultIdFor("alice", "AI Reading"));
+    expect(vault?.slugs ?? []).not.toContain("transformers");
   });
 
   it("is a no-op when slug was never curated", async () => {
     const result = await handleVaultUncurate({
       slug: "never-curated",
       owner: "alice",
+      vault: "AI Reading",
     });
     expect(result).toEqual({
       curated: false,
       slug: "never-curated",
       owner: "alice",
+      vault: "AI Reading",
     });
   });
 });

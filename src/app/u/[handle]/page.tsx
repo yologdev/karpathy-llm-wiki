@@ -4,7 +4,7 @@ import { slugsForOwner } from "@/lib/search";
 import { listAgentsForOwner, agentShortName } from "@/lib/agents";
 import { getDiscussionStatsForSlugs } from "@/lib/talk";
 import { getPrincipal } from "@/lib/auth";
-import { getVaultRefs } from "@/lib/vault";
+import { listVaults } from "@/lib/vault";
 import { decodeSlug } from "@/lib/slugify";
 import { WikiIndexClient } from "@/components/WikiIndexClient";
 
@@ -23,19 +23,13 @@ export default async function UserPage({
   const pages = readable.filter((p) => mine.has(p.slug));
   const agents = await listAgentsForOwner(handle);
 
-  // Curated commons pages this handle referenced into their vault — the lens
-  // part of the vault. Dedup against pages they already own/contributed (those
-  // show above), and keep only what's still readable (a curated page that went
-  // private drops out for non-owners).
-  const curatedSet = new Set(await getVaultRefs(handle));
-  const curated = readable.filter(
-    (p) => curatedSet.has(p.slug) && !mine.has(p.slug),
+  // Public vaults this handle owns — their curated reference lenses over the
+  // commons. Private vaults are hidden on the public profile.
+  const vaults = (await listVaults(handle)).filter(
+    (v) => v.visibility === "public",
   );
 
-  const statsMap = await getDiscussionStatsForSlugs([
-    ...pages.map((p) => p.slug),
-    ...curated.map((p) => p.slug),
-  ]);
+  const statsMap = await getDiscussionStatsForSlugs(pages.map((p) => p.slug));
   const discussionStats: Record<string, { total: number; open: number }> = {};
   for (const [slug, stats] of statsMap) discussionStats[slug] = stats;
 
@@ -101,7 +95,7 @@ export default async function UserPage({
         </section>
       )}
 
-      {pages.length === 0 && curated.length === 0 ? (
+      {pages.length === 0 && vaults.length === 0 ? (
         <p className="text-foreground/60">No pages yet.</p>
       ) : (
         pages.length > 0 && (
@@ -109,15 +103,31 @@ export default async function UserPage({
         )
       )}
 
-      {curated.length > 0 && (
+      {vaults.length > 0 && (
         <section className="mt-10">
           <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-foreground/50">
-            Curated
+            Vaults
           </h2>
           <p className="mb-3 text-sm text-foreground/50">
-            Commons pages {handle} saved to their vault — live references, not copies.
+            Curated reference lenses over the commons — live references, not copies.
           </p>
-          <WikiIndexClient pages={curated} discussionStats={discussionStats} />
+          <ul className="space-y-2">
+            {vaults.map((vault) => (
+              <li key={vault.id}>
+                <Link
+                  href={`/wiki?scope=vault:${vault.id}`}
+                  className="group flex items-center justify-between rounded-lg border border-foreground/10 p-3 hover:border-foreground/30"
+                >
+                  <span className="font-medium group-hover:underline">
+                    {vault.name}
+                  </span>
+                  <span className="text-sm text-foreground/60">
+                    {vault.slugs.length} {vault.slugs.length === 1 ? "page" : "pages"}
+                  </span>
+                </Link>
+              </li>
+            ))}
+          </ul>
         </section>
       )}
     </main>

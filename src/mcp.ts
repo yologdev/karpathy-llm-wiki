@@ -35,8 +35,8 @@
  *   read_revision      — Read a specific revision's content
  *   list_contributors  — List all contributors with trust scores
  *   get_contributor    — Get a specific contributor's trust profile
- *   vault_curate       — Curate a commons page into a user's vault
- *   vault_uncurate     — Remove a curated page from a user's vault
+ *   vault_curate       — Curate a commons page into one of a user's named vaults
+ *   vault_uncurate     — Remove a curated page from one of a user's named vaults
  *
  * Usage:
  *   pnpm mcp          # starts the stdio server
@@ -75,7 +75,7 @@ import { fixLintIssue, type FixResult } from "./lib/lint-fix";
 import { listThreads, createThread, resolveThread, addComment } from "./lib/talk";
 import { queryByFrontmatter, validateQuery, type DataviewFilter, type DataviewQuery, type DataviewResult } from "./lib/dataview";
 import { listRevisions, readRevision, readRevisionMeta, type Revision } from "./lib/revisions";
-import { addVaultRef, removeVaultRef } from "./lib/vault";
+import { vaultIdFor, getVault, createVault, addToVault, removeFromVault } from "./lib/vault";
 import { belongsInCommons } from "./lib/commons";
 import type { TalkThread, TalkComment } from "./lib/types";
 
@@ -805,7 +805,8 @@ export async function handleGetContributor(args: {
 export async function handleVaultCurate(args: {
   slug: string;
   owner: string;
-}): Promise<{ curated: true; slug: string; owner: string }> {
+  vault: string;
+}): Promise<{ curated: true; slug: string; owner: string; vault: string }> {
   // Validate slug exists and is a commons page
   const page = await readWikiPageWithFrontmatter(args.slug);
   if (!page) {
@@ -827,16 +828,22 @@ export async function handleVaultCurate(args: {
       "Only public commons pages can be curated into a vault.",
     );
   }
-  await addVaultRef(args.owner, args.slug);
-  return { curated: true, slug: args.slug, owner: args.owner };
+  // Resolve the named vault, creating it (public) on first use.
+  const id = vaultIdFor(args.owner, args.vault);
+  if (!(await getVault(id))) {
+    await createVault(args.owner, args.vault, "public");
+  }
+  await addToVault(id, args.slug);
+  return { curated: true, slug: args.slug, owner: args.owner, vault: args.vault };
 }
 
 export async function handleVaultUncurate(args: {
   slug: string;
   owner: string;
-}): Promise<{ curated: false; slug: string; owner: string }> {
-  await removeVaultRef(args.owner, args.slug);
-  return { curated: false, slug: args.slug, owner: args.owner };
+  vault: string;
+}): Promise<{ curated: false; slug: string; owner: string; vault: string }> {
+  await removeFromVault(vaultIdFor(args.owner, args.vault), args.slug);
+  return { curated: false, slug: args.slug, owner: args.owner, vault: args.vault };
 }
 
 // ---------------------------------------------------------------------------
@@ -2506,14 +2513,18 @@ export function createMcpServer(): McpServer {
   // vault_curate — Add a commons page to a user's vault
   server.registerTool("vault_curate", {
     description:
-      "Curate a public commons page into a user's vault. The vault is a personal reference lens " +
-      "over the commons — no copy is made; the page itself stays collective. Only public, " +
-      "non-agent (commons) pages can be curated.",
+      "Curate a public commons page into one of a user's named vaults. A vault is a personal " +
+      "reference lens over the commons — no copy is made; the page itself stays collective. The " +
+      "named vault is created (public) on first use. Only public, non-agent (commons) pages can " +
+      "be curated.",
     inputSchema: {
       slug: z.string().describe("Slug of the commons page to curate"),
       owner: z
         .string()
         .describe("Handle of the vault owner (must match the MCP caller's identity)"),
+      vault: z
+        .string()
+        .describe("Name of the vault to curate into / remove from"),
     },
     annotations: {
       readOnlyHint: false,
@@ -2548,13 +2559,16 @@ export function createMcpServer(): McpServer {
   // vault_uncurate — Remove a commons page from a user's vault
   server.registerTool("vault_uncurate", {
     description:
-      "Remove a curated commons page reference from a user's vault. This only drops the reference — " +
-      "the commons page itself is unaffected. No-op if the page was not curated.",
+      "Remove a curated commons page reference from one of a user's named vaults. This only drops " +
+      "the reference — the commons page itself is unaffected. No-op if the page was not curated.",
     inputSchema: {
       slug: z.string().describe("Slug of the page to uncurate"),
       owner: z
         .string()
         .describe("Handle of the vault owner (must match the MCP caller's identity)"),
+      vault: z
+        .string()
+        .describe("Name of the vault to curate into / remove from"),
     },
     annotations: {
       readOnlyHint: false,

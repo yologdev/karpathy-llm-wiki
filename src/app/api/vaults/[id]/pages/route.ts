@@ -32,7 +32,7 @@ async function readSlug(req: Request): Promise<string | null> {
  * POST /api/vaults/[id]/pages { slug } — add a page reference to a vault.
  *
  * v1 (public vaults): only a readable PUBLIC commons page can be referenced
- * (re-checked here, mirroring the old /api/vault curate gate).
+ * (re-checked here, mirroring the MCP vault_curate gate).
  */
 export async function POST(req: Request, { params }: Params) {
   const { id } = await params;
