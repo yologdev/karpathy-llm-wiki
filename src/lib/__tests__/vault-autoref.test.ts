@@ -8,7 +8,7 @@ import {
   serializeFrontmatter,
   type Frontmatter,
 } from "../wiki";
-import { getVaultRefs } from "../vault";
+import { getVaultRefs, listVaults } from "../vault";
 import { _resetStorage } from "../storage";
 
 let tmpDir: string;
@@ -54,36 +54,20 @@ async function write(slug: string, over: Partial<Frontmatter> = {}) {
   });
 }
 
-describe("vault auto-ref on commons write (lifecycle step 3d)", () => {
-  it("adds an owner's new public commons page to their vault", async () => {
+// In the multi-vault model membership is EXPLICIT: writing/ingesting a page no
+// longer auto-joins any vault (the old lifecycle "auto-ref" step was removed).
+// Pages join a vault only via ingest-into-vault / curate-into-vault.
+describe("no vault auto-membership on write (auto-ref removed)", () => {
+  it("does NOT add an owner's new public commons page to any vault", async () => {
     await write("transformers", { owner: "alice" });
-    expect(await getVaultRefs("alice")).toContain("transformers");
+    expect(await getVaultRefs("alice")).toEqual([]); // legacy single-vault store
+    expect(await listVaults("alice")).toEqual([]); // no named vaults either
   });
 
-  it("is idempotent across re-writes", async () => {
+  it("leaves the vault empty across re-writes", async () => {
     await write("transformers", { owner: "alice" });
     await write("transformers", { owner: "alice" });
-    expect(await getVaultRefs("alice")).toEqual(["transformers"]);
-  });
-
-  it("does NOT auto-ref a private page", async () => {
-    await write("secret", { owner: "alice", visibility: "private" });
     expect(await getVaultRefs("alice")).toEqual([]);
-  });
-
-  it("does NOT auto-ref an agent-scoped page", async () => {
-    await write("agent-note", { owner: "alice", type: "agent-knowledge" });
-    expect(await getVaultRefs("alice")).toEqual([]);
-  });
-
-  it("does NOT auto-ref a system-owned (seed) page", async () => {
-    await write("seed-page", { owner: "system" });
-    expect(await getVaultRefs("system")).toEqual([]);
-  });
-
-  it("does NOT auto-ref an agent-owned (handle--name) page", async () => {
-    await write("learned", { owner: "alice--yoyo" });
-    expect(await getVaultRefs("alice--yoyo")).toEqual([]);
-    expect(await getVaultRefs("alice")).toEqual([]);
+    expect(await listVaults("alice")).toEqual([]);
   });
 });

@@ -30,7 +30,6 @@ import { syncBacklinksForPage, removeBacklinksForSlug } from "./backlink-index";
 import { recordEditForAuthor } from "./contributor-index";
 import { pushRecentEvent, removeRecentForSlug } from "./recent-index";
 import { isAgentHandle } from "./agents";
-import { addVaultRef } from "./vault";
 import { parseFrontmatter } from "./frontmatter";
 import type { LogOperation } from "./wiki";
 import { logger } from "./logger";
@@ -498,26 +497,10 @@ async function runPageLifecycleOp(
     logger.warn("silo", `silo mirror skipped for "${slug}":`, err);
   }
 
-  // 3d. Auto-add the page into its owner's vault — the commons-first reference
-  //     lens. A contributor's own commons pages show in their vault without a
-  //     manual curate (ingest-into-my-vault). Owner-keyed, commons-only (public,
-  //     non-agent), humans-only (skip "system" and agent-owned `a--b` handles).
-  //     Idempotent + fail-soft — a vault error must never break the write.
-  try {
-    if (op.kind !== "delete") {
-      const fm = parseFrontmatter(op.content).data;
-      const owner = typeof fm.owner === "string" ? fm.owner.trim() : "";
-      const isCommons = belongsInCommons({
-        visibility: typeof fm.visibility === "string" ? fm.visibility : undefined,
-        type: typeof fm.type === "string" ? fm.type : undefined,
-      });
-      if (owner && owner !== "system" && !owner.includes("--") && isCommons) {
-        await addVaultRef(owner, slug);
-      }
-    }
-  } catch (err) {
-    logger.warn("vault", `vault auto-ref skipped for "${slug}":`, err);
-  }
+  // 3d. (removed) Pages no longer auto-join a vault. In the multi-vault model
+  //     vault membership is EXPLICIT — a page joins a vault only via an
+  //     ingest-into-vault or curate-into-vault action. Plain ingest lands in the
+  //     commons only.
 
   // 4. Cross-reference other pages.
   //    - write: discover related pages and add backlinks TO this slug.
