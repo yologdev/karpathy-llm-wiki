@@ -10,7 +10,8 @@
  * are resolved/enforced on READ. The index never encodes who can see what; a
  * private linker is filtered out at read time, so the index can be shared/cached
  * without leaking. Behavior-preserving: the read site falls back to the live
- * O(pages²) scan whenever the index is empty.
+ * O(pages²) scan whenever the index is ABSENT (reader returns `null`). An
+ * empty-but-present index (`{}`) is a valid seeded state.
  */
 
 import { getStorage } from "./storage";
@@ -31,16 +32,19 @@ const BACKLINK_INDEX_LOCK = "backlinks-index";
 export type BacklinkIndex = Record<string, string[]>;
 
 /**
- * Read the full backlink index (empty object when absent). Fail-soft: a missing
- * or corrupt index returns `{}` so the read site falls back to the live scan.
+ * Read the full backlink index, or `null` when absent/corrupt. Returns `null`
+ * (not an empty object) so callers can distinguish "no index → fall back to the
+ * live scan" from "index present but empty → genuinely no backlinks". Fail-soft:
+ * a missing or corrupt index returns `null`.
  */
-export async function getBacklinkIndex(): Promise<BacklinkIndex> {
+export async function getBacklinkIndex(): Promise<BacklinkIndex | null> {
   try {
     const idx = await getStorage().getIndex<BacklinkIndex>(BACKLINK_INDEX_KEY);
-    return idx && typeof idx === "object" ? idx : {};
+    if (!idx || typeof idx !== "object") return null;
+    return idx;
   } catch (err) {
-    logger.warn("backlink-index", "backlink index unreadable; treating as empty:", err);
-    return {};
+    logger.warn("backlink-index", "backlink index unreadable; treating as absent:", err);
+    return null;
   }
 }
 
@@ -79,6 +83,7 @@ export async function syncBacklinksForPage(
 
   await withFileLock(BACKLINK_INDEX_LOCK, async () => {
     const idx = await getBacklinkIndex();
+    if (!idx) return; // No index yet → daily rebuild seeds it; don't fabricate one.
     let changed = false;
 
     for (const target of added) {
@@ -111,6 +116,7 @@ export async function syncBacklinksForPage(
 export async function removeBacklinksForSlug(slug: string): Promise<void> {
   await withFileLock(BACKLINK_INDEX_LOCK, async () => {
     const idx = await getBacklinkIndex();
+    if (!idx) return; // No index yet → daily rebuild seeds it; don't fabricate one.
     let changed = false;
 
     if (slug in idx) {

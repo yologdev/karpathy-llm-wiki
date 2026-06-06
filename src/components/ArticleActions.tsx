@@ -48,11 +48,23 @@ export function ArticleActions({
   hasSourceUrl,
 }: ArticleActionsProps) {
   const { isLoaded, isSignedIn, user } = useUser();
-  const username = user?.username ?? null;
+  // Resolve the viewer's handle the SAME way the server does (auth.ts
+  // resolveHandle): prefer the Clerk username, else the username on the X/Twitter
+  // external account (Twitter-SSO users often have no Clerk username set).
+  const handle =
+    user?.username ??
+    user?.externalAccounts?.find(
+      (a) => typeof a.provider === "string" && /(^|_)(x|twitter)$/i.test(a.provider),
+    )?.username ??
+    null;
+  // Owner/contributor gating is case-insensitive (owner/contributors are stored
+  // lowercased server-side).
+  const handleLc = handle?.toLowerCase() ?? null;
 
-  const isOwner = !!username && username === owner;
+  const isOwner = !!handleLc && handleLc === owner.toLowerCase();
   const ownsOrContributes =
-    !!username && (isOwner || contributors.includes(username));
+    !!handleLc &&
+    (isOwner || contributors.some((c) => c.toLowerCase() === handleLc));
   // Curate is for pulling in OTHERS' commons pages (your own are implicitly in
   // your vault), so it shows only to signed-in non-owner/contributor viewers.
   const canCurate =

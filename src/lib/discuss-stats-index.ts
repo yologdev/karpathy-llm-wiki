@@ -7,7 +7,8 @@
  * bypass the page lifecycle op), and rebuilt daily as self-heal.
  *
  * Behavior-preserving: the read site falls back to the live directory scan
- * whenever the index is empty/missing.
+ * whenever the index is ABSENT (reader returns `null`). An empty-but-present
+ * index (`{}`) is a valid seeded state.
  */
 
 import { getStorage } from "./storage";
@@ -32,17 +33,19 @@ export interface DiscussStat {
 export type DiscussStatsIndex = Record<string, DiscussStat>;
 
 /**
- * Read the full discuss-stats index (empty object when absent). Fail-soft: a
- * missing or corrupt index returns `{}` so the read site falls back to the live
- * directory scan.
+ * Read the full discuss-stats index, or `null` when absent/corrupt. Returns
+ * `null` (not an empty object) so callers can distinguish "no index → fall back
+ * to the live directory scan" from "index present but empty → genuinely no
+ * discussions". Fail-soft: a missing or corrupt index returns `null`.
  */
-export async function getDiscussStatsIndex(): Promise<DiscussStatsIndex> {
+export async function getDiscussStatsIndex(): Promise<DiscussStatsIndex | null> {
   try {
     const idx = await getStorage().getIndex<DiscussStatsIndex>(DISCUSS_STATS_KEY);
-    return idx && typeof idx === "object" ? idx : {};
+    if (!idx || typeof idx !== "object") return null;
+    return idx;
   } catch (err) {
-    logger.warn("discuss-stats", "discuss-stats index unreadable; treating as empty:", err);
-    return {};
+    logger.warn("discuss-stats", "discuss-stats index unreadable; treating as absent:", err);
+    return null;
   }
 }
 
@@ -70,6 +73,7 @@ export async function syncDiscussStatsForSlug(
   const stat = statsFromThreads(threads);
   await withFileLock(DISCUSS_STATS_LOCK, async () => {
     const idx = await getDiscussStatsIndex();
+    if (!idx) return; // No index yet → daily rebuild seeds it; don't fabricate one.
     const cur = idx[slug];
     if (cur && cur.total === stat.total && cur.open === stat.open) return;
     idx[slug] = stat;
@@ -81,6 +85,7 @@ export async function syncDiscussStatsForSlug(
 export async function removeDiscussStatsForSlug(slug: string): Promise<void> {
   await withFileLock(DISCUSS_STATS_LOCK, async () => {
     const idx = await getDiscussStatsIndex();
+    if (!idx) return; // No index yet → daily rebuild seeds it; don't fabricate one.
     if (!(slug in idx)) return;
     delete idx[slug];
     await putDiscussStatsIndex(idx);

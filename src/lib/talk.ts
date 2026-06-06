@@ -307,12 +307,12 @@ export async function getDiscussionStatsForSlugs(
   }
 
   // Fast path: project the requested slugs out of the precomputed discuss-stats
-  // index (O(1)). Falls through to the directory scan below when the index is
-  // empty/missing — keeps this behavior-preserving and safe to roll out.
+  // index (O(1)). Falls through to the directory scan below only when the index
+  // is ABSENT (reader → null); an empty-but-present index is authoritative.
   try {
     const { getDiscussStatsIndex } = await import("./discuss-stats-index");
     const idx = await getDiscussStatsIndex();
-    if (Object.keys(idx).length > 0) {
+    if (idx !== null) {
       for (const slug of slugs) {
         const stat = idx[slug];
         if (stat) result.set(slug, { total: stat.total, open: stat.open });

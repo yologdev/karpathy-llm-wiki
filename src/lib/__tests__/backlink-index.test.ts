@@ -52,12 +52,42 @@ async function createPage(slug: string, body: string, frontmatter = "") {
   );
 }
 
-describe("syncBacklinksForPage", () => {
+/** Seed an empty-but-present index so incremental hooks apply (not no-op). */
+async function seedEmptyIndex() {
+  await rebuildBacklinkIndex(); // no pages → writes `{}` (present, empty)
+}
+
+describe("no-op until seeded", () => {
+  it("getBacklinkIndex returns null when absent", async () => {
+    expect(await getBacklinkIndex()).toBeNull();
+  });
+
+  it("syncBacklinksForPage no-ops before any rebuild (reader stays null)", async () => {
+    await syncBacklinksForPage("src", "see [T](target.md)");
+    expect(await getBacklinkIndex()).toBeNull(); // not fabricated from one write
+  });
+
+  it("removeBacklinksForSlug no-ops before any rebuild", async () => {
+    await removeBacklinksForSlug("a");
+    expect(await getBacklinkIndex()).toBeNull();
+  });
+
+  it("rebuild seeds an empty-but-present index, then incremental updates apply", async () => {
+    await seedEmptyIndex();
+    expect(await getBacklinkIndex()).toEqual({});
+    await syncBacklinksForPage("src", "see [T](target.md)");
+    expect((await getBacklinkIndex())?.target).toEqual(["src"]);
+  });
+});
+
+describe("syncBacklinksForPage (after seeding)", () => {
+  beforeEach(seedEmptyIndex);
+
   it("adds the source for each newly-linked target", async () => {
     await syncBacklinksForPage("src", "see [T](target.md) and [U](other.md)");
     const idx = await getBacklinkIndex();
-    expect(idx.target).toEqual(["src"]);
-    expect(idx.other).toEqual(["src"]);
+    expect(idx?.target).toEqual(["src"]);
+    expect(idx?.other).toEqual(["src"]);
   });
 
   it("diffs against previous content: removed link drops the source", async () => {
@@ -65,26 +95,28 @@ describe("syncBacklinksForPage", () => {
     // New content no longer links to `other`.
     await syncBacklinksForPage("src", "[T](target.md)", "[T](target.md) [U](other.md)");
     const idx = await getBacklinkIndex();
-    expect(idx.target).toEqual(["src"]);
-    expect(idx.other).toBeUndefined();
+    expect(idx?.target).toEqual(["src"]);
+    expect(idx?.other).toBeUndefined();
   });
 
   it("ignores self-links", async () => {
     await syncBacklinksForPage("src", "[me](src.md) [T](target.md)");
     const idx = await getBacklinkIndex();
-    expect(idx.src).toBeUndefined();
-    expect(idx.target).toEqual(["src"]);
+    expect(idx?.src).toBeUndefined();
+    expect(idx?.target).toEqual(["src"]);
   });
 });
 
-describe("removeBacklinksForSlug", () => {
+describe("removeBacklinksForSlug (after seeding)", () => {
+  beforeEach(seedEmptyIndex);
+
   it("drops the slug as a target key and as a source everywhere", async () => {
     await syncBacklinksForPage("a", "[X](x.md)");
     await syncBacklinksForPage("b", "[A](a.md)"); // b → a
     await removeBacklinksForSlug("a");
     const idx = await getBacklinkIndex();
-    expect(idx.a).toBeUndefined(); // a removed as a target key (b→a gone)
-    expect(idx.x).toBeUndefined(); // a was x's only source → key pruned
+    expect(idx?.a).toBeUndefined(); // a removed as a target key (b→a gone)
+    expect(idx?.x).toBeUndefined(); // a was x's only source → key pruned
   });
 });
 
@@ -107,7 +139,7 @@ describe("findBacklinks read parity (fast path vs fallback)", () => {
     await createPage("target", "the target");
 
     // No index → fallback O(pages²) scan.
-    expect(await getBacklinkIndex()).toEqual({});
+    expect(await getBacklinkIndex()).toBeNull();
     const fallback = (await findBacklinks("target")).map((b) => b.slug).sort();
     expect(fallback).toEqual(["a", "b"]);
 
@@ -126,7 +158,7 @@ describe("findBacklinks read parity (fast path vs fallback)", () => {
 
     // The index records BOTH sources (no visibility encoded).
     const idx = await getBacklinkIndex();
-    expect(idx.target.sort()).toEqual(["priv", "pub"]);
+    expect(idx?.target.sort()).toEqual(["priv", "pub"]);
 
     // But an anonymous read filters out the private linker.
     const anon = await findBacklinks("target", null);

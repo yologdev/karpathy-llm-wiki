@@ -156,9 +156,10 @@ export async function findBacklinks(
     // Fast path: the precomputed reverse-link index gives the source slugs that
     // link TO targetSlug in O(1). We then intersect with the readable set (the
     // SAME filter the scan applies) and resolve titles from it. Falls back to
-    // the O(pages²) scan below when the index is empty/missing.
+    // the O(pages²) scan below only when the index is ABSENT (reader → null);
+    // an empty-but-present index is authoritative.
     const backlinkIdx = await getBacklinkIndex();
-    if (Object.keys(backlinkIdx).length > 0) {
+    if (backlinkIdx !== null) {
       const sources = backlinkIdx[targetSlug];
       if (!sources || sources.length === 0) return [];
       const readable = new Map(pages.map((p) => [p.slug, p.title]));
@@ -575,10 +576,10 @@ export async function slugsForOwner(handle: string): Promise<string[]> {
   const wantTenant = tenantForOwner(handle);
 
   // Fast path: read the precomputed owner→slugs index (O(1)). Falls through to
-  // the live frontmatter scan below when the index is empty/missing — keeps
-  // this behavior-preserving and safe to roll out.
+  // the live frontmatter scan below only when the index is ABSENT (reader →
+  // null); an empty-but-present index is authoritative. Behavior-preserving.
   const ownerIdx = await getOwnerIndex();
-  if (Object.keys(ownerIdx).length > 0) {
+  if (ownerIdx !== null) {
     return ownerIdx[wantTenant] ?? [];
   }
 

@@ -110,6 +110,40 @@ describe("contributors data layer", () => {
       const contributors = await listContributors();
       expect(contributors.map((c) => c.handle)).toEqual(["alice"]);
     });
+
+    it("takes the contributor-index fast path ONLY for an anonymous viewer; a non-null principal uses the per-principal scan (sees their own private pages)", async () => {
+      // A PUBLIC page edited by alice (visible to everyone, in the anon index).
+      await createPage(
+        "pub",
+        "Pub",
+        "---\nowner: alice\nvisibility: public\n---\n\n# Pub\n\nc.",
+      );
+      await saveRevision("pub", "# Pub\n\nv1", "alice");
+
+      // A PRIVATE page owned+edited by bob (invisible to anon → NOT in index).
+      await createPage(
+        "priv",
+        "Priv",
+        "---\nowner: bob\nvisibility: private\n---\n\n# Priv\n\nc.",
+      );
+      await saveRevision("priv", "# Priv\n\nv1", "bob");
+
+      // Build the index from the ANONYMOUS scan: only alice/pub.
+      const { rebuildContributorIndex, getContributorIndex } = await import(
+        "../contributor-index"
+      );
+      await rebuildContributorIndex();
+      expect(await getContributorIndex()).not.toBeNull();
+
+      // Anonymous: fast path → index only → bob (private) absent.
+      const anon = await listContributors(null);
+      expect(anon.map((c) => c.handle)).toEqual(["alice"]);
+
+      // bob as principal: must NOT take the anon fast path; the per-principal
+      // scan sees bob's own private page, so bob shows up.
+      const asBob = await listContributors({ id: "bob", handle: "bob" });
+      expect(asBob.map((c) => c.handle).sort()).toEqual(["alice", "bob"]);
+    });
   });
 
   describe("buildContributorProfile", () => {

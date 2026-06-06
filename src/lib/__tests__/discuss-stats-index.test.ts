@@ -48,41 +48,73 @@ function thread(status: TalkThread["status"]): TalkThread {
   return { pageSlug: "p", title: "t", status, created: "", updated: "", comments: [] };
 }
 
-describe("syncDiscussStatsForSlug / removeDiscussStatsForSlug", () => {
+/** Seed an empty-but-present index so incremental hooks apply (not no-op). */
+async function seedEmptyIndex() {
+  await rebuildDiscussStatsIndex(); // no discuss files → writes `{}` (present, empty)
+}
+
+describe("no-op until seeded", () => {
+  it("getDiscussStatsIndex returns null when absent", async () => {
+    expect(await getDiscussStatsIndex()).toBeNull();
+  });
+
+  it("syncDiscussStatsForSlug no-ops before any rebuild (reader stays null)", async () => {
+    await syncDiscussStatsForSlug("p", [thread("open")]);
+    expect(await getDiscussStatsIndex()).toBeNull(); // not fabricated from one write
+  });
+
+  it("removeDiscussStatsForSlug no-ops before any rebuild", async () => {
+    await removeDiscussStatsForSlug("p");
+    expect(await getDiscussStatsIndex()).toBeNull();
+  });
+
+  it("rebuild seeds an empty-but-present index, then incremental updates apply", async () => {
+    await seedEmptyIndex();
+    expect(await getDiscussStatsIndex()).toEqual({});
+    await syncDiscussStatsForSlug("p", [thread("open")]);
+    expect((await getDiscussStatsIndex())?.p).toEqual({ total: 1, open: 1 });
+  });
+});
+
+describe("syncDiscussStatsForSlug / removeDiscussStatsForSlug (after seeding)", () => {
+  beforeEach(seedEmptyIndex);
+
   it("upserts {total, open} from the in-memory threads", async () => {
     await syncDiscussStatsForSlug("p", [thread("open"), thread("resolved")]);
-    expect((await getDiscussStatsIndex()).p).toEqual({ total: 2, open: 1 });
+    expect((await getDiscussStatsIndex())?.p).toEqual({ total: 2, open: 1 });
   });
 
   it("updates in place on re-sync", async () => {
     await syncDiscussStatsForSlug("p", [thread("open")]);
     await syncDiscussStatsForSlug("p", [thread("open"), thread("open")]);
-    expect((await getDiscussStatsIndex()).p).toEqual({ total: 2, open: 2 });
+    expect((await getDiscussStatsIndex())?.p).toEqual({ total: 2, open: 2 });
   });
 
   it("remove drops the entry", async () => {
     await syncDiscussStatsForSlug("p", [thread("open")]);
     await removeDiscussStatsForSlug("p");
-    expect((await getDiscussStatsIndex()).p).toBeUndefined();
+    expect((await getDiscussStatsIndex())?.p).toBeUndefined();
   });
 });
 
-describe("talk mutations maintain the index", () => {
+describe("talk mutations maintain the index (after seeding)", () => {
+  beforeEach(seedEmptyIndex);
+
   it("createThread / addComment / resolveThread keep stats fresh", async () => {
     await createThread("p", "Title", "alice", "first");
-    expect((await getDiscussStatsIndex()).p).toEqual({ total: 1, open: 1 });
+    expect((await getDiscussStatsIndex())?.p).toEqual({ total: 1, open: 1 });
 
     await addComment("p", 0, "bob", "reply");
-    expect((await getDiscussStatsIndex()).p).toEqual({ total: 1, open: 1 });
+    expect((await getDiscussStatsIndex())?.p).toEqual({ total: 1, open: 1 });
 
     await resolveThread("p", 0, "resolved");
-    expect((await getDiscussStatsIndex()).p).toEqual({ total: 1, open: 0 });
+    expect((await getDiscussStatsIndex())?.p).toEqual({ total: 1, open: 0 });
   });
 
   it("deleteDiscussions removes the slug entry", async () => {
     await createThread("p", "Title", "alice", "first");
     await deleteDiscussions("p");
-    expect((await getDiscussStatsIndex()).p).toBeUndefined();
+    expect((await getDiscussStatsIndex())?.p).toBeUndefined();
   });
 });
 
@@ -93,8 +125,8 @@ describe("rebuildDiscussStatsIndex", () => {
     await resolveThread("b", 0, "resolved");
     await rebuildDiscussStatsIndex();
     const idx = await getDiscussStatsIndex();
-    expect(idx.a).toEqual({ total: 1, open: 1 });
-    expect(idx.b).toEqual({ total: 1, open: 0 });
+    expect(idx?.a).toEqual({ total: 1, open: 1 });
+    expect(idx?.b).toEqual({ total: 1, open: 0 });
   });
 });
 
@@ -116,15 +148,15 @@ describe("getDiscussionStatsForSlugs read parity (fast path vs fallback)", () =>
       "utf-8",
     );
 
-    // Index is empty → read falls back to the directory scan.
-    expect(await getDiscussStatsIndex()).toEqual({});
+    // Index is absent → read falls back to the directory scan.
+    expect(await getDiscussStatsIndex()).toBeNull();
     const fallback = await getDiscussionStatsForSlugs(["a", "missing"]);
     expect(fallback.get("a")).toEqual({ total: 2, open: 1 });
     expect(fallback.get("missing")).toEqual({ total: 0, open: 0 });
 
     // Rebuild → fast path → SAME result.
     await rebuildDiscussStatsIndex();
-    expect(Object.keys(await getDiscussStatsIndex()).length).toBeGreaterThan(0);
+    expect(Object.keys((await getDiscussStatsIndex())!).length).toBeGreaterThan(0);
     const fast = await getDiscussionStatsForSlugs(["a", "missing"]);
     expect(fast.get("a")).toEqual(fallback.get("a"));
     expect(fast.get("missing")).toEqual(fallback.get("missing"));

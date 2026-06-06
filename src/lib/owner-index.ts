@@ -8,7 +8,8 @@
  * path and rebuilt daily as self-heal.
  *
  * Behavior-preserving: the read site falls back to the live scan whenever the
- * index is empty/missing, so the index is purely an accelerator.
+ * index is ABSENT (reader returns `null`), so the index is purely an
+ * accelerator. An empty-but-present index (`{}`) is a valid seeded state.
  */
 
 import { getStorage } from "./storage";
@@ -29,17 +30,19 @@ const OWNER_INDEX_LOCK = "owner-slugs-index";
 export type OwnerIndex = Record<string, string[]>;
 
 /**
- * Read the full owner index (empty object when absent). Fail-soft: a missing or
- * corrupt index returns `{}` so the read site falls back to the live scan
- * rather than crashing a page render.
+ * Read the full owner index, or `null` when absent/corrupt. Returns `null` (not
+ * an empty object) so callers can distinguish "no index → fall back to the live
+ * scan" from "index present but empty → genuinely no owned pages". Fail-soft: a
+ * missing or corrupt index returns `null` rather than crashing a page render.
  */
-export async function getOwnerIndex(): Promise<OwnerIndex> {
+export async function getOwnerIndex(): Promise<OwnerIndex | null> {
   try {
     const idx = await getStorage().getIndex<OwnerIndex>(OWNER_INDEX_KEY);
-    return idx && typeof idx === "object" ? idx : {};
+    if (!idx || typeof idx !== "object") return null;
+    return idx;
   } catch (err) {
-    logger.warn("owner-index", "owner index unreadable; treating as empty:", err);
-    return {};
+    logger.warn("owner-index", "owner index unreadable; treating as absent:", err);
+    return null;
   }
 }
 
@@ -71,6 +74,7 @@ export async function syncOwnerIndexForPage(
   const wanted = tenantsForPage(owner, contributors);
   await withFileLock(OWNER_INDEX_LOCK, async () => {
     const idx = await getOwnerIndex();
+    if (!idx) return; // No index yet → daily rebuild seeds it; don't fabricate one.
     let changed = false;
 
     // Add to every wanted bucket.
@@ -103,6 +107,7 @@ export async function syncOwnerIndexForPage(
 export async function removeOwnerIndexForSlug(slug: string): Promise<void> {
   await withFileLock(OWNER_INDEX_LOCK, async () => {
     const idx = await getOwnerIndex();
+    if (!idx) return; // No index yet → daily rebuild seeds it; don't fabricate one.
     let changed = false;
     for (const tenant of Object.keys(idx)) {
       const bucket = idx[tenant];

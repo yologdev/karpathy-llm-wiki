@@ -52,43 +52,75 @@ async function createPage(slug: string, frontmatter: string, title = slug) {
   );
 }
 
-describe("syncOwnerIndexForPage", () => {
+/** Seed an empty-but-present index so incremental hooks apply (not no-op). */
+async function seedEmptyIndex() {
+  await rebuildOwnerIndex(); // no pages → writes `{}` (present, empty)
+}
+
+describe("no-op until seeded", () => {
+  it("getOwnerIndex returns null when absent", async () => {
+    expect(await getOwnerIndex()).toBeNull();
+  });
+
+  it("syncOwnerIndexForPage no-ops before any rebuild (reader stays null)", async () => {
+    await syncOwnerIndexForPage("p", "alice");
+    expect(await getOwnerIndex()).toBeNull(); // not fabricated from one write
+  });
+
+  it("removeOwnerIndexForSlug no-ops before any rebuild", async () => {
+    await removeOwnerIndexForSlug("p");
+    expect(await getOwnerIndex()).toBeNull();
+  });
+
+  it("rebuild seeds an empty-but-present index, then incremental updates apply", async () => {
+    await seedEmptyIndex();
+    expect(await getOwnerIndex()).toEqual({});
+    await syncOwnerIndexForPage("p", "alice");
+    expect((await getOwnerIndex())?.alice).toEqual(["p"]);
+  });
+});
+
+describe("syncOwnerIndexForPage (after seeding)", () => {
+  beforeEach(seedEmptyIndex);
+
   it("adds the slug to the owner tenant bucket", async () => {
     await syncOwnerIndexForPage("p", "alice");
-    expect((await getOwnerIndex()).alice).toEqual(["p"]);
+    expect((await getOwnerIndex())?.alice).toEqual(["p"]);
   });
 
   it("adds the slug to owner AND every contributor tenant", async () => {
     await syncOwnerIndexForPage("p", "alice", ["bob", "Carol"]);
     const idx = await getOwnerIndex();
-    expect(idx.alice).toEqual(["p"]);
-    expect(idx.bob).toEqual(["p"]);
-    expect(idx.carol).toEqual(["p"]); // tenant is lowercased
+    expect(idx?.alice).toEqual(["p"]);
+    expect(idx?.bob).toEqual(["p"]);
+    expect(idx?.carol).toEqual(["p"]); // tenant is lowercased
   });
 
   it("ownerless pages land in the default (yopedia) tenant", async () => {
     await syncOwnerIndexForPage("o");
-    expect((await getOwnerIndex()).yopedia).toEqual(["o"]);
+    expect((await getOwnerIndex())?.yopedia).toEqual(["o"]);
   });
 
   it("removes the slug from a stale bucket when owner/contributors change", async () => {
     await syncOwnerIndexForPage("p", "alice", ["bob"]);
-    expect((await getOwnerIndex()).bob).toEqual(["p"]);
+    expect((await getOwnerIndex())?.bob).toEqual(["p"]);
     // bob no longer a contributor → drop from bob's bucket.
     await syncOwnerIndexForPage("p", "alice", []);
     const idx = await getOwnerIndex();
-    expect(idx.alice).toEqual(["p"]);
-    expect(idx.bob).toBeUndefined();
+    expect(idx?.alice).toEqual(["p"]);
+    expect(idx?.bob).toBeUndefined();
   });
 
   it("is idempotent (no duplicate slugs)", async () => {
     await syncOwnerIndexForPage("p", "alice");
     await syncOwnerIndexForPage("p", "alice");
-    expect((await getOwnerIndex()).alice).toEqual(["p"]);
+    expect((await getOwnerIndex())?.alice).toEqual(["p"]);
   });
 });
 
-describe("removeOwnerIndexForSlug", () => {
+describe("removeOwnerIndexForSlug (after seeding)", () => {
+  beforeEach(seedEmptyIndex);
+
   it("removes the slug from all buckets", async () => {
     await syncOwnerIndexForPage("p", "alice", ["bob"]);
     await removeOwnerIndexForSlug("p");
@@ -115,13 +147,13 @@ describe("slugsForOwner read parity (fast path vs fallback)", () => {
     await createPage("b", "owner: bob\ncontributors: [alice]");
 
     // No index yet → fallback scan.
-    expect(await getOwnerIndex()).toEqual({});
+    expect(await getOwnerIndex()).toBeNull();
     const fallback = (await slugsForOwner("alice")).sort();
     expect(fallback).toEqual(["a", "b"]);
 
     // Populate the index → fast path → SAME result.
     await rebuildOwnerIndex();
-    expect(Object.keys(await getOwnerIndex()).length).toBeGreaterThan(0);
+    expect(Object.keys((await getOwnerIndex())!).length).toBeGreaterThan(0);
     const fastPath = (await slugsForOwner("alice")).sort();
     expect(fastPath).toEqual(fallback);
   });

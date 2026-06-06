@@ -19,8 +19,13 @@ interface WikiPageProps {
 /**
  * Per-page Open Graph / Twitter metadata for the owner-scoped (private/owned)
  * URL. Private pages the viewer can't read get a neutral title so existence
- * isn't leaked. Canonical stays `/u/<tenant>/<slug>`; for PUBLIC pages this
- * route 308-redirects to the global `/wiki/<slug>` so the canonical there wins.
+ * isn't leaked.
+ *
+ * For PUBLIC commons pages the canonical + OG url point at the GLOBAL
+ * `/wiki/<slug>`: the page-body `permanentRedirect` does NOT produce a true HTTP
+ * redirect on OpenNext-Cloudflare (the public page renders at 200 here), so
+ * pointing the canonical at the commons URL avoids duplicate-content/SEO issues.
+ * Private/owned pages stay canonical at `/u/<tenant>/<slug>`.
  */
 export async function generateMetadata({
   params,
@@ -41,7 +46,19 @@ export async function generateMetadata({
     typeof page.frontmatter.summary === "string"
       ? page.frontmatter.summary
       : undefined;
-  const url = pagePath(tenant, slug);
+  // Public commons pages are canonical at the global `/wiki/<slug>` (see the
+  // function doc): point canonical + OG url there. Private pages canonical here.
+  const inCommons = belongsInCommons({
+    visibility:
+      typeof page.frontmatter.visibility === "string"
+        ? page.frontmatter.visibility
+        : undefined,
+    type:
+      typeof page.frontmatter.type === "string"
+        ? page.frontmatter.type
+        : undefined,
+  });
+  const url = inCommons ? commonsPath(slug) : pagePath(tenant, slug);
   return {
     title: page.title, // layout template appends " · yopedia"
     ...(description ? { description } : {}),

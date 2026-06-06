@@ -303,16 +303,22 @@ export async function listContributors(
   principal: Principal | null = null,
 ): Promise<ContributorProfile[]> {
   // Fast path: build profiles from the precomputed contributor index (O(1) read)
-  // instead of re-scanning every page's revisions + every talk thread. Falls back
-  // to the full scan below when the index is absent — behavior-preserving.
-  try {
-    const { getContributorIndex, profilesFromIndex } = await import(
-      "./contributor-index"
-    );
-    const idx = await getContributorIndex();
-    if (idx) return profilesFromIndex(idx);
-  } catch {
-    // Fall through to the live scan — the index is purely an accelerator.
+  // instead of re-scanning every page's revisions + every talk thread. The index
+  // is built from `computeScanData(null)` (ANONYMOUS visibility), so it is only
+  // valid for an anonymous viewer. A non-null principal can see its own private
+  // pages, so it MUST use the per-principal scan below to match the fallback;
+  // taking the anonymous fast path would under-count the viewer's activity.
+  // Falls back to the full scan when the index is absent — behavior-preserving.
+  if (principal == null) {
+    try {
+      const { getContributorIndex, profilesFromIndex } = await import(
+        "./contributor-index"
+      );
+      const idx = await getContributorIndex();
+      if (idx) return profilesFromIndex(idx);
+    } catch {
+      // Fall through to the live scan — the index is purely an accelerator.
+    }
   }
 
   const data = await computeScanData(principal);
