@@ -1,15 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import Link from "next/link";
-import { providerLabel } from "@/lib/providers";
-
-interface ProviderInfo {
-  configured: boolean;
-  provider: string | null;
-  model: string | null;
-  embeddingSupport: boolean;
-}
 
 interface OnboardingWizardProps {
   pageCount: number;
@@ -30,53 +21,33 @@ function CheckIcon() {
   );
 }
 
+/**
+ * Empty-state onboarding for a fresh commons. The LLM is a platform setting
+ * (configured server-side via env), not something each user sets up, so there's
+ * no "configure your LLM" step — onboarding is just: ingest, then ask.
+ */
 export function OnboardingWizard({ pageCount }: OnboardingWizardProps) {
-  const [providerInfo, setProviderInfo] = useState<ProviderInfo | null>(null);
-  const [fetchError, setFetchError] = useState(false);
-
-  useEffect(() => {
-    fetch("/api/status")
-      .then((r) => {
-        if (!r.ok) throw new Error("status fetch failed");
-        return r.json();
-      })
-      .then((data: ProviderInfo) => setProviderInfo(data))
-      .catch(() => setFetchError(true));
-  }, []);
-
-  const llmConfigured = providerInfo?.configured ?? false;
   const hasPages = pageCount > 0;
-
-  // Determine which step is active (first incomplete step)
-  const activeStep = !llmConfigured ? 1 : !hasPages ? 2 : 3;
+  // First incomplete step: ingest (1) until there are pages, then ask (2).
+  const activeStep = !hasPages ? 1 : 2;
 
   const steps = [
     {
       number: 1,
-      title: "Configure your LLM",
-      completed: llmConfigured,
-      description: llmConfigured
-        ? `Connected to ${providerLabel(providerInfo!.provider!)}${providerInfo!.model ? ` (${providerInfo!.model})` : ""}`
-        : "The server needs an LLM provider configured via environment variables.",
-      href: "/settings",
-      linkText: "View LLM Status →",
-    },
-    {
-      number: 2,
       title: "Ingest your first source",
       completed: hasPages,
       description: hasPages
-        ? `Your wiki has ${pageCount} ${pageCount === 1 ? "page" : "pages"}.`
-        : "Paste a URL or text — the LLM will create a wiki page with summaries and cross-references.",
+        ? `The commons has ${pageCount} ${pageCount === 1 ? "page" : "pages"}.`
+        : "Paste a URL or text — it's synthesized into a cited wiki page with summaries and cross-references.",
       href: "/ingest",
       linkText: "Ingest a source →",
     },
     {
-      number: 3,
+      number: 2,
       title: "Ask your first question",
       completed: false,
       description:
-        "Query your wiki and get cited answers drawn from your pages.",
+        "Query the commons and get cited answers drawn from the pages.",
       href: "/query",
       linkText: "Ask a question →",
     },
@@ -92,7 +63,8 @@ export function OnboardingWizard({ pageCount }: OnboardingWizardProps) {
           {steps.map((step) => {
             const isActive = step.number === activeStep;
             const isPast = step.number < activeStep;
-            const showLink = !step.completed && (isActive || step.number === 3);
+            const showLink =
+              !step.completed && (isActive || step.number === steps.length);
 
             return (
               <li key={step.number} className="flex gap-4">
@@ -107,11 +79,7 @@ export function OnboardingWizard({ pageCount }: OnboardingWizardProps) {
                           : "bg-gray-200 text-gray-500 dark:bg-gray-800 dark:text-gray-400"
                     }`}
                   >
-                    {step.completed || isPast ? (
-                      <CheckIcon />
-                    ) : (
-                      step.number
-                    )}
+                    {step.completed || isPast ? <CheckIcon /> : step.number}
                   </div>
                   {/* Connector line (not on last step) */}
                   {step.number < steps.length && (
@@ -145,12 +113,7 @@ export function OnboardingWizard({ pageCount }: OnboardingWizardProps) {
                         : "text-foreground/60"
                     }`}
                   >
-                    {/* While loading provider info, show a placeholder for step 1 */}
-                    {step.number === 1 && !providerInfo && !fetchError
-                      ? "Checking provider status…"
-                      : step.number === 1 && fetchError
-                        ? "Unable to check provider status. Visit Settings to configure."
-                        : step.description}
+                    {step.description}
                   </p>
                   {showLink && (
                     <Link
