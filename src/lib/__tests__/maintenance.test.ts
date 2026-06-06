@@ -10,7 +10,7 @@ import {
   type Frontmatter,
 } from "../wiki";
 import { createThread, addComment } from "../talk";
-import { scanForMaintenance } from "../maintenance";
+import { scanForMaintenance, rebuildDerivedIndexes } from "../maintenance";
 import { _resetStorage } from "../storage";
 
 let tmpDir: string;
@@ -288,5 +288,13 @@ describe("scanForMaintenance", () => {
     expect(tasks).not.toContainEqual(
       expect.objectContaining({ slug: "substantial", lintType: "empty-page" }),
     );
+  });
+});
+
+describe("rebuildDerivedIndexes", () => {
+  it("includes the commons index in the rebuild", async () => {
+    const results = await rebuildDerivedIndexes();
+    expect(results).toHaveProperty("commons");
+    expect(results.commons.ok).toBe(true);
   });
 });
