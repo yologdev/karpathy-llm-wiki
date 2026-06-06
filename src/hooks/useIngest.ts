@@ -1,10 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import type { PreviewData } from "@/components/IngestPreview";
+import type { PreviewData } from "@/components/IngestReview";
+import type { IngestPreviewMeta } from "@/lib/types";
 
-export type Mode = "text" | "url" | "batch" | "image" | "pdf";
-export type Stage = "form" | "preview" | "success";
+export type Mode = "url" | "pdf" | "xpost" | "text" | "image" | "batch";
+export type Stage = "form" | "synthesis" | "review" | "success";
 
 export interface IngestResponse {
   rawPath: string;
@@ -13,6 +14,7 @@ export interface IngestResponse {
   wikiPages: string[];
   indexUpdated: boolean;
   previewContent?: string;
+  preview?: IngestPreviewMeta;
   error?: string;
 }
 
@@ -31,7 +33,6 @@ export interface UseIngestReturn {
   error: string | null;
   result: IngestResponse | null;
   preview: PreviewData | null;
-  showRawMarkdown: boolean;
   // Actions
   switchMode: (m: Mode) => void;
   setTitle: (v: string) => void;
@@ -41,18 +42,16 @@ export interface UseIngestReturn {
   setImageFile: (f: File | null) => void;
   setPdfUrl: (v: string) => void;
   setPdfFile: (f: File | null) => void;
-  handlePreview: (e: React.FormEvent) => void;
+  handleSourceSubmit: (e: React.FormEvent) => void;
   handleApprove: () => void;
-  handleDirectIngest: (e: React.FormEvent) => void;
   handleImageIngest: (e: React.FormEvent) => void;
   handlePdfIngest: (e: React.FormEvent) => void;
   reset: () => void;
-  cancelPreview: () => void;
-  toggleRawMarkdown: () => void;
+  cancelReview: () => void;
 }
 
 /**
- * Validate ingest inputs — pure function extracted from handleDirectIngest.
+ * Validate ingest inputs — pure function shared by the source-step submit.
  * Returns an error message string if invalid, or null if valid.
  */
 export function validateIngestInput(
@@ -61,7 +60,7 @@ export function validateIngestInput(
   content: string,
   url: string,
 ): string | null {
-  if (mode === "url") {
+  if (mode === "url" || mode === "xpost") {
     if (!url.trim()) {
       return "Please enter a URL";
     }
@@ -82,7 +81,7 @@ export function validateIngestInput(
 }
 
 export function useIngest(): UseIngestReturn {
-  const [mode, setMode] = useState<Mode>("text");
+  const [mode, setMode] = useState<Mode>("url");
   const [stage, setStage] = useState<Stage>("form");
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
@@ -95,25 +94,17 @@ export function useIngest(): UseIngestReturn {
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<IngestResponse | null>(null);
   const [preview, setPreview] = useState<PreviewData | null>(null);
-  const [showRawMarkdown, setShowRawMarkdown] = useState(false);
 
   function switchMode(newMode: Mode) {
     setMode(newMode);
     setError(null);
-    if (newMode === "url") {
+    // Clear the fields that don't belong to the new mode so a stale value never
+    // leaks across a tab switch.
+    if (newMode !== "text") {
       setTitle("");
       setContent("");
-    } else if (newMode === "text") {
-      setUrl("");
-    } else if (newMode === "image") {
-      setContent("");
-      setUrl("");
-    } else if (newMode === "pdf") {
-      setContent("");
-      setUrl("");
-    } else {
-      setTitle("");
-      setContent("");
+    }
+    if (newMode !== "url" && newMode !== "xpost") {
       setUrl("");
     }
     if (newMode !== "image") {
@@ -126,17 +117,27 @@ export function useIngest(): UseIngestReturn {
     }
   }
 
-  /** Phase 1: call the API with preview=true to get LLM output without writing. */
-  async function handlePreview(e: React.FormEvent) {
+  /**
+   * Step 1 → 2 → 3: synthesize the source (preview, no write), show the
+   * synthesis animation while it runs, then land on the review step.
+   */
+  async function handleSourceSubmit(e: React.FormEvent) {
     e.preventDefault();
+    const validationError = validateIngestInput(mode, title, content, url);
+    if (validationError) {
+      setError(validationError);
+      return;
+    }
+
     setLoading(true);
     setError(null);
+    setStage("synthesis");
 
     try {
-      const body =
-        mode === "url"
-          ? { url, preview: true }
-          : { title, content, preview: true };
+      const usesUrl = mode === "url" || mode === "xpost";
+      const body = usesUrl
+        ? { url: url.trim(), preview: true }
+        : { title, content, preview: true };
 
       const res = await fetch("/api/ingest", {
         method: "POST",
@@ -148,6 +149,7 @@ export function useIngest(): UseIngestReturn {
 
       if (!res.ok) {
         setError(data.error || "Something went wrong");
+        setStage("form");
         return;
       }
 
@@ -155,19 +157,21 @@ export function useIngest(): UseIngestReturn {
         slug: data.primarySlug,
         previewContent: data.previewContent ?? "",
         relatedPages: data.relatedUpdated ?? [],
-        title: mode === "url" ? data.primarySlug : title,
-        content: mode === "url" ? "" : content,
-        url: mode === "url" ? url : undefined,
+        title: usesUrl ? data.preview?.title ?? data.primarySlug : title,
+        content: usesUrl ? "" : content,
+        url: usesUrl ? url.trim() : undefined,
+        meta: data.preview,
       });
-      setStage("preview");
+      setStage("review");
     } catch {
       setError("Network error — could not reach the server");
+      setStage("form");
     } finally {
       setLoading(false);
     }
   }
 
-  /** Phase 2: approve the preview — commit with pre-generated content. */
+  /** Step 3: publish — commit with the pre-generated content the user reviewed. */
   async function handleApprove() {
     if (!preview) return;
     setLoading(true);
@@ -175,10 +179,7 @@ export function useIngest(): UseIngestReturn {
 
     try {
       const body = preview.url
-        ? {
-            url: preview.url,
-            generatedContent: preview.previewContent,
-          }
+        ? { url: preview.url, generatedContent: preview.previewContent }
         : {
             title: preview.title,
             content: preview.content,
@@ -207,49 +208,8 @@ export function useIngest(): UseIngestReturn {
     }
   }
 
-  /** Direct ingest: skip preview, write immediately. */
-  async function handleDirectIngest(e: React.FormEvent) {
-    e.preventDefault();
-    setError(null);
-
-    // Validate inputs (since this button bypasses HTML5 form validation)
-    const validationError = validateIngestInput(mode, title, content, url);
-    if (validationError) {
-      setError(validationError);
-      return;
-    }
-
-    setLoading(true);
-    setResult(null);
-
-    try {
-      const body =
-        mode === "url" ? { url } : { title, content };
-
-      const res = await fetch("/api/ingest", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-
-      const data: IngestResponse = await res.json();
-
-      if (!res.ok) {
-        setError(data.error || "Something went wrong");
-        return;
-      }
-
-      setResult(data);
-      setStage("success");
-    } catch {
-      setError("Network error — could not reach the server");
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  /** Image ingest: store image, describe via vision model, write a page. No
-   *  preview stage (the body is just the image + description). */
+  /** Image ingest: store image, describe via vision model, write a page. Skips
+   *  the review gate (the body is just the image + description). */
   async function handleImageIngest(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
@@ -269,6 +229,7 @@ export function useIngest(): UseIngestReturn {
 
     setLoading(true);
     setResult(null);
+    setStage("synthesis");
 
     try {
       let res: Response;
@@ -291,19 +252,21 @@ export function useIngest(): UseIngestReturn {
       const data: IngestResponse = await res.json();
       if (!res.ok) {
         setError(data.error || "Something went wrong");
+        setStage("form");
         return;
       }
       setResult(data);
       setStage("success");
     } catch {
       setError("Network error — could not reach the server");
+      setStage("form");
     } finally {
       setLoading(false);
     }
   }
 
-  /** PDF ingest: extract text from a PDF, run through the ingest pipeline. No
-   *  preview stage (the body is the extracted text). */
+  /** PDF ingest: extract text from a PDF, run through the ingest pipeline. Skips
+   *  the review gate (the body is the extracted text). */
   async function handlePdfIngest(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
@@ -323,6 +286,7 @@ export function useIngest(): UseIngestReturn {
 
     setLoading(true);
     setResult(null);
+    setStage("synthesis");
 
     try {
       let res: Response;
@@ -345,12 +309,14 @@ export function useIngest(): UseIngestReturn {
       const data: IngestResponse = await res.json();
       if (!res.ok) {
         setError(data.error || "Something went wrong");
+        setStage("form");
         return;
       }
       setResult(data);
       setStage("success");
     } catch {
       setError("Network error — could not reach the server");
+      setStage("form");
     } finally {
       setLoading(false);
     }
@@ -368,18 +334,13 @@ export function useIngest(): UseIngestReturn {
     setResult(null);
     setPreview(null);
     setStage("form");
-    setShowRawMarkdown(false);
   }
 
-  function cancelPreview() {
+  /** Discard the reviewed draft and return to the source step. */
+  function cancelReview() {
     setPreview(null);
     setError(null);
     setStage("form");
-    setShowRawMarkdown(false);
-  }
-
-  function toggleRawMarkdown() {
-    setShowRawMarkdown((v) => !v);
   }
 
   return {
@@ -396,7 +357,6 @@ export function useIngest(): UseIngestReturn {
     error,
     result,
     preview,
-    showRawMarkdown,
     switchMode,
     setTitle,
     setContent,
@@ -405,13 +365,11 @@ export function useIngest(): UseIngestReturn {
     setImageFile,
     setPdfUrl,
     setPdfFile,
-    handlePreview,
+    handleSourceSubmit,
     handleApprove,
-    handleDirectIngest,
     handleImageIngest,
     handlePdfIngest,
     reset,
-    cancelPreview,
-    toggleRawMarkdown,
+    cancelReview,
   };
 }

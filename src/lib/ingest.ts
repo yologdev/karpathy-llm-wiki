@@ -11,7 +11,7 @@ import { callLLM, hasLLMKey } from "./llm";
 import { fetchUrlContent, downloadImages, fetchImageBytes, storeImageBytes } from "./fetch";
 import { describeImage } from "./vision";
 import { isYouTubeUrl, fetchYouTubeContent } from "./youtube";
-import type { IngestResult, SourceEntry } from "./types";
+import type { IngestResult, IngestPreviewMeta, SourceEntry } from "./types";
 import {
   serializeSources,
   parseSources,
@@ -1222,6 +1222,52 @@ export async function ingest(
     );
     const relatedSlugs = await findRelatedPages(slug, content, existingEntries);
 
+    // Would publishing merge into an existing commons page, or create a fresh
+    // one? Resolve the same source-URL / content-hash dedup the commit path
+    // uses, but read-only. Read-gated via `existingEntries` so a private page
+    // the actor can't see is treated as "new" (it would fork on publish).
+    let dupSlug = options?.sourceUrl
+      ? await resolveSourceUrl(options.sourceUrl)
+      : null;
+    if (!dupSlug) dupSlug = await resolveContentHash(hash);
+    const existingEntry = dupSlug
+      ? existingEntries.find((e) => e.slug === dupSlug)
+      : undefined;
+
+    // Mirror exactly what the commit path below would write so the review card
+    // never promises a value publish won't honor. Review-by always resets to
+    // now + 90 days (a re-ingest refreshes the page). Confidence defaults to 0.7
+    // and is only preserved on a merge when the existing page was set HIGHER
+    // (the > 0.7 rule at the re-ingest frontmatter merge below).
+    const reviewExpiry = new Date();
+    reviewExpiry.setDate(reviewExpiry.getDate() + 90);
+    const reviewBy = reviewExpiry.toISOString().slice(0, 10);
+    let confidence = 0.7;
+    if (existingEntry) {
+      const ex = await readWikiPageWithFrontmatter(existingEntry.slug);
+      if (
+        typeof ex?.frontmatter.confidence === "number" &&
+        ex.frontmatter.confidence > 0.7
+      ) {
+        confidence = ex.frontmatter.confidence;
+      }
+    }
+
+    const tags = Array.from(
+      new Set([...(existingEntry?.tags ?? []), ...(options?.tags ?? [])]),
+    );
+
+    const previewMeta: IngestPreviewMeta = {
+      title: concept || pageTitle || title || slug,
+      summary,
+      tags,
+      owner: owner ?? "",
+      confidence,
+      reviewBy,
+      deduped: !!existingEntry,
+      ...(existingEntry ? { existingTitle: existingEntry.title } : {}),
+    };
+
     return {
       rawPath: "",
       primarySlug: slug,
@@ -1229,6 +1275,7 @@ export async function ingest(
       wikiPages: [slug, ...relatedSlugs],
       indexUpdated: false,
       previewContent: wikiContent,
+      preview: previewMeta,
       ...(options?.sourceUrl ? { sourceUrl: options.sourceUrl } : {}),
     };
   }
