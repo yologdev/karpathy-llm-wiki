@@ -5,15 +5,20 @@ import { useRouter } from "next/navigation";
 
 interface RemoveFromVaultButtonProps {
   slug: string;
+  /** The vault to remove the reference from (id = `<ownerTenant>--<nameSlug>`). */
+  vaultId: string;
 }
 
 /**
- * Remove a curated commons reference from your vault — the inverse of
- * {@link SaveToVaultButton}, scoped to the owner's own management surface
- * (`/vault`). Removing drops the *reference* only; the underlying commons page
- * is untouched. The server re-checks ownership of the vault on the request.
+ * Remove a curated commons reference from a specific vault — the inverse of the
+ * vault picker, used to curate-out from the lens view (`/wiki?scope=vault:<id>`).
+ * Removing drops the *reference* only; the underlying commons page is untouched.
+ * The server re-checks ownership of the vault on the request.
  */
-export function RemoveFromVaultButton({ slug }: RemoveFromVaultButtonProps) {
+export function RemoveFromVaultButton({
+  slug,
+  vaultId,
+}: RemoveFromVaultButtonProps) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -22,7 +27,7 @@ export function RemoveFromVaultButton({ slug }: RemoveFromVaultButtonProps) {
     setBusy(true);
     setError(null);
     try {
-      const res = await fetch("/api/vault", {
+      const res = await fetch(`/api/vaults/${vaultId}/pages`, {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ slug }),
@@ -47,7 +52,7 @@ export function RemoveFromVaultButton({ slug }: RemoveFromVaultButtonProps) {
         disabled={busy}
         className="btn ghost"
         style={{ opacity: busy ? 0.5 : 1 }}
-        title="Remove this curated reference from your vault"
+        title="Remove this reference from the vault"
       >
         {busy ? "Removing…" : "Remove"}
       </button>

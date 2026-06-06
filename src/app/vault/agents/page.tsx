@@ -1,16 +1,15 @@
 import Link from "next/link";
 import { SignInButton } from "@clerk/nextjs";
 import { getPrincipal } from "@/lib/auth";
-import { listVaults } from "@/lib/vault";
-import { VaultManager } from "@/components/VaultManager";
+import { listAgentsForOwner } from "@/lib/agents";
+import { AgentManager } from "@/components/AgentManager";
 
 /**
- * `/vault` — the signed-in user's vault management surface: a list of their
- * named vaults (each a curated reference lens over the commons) with create /
- * rename / delete / view. Agents moved to `/vault/agents`. Signed-out visitors
- * see only a sign-in prompt — no data is fetched or leaked.
+ * `/vault/agents` — the signed-in user's agent management surface (moved off
+ * `/vault`): list their agents with inline edit / token / delete, plus a create
+ * form. Signed-out visitors see only a sign-in prompt — no data is fetched.
  */
-export default async function VaultPage() {
+export default async function VaultAgentsPage() {
   const principal = await getPrincipal();
 
   if (!principal) {
@@ -21,13 +20,13 @@ export default async function VaultPage() {
           style={{ paddingTop: 120, paddingBottom: 120, textAlign: "center" }}
         >
           <p className="fmark" style={{ justifyContent: "center" }}>
-            your vaults
+            your agents
           </p>
           <h1
             className="display"
             style={{ fontSize: "clamp(34px,4.6vw,58px)", margin: "16px 0 12px" }}
           >
-            Vaults
+            Agents
           </h1>
           <p
             style={{
@@ -38,48 +37,51 @@ export default async function VaultPage() {
               lineHeight: 1.55,
             }}
           >
-            Sign in to create and manage your vaults — curated reference lenses
-            over the commons.
+            Sign in to create and manage agents that ingest and maintain pages
+            on your behalf.
           </p>
           <SignInButton mode="modal">
-            <button className="btn primary">Sign in to view your vaults</button>
+            <button className="btn primary">Sign in to view your agents</button>
           </SignInButton>
         </section>
       </div>
     );
   }
 
-  const vaults = await listVaults(principal.handle);
+  const handle = principal.handle;
+  const agents = await listAgentsForOwner(handle);
 
   return (
     <div className="fade">
       {/* Header */}
       <section className="shell" style={{ paddingTop: 56 }}>
-        <p className="fmark" style={{ marginBottom: 18 }}>
-          your vaults
-        </p>
         <div
           className="spread"
           style={{ gap: 20, alignItems: "flex-end", flexWrap: "wrap" }}
         >
-          <h1
-            className="display"
-            style={{ fontSize: "clamp(34px,4.6vw,58px)", margin: 0 }}
-          >
-            Vaults
-          </h1>
+          <div>
+            <p className="fmark" style={{ marginBottom: 18 }}>
+              your agents
+            </p>
+            <h1
+              className="display"
+              style={{ fontSize: "clamp(34px,4.6vw,58px)", margin: 0 }}
+            >
+              Agents
+            </h1>
+          </div>
           <Link
-            href="/vault/agents"
+            href="/vault"
             className="receipt"
             style={{
               fontSize: 13,
-              color: "var(--agent)",
+              color: "var(--muted)",
               textDecoration: "none",
               paddingBottom: 8,
               whiteSpace: "nowrap",
             }}
           >
-            Agents →
+            ← Vaults
           </Link>
         </div>
         <p
@@ -91,12 +93,11 @@ export default async function VaultPage() {
             maxWidth: "56ch",
           }}
         >
-          Each vault is a curated set of live references into the commons — save
-          pages to a vault, then browse, query, and graph through that lens.
+          Agents that ingest and maintain pages on your behalf.
         </p>
       </section>
 
-      {/* Vaults */}
+      {/* Agents */}
       <section
         className="shell"
         style={{
@@ -105,7 +106,7 @@ export default async function VaultPage() {
           borderTop: "1px solid var(--rule)",
         }}
       >
-        <VaultManager vaults={vaults} />
+        <AgentManager handle={handle} agents={agents} />
       </section>
     </div>
   );

@@ -47,10 +47,28 @@ export default function QueryPage() {
     [],
   );
 
-  // Mine|All lens — querying requires sign-in (API write gate), so signed-in
-  // users default to "mine" (their own pages). A `?scope=owner:<h>` deep-link
-  // (from a /u/<handle> silo) takes precedence and pins the query to that silo.
+  // Public + your-vaults lens. Default scope = undefined (the public commons).
+  // A `?scope=owner:<h>` / `agent:<id>` deep-link (e.g. from a /u/<handle> silo)
+  // takes precedence and pins the query to that scope.
   const { isLoaded, isSignedIn } = useUser();
+
+  // The signed-in user's vaults, for the lens selector (fetched on mount).
+  const [myVaults, setMyVaults] = useState<
+    { id: string; name: string }[]
+  >([]);
+  useEffect(() => {
+    if (!isSignedIn) return;
+    let cancelled = false;
+    fetch("/api/vaults")
+      .then((r) => (r.ok ? r.json() : { vaults: [] }))
+      .then((d: { vaults?: { id: string; name: string }[] }) => {
+        if (!cancelled) setMyVaults(d.vaults ?? []);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [isSignedIn]);
 
   const {
     question,
@@ -75,8 +93,8 @@ export default function QueryPage() {
   });
 
   // Set the initial scope once, on first Clerk load: a `?scope=` deep-link wins;
-  // otherwise signed-in users default to "mine". Reads location directly (not
-  // useSearchParams) to avoid a client-side-rendering bailout of the page.
+  // otherwise default = undefined (the public commons). Reads location directly
+  // (not useSearchParams) to avoid a client-side-rendering bailout of the page.
   const didInitScope = useRef(false);
   useEffect(() => {
     if (didInitScope.current || !isLoaded) return;
@@ -84,13 +102,16 @@ export default function QueryPage() {
     const deepLink =
       new URLSearchParams(window.location.search).get("scope") || undefined;
     if (deepLink) setScope(deepLink);
-    else if (isSignedIn) setScope("mine");
-  }, [isLoaded, isSignedIn, setScope]);
+  }, [isLoaded, setScope]);
 
   // A deep-linked owner:<handle> scope renders as a dismissible chip; otherwise
-  // the Mine|All toggle drives `scope` ("mine" vs undefined=All).
+  // the Public + your-vaults selector drives `scope` (undefined=Public vs
+  // `vault:<id>`).
   const scopedHandle = scope?.startsWith("owner:")
     ? scope.slice("owner:".length)
+    : null;
+  const activeVaultId = scope?.startsWith("vault:")
+    ? scope.slice("vault:".length)
     : null;
 
   // Fetch history on mount
@@ -134,16 +155,28 @@ export default function QueryPage() {
         ask the accumulated brain
       </p>
 
-      {/* Scope lens — pinned silo (deep-link) renders as a chip; otherwise a
-          Mine|All toggle. "Mine" is shown only when signed in. */}
-      <div className="mt-4">
+      {/* Scope lens — a pinned silo/agent (deep-link) renders as a dismissible
+          chip; otherwise a Public + your-vaults selector. */}
+      <div style={{ marginTop: 16 }}>
         {scopedHandle ? (
-          <div className="inline-flex items-center gap-2 rounded-lg border border-foreground/10 bg-foreground/5 px-3 py-1.5 text-sm">
-            <span className="text-foreground/70">
+          <div
+            className="row"
+            style={{
+              display: "inline-flex",
+              gap: 8,
+              alignItems: "center",
+              border: "1px solid var(--rule)",
+              background: "var(--paper-2)",
+              borderRadius: 999,
+              padding: "5px 12px",
+              fontSize: 13,
+            }}
+          >
+            <span style={{ color: "var(--muted)" }}>
               Answering from{" "}
               <Link
                 href={`/u/${scopedHandle}`}
-                className="font-medium text-foreground hover:underline"
+                style={{ color: "var(--ink)", fontWeight: 600, textDecoration: "none" }}
               >
                 @{scopedHandle}
               </Link>
@@ -152,7 +185,7 @@ export default function QueryPage() {
             <button
               type="button"
               onClick={() => setScope(undefined)}
-              className="text-foreground/50 hover:text-foreground"
+              style={{ color: "var(--muted)", background: "transparent", border: 0, cursor: "pointer" }}
               aria-label="Clear scope and search all content"
             >
               ✕
@@ -162,32 +195,35 @@ export default function QueryPage() {
           <div
             role="group"
             aria-label="Query scope"
-            className="inline-flex items-center gap-1 rounded-lg border border-foreground/10 p-1"
+            className="row"
+            style={{ gap: 6, flexWrap: "wrap" }}
           >
-            {isSignedIn && (
+            {[
+              { scope: undefined as string | undefined, label: "Public", active: !activeVaultId },
+              ...myVaults.map((v) => ({
+                scope: `vault:${v.id}` as string | undefined,
+                label: v.name,
+                active: activeVaultId === v.id,
+              })),
+            ].map((o) => (
               <button
+                key={o.scope ?? "all"}
                 type="button"
-                onClick={() => setScope("mine")}
-                className={`rounded-md px-3 py-1.5 text-sm transition-colors ${
-                  scope === "mine"
-                    ? "bg-foreground/10 font-semibold text-foreground"
-                    : "text-foreground/60 hover:text-foreground hover:bg-foreground/5"
-                }`}
+                onClick={() => setScope(o.scope)}
+                style={{
+                  fontSize: 13,
+                  padding: "5px 12px",
+                  borderRadius: 999,
+                  whiteSpace: "nowrap",
+                  cursor: "pointer",
+                  border: `1px solid ${o.active ? "var(--ink)" : "var(--rule)"}`,
+                  background: o.active ? "var(--ink)" : "transparent",
+                  color: o.active ? "var(--paper)" : "var(--ink-2)",
+                }}
               >
-                Mine
+                {o.label}
               </button>
-            )}
-            <button
-              type="button"
-              onClick={() => setScope(undefined)}
-              className={`rounded-md px-3 py-1.5 text-sm transition-colors ${
-                scope === undefined
-                  ? "bg-foreground/10 font-semibold text-foreground"
-                  : "text-foreground/60 hover:text-foreground hover:bg-foreground/5"
-              }`}
-            >
-              All
-            </button>
+            ))}
           </div>
         )}
       </div>

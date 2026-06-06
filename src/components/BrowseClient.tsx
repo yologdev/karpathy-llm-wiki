@@ -7,13 +7,23 @@ import { formatRelativeTime } from "@/lib/format";
 import { commonsPath, pagePath, ownerToTenant } from "@/lib/links";
 import { Icon } from "@/components/folio/icons";
 import { Confidence, Mark } from "@/components/folio/primitives";
+import { RemoveFromVaultButton } from "@/components/RemoveFromVaultButton";
 
 type Sort = "recent" | "confidence" | "sources";
+
+interface VaultLite {
+  id: string;
+  name: string;
+  visibility: "public" | "private";
+}
 
 interface BrowseClientProps {
   pages: IndexEntry[];
   myHandle: string | null;
-  showingMine: boolean;
+  /** The active lens scope: `"all"` (Public) or `"vault:<id>"`. */
+  activeScope: string;
+  /** The signed-in user's own vaults — one lens pill each. */
+  myVaults: VaultLite[];
   discussionStats?: Record<string, { total: number; open: number }>;
 }
 
@@ -21,9 +31,12 @@ interface BrowseClientProps {
 function PageRow({
   page,
   discussion,
+  removeVaultId,
 }: {
   page: IndexEntry;
   discussion?: { total: number; open: number };
+  /** When set, render a per-row "Remove" to curate the page out of this vault. */
+  removeVaultId?: string;
 }) {
   const owner = page.owner && page.owner !== "system" ? page.owner : null;
   const agentOwned = !!owner && owner.includes("--");
@@ -39,7 +52,7 @@ function PageRow({
     : pagePath(ownerToTenant(page.owner), page.slug);
 
   return (
-    <li>
+    <li style={{ borderTop: "1px solid var(--rule)" }}>
       <Link
         href={href}
         style={{
@@ -47,8 +60,7 @@ function PageRow({
           gridTemplateColumns: "1fr auto",
           gap: 22,
           alignItems: "baseline",
-          padding: "22px 0",
-          borderTop: "1px solid var(--rule)",
+          padding: removeVaultId ? "22px 0 12px" : "22px 0",
           textDecoration: "none",
         }}
       >
@@ -124,6 +136,11 @@ function PageRow({
           </div>
         )}
       </Link>
+      {removeVaultId && (
+        <div className="row" style={{ paddingBottom: 18 }}>
+          <RemoveFromVaultButton slug={page.slug} vaultId={removeVaultId} />
+        </div>
+      )}
     </li>
   );
 }
@@ -172,9 +189,20 @@ function FilterRow({
 export function BrowseClient({
   pages,
   myHandle,
-  showingMine,
+  activeScope,
+  myVaults,
   discussionStats,
 }: BrowseClientProps) {
+  // The active vault id (if the lens is a vault scope) and whether it's one of
+  // the viewer's OWN vaults — only then do rows get a per-row Remove control.
+  const activeVaultId = activeScope.startsWith("vault:")
+    ? activeScope.slice("vault:".length)
+    : null;
+  const activeVault = activeVaultId
+    ? myVaults.find((v) => v.id === activeVaultId)
+    : null;
+  const ownVaultLens = activeVault ?? null;
+
   const [q, setQ] = useState("");
   const [sort, setSort] = useState<Sort>("recent");
   const [tag, setTag] = useState<string | null>(null);
@@ -208,7 +236,7 @@ export function BrowseClient({
     return r;
   }, [pages, q, sort, tag]);
 
-  // Lens links switch the All/Mine scope only (a server navigation that
+  // Lens links switch the Public/vault scope only (a server navigation that
   // re-fetches the page set). The active topic is local UI state, so it
   // intentionally resets when the scope changes.
   const lensHref = (scope: string) =>
@@ -218,7 +246,9 @@ export function BrowseClient({
     <div className="fade">
       <section className="shell" style={{ paddingTop: 64 }}>
         <p className="fmark" style={{ marginBottom: 20 }}>
-          {showingMine ? "your pages · private + public" : "the commons · public"}
+          {activeVault
+            ? `vault · ${activeVault.name}`
+            : "the commons · public"}
         </p>
         <div
           className="browse-head"
@@ -317,8 +347,12 @@ export function BrowseClient({
               <span className="fmark">lens</span>
               <div className="row" style={{ gap: 6, flexWrap: "wrap" }}>
                 {[
-                  { scope: "all", label: "All", active: !showingMine },
-                  { scope: "mine", label: "Mine", active: showingMine },
+                  { scope: "all", label: "Public", active: !activeVaultId },
+                  ...myVaults.map((v) => ({
+                    scope: `vault:${v.id}`,
+                    label: v.name,
+                    active: activeVaultId === v.id,
+                  })),
                 ].map((o) => (
                   <Link
                     key={o.scope}
@@ -418,6 +452,7 @@ export function BrowseClient({
                   key={p.slug}
                   page={p}
                   discussion={discussionStats?.[p.slug]}
+                  removeVaultId={ownVaultLens ? ownVaultLens.id : undefined}
                 />
               ))}
             </ul>

@@ -30,6 +30,7 @@ import {
 import type { SearchScope } from "../search";
 import type { Principal } from "../auth";
 import { registerAgent, ensureAgentsDir } from "../agents";
+import { createVault, addToVault, vaultIdFor } from "../vault";
 import { serializeFrontmatter } from "../frontmatter";
 import { isAgentScopedType } from "../wiki";
 import type { AgentProfile } from "../types";
@@ -784,6 +785,31 @@ describe("resolveScope", () => {
 
   it("returns null for an empty owner handle", async () => {
     expect(await resolveScope("owner:")).toBeNull();
+  });
+
+  it("resolves 'vault:<id>' for a PUBLIC vault to its member slugs", async () => {
+    await ensureDirectories();
+    const vault = await createVault("alice", "Reading List", "public");
+    await addToVault(vault.id, "page-a");
+    await addToVault(vault.id, "page-b");
+
+    const result = await resolveScope(`vault:${vault.id}`);
+    expect(result).not.toBeNull();
+    expect(result!.agentId).toBe(vault.id);
+    expect(result!.slugs).toEqual(["page-a", "page-b"]);
+  });
+
+  it("returns null for a PRIVATE vault (never exposed via scope)", async () => {
+    await ensureDirectories();
+    const vault = await createVault("alice", "Secret", "private");
+    await addToVault(vault.id, "page-a");
+
+    expect(await resolveScope(`vault:${vault.id}`)).toBeNull();
+  });
+
+  it("returns null for a vault that does not exist", async () => {
+    await ensureDirectories();
+    expect(await resolveScope(`vault:${vaultIdFor("alice", "ghost")}`)).toBeNull();
   });
 
   it("combines all three page arrays from agent profile", async () => {

@@ -1,7 +1,6 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
 import { useUser } from "@clerk/nextjs";
 import { editPath, rawPath } from "@/lib/links";
 import { ReingestButton } from "@/components/ReingestButton";
@@ -70,27 +69,6 @@ export function ArticleActions({
   const canCurate =
     isLoaded && !!isSignedIn && isCommonsPage && !ownsOrContributes;
 
-  // Fetch vault membership only when the curate button would actually show.
-  const [inVault, setInVault] = useState<boolean | null>(null);
-  useEffect(() => {
-    if (!canCurate) {
-      setInVault(null);
-      return;
-    }
-    let cancelled = false;
-    fetch(`/api/vault/status?slug=${encodeURIComponent(slug)}`)
-      .then((r) => (r.ok ? r.json() : { inVault: false }))
-      .then((d: { inVault?: boolean }) => {
-        if (!cancelled) setInVault(!!d.inVault);
-      })
-      .catch(() => {
-        if (!cancelled) setInVault(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [canCurate, slug]);
-
   return (
     <div className="mt-12 border-t border-rule pt-6 flex flex-wrap items-center gap-3">
       <Link href={editPath(tenant, slug)} className="btn">
@@ -102,9 +80,7 @@ export function ArticleActions({
         </Link>
       )}
       {hasSourceUrl && ownsOrContributes && <ReingestButton slug={slug} />}
-      {canCurate && inVault !== null && (
-        <SaveToVaultButton slug={slug} initiallyInVault={inVault} />
-      )}
+      {canCurate && <SaveToVaultButton slug={slug} />}
       {isOwner && <DeletePageButton slug={slug} />}
     </div>
   );

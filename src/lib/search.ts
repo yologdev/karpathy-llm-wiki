@@ -19,6 +19,7 @@ import { canReadFrontmatter } from "./authz";
 import type { Principal } from "./auth";
 import { isEnoent } from "./errors";
 import { getAgent, resolveAgentPages } from "./agents";
+import { getVault } from "./vault";
 import { getStorage } from "./storage";
 import { getOwnerIndex } from "./owner-index";
 import { getBacklinkIndex } from "./backlink-index";
@@ -657,6 +658,19 @@ export async function resolveScope(
     const handle = ownerMatch[1]?.trim();
     if (!handle) return null;
     return { agentId: handle, slugs: await slugsForOwner(handle) };
+  }
+
+  // vault:<id> — a curated reference lens over the commons. Only PUBLIC vaults
+  // resolve via scope (a public view filter); PRIVATE vaults are owner-only
+  // (V2) and return null here so they're never exposed through a scope param.
+  const vaultMatch = scopeParam.match(/^vault:(.+)$/);
+  if (vaultMatch) {
+    const vaultId = vaultMatch[1]?.trim();
+    if (!vaultId) return null;
+    const vault = await getVault(vaultId);
+    if (!vault) return null;
+    if (vault.visibility !== "public") return null;
+    return { agentId: vaultId, slugs: vault.slugs };
   }
 
   const match = scopeParam.match(/^agent:(.+)$/);
