@@ -1,0 +1,64 @@
+"use client";
+
+import { useState } from "react";
+import { useRouter } from "next/navigation";
+
+interface RemoveFromVaultButtonProps {
+  slug: string;
+}
+
+/**
+ * Remove a curated commons reference from your vault — the inverse of
+ * {@link SaveToVaultButton}, scoped to the owner's own management surface
+ * (`/vault`). Removing drops the *reference* only; the underlying commons page
+ * is untouched. The server re-checks ownership of the vault on the request.
+ */
+export function RemoveFromVaultButton({ slug }: RemoveFromVaultButtonProps) {
+  const router = useRouter();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function remove() {
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/vault", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ slug }),
+      });
+      if (!res.ok) {
+        const body = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(body.error ?? `request failed (${res.status})`);
+      }
+      router.refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Something went wrong");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <span className="row" style={{ gap: 8, alignItems: "baseline" }}>
+      <button
+        type="button"
+        onClick={remove}
+        disabled={busy}
+        className="btn ghost"
+        style={{ opacity: busy ? 0.5 : 1 }}
+        title="Remove this curated reference from your vault"
+      >
+        {busy ? "Removing…" : "Remove"}
+      </button>
+      {error && (
+        <span
+          className="receipt"
+          style={{ fontSize: 11.5, color: "var(--rust)" }}
+        >
+          {error}
+        </span>
+      )}
+    </span>
+  );
+}

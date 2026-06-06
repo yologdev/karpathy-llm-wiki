@@ -39,7 +39,6 @@ export function NavHeader() {
   const [scrolled, setScrolled] = useState(false);
   const { user } = useUser();
   const handle = user?.username ?? null;
-  const profileHref = handle ? `/u/${handle}` : null;
   const isOwner = isOwnerHandle(handle);
 
   // Close the mobile menu on navigation.
@@ -140,15 +139,13 @@ export function NavHeader() {
               style={{ marginLeft: 2 }}
             >
               <UserButton>
-                {(profileHref || isOwner) && (
+                {
                   <UserButton.MenuItems>
-                    {profileHref && (
-                      <UserButton.Link
-                        label="My pages"
-                        labelIcon={<span aria-hidden>📄</span>}
-                        href={profileHref}
-                      />
-                    )}
+                    <UserButton.Link
+                      label="Vault"
+                      labelIcon={<span aria-hidden>🗄️</span>}
+                      href="/vault"
+                    />
                     {isOwner && (
                       <>
                         <UserButton.Link
@@ -164,7 +161,7 @@ export function NavHeader() {
                       </>
                     )}
                   </UserButton.MenuItems>
-                )}
+                }
               </UserButton>
             </span>
           </Show>

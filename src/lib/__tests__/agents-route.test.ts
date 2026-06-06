@@ -9,6 +9,12 @@ vi.mock("@/lib/agents", () => ({
   listAgents: vi.fn(),
   registerAgent: vi.fn(),
   getAgent: vi.fn(),
+  // The route derives the id from (owner, name) server-side. Mirror the real
+  // `agentIdFor` shape (`<owner>--<name>`) so the route resolves a stable id.
+  agentIdFor: vi.fn(
+    (owner: string, name: string) =>
+      `${owner.toLowerCase()}--${name.toLowerCase()}`,
+  ),
 }));
 
 // The route claims ownership from the session principal.
@@ -32,8 +38,10 @@ function makeRequest(body: unknown): NextRequest {
   });
 }
 
+// The create form sends ONLY { name, description } — the id is derived
+// server-side from (owner, name), so principal "alice" + name "Yoyo" → "alice--yoyo".
 function validBody() {
-  return { id: "yoyo", name: "Yoyo", description: "An agent" };
+  return { name: "Yoyo", description: "An agent" };
 }
 
 beforeEach(() => {
@@ -49,8 +57,10 @@ describe("POST /api/agents — ownership", () => {
     expect(res.status).toBe(201);
     const data = await res.json();
     expect(data.agent.owner).toBe("alice");
+    // The id is derived from (owner, name), never supplied by the client.
+    expect(data.agent.id).toBe("alice--yoyo");
     expect(mockedRegister).toHaveBeenCalledWith(
-      expect.objectContaining({ id: "yoyo", owner: "alice" }),
+      expect.objectContaining({ id: "alice--yoyo", owner: "alice" }),
     );
   });
 

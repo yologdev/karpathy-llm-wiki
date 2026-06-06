@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { listAgents, registerAgent, getAgent } from "@/lib/agents";
+import { listAgents, registerAgent, getAgent, agentIdFor } from "@/lib/agents";
 import { getPrincipal } from "@/lib/auth";
 import { getErrorMessage } from "@/lib/errors";
 import type { AgentProfile } from "@/lib/types";
@@ -41,19 +41,17 @@ export async function POST(req: Request) {
     const body = await req.json();
 
     // Basic presence checks before calling into the lib layer
-    const { id, name, description } = body as Partial<AgentProfile>;
-    if (!id || typeof id !== "string") {
-      return NextResponse.json(
-        { error: "Missing or invalid 'id' — must be a non-empty string" },
-        { status: 400 },
-      );
-    }
+    const { name, description } = body as Partial<AgentProfile>;
     if (!name || typeof name !== "string") {
       return NextResponse.json(
         { error: "Missing or invalid 'name' — must be a non-empty string" },
         { status: 400 },
       );
     }
+    // The id is ALWAYS derived from (owner, name) — never trusted from the body —
+    // so a caller can only ever create an agent inside their own namespace
+    // (`<handle>--<name>`), never under another owner's id.
+    const id = agentIdFor(principal.handle, name);
     if (!description || typeof description !== "string") {
       return NextResponse.json(
         { error: "Missing or invalid 'description' — must be a non-empty string" },
