@@ -1482,3 +1482,82 @@ describe("query — scoped search with registered agent", () => {
     expect(result.answer).toContain("existing-page");
   });
 });
+
+// ---------------------------------------------------------------------------
+// query() — unscoped queries exclude agent-scoped pages
+// ---------------------------------------------------------------------------
+describe("query — unscoped excludes agent-scoped pages", () => {
+  it("excludes agent-knowledge pages from unscoped queries", async () => {
+    await ensureDirectories();
+
+    // Create a normal page and an agent-scoped page
+    await writeWikiPage(
+      "normal-page",
+      "---\ntitle: Normal Page\n---\n# Normal Page\n\nPublic content about testing.",
+    );
+    await writeWikiPage(
+      "agent-knowledge-page",
+      "---\ntitle: Agent Knowledge\ntype: agent-knowledge\n---\n# Agent Knowledge\n\nSecret agent knowledge.",
+    );
+    await updateIndex([
+      { slug: "normal-page", title: "Normal Page", summary: "Public content about testing.", type: undefined },
+      { slug: "agent-knowledge-page", title: "Agent Knowledge", summary: "Secret agent knowledge.", type: "agent-knowledge" },
+    ]);
+
+    mockedHasLLMKey.mockReturnValue(false);
+
+    // Unscoped query — should NOT see agent-knowledge page
+    const result = await query("testing", "prose");
+    // The no-key fallback lists sources — agent-knowledge-page should be absent
+    expect(result.answer).toContain("normal-page");
+    expect(result.answer).not.toContain("agent-knowledge-page");
+  });
+
+  it("includes agent-scoped pages when an agent scope is provided", async () => {
+    await ensureDirectories();
+
+    await writeWikiPage(
+      "normal-page",
+      "---\ntitle: Normal Page\n---\n# Normal Page\n\nPublic content.",
+    );
+    await writeWikiPage(
+      "agent-identity-page",
+      "---\ntitle: Agent Identity\ntype: agent-identity\n---\n# Agent Identity\n\nI am a test agent.",
+    );
+    await updateIndex([
+      { slug: "normal-page", title: "Normal Page", summary: "Public content." },
+      { slug: "agent-identity-page", title: "Agent Identity", summary: "I am a test agent.", type: "agent-identity" },
+    ]);
+
+    const profile: AgentProfile = {
+      id: "scoped-agent",
+      name: "Scoped Agent",
+      description: "An agent for scope tests",
+      identityPages: ["agent-identity-page"],
+      learningPages: [],
+      socialPages: [],
+      registered: "2026-01-01",
+      lastUpdated: "2026-01-01",
+    };
+    await registerAgent(profile);
+
+    mockedHasLLMKey.mockReturnValue(false);
+
+    // Scoped query — should see agent-identity page
+    const result = await query("identity", "prose", "agent:scoped-agent");
+    expect(result.answer).toContain("agent-identity-page");
+  });
+
+  it("selectPagesForQuery returns agent-scoped pages when they are in entries", async () => {
+    // This tests that selectPagesForQuery itself doesn't filter — the caller
+    // (query() or the streaming route) is responsible for pre-filtering.
+    const entries: IndexEntry[] = [
+      { slug: "normal", title: "Normal", summary: "Normal content" },
+      { slug: "agent-kb", title: "Agent KB", summary: "Agent knowledge", type: "agent-knowledge" },
+    ];
+    // Small wiki — returns all entries passed in
+    const result = await selectPagesForQuery("anything", entries);
+    expect(result).toContain("normal");
+    expect(result).toContain("agent-kb");
+  });
+});
