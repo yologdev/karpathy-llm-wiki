@@ -88,10 +88,13 @@ export default async function Home() {
         </p>
       </section>
 
-      {/* Ask console — the star */}
-      <section className="shell" style={{ marginTop: 38, maxWidth: 880 }}>
-        <HomeAsk showExamples={pageCount > 0} />
-      </section>
+      {/* Ask console — the star. Hidden on an empty commons: there's nothing to
+          consult yet, so we lead with onboarding instead. */}
+      {pageCount > 0 && (
+        <section className="shell" style={{ marginTop: 38, maxWidth: 880 }}>
+          <HomeAsk />
+        </section>
+      )}
 
       {pageCount === 0 ? (
         <section className="shell" style={{ marginTop: 64 }}>
