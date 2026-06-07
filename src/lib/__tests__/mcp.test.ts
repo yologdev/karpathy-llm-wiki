@@ -69,6 +69,19 @@ vi.mock("../fetch", async (importOriginal) => {
   };
 });
 
+// Mock the X-post syndication fetch (X URLs route through ../x-post, not
+// ../fetch) so no real HTTP calls hit the syndication CDN. isXPostUrl is kept.
+vi.mock("../x-post", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../x-post")>();
+  return {
+    ...actual,
+    fetchXPostContent: vi.fn(async (url: string) => ({
+      title: `Mocked X post for ${url}`,
+      content: `Mocked tweet text fetched from ${url}`,
+    })),
+  };
+});
+
 // Mock the vision module so no real vision model calls are made.
 vi.mock("../vision", () => ({
   describeImage: vi.fn(async () => ({
@@ -77,7 +90,9 @@ vi.mock("../vision", () => ({
 }));
 
 import { fetchUrlContent, downloadImages } from "../fetch";
+import { fetchXPostContent } from "../x-post";
 const mockedFetchUrlContent = vi.mocked(fetchUrlContent);
+const mockedFetchXPostContent = vi.mocked(fetchXPostContent);
 const mockedDownloadImages = vi.mocked(downloadImages);
 
 let tmpDir: string;
@@ -1573,7 +1588,7 @@ describe("ingest_x_mention", () => {
       expect(result.title).toBeTruthy();
       expect(typeof result.summary).toBe("string");
       expect(result.sourceUrl).toBe("https://x.com/user/status/123");
-      expect(mockedFetchUrlContent).toHaveBeenCalledWith("https://x.com/user/status/123");
+      expect(mockedFetchXPostContent).toHaveBeenCalledWith("https://x.com/user/status/123");
     } finally {
       if (savedKey !== undefined) {
         process.env.ANTHROPIC_API_KEY = savedKey;
@@ -1596,7 +1611,7 @@ describe("ingest_x_mention", () => {
       expect(result.title).toBeTruthy();
       expect(typeof result.summary).toBe("string");
       expect(result.sourceUrl).toBe("https://twitter.com/user/status/456");
-      expect(mockedFetchUrlContent).toHaveBeenCalledWith("https://twitter.com/user/status/456");
+      expect(mockedFetchXPostContent).toHaveBeenCalledWith("https://twitter.com/user/status/456");
     } finally {
       if (savedKey !== undefined) {
         process.env.ANTHROPIC_API_KEY = savedKey;
@@ -1619,7 +1634,7 @@ describe("ingest_x_mention", () => {
       expect(result.title).toBeTruthy();
       expect(typeof result.summary).toBe("string");
       expect(result.sourceUrl).toBe("https://www.x.com/user/status/789");
-      expect(mockedFetchUrlContent).toHaveBeenCalledWith("https://www.x.com/user/status/789");
+      expect(mockedFetchXPostContent).toHaveBeenCalledWith("https://www.x.com/user/status/789");
     } finally {
       if (savedKey !== undefined) {
         process.env.ANTHROPIC_API_KEY = savedKey;

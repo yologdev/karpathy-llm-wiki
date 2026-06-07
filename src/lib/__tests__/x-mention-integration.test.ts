@@ -67,34 +67,20 @@ afterEach(async () => {
 // Helpers
 // ---------------------------------------------------------------------------
 
-/** Create a mock fetch that returns an HTML page with given title and body. */
+/**
+ * Mock fetch for the syndication CDN — an X post URL is now read via
+ * `cdn.syndication.twimg.com` (X serves a JS shell to plain HTML fetches), so
+ * the integration ingests the tweet text returned here. `title` becomes the
+ * author name (byline); the page title/slug come from the mocked LLM's H1.
+ */
 function mockFetchSuccess(title: string, body: string) {
   global.fetch = vi.fn().mockResolvedValue({
     ok: true,
     status: 200,
-    headers: new Map([
-      ["content-type", "text/html"],
-    ]) as unknown as Headers,
-    body: {
-      getReader: () => {
-        let called = false;
-        return {
-          read: () => {
-            if (!called) {
-              called = true;
-              return Promise.resolve({
-                done: false,
-                value: new TextEncoder().encode(
-                  `<html><head><title>${title}</title></head><body><p>${body}</p></body></html>`,
-                ),
-              });
-            }
-            return Promise.resolve({ done: true, value: undefined });
-          },
-          cancel: vi.fn(),
-        };
-      },
-    },
+    json: async () => ({
+      text: body,
+      user: { name: title, screen_name: "someuser" },
+    }),
   });
 }
 
@@ -104,9 +90,7 @@ function mockFetchFailure(status: number, statusText: string) {
     ok: false,
     status,
     statusText,
-    headers: new Map([
-      ["content-type", "text/html"],
-    ]) as unknown as Headers,
+    json: async () => ({}),
   });
 }
 
@@ -127,9 +111,10 @@ describe("X-mention integration", () => {
       "Large language models are transforming how we build software. They enable natural language interfaces for complex tasks.",
     );
 
-    // Mock LLM to return wiki content for the ingest
+    // Mock LLM to return wiki content for the ingest. The CONCEPT marker drives
+    // the canonical slug/title (as the real synthesis prompt instructs).
     mockedCallLLM.mockResolvedValueOnce(
-      "# Interesting AI Thread\n\n## Summary\n\nLLMs are transforming software development.\n\n## Key Points\n\n- Natural language interfaces\n- Complex task automation",
+      "CONCEPT: Interesting AI Thread\n\n# Interesting AI Thread\n\n## Summary\n\nLLMs are transforming software development.\n\n## Key Points\n\n- Natural language interfaces\n- Complex task automation",
     );
 
     const result = await ingestXMention(
@@ -174,7 +159,7 @@ describe("X-mention integration", () => {
     );
 
     mockedCallLLM.mockResolvedValueOnce(
-      "# Agent Memory Systems\n\n## Summary\n\nAgents need persistent memory.\n\n## Key Points\n\n- Context across sessions",
+      "CONCEPT: Agent Memory Systems\n\n# Agent Memory Systems\n\n## Summary\n\nAgents need persistent memory.\n\n## Key Points\n\n- Context across sessions",
     );
 
     await ingestXMention(
@@ -194,9 +179,11 @@ describe("X-mention integration", () => {
   it("handles fetch failure (404) gracefully", async () => {
     mockFetchFailure(404, "Not Found");
 
+    // The syndication CDN 404s deleted/private posts — surfaced as a friendly
+    // ClientInputError rather than a raw HTTP code.
     await expect(
       ingestXMention("https://x.com/user/status/999", "@someone"),
-    ).rejects.toThrow(/404/);
+    ).rejects.toThrow(/deleted, private/);
   });
 
   it("handles network error gracefully", async () => {
@@ -214,7 +201,7 @@ describe("X-mention integration", () => {
     );
 
     mockedCallLLM.mockResolvedValueOnce(
-      "# Legacy Twitter Post\n\n## Summary\n\nA post from the twitter.com era.\n\n## Key Points\n\n- Historical reference",
+      "CONCEPT: Legacy Twitter Post\n\n# Legacy Twitter Post\n\n## Summary\n\nA post from the twitter.com era.\n\n## Key Points\n\n- Historical reference",
     );
 
     const result = await ingestXMention(

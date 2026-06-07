@@ -12,6 +12,7 @@ import { callLLM, hasLLMKey } from "./llm";
 import { fetchUrlContent, downloadImages, fetchImageBytes, storeImageBytes, pdfToText } from "./fetch";
 import { describeImage } from "./vision";
 import { isYouTubeUrl, fetchYouTubeContent } from "./youtube";
+import { isXPostUrl, fetchXPostContent } from "./x-post";
 import type { IngestResult, IngestPreviewMeta, SourceEntry } from "./types";
 import {
   serializeSources,
@@ -173,6 +174,18 @@ export async function ingestUrl(
 
   if (isYouTubeUrl(url)) {
     return ingestYouTube(url, options);
+  }
+
+  // X.com serves a JS shell to plain fetches (the "Something went wrong" page),
+  // so read the post via the syndication CDN instead. Default the provenance to
+  // x-mention when the caller didn't already set one (e.g. a manual UI ingest).
+  if (isXPostUrl(url)) {
+    const { title, content } = await fetchXPostContent(url);
+    return ingest(title, content, {
+      ...options,
+      sourceUrl: url,
+      sourceType: options?.sourceType ?? "x-mention",
+    });
   }
 
   const { title, content } = await fetchUrlContent(url);
@@ -395,8 +408,9 @@ export async function reingest(
 /**
  * Ingest an X (Twitter) post into the wiki.
  *
- * Fetches the post content via URL, then delegates to the standard ingest
- * pipeline with `x-mention` provenance so the source is correctly attributed.
+ * Delegates to {@link ingestUrl}, which reads the post via the syndication CDN
+ * (X serves a JS shell to plain fetches), tagged with `x-mention` provenance so
+ * the source is correctly attributed.
  *
  * @param url         - Full URL to the X/Twitter post.
  * @param triggeredBy - Handle of the user or agent that triggered the ingest.
