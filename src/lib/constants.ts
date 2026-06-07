@@ -36,7 +36,7 @@ export const MAX_LLM_INPUT_CHARS = 12_000;
 /** Maximum number of images to download per source during ingest. */
 export const MAX_IMAGES_PER_SOURCE = 20;
 
-/** Maximum number of source images surfaced in a wiki page's `## Images` section. */
+/** Maximum number of source images tokenized for inline placement during synthesis. */
 export const MAX_APPENDED_IMAGES = 12;
 
 // ---- Batch ingest ---------------------------------------------------------

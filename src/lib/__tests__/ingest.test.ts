@@ -11,6 +11,8 @@ import {
   chunkText,
   parseConceptMarker,
   parseDisputedMarker,
+  tokenizeSourceImages,
+  restoreImageTokens,
 } from "../ingest";
 import { slugify } from "../slugify";
 import { loadPageConventions } from "../schema";
@@ -2987,5 +2989,44 @@ describe("ingest attribution", () => {
     const page = await readWikiPageWithFrontmatter("sys-page");
     expect(page!.frontmatter.authors).toEqual(["system"]);
     expect(page!.frontmatter.owner).toBe("system");
+  });
+});
+
+describe("tokenizeSourceImages / restoreImageTokens", () => {
+  it("round-trips content images through tokens", () => {
+    const src = "Intro.\n\n![a chart](assets/p/chart.png)\n\nbody.";
+    const { text, refs } = tokenizeSourceImages(src);
+    expect(text).toContain("[[IMG:1]]");
+    expect(text).not.toContain("chart.png");
+    expect(refs).toEqual([{ alt: "a chart", ref: "assets/p/chart.png" }]);
+    expect(restoreImageTokens(text, refs)).toContain(
+      "![a chart](assets/p/chart.png)",
+    );
+  });
+
+  it("strips decorative images (logo/icon) — never tokenized", () => {
+    const { text, refs } = tokenizeSourceImages(
+      "![site logo](assets/p/logo.png)\n\n![diagram](https://x.com/fig.png)",
+    );
+    expect(refs).toEqual([{ alt: "diagram", ref: "https://x.com/fig.png" }]);
+    expect(text).not.toContain("logo.png");
+    expect(text).toContain("[[IMG:1]]");
+  });
+
+  it("drops omitted and out-of-range tokens on restore", () => {
+    const refs = [{ alt: "a", ref: "assets/p/a.png" }];
+    // Token 1 kept inline, token 2 hallucinated → dropped; an unreferenced image filtered.
+    expect(restoreImageTokens("x [[IMG:1]] y [[IMG:2]] z", refs)).toBe(
+      "x ![a](assets/p/a.png) y  z",
+    );
+  });
+
+  it("caps the number of tokenized images", () => {
+    const imgs = Array.from(
+      { length: 20 },
+      (_, i) => `![fig${i}](assets/p/f${i}.png)`,
+    ).join("\n\n");
+    const { refs } = tokenizeSourceImages(imgs);
+    expect(refs.length).toBe(12); // MAX_APPENDED_IMAGES
   });
 });

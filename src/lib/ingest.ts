@@ -445,38 +445,50 @@ function generateFallbackPage(title: string, content: string): string {
 // ---------------------------------------------------------------------------
 
 /**
- * Append the source's downloaded images to the wiki body as a trailing
- * `## Images` section. The LLM distills text and drops image refs, so this
- * deterministically re-surfaces them (no LLM cost, no hallucinated paths).
- *
- * Only locally-downloaded images (`assets/...` refs, produced by
- * {@link downloadImages}) are included — they're guaranteed servable via
- * `/api/assets`. Idempotent: if the body already has an `## Images` heading
- * (e.g. a preview→commit round-trip), it's returned unchanged.
+/** An image ref captured from the source for token-based inline placement. */
+interface SourceImageRef {
+  alt: string;
+  ref: string;
+}
+
+/** Image refs we strip outright (decorative/branding/UI — never content). */
+const DECORATIVE_IMAGE_RE = /(logo|icon|avatar|sprite|favicon|emoji|banner)/i;
+
+/**
+ * Replace the source's image refs with short `[[IMG:n]]` placeholder tokens at
+ * their original positions, so the synthesis LLM can keep the genuine ones by
+ * placing the same token inline where it now belongs (and omit the rest) — the
+ * LLM reliably preserves a tiny token but mangles long `assets/<slug>/x.png`
+ * paths. Decorative/branding images are removed outright (never tokenized).
+ * Returns the tokenized text plus the ordered ref map for {@link restoreImageTokens}.
  */
-function appendSourceImages(wikiBody: string, sourceContent: string): string {
-  if (/^##\s+Images\s*$/m.test(wikiBody)) return wikiBody;
-
-  // Surface images the LLM dropped: both localized (assets/…) and ones kept as
-  // their original http(s) URL (download skipped/failed, e.g. salvaged figures).
+export function tokenizeSourceImages(content: string): {
+  text: string;
+  refs: SourceImageRef[];
+} {
+  const refs: SourceImageRef[] = [];
   const re = /!\[([^\]]*)\]\(((?:assets\/|https?:\/\/)[^)\s]+)\)/g;
-  const seen = new Set<string>();
-  const refs: { alt: string; ref: string }[] = [];
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(sourceContent)) !== null) {
-    const ref = m[2];
-    if (seen.has(ref)) continue;
-    seen.add(ref);
-    // Don't duplicate an image the body already embeds (e.g. the image-ingest
-    // page, where the image is the page's centerpiece).
-    if (wikiBody.includes(`](${ref})`)) continue;
-    refs.push({ alt: m[1], ref });
-    if (refs.length >= MAX_APPENDED_IMAGES) break;
-  }
-  if (refs.length === 0) return wikiBody;
+  const text = content.replace(re, (whole, alt: string, ref: string) => {
+    if (DECORATIVE_IMAGE_RE.test(ref) || DECORATIVE_IMAGE_RE.test(alt)) {
+      return ""; // strip decorative images so the LLM never sees them
+    }
+    if (refs.length >= MAX_APPENDED_IMAGES) return whole; // cap; leave extras as-is
+    refs.push({ alt, ref });
+    return `\n\n[[IMG:${refs.length}]]\n\n`;
+  });
+  return { text, refs };
+}
 
-  const section = refs.map(({ alt, ref }) => `![${alt}](${ref})`).join("\n\n");
-  return `${wikiBody}\n\n## Images\n\n${section}`;
+/**
+ * Substitute the real image refs back for the `[[IMG:n]]` tokens the LLM kept.
+ * Tokens the LLM omitted are absent (those images are filtered out); tokens with
+ * an out-of-range/invalid `n` (hallucinated) are dropped.
+ */
+export function restoreImageTokens(body: string, refs: SourceImageRef[]): string {
+  return body.replace(/\[\[IMG:(\d+)\]\]/g, (_whole, n: string) => {
+    const img = refs[Number(n) - 1];
+    return img ? `![${img.alt}](${img.ref})` : "";
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -663,6 +675,8 @@ Then, on the following lines, the wiki article. Include:
   click away ("View raw"), so do NOT try to reproduce it. Invent nothing not
   supported by the source.
 
+Images: the source may contain placeholder tokens like \`[[IMG:1]]\`. KEEP the ones that are genuine content — diagrams, figures, charts, screenshots that illustrate the topic — by writing the SAME token on its own line at the most relevant point in the article (next to the text it illustrates). OMIT tokens for decorative/branding/UI images. Never invent tokens or change their numbers; output each kept token verbatim.
+
 Write a focused, distilled page, not a transcript of the source. Output the CONCEPT and ALIASES lines, then pure markdown, and nothing else. Do not wrap in code fences.`;
 
 /**
@@ -674,6 +688,8 @@ Write a focused, distilled page, not a transcript of the source. Output the CONC
 const CONTINUATION_SYSTEM_PROMPT = `You are a wiki editor. You have already started a wiki article from earlier parts of a long source document. You are now given additional source material.
 
 Add new key points, concepts, and details from the additional source material. Do NOT repeat the title, summary, or any content already in the article. Only output the new sections or bullet points to append.
+
+Images: the source may contain placeholder tokens like \`[[IMG:1]]\`. Keep genuine content images (diagrams, figures, charts, screenshots) by writing the SAME token on its own line where relevant; omit decorative/branding/UI images. Never invent tokens or change their numbers.
 
 Output pure markdown and nothing else. Do not wrap in code fences.`;
 
@@ -1138,7 +1154,10 @@ export async function ingest(
     wikiContent = preGeneratedContent;
   } else if (hasLLMKey()) {
     const systemPrompt = await buildIngestSystemPrompt();
-    const chunks = chunkText(content, MAX_LLM_INPUT_CHARS);
+    // Swap source images for [[IMG:n]] tokens so the LLM can place the relevant
+    // ones inline (and omit decorative ones); refs are restored after synthesis.
+    const { text: llmInput, refs: imageRefs } = tokenizeSourceImages(content);
+    const chunks = chunkText(llmInput, MAX_LLM_INPUT_CHARS);
 
     // Larger output budget so the ## Details section can preserve substantive
     // source content instead of being truncated.
@@ -1162,6 +1181,9 @@ export async function ingest(
         wikiContent += "\n\n" + continuation;
       }
     }
+
+    // Restore the kept [[IMG:n]] tokens to real refs (omitted ones are dropped).
+    wikiContent = restoreImageTokens(wikiContent, imageRefs);
   } else {
     wikiContent = generateFallbackPage(title, content);
   }
@@ -1198,9 +1220,8 @@ export async function ingest(
     }
   }
 
-  // The LLM distills text and drops image refs, so deterministically append the
-  // source's downloaded images as a trailing section — reliable, no LLM cost.
-  wikiContent = appendSourceImages(wikiContent, content);
+  // Images are placed inline during synthesis via [[IMG:n]] tokens (see
+  // tokenizeSourceImages / restoreImageTokens) — no trailing dump.
 
   // Commit-from-preview carries no CONCEPT marker (preview stripped it), so the
   // canonical slug would otherwise stay the source-TITLE slug even though the
