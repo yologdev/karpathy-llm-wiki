@@ -54,6 +54,7 @@ export async function POST(request: NextRequest) {
       if (typeof tags === "string" && tags.trim()) {
         options.tags = tags.split(",").map((t) => t.trim()).filter(Boolean);
       }
+      if (form.get("preview") === "true") options.preview = true;
       const bytes = await file.arrayBuffer();
       const result = await ingestImage(
         { bytes, filename: file.name, contentType: file.type || undefined },
@@ -62,9 +63,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(result);
     }
 
-    // JSON path: { imageUrl, title?, tags? }
+    // JSON path: { imageUrl, title?, tags?, preview? }
     const body = await request.json();
-    const { imageUrl, title, tags } = body;
+    const { imageUrl, title, tags, preview } = body;
     if (typeof imageUrl !== "string" || !isUrl(imageUrl.trim())) {
       return NextResponse.json(
         { error: "imageUrl is required and must be a valid URL." },
@@ -75,6 +76,7 @@ export async function POST(request: NextRequest) {
     if (Array.isArray(tags) && tags.every((t: unknown) => typeof t === "string")) {
       options.tags = tags;
     }
+    if (preview === true) options.preview = true;
     const result = await ingestImage({ imageUrl: imageUrl.trim() }, options);
     return NextResponse.json(result);
   } catch (error) {

@@ -54,6 +54,7 @@ export async function POST(request: NextRequest) {
       if (typeof tags === "string" && tags.trim()) {
         options.tags = tags.split(",").map((t) => t.trim()).filter(Boolean);
       }
+      if (form.get("preview") === "true") options.preview = true;
       const bytes = await file.arrayBuffer();
       const result = await ingestPdf(
         { bytes, filename: file.name },
@@ -62,9 +63,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(result);
     }
 
-    // JSON path: { pdfUrl, title?, tags? }
+    // JSON path: { pdfUrl, title?, tags?, preview? }
     const body = await request.json();
-    const { pdfUrl, title, tags } = body;
+    const { pdfUrl, title, tags, preview } = body;
     if (typeof pdfUrl !== "string" || !isUrl(pdfUrl.trim())) {
       return NextResponse.json(
         { error: "pdfUrl is required and must be a valid URL." },
@@ -75,6 +76,7 @@ export async function POST(request: NextRequest) {
     if (Array.isArray(tags) && tags.every((t: unknown) => typeof t === "string")) {
       options.tags = tags;
     }
+    if (preview === true) options.preview = true;
     const result = await ingestPdf({ pdfUrl: pdfUrl.trim() }, options);
     return NextResponse.json(result);
   } catch (error) {

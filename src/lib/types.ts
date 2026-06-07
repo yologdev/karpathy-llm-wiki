@@ -75,6 +75,12 @@ export interface IngestResult {
   previewContent?: string;
   /** Structured page metadata for the review step. Present only when `preview: true`. */
   preview?: IngestPreviewMeta;
+  /**
+   * The raw source text used for synthesis. Returned on `preview: true` for the
+   * PDF/image paths (where the server extracted it) so the client can replay it
+   * to the text commit path on approve — no re-extraction / re-vision needed.
+   */
+  sourceContent?: string;
   /** The original source URL, if the ingest was URL-based. */
   sourceUrl?: string;
   /**

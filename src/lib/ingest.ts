@@ -267,12 +267,15 @@ export async function ingestImage(
 
   // generatedContent writes `body` as-is (skip the wiki-editor LLM) while still
   // reusing frontmatter, dedup, embedding, cross-refs, and the ledger.
-  return ingest(title, body, {
+  const result = await ingest(title, body, {
     ...options,
     generatedContent: body,
     sourceUrl: imageUrl ?? "upload",
     sourceType: "image",
   });
+  // On preview, return the body as sourceContent so the client can commit it via
+  // the text path on approve (the image asset is already stored above).
+  return options?.preview ? { ...result, sourceContent: body } : result;
 }
 
 /**
@@ -303,11 +306,14 @@ export async function ingestPdf(
     }
     // fetchUrlContent now handles application/pdf natively
     const { title, content } = await fetchUrlContent(url);
-    return ingest(options?.title ?? title, content, {
+    const result = await ingest(options?.title ?? title, content, {
       ...options,
       sourceUrl: url,
       sourceType: "pdf",
     });
+    // On preview, return the extracted text so the client can replay it to the
+    // text commit path on approve (no re-fetch / re-extract needed).
+    return options?.preview ? { ...result, sourceContent: content } : result;
   }
 
   // Upload path: extract text from bytes directly
@@ -344,10 +350,11 @@ export async function ingestPdf(
       filename.replace(/\.pdf$/i, "") ||
       "PDF Document";
 
-    return ingest(title, content, {
+    const result = await ingest(title, content, {
       ...options,
       sourceType: "pdf",
     });
+    return options?.preview ? { ...result, sourceContent: content } : result;
   } finally {
     await doc.cleanup();
   }
