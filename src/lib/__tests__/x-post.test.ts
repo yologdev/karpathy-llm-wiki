@@ -121,6 +121,44 @@ describe("fetchXPostContent", () => {
     expect(content).toContain("![a photo](https://pbs.twimg.com/media/p.jpg)");
   });
 
+  it("prefers mediaDetails over photos when both are present (no duplicates)", async () => {
+    mockSyndication({
+      text: "both shapes",
+      user: { name: "B", screen_name: "b" },
+      mediaDetails: [{ type: "photo", media_url_https: "https://pbs.twimg.com/media/detail.jpg" }],
+      photos: [{ type: "photo", media_url_https: "https://pbs.twimg.com/media/photo.jpg" }],
+    });
+    const { content } = await fetchXPostContent("https://x.com/b/status/5");
+    expect(content).toContain("detail.jpg");
+    expect(content).not.toContain("photo.jpg");
+  });
+
+  it("keeps a quote-only tweet (empty top-level text/media, non-empty quoted)", async () => {
+    mockSyndication({
+      text: "",
+      user: { name: "Q", screen_name: "q" },
+      quoted_tweet: { text: "the quoted substance", user: { screen_name: "orig" } },
+    });
+    const { content } = await fetchXPostContent("https://x.com/q/status/6");
+    expect(content).toContain("> the quoted substance");
+  });
+
+  it("truncates a long first line and falls back to author when text is empty", async () => {
+    const long = "x".repeat(120);
+    mockSyndication({ text: long, user: { name: "Ada", screen_name: "ada" } });
+    const a = await fetchXPostContent("https://x.com/ada/status/10");
+    expect(a.title.length).toBeLessThan(90);
+    expect(a.title.endsWith("…")).toBe(true);
+
+    mockSyndication({
+      text: "",
+      user: { name: "Ada", screen_name: "ada" },
+      mediaDetails: [{ type: "photo", media_url_https: "https://pbs.twimg.com/media/x.jpg" }],
+    });
+    const b = await fetchXPostContent("https://x.com/ada/status/11");
+    expect(b.title).toBe("Ada on X");
+  });
+
   it("throws ClientInputError when media entries carry no URL (content-free stub)", async () => {
     mockSyndication({
       text: "",

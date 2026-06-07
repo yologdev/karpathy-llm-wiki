@@ -151,6 +151,13 @@ function mediaImageRefs(tweet: SyndicationTweet): string[] {
     .map((m) => `![${(m.ext_alt_text || "image").replace(/\s+/g, " ").trim()}](${m.media_url_https})`);
 }
 
+/** True if the tweet (or the tweet it quotes) has any text or media to render. */
+function hasRenderableContent(tweet: SyndicationTweet): boolean {
+  const hasOwn = (t: SyndicationTweet) =>
+    (t.text ?? "").trim().length > 0 || mediaImageRefs(t).length > 0;
+  return hasOwn(tweet) || (tweet.quoted_tweet ? hasOwn(tweet.quoted_tweet) : false);
+}
+
 /** Build a concise wiki-ingestion title from the author + text opening. */
 function deriveTitle(tweet: SyndicationTweet, text: string): string {
   const author = tweet.user?.name || tweet.user?.screen_name || "X post";
@@ -206,11 +213,11 @@ export async function fetchXPostContent(url: string): Promise<XPostContent> {
   if (!id) throw new ClientInputError(`Not a recognizable X post URL: "${url}"`);
 
   const tweet = await fetchSyndication(id);
-  // Guard on exactly what the formatter would render — trimmed text and the
-  // same media set (covering both the `photos` shape and URL-less entries) — so
-  // a benign-but-empty payload errors instead of producing a content-free stub.
-  const hasText = (tweet.text ?? "").trim().length > 0;
-  if (tweet.error || tweet.tombstone || (!hasText && mediaImageRefs(tweet).length === 0)) {
+  // Reject only a genuinely empty payload — no renderable text/media on the
+  // tweet itself OR the tweet it quotes (mirrors the media set the formatter
+  // actually emits, covering the `photos` shape and URL-less entries) — so a
+  // benign-but-empty response errors instead of producing a content-free stub.
+  if (tweet.error || tweet.tombstone || !hasRenderableContent(tweet)) {
     logger.warn("x-post", `No usable content for tweet ${id} (error/tombstone/empty)`);
     throw new ClientInputError(
       "That X post couldn't be read — it may be deleted, private, or from a protected account.",

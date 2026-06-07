@@ -39,6 +39,7 @@ import { POST } from "@/app/api/ingest/route";
 import { POST as POST_BATCH } from "@/app/api/ingest/batch/route";
 import { POST as POST_REINGEST } from "@/app/api/ingest/reingest/route";
 import type { IngestResult } from "@/lib/types";
+import { ClientInputError } from "@/lib/errors";
 
 const mockedIngest = vi.mocked(ingest);
 const mockedIngestUrl = vi.mocked(ingestUrl);
@@ -74,6 +75,30 @@ const fakeResult: IngestResult = {
   wikiPages: ["test-page"],
   indexUpdated: true,
 };
+
+// ===========================================================================
+// POST /api/ingest — error → HTTP status mapping
+// ===========================================================================
+describe("POST /api/ingest — error status mapping", () => {
+  it("maps a ClientInputError (e.g. deleted/private X post) to 400 + the message", async () => {
+    mockedIngestUrl.mockRejectedValue(
+      new ClientInputError("That X post couldn't be read — it may be deleted, private, or from a protected account."),
+    );
+    const res = await POST(
+      makeRequest("http://localhost/api/ingest", { url: "https://x.com/u/status/1" }),
+    );
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toMatch(/deleted, private/);
+  });
+
+  it("maps an unexpected error to 500", async () => {
+    mockedIngestUrl.mockRejectedValue(new Error("boom"));
+    const res = await POST(
+      makeRequest("http://localhost/api/ingest", { url: "https://x.com/u/status/2" }),
+    );
+    expect(res.status).toBe(500);
+  });
+});
 
 // ===========================================================================
 // POST /api/ingest — tags support
