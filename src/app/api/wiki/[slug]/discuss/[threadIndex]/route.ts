@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { decodeSlug } from "@/lib/slugify";
 import { getThread, resolveThread } from "@/lib/talk";
-import { getPrincipal } from "@/lib/auth";
+import { getPrincipal, getServicePrincipal } from "@/lib/auth";
 import { canReadSlug } from "@/lib/authz";
 import { getErrorMessage } from "@/lib/errors";
 import { logger } from "@/lib/logger";
@@ -53,15 +53,21 @@ export async function GET(_req: Request, { params }: RouteParams) {
  * Update a discussion thread's status.
  * Body: `{ status: "open" | "resolved" | "wontfix" }`
  * Returns `{ thread: TalkThread }`.
+ *
+ * Only the thread author, the page owner, or a service principal may change
+ * thread status. Other authenticated users receive 403.
  */
 export async function PATCH(req: Request, { params }: RouteParams) {
   try {
     const { slug: encodedSlug, threadIndex } = await params;
     const slug = decodeSlug(encodedSlug);
 
+    // Resolve principal — prefer Clerk session, fall back to service token.
+    const principal = (await getPrincipal()) ?? getServicePrincipal(req);
+
     // Realm-aware read ACL: a private page's discussions are invisible to
     // non-owners (cloaked as 404 — no existence oracle).
-    if (!(await canReadSlug(slug, await getPrincipal()))) {
+    if (!(await canReadSlug(slug, principal))) {
       return NextResponse.json({ error: "not found" }, { status: 404 });
     }
 
@@ -96,6 +102,45 @@ export async function PATCH(req: Request, { params }: RouteParams) {
         { error: 'status must be "open", "resolved", or "wontfix"' },
         { status: 400 },
       );
+    }
+
+    // Fetch the thread to check ownership before resolving.
+    const existing = await getThread(slug, idx);
+    if (!existing) {
+      return NextResponse.json(
+        { error: `thread ${idx} not found for page "${slug}"` },
+        { status: 404 },
+      );
+    }
+
+    // --- Ownership check ---
+    // Service principals bypass the ownership check entirely.
+    const isService = principal?.id.startsWith("service:");
+    if (!isService) {
+      if (!principal) {
+        return NextResponse.json(
+          { error: "authentication required" },
+          { status: 401 },
+        );
+      }
+
+      // The thread author is the author of the first comment.
+      const threadAuthor = existing.comments[0]?.author;
+      const isThreadAuthor = threadAuthor === principal.handle;
+
+      // The page owner comes from the page's frontmatter.
+      const { readWikiPageWithFrontmatter } = await import("@/lib/wiki");
+      const page = await readWikiPageWithFrontmatter(slug);
+      const pageOwner = page?.frontmatter?.owner;
+      const isPageOwner =
+        typeof pageOwner === "string" && pageOwner === principal.handle;
+
+      if (!isThreadAuthor && !isPageOwner) {
+        return NextResponse.json(
+          { error: "only the thread author or page owner may change thread status" },
+          { status: 403 },
+        );
+      }
     }
 
     const thread = await resolveThread(slug, idx, status);
