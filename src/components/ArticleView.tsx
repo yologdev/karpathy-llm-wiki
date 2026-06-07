@@ -194,20 +194,22 @@ export async function ArticleView({
         : null;
   const expiry = typeof fm.expiry === "string" ? fm.expiry : null;
   const disputed = fm.disputed === true;
-  // Written-by: owner first, then contributors — deduped, real handles only.
-  const writtenBy = [pageOwner, ...pageContributors]
+  // Contributed-by: owner first, then contributors — deduped, real handles
+  // only. Pages are synthesized by an agent from ingested sources, so the
+  // credit is "contributed by" (who ingested / contributed), not "written by".
+  const contributedBy = [pageOwner, ...pageContributors]
     .map((h) => (typeof h === "string" ? h.trim() : ""))
     .filter((h) => h && h !== "system")
     .filter((h, i, a) => a.indexOf(h) === i);
 
   // Provenance "stops" — only the ones we actually have data for.
   const provStops: { label: string; node: ReactNode }[] = [];
-  if (writtenBy.length > 0) {
+  if (contributedBy.length > 0) {
     provStops.push({
-      label: "written by",
+      label: "contributed by",
       node: (
         <div className="row" style={{ gap: 12, flexWrap: "wrap" }}>
-          {writtenBy.map((id) => {
+          {contributedBy.map((id) => {
             const agent = id.includes("--");
             return (
               <span key={id} className="row" style={{ gap: 6 }}>
