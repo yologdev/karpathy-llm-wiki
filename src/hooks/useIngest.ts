@@ -44,7 +44,7 @@ export interface UseIngestReturn {
   setPdfUrl: (v: string) => void;
   setPdfFile: (f: File | null) => void;
   handleSourceSubmit: (e: React.FormEvent) => void;
-  handleApprove: () => void;
+  handleApprove: (editedContent?: string) => void;
   handleImageIngest: (e: React.FormEvent) => void;
   handlePdfIngest: (e: React.FormEvent) => void;
   reset: () => void;
@@ -172,19 +172,28 @@ export function useIngest(): UseIngestReturn {
     }
   }
 
-  /** Step 3: publish — commit with the pre-generated content the user reviewed. */
-  async function handleApprove() {
+  /**
+   * Step 3: publish — commit the reviewed draft. `editedContent` (when the user
+   * edited the draft in the review step) is published instead of the original
+   * synthesized body.
+   */
+  async function handleApprove(editedContent?: string) {
     if (!preview) return;
     setLoading(true);
     setError(null);
 
+    const generated =
+      editedContent && editedContent.trim()
+        ? editedContent
+        : preview.previewContent;
+
     try {
       const body = preview.url
-        ? { url: preview.url, generatedContent: preview.previewContent }
+        ? { url: preview.url, generatedContent: generated }
         : {
             title: preview.title,
             content: preview.content,
-            generatedContent: preview.previewContent,
+            generatedContent: generated,
             // Preserve PDF/image provenance through the text commit path.
             ...(preview.sourceType ? { sourceType: preview.sourceType } : {}),
             ...(preview.sourceUrl ? { sourceUrl: preview.sourceUrl } : {}),

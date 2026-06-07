@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { MarkdownRenderer } from "@/components/MarkdownRenderer";
 import { Alert } from "@/components/Alert";
 import { Icon } from "@/components/folio/icons";
@@ -26,7 +26,8 @@ export interface PreviewData {
 interface Props {
   preview: PreviewData;
   loading: boolean;
-  onApprove: () => void;
+  /** Publish; receives the edited draft when the reviewer changed it. */
+  onApprove: (editedContent?: string) => void;
   onCancel: () => void;
   error: string | null;
 }
@@ -69,6 +70,14 @@ function MetaCell({ label, children }: { label: string; children: React.ReactNod
 
 export function IngestReview({ preview, loading, onApprove, onCancel, error }: Props) {
   const [showDraft, setShowDraft] = useState(false);
+  const [editing, setEditing] = useState(false);
+  // Editable copy of the synthesized markdown; published as-is on approve.
+  const [draft, setDraft] = useState(preview.previewContent);
+  // Resync if a new draft arrives (e.g. re-synthesis) and nothing's been edited.
+  useEffect(() => {
+    setDraft(preview.previewContent);
+  }, [preview.previewContent]);
+  const edited = draft !== preview.previewContent;
   const meta = preview.meta;
   const title = meta?.title || preview.title || preview.slug;
 
@@ -185,34 +194,79 @@ export function IngestReview({ preview, loading, onApprove, onCancel, error }: P
         )}
       </div>
 
-      {/* Inspect the full draft before publishing */}
-      <button
-        type="button"
-        onClick={() => setShowDraft((v) => !v)}
-        className="receipt"
-        style={{
-          marginTop: 20,
-          fontSize: 12.5,
-          color: "var(--muted)",
-          background: "transparent",
-          border: 0,
-          cursor: "pointer",
-          padding: 0,
-        }}
+      {/* Inspect / edit the full draft before publishing */}
+      <div
+        className="spread"
+        style={{ marginTop: 20, gap: 12, alignItems: "center" }}
       >
-        {showDraft ? "▾ Hide full draft" : "▸ View full draft"}
-      </button>
+        <button
+          type="button"
+          onClick={() => setShowDraft((v) => !v)}
+          className="receipt"
+          style={{
+            fontSize: 12.5,
+            color: "var(--muted)",
+            background: "transparent",
+            border: 0,
+            cursor: "pointer",
+            padding: 0,
+          }}
+        >
+          {showDraft ? "▾ Hide full draft" : "▸ View full draft"}
+          {edited ? " · edited" : ""}
+        </button>
+        {showDraft && (
+          <button
+            type="button"
+            onClick={() => setEditing((v) => !v)}
+            className="receipt"
+            style={{
+              fontSize: 12.5,
+              color: "var(--accent)",
+              background: "transparent",
+              border: 0,
+              cursor: "pointer",
+              padding: 0,
+            }}
+          >
+            {editing ? "Preview" : "Edit"}
+          </button>
+        )}
+      </div>
       {showDraft && (
         <div
           style={{
             marginTop: 14,
             border: "1px solid var(--rule)",
             borderRadius: 12,
-            padding: "20px 24px",
+            padding: editing ? 0 : "20px 24px",
             background: "var(--paper)",
+            overflow: "hidden",
           }}
         >
-          <MarkdownRenderer content={preview.previewContent} />
+          {editing ? (
+            <textarea
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              spellCheck={false}
+              aria-label="Edit the draft markdown"
+              style={{
+                width: "100%",
+                minHeight: 360,
+                border: 0,
+                outline: 0,
+                resize: "vertical",
+                background: "transparent",
+                fontFamily: "var(--font-mono)",
+                fontSize: 13,
+                lineHeight: 1.6,
+                color: "var(--ink)",
+                padding: "20px 24px",
+              }}
+            />
+          ) : (
+            <MarkdownRenderer content={draft} />
+          )}
         </div>
       )}
 
@@ -226,8 +280,8 @@ export function IngestReview({ preview, loading, onApprove, onCancel, error }: P
       <div className="row" style={{ gap: 20, alignItems: "center", marginTop: 28 }}>
         <button
           type="button"
-          onClick={onApprove}
-          disabled={loading}
+          onClick={() => onApprove(edited ? draft : undefined)}
+          disabled={loading || !draft.trim()}
           className="btn primary disabled:opacity-50"
         >
           {loading ? "Publishing…" : "Publish to the commons"}
