@@ -12,8 +12,8 @@ import { Icon } from "@/components/folio/icons";
  */
 const STAGES = [
   ["Fetch", "retrieving & cleaning the source"],
-  ["Synthesize", "DeepSeek-V4 drafts a cited page"],
-  ["Embed", "bge-m3 vectors · CJK-aware"],
+  ["Synthesize", "drafting a cited page"],
+  ["Embed", "indexing for semantic search"],
   ["Cross-link", "wikilinks to related pages"],
   ["Score", "confidence & review-by date"],
 ] as const;
