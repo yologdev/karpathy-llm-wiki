@@ -112,9 +112,9 @@ export function useStreamingQuery(
             signal: controller.signal,
           });
 
-          const fallbackData = await fallbackRes.json();
-          if (!fallbackRes.ok) {
-            setError(fallbackData.error ?? errMsg);
+          const fallbackData = await fallbackRes.json().catch(() => null);
+          if (!fallbackRes.ok || !fallbackData) {
+            setError(fallbackData?.error ?? errMsg);
             return;
           }
           setResult(fallbackData);

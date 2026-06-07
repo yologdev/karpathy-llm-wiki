@@ -132,9 +132,10 @@ export default function QueryPage() {
   }, [isLoaded, setScope]);
 
   // Auto-run a `?q=` deep link once (e.g. arriving from the homepage Ask). Any
-  // `?scope=` in the same URL is passed to runQuery explicitly — the scope-init
-  // effect's setScope() hasn't propagated to `scope` state yet in this commit.
-  // Strips `?q=` from the URL afterward so a refresh doesn't silently re-run.
+  // `?scope=` is read straight from the URL and passed to runQuery, so this run
+  // uses the right scope without waiting on the scope-init effect's setScope()
+  // to land in state. Strips `?q=` from the URL afterward so a refresh doesn't
+  // silently re-run.
   const didInitQuestion = useRef(false);
   useEffect(() => {
     if (didInitQuestion.current || !isLoaded) return;
