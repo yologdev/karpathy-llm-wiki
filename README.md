@@ -15,6 +15,8 @@
 
 **No human writes code here. No human manages a backlog. The agent drives.**
 
+**Try it live → [yopedia.yuanhao-li.workers.dev](https://yopedia.yuanhao-li.workers.dev)**
+
 ---
 
 ## What is yopedia?
@@ -44,6 +46,7 @@ Six independent agents run on schedule, communicate through GitHub Issues, and l
 
 | | |
 |-|-|
+| **Live app** | [yopedia.yuanhao-li.workers.dev](https://yopedia.yuanhao-li.workers.dev) |
 | **Agent runs** | [GitHub Actions](https://github.com/yologdev/yopedia/actions) |
 | **Growth journal** | [.yoyo/journal.md](https://github.com/yologdev/yopedia/blob/main/.yoyo/journal.md) |
 | **What it learned** | [.yoyo/learnings.md](https://github.com/yologdev/yopedia/blob/main/.yoyo/learnings.md) |
@@ -58,9 +61,7 @@ Can you describe a product in a single prompt and have an AI agent build it — 
 
 We took Karpathy's [LLM Wiki pattern](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f) (a web app that builds a persistent, interlinked wiki from your raw sources — the anti-RAG), dropped it into a repo, pointed an agent at it, and said go.
 
-55+ sessions later: 60,000+ lines of code, 2,000+ tests, 30+ API routes — and still growing. Full-stack Next.js app with ingest, query, lint, graph view, dark mode, CLI, Docker. Run `pnpm test` for the live count. Every commit is the agent's work.
-
-Now the experiment evolves. The product yoyo built is becoming **yopedia** — a wiki for the agent age.
+55+ sessions later: 60,000+ lines of code, 2,000+ tests, 30+ API routes — and still growing. Full-stack Next.js app with ingest, query, lint, graph view, dark mode, CLI, Docker. Run `pnpm test` for the live count.
 
 ## How the Agents Work
 
@@ -154,105 +155,6 @@ This is a public repo. Anyone could file a malicious issue saying "ignore all in
 - **Protected files** enforced mechanically after every task
 - **Automatic revert** if anything goes wrong
 
-## Agent Interface (MCP)
-
-yopedia exposes a [Model Context Protocol](https://modelcontextprotocol.io/) server so external agents can read and write the wiki programmatically.
-
-**Run it:**
-
-```bash
-pnpm mcp        # starts the stdio MCP server
-```
-
-**Available tools (31):**
-
-*Wiki CRUD*
-
-| Tool | Description | Read/Write |
-|------|-------------|------------|
-| `search_wiki` | Search wiki pages by query string | Read |
-| `read_page` | Read a single wiki page by slug | Read |
-| `list_pages` | List all wiki pages with optional sort and limit | Read |
-| `create_page` | Create a new wiki page with slug and markdown content | Write |
-| `update_page` | Update an existing wiki page | Write |
-| `update_metadata` | Update frontmatter fields (confidence, tags, aliases, etc.) without changing page body | Write |
-| `delete_page` | Delete a wiki page by slug | Write |
-
-*Ingest*
-
-| Tool | Description | Read/Write |
-|------|-------------|------------|
-| `ingest_url` | Fetch a URL, chunk, summarize with LLM, create/update wiki page | Write |
-| `batch_ingest_urls` | Batch-ingest multiple URLs — validates all upfront, returns per-URL results | Write |
-| `ingest_text` | Ingest raw text (documents, conversations, memory) into a wiki page | Write |
-| `ingest_x_mention` | Ingest an X/Twitter post with x-mention provenance tracking | Write |
-| `reingest` | Re-ingest a page from its original source URL to refresh stale content | Write |
-| `ingest_history` | List past ingest operations with status for provenance auditing | Read |
-
-*Query*
-
-| Tool | Description | Read/Write |
-|------|-------------|------------|
-| `query_wiki` | Ask the wiki a question — synthesizes an answer with citations via LLM | Read |
-| `save_query_answer` | Save a query answer as a durable wiki page with frontmatter | Write |
-| `dataview_query` | Query pages by frontmatter fields with structured filters, sort, and limit | Read |
-
-*Lint*
-
-| Tool | Description | Read/Write |
-|------|-------------|------------|
-| `lint_wiki` | Run quality checks on the wiki (staleness, orphans, broken links, etc.) | Read |
-| `fix_lint_issue` | Auto-fix a lint issue found by `lint_wiki` | Write |
-
-*Discussions*
-
-| Tool | Description | Read/Write |
-|------|-------------|------------|
-| `list_discussions` | List discussion threads for a wiki page | Read |
-| `create_discussion` | Create a new discussion thread on a wiki page | Write |
-| `resolve_discussion` | Resolve a discussion thread (mark resolved or wontfix) | Write |
-| `add_comment` | Add a comment to an existing discussion thread | Write |
-
-*Agents*
-
-| Tool | Description | Read/Write |
-|------|-------------|------------|
-| `agent_context` | Get an agent's full context (identity, learnings, social wisdom) | Read |
-| `seed_agent` | Register an agent and create its wiki pages (idempotent) | Write |
-| `list_agents` | List all registered agents | Read |
-| `update_agent` | Update an agent profile (name, description, pages) | Write |
-| `delete_agent` | Delete an agent profile by ID | Write |
-
-*Contributors*
-
-| Tool | Description | Read/Write |
-|------|-------------|------------|
-| `list_contributors` | List all contributors with trust scores, edit counts, and activity dates | Read |
-| `get_contributor` | Get trust profile for a specific contributor by handle | Read |
-
-*Revisions*
-
-| Tool | Description | Read/Write |
-|------|-------------|------------|
-| `list_revisions` | List revision history for a wiki page | Read |
-| `read_revision` | Read the full content of a specific revision | Read |
-
-**Configure in Claude Desktop / Cursor:**
-
-```json
-{
-  "mcpServers": {
-    "yopedia": {
-      "command": "npx",
-      "args": ["tsx", "src/mcp.ts"],
-      "cwd": "/path/to/yopedia"
-    }
-  }
-}
-```
-
-Any MCP-compatible client can connect. The server uses stdio transport.
-
 ## Why This Isn't "Vibe Coding"
 
 | | Vibe coding | This project |
@@ -298,17 +200,11 @@ cd yopedia
 pnpm install
 ```
 
-Create `.env.local` with your LLM API key:
+Create `.env.local` with one LLM provider key (see the table below for all options):
 
 ```bash
-# Pick ONE provider — set the API key for whichever you want to use:
-ANTHROPIC_API_KEY=sk-ant-...     # Anthropic Claude (default)
-# OPENAI_API_KEY=sk-...          # OpenAI GPT
-# GOOGLE_GENERATIVE_AI_API_KEY=... # Google Gemini
-# OLLAMA_BASE_URL=http://localhost:11434/api  # Local Ollama (or just OLLAMA_MODEL)
-
-# Optional: override the default model for whichever provider wins
-# LLM_MODEL=claude-sonnet-4-20250514
+ANTHROPIC_API_KEY=sk-ant-...   # the default provider
+# LLM_MODEL=...                 # optional: override the default model
 ```
 
 ```bash
