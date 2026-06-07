@@ -14,6 +14,7 @@ import {
   handleBatchIngest,
   handleIngestText,
   handleIngestPdf,
+  handleIngestImage,
   handleIngestXMention,
   handleQueryWiki,
   handleSaveQueryAnswer,
@@ -44,7 +45,8 @@ import { parseFrontmatter } from "../frontmatter";
 import { registerAgent } from "../agents";
 
 // ---------------------------------------------------------------------------
-// Mock fetchUrlContent and downloadImages so no test makes real HTTP calls.
+// Mock fetchUrlContent, downloadImages, fetchImageBytes, and storeImageBytes
+// so no test makes real HTTP calls.
 // All other exports from ../fetch (isUrl, validateUrlSafety, etc.) are kept.
 // ---------------------------------------------------------------------------
 vi.mock("../fetch", async (importOriginal) => {
@@ -56,8 +58,23 @@ vi.mock("../fetch", async (importOriginal) => {
       content: `Mocked content fetched from ${url}`,
     })),
     downloadImages: vi.fn(async (markdown: string) => markdown),
+    fetchImageBytes: vi.fn(async (url: string) => ({
+      bytes: new ArrayBuffer(8),
+      filename: url.split("/").pop() || "image.png",
+      contentType: "image/png",
+    })),
+    storeImageBytes: vi.fn(async (_bytes: ArrayBuffer, slug: string, filename: string) => ({
+      localPath: `/assets/${slug}/${filename}`,
+    })),
   };
 });
+
+// Mock the vision module so no real vision model calls are made.
+vi.mock("../vision", () => ({
+  describeImage: vi.fn(async () => ({
+    text: "Mocked vision description of the image.",
+  })),
+}));
 
 import { fetchUrlContent, downloadImages } from "../fetch";
 const mockedFetchUrlContent = vi.mocked(fetchUrlContent);
@@ -1425,6 +1442,79 @@ describe("ingest_pdf", () => {
 
       expect(result.slug).toBeTruthy();
       expect(result.sourceUrl).toBe("https://example.com/another.pdf");
+    } finally {
+      if (savedKey !== undefined) {
+        process.env.ANTHROPIC_API_KEY = savedKey;
+      }
+      _resetConfigCache();
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// ingest_image tests
+// ---------------------------------------------------------------------------
+
+describe("ingest_image", () => {
+  it("rejects invalid URLs", async () => {
+    await expect(
+      handleIngestImage({ url: "not-a-url" }),
+    ).rejects.toThrow("Invalid URL");
+  });
+
+  it("rejects empty URL", async () => {
+    await expect(
+      handleIngestImage({ url: "" }),
+    ).rejects.toThrow("Invalid URL");
+  });
+
+  it("ingests an image URL and returns slug and title", async () => {
+    const savedKey = process.env.ANTHROPIC_API_KEY;
+    delete process.env.ANTHROPIC_API_KEY;
+    _resetConfigCache();
+    try {
+      const result = await handleIngestImage({
+        url: "https://example.com/photo.png",
+      });
+
+      expect(result.slug).toBeTruthy();
+      expect(result.title).toBeTruthy();
+      expect(result.sourceUrl).toBe("https://example.com/photo.png");
+      expect(result.summary).toBeTruthy();
+
+      // Verify the page was actually created
+      const page = await handleReadPage({ slug: result.slug });
+      expect(page.content).toBeTruthy();
+    } finally {
+      if (savedKey !== undefined) {
+        process.env.ANTHROPIC_API_KEY = savedKey;
+      }
+      _resetConfigCache();
+    }
+  });
+
+  it("passes owner and triggeredBy through to ingestImage", async () => {
+    const savedKey = process.env.ANTHROPIC_API_KEY;
+    delete process.env.ANTHROPIC_API_KEY;
+    _resetConfigCache();
+    try {
+      const result = await handleIngestImage({
+        url: "https://example.com/diagram.jpg",
+        owner: "alice",
+        triggeredBy: "bob",
+      });
+
+      expect(result.slug).toBeTruthy();
+      expect(result.sourceUrl).toBe("https://example.com/diagram.jpg");
+
+      // Verify the page was created with the correct owner
+      const page = await handleReadPage({ slug: result.slug });
+      expect(page.frontmatter.owner).toBe("alice");
+      // triggeredBy is recorded in sources provenance
+      const sources = typeof page.frontmatter.sources === "string"
+        ? page.frontmatter.sources
+        : "";
+      expect(sources).toContain("bob");
     } finally {
       if (savedKey !== undefined) {
         process.env.ANTHROPIC_API_KEY = savedKey;

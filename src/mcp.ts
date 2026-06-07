@@ -15,6 +15,7 @@
  *   ingest_text    — Ingest raw text content into the wiki (chunk → summarize → write)
  *   ingest_x_mention — Ingest an X/Twitter post into the wiki with mention provenance
  *   ingest_pdf     — Ingest a PDF document into the wiki by URL
+ *   ingest_image   — Ingest an image into the wiki by URL (vision model analysis)
  *   query_wiki     — Ask the wiki a question with LLM synthesis
  *   save_query_answer — Save a query answer as a durable wiki page
  *   agent_context  — Get an agent's full context by agent ID
@@ -58,7 +59,7 @@ import {
   type Frontmatter,
 } from "./lib/wiki";
 import { canReadFrontmatter } from "./lib/authz";
-import { extractSummary, ingest, ingestUrl, ingestPdf, ingestXMention, reingest, readLedger, type LedgerEntry } from "./lib/ingest";
+import { extractSummary, ingest, ingestUrl, ingestImage, ingestPdf, ingestXMention, reingest, readLedger, type LedgerEntry } from "./lib/ingest";
 import { query, saveAnswerToWiki, type QueryFormat } from "./lib/query";
 import { isUrl } from "./lib/fetch";
 import { MAX_BATCH_URLS } from "./lib/constants";
@@ -568,6 +569,50 @@ export async function handleIngestPdf(args: {
     title: pageTitle,
     summary,
     sourceUrl: args.pdf_url.trim(),
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Ingest image handler
+// ---------------------------------------------------------------------------
+
+export async function handleIngestImage(args: {
+  url: string;
+  owner?: string;
+  prompt?: string;
+  triggeredBy?: string;
+}): Promise<{
+  slug: string;
+  title: string;
+  summary: string;
+  sourceUrl: string;
+}> {
+  if (!args.url || !isUrl(args.url.trim())) {
+    throw new Error(
+      `Invalid URL: "${args.url}" — must start with http:// or https://`,
+    );
+  }
+
+  const result = await ingestImage(
+    { imageUrl: args.url.trim() },
+    {
+      ...(args.owner ? { owner: args.owner } : {}),
+      ...(args.prompt ? { title: args.prompt } : {}),
+      ...(args.triggeredBy ? { triggeredBy: args.triggeredBy } : {}),
+    },
+  );
+
+  const page = await readWikiPageWithFrontmatter(result.primarySlug);
+  const pageTitle = page?.title ?? result.primarySlug;
+  const summary = page
+    ? extractSummary(page.body)
+    : `Ingested image from ${args.url}`;
+
+  return {
+    slug: result.primarySlug,
+    title: pageTitle,
+    summary,
+    sourceUrl: args.url.trim(),
   };
 }
 
@@ -1619,6 +1664,51 @@ export function createMcpServer(): McpServer {
   }, async (args) => {
     try {
       const result = await handleIngestPdf(args);
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: JSON.stringify(result, null, 2),
+          },
+        ],
+      };
+    } catch (err) {
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: (err as Error).message,
+          },
+        ],
+        isError: true,
+      };
+    }
+  });
+
+  // ingest_image — Ingest an image into the wiki by URL
+  server.registerTool("ingest_image", {
+    description:
+      "Ingest an image into the wiki by URL — downloads the image, analyzes it with a vision model, and creates a wiki page with the image embedded and a description. Supports common image formats (JPEG, PNG, GIF, WebP).",
+    inputSchema: {
+      url: z
+        .string()
+        .describe("URL of the image to ingest (must start with http:// or https://)"),
+      owner: z.string().optional().describe("Owner handle — the accountable principal for the resulting page. Sets frontmatter owner for tenant model."),
+      prompt: z
+        .string()
+        .optional()
+        .describe("Optional guidance for the vision model analysis — used as the page title hint"),
+      triggeredBy: z.string().optional().describe("Handle of the user or agent that triggered this ingest (for provenance tracking)"),
+    },
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: false,
+      openWorldHint: true,
+    },
+  }, async (args) => {
+    try {
+      const result = await handleIngestImage(args);
       return {
         content: [
           {

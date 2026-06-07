@@ -18,6 +18,7 @@
     "ingest_text",
     "ingest_x_mention",
     "ingest_pdf",
+    "ingest_image",
     "query_wiki",
     "save_query_answer",
     "agent_context",
