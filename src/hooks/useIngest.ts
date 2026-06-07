@@ -185,6 +185,9 @@ export function useIngest(): UseIngestReturn {
             title: preview.title,
             content: preview.content,
             generatedContent: preview.previewContent,
+            // Preserve PDF/image provenance through the text commit path.
+            ...(preview.sourceType ? { sourceType: preview.sourceType } : {}),
+            ...(preview.sourceUrl ? { sourceUrl: preview.sourceUrl } : {}),
           };
 
       const res = await fetch("/api/ingest", {
@@ -266,6 +269,9 @@ export function useIngest(): UseIngestReturn {
         title: data.preview?.title ?? title,
         content: data.sourceContent ?? "",
         url: undefined,
+        sourceType: "image",
+        // Real source URL only when ingesting by URL (uploads have none).
+        sourceUrl: imageFile ? undefined : imageUrl.trim() || undefined,
         meta: data.preview,
       });
       setStage("review");
@@ -334,6 +340,9 @@ export function useIngest(): UseIngestReturn {
         title: data.preview?.title ?? title,
         content: data.sourceContent ?? "",
         url: undefined,
+        sourceType: "pdf",
+        // Real source URL only when ingesting by URL (uploads have none).
+        sourceUrl: pdfFile ? undefined : pdfUrl.trim() || undefined,
         meta: data.preview,
       });
       setStage("review");

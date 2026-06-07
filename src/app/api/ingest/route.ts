@@ -19,12 +19,22 @@ export async function POST(request: NextRequest) {
 
     const body = await request.json();
 
-    const { url, title, content, preview, generatedContent, triggeredBy, tags, sourceUrl } = body;
+    const { url, title, content, preview, generatedContent, triggeredBy, tags, sourceUrl, sourceType } = body;
 
     // Validate triggeredBy if provided
     if (triggeredBy !== undefined && typeof triggeredBy !== "string") {
       return NextResponse.json(
         { error: "triggeredBy must be a string if provided" },
+        { status: 400 },
+      );
+    }
+
+    // Validate sourceType if provided (preserves provenance when the
+    // PDF/image review flow commits the approved body via this text path).
+    const VALID_SOURCE_TYPES = ["url", "text", "x-mention", "image", "pdf", "youtube"];
+    if (sourceType !== undefined && !VALID_SOURCE_TYPES.includes(sourceType)) {
+      return NextResponse.json(
+        { error: `sourceType must be one of: ${VALID_SOURCE_TYPES.join(", ")}` },
         { status: 400 },
       );
     }
@@ -64,6 +74,9 @@ export async function POST(request: NextRequest) {
     }
     if (typeof sourceUrl === "string" && sourceUrl.trim().length > 0) {
       options.sourceUrl = sourceUrl.trim();
+    }
+    if (typeof sourceType === "string" && sourceType.length > 0) {
+      options.sourceType = sourceType as IngestOptions["sourceType"];
     }
     // Attribution from the authenticated session (authoritative; overrides any
     // client-supplied triggeredBy to prevent spoofing).

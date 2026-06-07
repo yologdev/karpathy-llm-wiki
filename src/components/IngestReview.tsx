@@ -16,6 +16,9 @@ export interface PreviewData {
   content: string;
   /** Original URL if using URL mode. */
   url?: string;
+  /** Provenance carried through a text-path commit (PDF/image review flow). */
+  sourceType?: string;
+  sourceUrl?: string;
   /** Structured page metadata for the review card (from the preview response). */
   meta?: IngestPreviewMeta;
 }
