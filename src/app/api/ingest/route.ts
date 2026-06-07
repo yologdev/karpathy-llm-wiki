@@ -3,7 +3,7 @@ import { ingest, ingestUrl } from "@/lib/ingest";
 import type { IngestOptions } from "@/lib/ingest";
 import { isUrl } from "@/lib/fetch";
 import { getPrincipal, getServicePrincipal } from "@/lib/auth";
-import { getErrorMessage } from "@/lib/errors";
+import { ClientInputError, getErrorMessage } from "@/lib/errors";
 import { logger } from "@/lib/logger";
 
 export async function POST(request: NextRequest) {
@@ -113,12 +113,15 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json(result);
   } catch (error) {
+    const msg = getErrorMessage(error);
+    // Bad-input failures (e.g. a deleted/private X post, an unsafe URL) are
+    // tagged ClientInputError → 400 + warn. Anything else is a real server
+    // failure → 500 + error log, so genuine bugs aren't buried as 500 noise.
+    if (error instanceof ClientInputError) {
+      logger.warn("ingest", `Ingest rejected: ${msg}`);
+      return NextResponse.json({ error: msg }, { status: 400 });
+    }
     logger.error("ingest", "Ingest error", error);
-    return NextResponse.json(
-      {
-        error: getErrorMessage(error),
-      },
-      { status: 500 },
-    );
+    return NextResponse.json({ error: msg }, { status: 500 });
   }
 }

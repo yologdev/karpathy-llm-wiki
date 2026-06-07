@@ -110,6 +110,28 @@ describe("fetchXPostContent", () => {
     expect(content).toContain("> original insight");
   });
 
+  it("accepts a media-only tweet delivered under `photos` (no text, no mediaDetails)", async () => {
+    mockSyndication({
+      text: "",
+      user: { name: "Pic", screen_name: "pic" },
+      photos: [{ type: "photo", media_url_https: "https://pbs.twimg.com/media/p.jpg", ext_alt_text: "a photo" }],
+    });
+
+    const { content } = await fetchXPostContent("https://x.com/pic/status/7");
+    expect(content).toContain("![a photo](https://pbs.twimg.com/media/p.jpg)");
+  });
+
+  it("throws ClientInputError when media entries carry no URL (content-free stub)", async () => {
+    mockSyndication({
+      text: "",
+      user: { name: "X", screen_name: "x" },
+      mediaDetails: [{ type: "photo" }], // present but no media_url_https
+    });
+    await expect(fetchXPostContent("https://x.com/x/status/8")).rejects.toBeInstanceOf(
+      ClientInputError,
+    );
+  });
+
   it("throws ClientInputError on a 404 (deleted/private)", async () => {
     mockSyndication({}, 404);
     await expect(fetchXPostContent("https://x.com/a/status/1")).rejects.toBeInstanceOf(

@@ -138,9 +138,14 @@ function expandLinks(text: string, urls?: SyndicationUrlEntity[]): string {
   return out;
 }
 
-/** Photo refs as markdown image lines (videos/gifs contribute their poster). */
+/**
+ * Photo refs as markdown image lines (videos/gifs contribute their poster).
+ *
+ * The CDN may carry media under `mediaDetails` OR `photos` — prefer whichever
+ * is non-empty (not just non-null), and keep only entries with a real URL.
+ */
 function mediaImageRefs(tweet: SyndicationTweet): string[] {
-  const media = tweet.mediaDetails ?? tweet.photos ?? [];
+  const media = tweet.mediaDetails?.length ? tweet.mediaDetails : tweet.photos ?? [];
   return media
     .filter((m) => m.media_url_https)
     .map((m) => `![${(m.ext_alt_text || "image").replace(/\s+/g, " ").trim()}](${m.media_url_https})`);
@@ -201,7 +206,11 @@ export async function fetchXPostContent(url: string): Promise<XPostContent> {
   if (!id) throw new ClientInputError(`Not a recognizable X post URL: "${url}"`);
 
   const tweet = await fetchSyndication(id);
-  if (tweet.error || tweet.tombstone || (!tweet.text && !tweet.mediaDetails?.length)) {
+  // Guard on exactly what the formatter would render — trimmed text and the
+  // same media set (covering both the `photos` shape and URL-less entries) — so
+  // a benign-but-empty payload errors instead of producing a content-free stub.
+  const hasText = (tweet.text ?? "").trim().length > 0;
+  if (tweet.error || tweet.tombstone || (!hasText && mediaImageRefs(tweet).length === 0)) {
     logger.warn("x-post", `No usable content for tweet ${id} (error/tombstone/empty)`);
     throw new ClientInputError(
       "That X post couldn't be read — it may be deleted, private, or from a protected account.",
