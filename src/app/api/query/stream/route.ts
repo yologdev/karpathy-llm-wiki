@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { hasLLMKey, callLLMStream } from "@/lib/llm";
 import { QUERY_MAX_OUTPUT_TOKENS } from "@/lib/constants";
-import { listReadableWikiPages } from "@/lib/wiki";
+import { listReadableWikiPages, isAgentScopedType } from "@/lib/wiki";
 import { getPrincipal } from "@/lib/auth";
 import {
   selectPagesForQuery,
@@ -64,7 +64,14 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: scopeError }, { status: 400 });
     }
 
-    const entries = await listReadableWikiPages(principal);
+    let entries = await listReadableWikiPages(principal);
+
+    // Unscoped queries answer from the public commons only — exclude agent-scoped
+    // pages (identity / knowledge / social), which surface solely via an explicit
+    // `agent:` scope. Mirrors the non-streaming query() path (query.ts).
+    if (!scopeSlugs) {
+      entries = entries.filter((e) => !isAgentScopedType(e.type));
+    }
 
     // Empty wiki — nothing to query
     if (entries.length === 0) {

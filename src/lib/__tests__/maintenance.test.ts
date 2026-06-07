@@ -10,7 +10,8 @@ import {
   type Frontmatter,
 } from "../wiki";
 import { createThread, addComment } from "../talk";
-import { scanForMaintenance } from "../maintenance";
+import { scanForMaintenance, rebuildDerivedIndexes } from "../maintenance";
+import { listCommonsPages } from "../commons";
 import { _resetStorage } from "../storage";
 
 let tmpDir: string;
@@ -335,5 +336,22 @@ describe("scanForMaintenance", () => {
       lintType: "missing-crossref",
       targetSlug: "artificial-intelligence",
     });
+  });
+});
+
+describe("rebuildDerivedIndexes — commons index (#398)", () => {
+  it("includes the commons index in the daily self-heal rebuild", async () => {
+    await seed("agentic-systems");
+
+    const results = await rebuildDerivedIndexes();
+
+    // The commons index must be one of the rebuilt indexes (it powers every
+    // unauthenticated surface; without this it never self-heals from drift).
+    expect(results).toHaveProperty("commons");
+    expect(results.commons.ok).toBe(true);
+
+    // And the rebuild actually populated it with the public page.
+    const commons = await listCommonsPages();
+    expect(commons.map((p) => p.slug)).toContain("agentic-systems");
   });
 });
