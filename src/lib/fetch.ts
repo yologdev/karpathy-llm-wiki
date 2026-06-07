@@ -73,9 +73,12 @@ async function extractPdfText(
   const { getDocumentProxy, extractText } = await import("unpdf");
   const doc = await getDocumentProxy(new Uint8Array(buffer));
   try {
-    const { text } = await extractText(doc, { mergePages: true });
+    // Per-page joined with blank lines, so the text keeps page-level paragraph
+    // breaks instead of collapsing into one unreadable blob (synthesis + raw).
+    const { text } = await extractText(doc, { mergePages: false });
+    const joined = Array.isArray(text) ? text.join("\n\n") : text;
 
-    const trimmed = text.trim();
+    const trimmed = joined.trim();
     if (!trimmed) {
       throw new ClientInputError(
         "PDF has no extractable text layer. Scanned/image-only PDFs are not supported yet.",

@@ -63,6 +63,22 @@ describe("PDF extraction via fetchUrlContent", () => {
     expect(mockCleanup).toHaveBeenCalled();
   });
 
+  it("joins per-page text with blank lines (mergePages:false → string[])", async () => {
+    setupDocProxy();
+    // unpdf with mergePages:false returns text as a per-page array.
+    mockExtractText.mockResolvedValue({
+      totalPages: 2,
+      text: ["Page one body.", "Page two body."],
+    });
+    stubPdfFetch(new ArrayBuffer(300));
+
+    const result = await fetchUrlContent("https://example.com/multi.pdf");
+    expect(result.content).toContain("Page one body.");
+    expect(result.content).toContain("Page two body.");
+    // Page-level paragraph break preserved (not collapsed into one blob).
+    expect(result.content).toContain("Page one body.\n\nPage two body.");
+  });
+
   it("throws ClientInputError for empty text layer", async () => {
     setupDocProxy();
     mockExtractText.mockResolvedValue({ totalPages: 1, text: "" });

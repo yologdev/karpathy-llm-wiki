@@ -74,6 +74,20 @@ export function parseSources(raw: string | string[] | undefined): SourceEntry[] 
  * @param type       - Provenance type. Defaults to `"url"`.
  * @param triggeredBy - Who triggered the ingest. Defaults to `"system"`.
  */
+/**
+ * The `type` of the newest source entry (by `fetched` date), or `undefined` for
+ * an empty list. Used to tag a freshly-ingested page's trail event with its
+ * source chip. `fetched` is `YYYY-MM-DD`, so lexicographic compare is date order.
+ */
+export function newestSourceType(
+  sources: SourceEntry[],
+): SourceEntry["type"] | undefined {
+  return sources.reduce(
+    (newest, s) => (newest && newest.fetched >= s.fetched ? newest : s),
+    sources[0] as SourceEntry | undefined,
+  )?.type;
+}
+
 export function buildSourceEntry(
   url: string,
   type: SourceEntry["type"] = "url",

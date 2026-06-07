@@ -31,7 +31,7 @@ import { recordEditForAuthor } from "./contributor-index";
 import { pushRecentEvent, removeRecentForSlug } from "./recent-index";
 import { isAgentHandle } from "./agents";
 import { parseFrontmatter } from "./frontmatter";
-import { parseSources } from "./sources";
+import { parseSources, newestSourceType } from "./sources";
 import type { LogOperation } from "./wiki";
 import { logger } from "./logger";
 
@@ -451,14 +451,12 @@ async function runPageLifecycleOp(
         // (URL/PDF/…) immediately — the full-scan rebuild sets it too, but the
         // incremental push must match or a fresh ingest shows a chip-less row
         // until the next daily rebuild. Use the newest source entry.
-        let sourceType;
-        if (logOp === "ingest") {
-          const srcs = parseSources(fm.sources as string | string[] | undefined);
-          sourceType = srcs.reduce(
-            (newest, s) => (newest && newest.fetched >= s.fetched ? newest : s),
-            srcs[0],
-          )?.type;
-        }
+        const sourceType =
+          logOp === "ingest"
+            ? newestSourceType(
+                parseSources(fm.sources as string | string[] | undefined),
+              )
+            : undefined;
         await pushRecentEvent({
           ts: now,
           when: new Date(now).toISOString(),

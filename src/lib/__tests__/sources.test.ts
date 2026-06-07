@@ -3,8 +3,35 @@ import {
   serializeSources,
   parseSources,
   buildSourceEntry,
+  newestSourceType,
 } from "../sources";
 import type { SourceEntry } from "../types";
+
+describe("newestSourceType", () => {
+  const mk = (type: SourceEntry["type"], fetched: string): SourceEntry => ({
+    type,
+    url: "u",
+    fetched,
+    triggered_by: "system",
+  });
+
+  it("returns undefined for an empty list", () => {
+    expect(newestSourceType([])).toBeUndefined();
+  });
+
+  it("returns the only entry's type", () => {
+    expect(newestSourceType([mk("pdf", "2026-06-01")])).toBe("pdf");
+  });
+
+  it("picks the type of the newest entry by fetched date", () => {
+    const sources = [
+      mk("text", "2026-05-01"),
+      mk("pdf", "2026-06-07"),
+      mk("url", "2026-05-20"),
+    ];
+    expect(newestSourceType(sources)).toBe("pdf");
+  });
+});
 
 // ---------------------------------------------------------------------------
 // serializeSources
