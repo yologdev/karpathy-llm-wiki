@@ -208,14 +208,15 @@ export async function scanForMaintenance(
 // Precomputed-index self-heal (Phase 2)
 // ---------------------------------------------------------------------------
 //
-// The five derived KV indexes (owner-slugs, backlinks, discuss-stats,
-// contributors) are maintained incrementally on the write/talk paths. Drift can
-// still creep in (a failed fail-soft update, an out-of-band edit, the coarse
-// contributor fields left to rebuild). This rebuilds all five from ground truth
-// in one daily pass so any drift self-corrects. Fully fail-soft — each rebuild
-// is independent and a failure never aborts the others or the maintenance scan.
+// The seven derived KV indexes (pages, commons, owner-slugs, backlinks,
+// discuss-stats, contributors, recent) are maintained incrementally on the
+// write/talk paths. Drift can still creep in (a failed fail-soft update, an
+// out-of-band edit, the coarse contributor fields left to rebuild). This
+// rebuilds all seven from ground truth in one daily pass so any drift
+// self-corrects. Fully fail-soft — each rebuild is independent and a failure
+// never aborts the others or the maintenance scan.
 
-/** Rebuild all five precomputed indexes. Returns a per-index ok/error summary. */
+/** Rebuild all seven precomputed indexes. Returns a per-index ok/error summary. */
 export async function rebuildDerivedIndexes(): Promise<
   Record<string, { ok: boolean; error?: string }>
 > {
