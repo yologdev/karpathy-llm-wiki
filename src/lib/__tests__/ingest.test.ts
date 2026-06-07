@@ -538,6 +538,29 @@ describe("ingest — source URL tracking", () => {
     expect(second!.frontmatter.source_url).toBe("https://example.com/original");
   });
 
+  it("stores a per-source raw snapshot with a distinct raw_id per source", async () => {
+    const { readWikiPageWithFrontmatter, readRawSourceById } = await import("../wiki");
+
+    await ingest("Multi Source Page", "First source body. Some detail here.", {
+      sourceUrl: "https://a.example.com/one",
+    });
+    await ingest("Multi Source Page", "Second source body. Other detail here.", {
+      sourceUrl: "https://b.example.com/two",
+    });
+
+    const page = await readWikiPageWithFrontmatter("multi-source-page");
+    const sources = parseSources(page!.frontmatter.sources as string);
+    expect(sources).toHaveLength(2);
+    const ids = sources.map((s) => s.raw_id);
+    expect(ids.every(Boolean)).toBe(true);
+    expect(new Set(ids).size).toBe(2); // one snapshot per source
+
+    for (const s of sources) {
+      const raw = await readRawSourceById("multi-source-page", s.raw_id!);
+      expect(raw.content.length).toBeGreaterThan(0);
+    }
+  });
+
   it("overwrites source_url on re-ingest with a new URL", async () => {
     // First ingest with a URL
     await ingest("Reingest New Url", "First content. Has details.", {

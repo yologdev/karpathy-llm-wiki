@@ -1,32 +1,25 @@
-import Link from "next/link";
 import { decodeSlug } from "@/lib/slugify";
 import { notFound, permanentRedirect } from "next/navigation";
-import { readRawSource, readWikiPageWithFrontmatter, tenantForOwner } from "@/lib/wiki";
+import {
+  readRawSource,
+  readRawSourceById,
+  readWikiPageWithFrontmatter,
+  tenantForOwner,
+} from "@/lib/wiki";
+import { parseSources } from "@/lib/sources";
 import { pagePath, rawPath } from "@/lib/links";
 import { canReadSlug } from "@/lib/authz";
 import { getPrincipal } from "@/lib/auth";
-import { MarkdownRenderer } from "@/components/MarkdownRenderer";
+import { RawSourceBrowser, type RawItem } from "@/components/RawSourceBrowser";
 
 interface RawSourcePageProps {
   params: Promise<{ handle: string; slug: string }>;
 }
 
-/** Hard ceiling on how much raw content we render inline in the browser. */
-const MAX_INLINE_BYTES = 500 * 1024; // 500 KB
-
-function formatSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) {
-    const kb = bytes / 1024;
-    return kb >= 10 ? `${Math.round(kb)} KB` : `${kb.toFixed(1)} KB`;
-  }
-  const mb = bytes / (1024 * 1024);
-  return mb >= 10 ? `${Math.round(mb)} MB` : `${mb.toFixed(1)} MB`;
-}
-
 export default async function RawSourcePage({ params }: RawSourcePageProps) {
   const { handle: encodedHandle, slug: encodedSlug } = await params;
   const slug = decodeSlug(encodedSlug);
+
   // A private page's raw source is owner-only — 404 (same as missing) otherwise.
   if (!(await canReadSlug(slug, await getPrincipal()))) {
     notFound();
@@ -43,67 +36,70 @@ export default async function RawSourcePage({ params }: RawSourcePageProps) {
   if (decodeSlug(encodedHandle).toLowerCase() !== pageTenant) {
     permanentRedirect(rawPath(pageTenant, slug));
   }
-  let source;
-  try {
-    source = await readRawSource(slug);
-  } catch {
-    // readRawSource throws for both "not found" and "invalid slug" — in
-    // either case the right response to the user is a 404.
-    notFound();
+
+  // Build the source list from the page's provenance. Newest first.
+  const sources = parseSources(
+    ownerPage?.frontmatter.sources as string | string[] | undefined,
+  )
+    .slice()
+    .reverse();
+  const anyRaw = sources.some((s) => s.raw_id);
+
+  let items: RawItem[];
+  let initialKey: string;
+  let initialContent: string | null = null;
+
+  if (anyRaw) {
+    // Per-source pages: one entry per source. Snapshots are viewable; sources
+    // ingested before per-source raw existed are shown as "uncaptured".
+    items = sources.map((s, i) => ({
+      key: s.raw_id ?? `uncaptured-${i}`,
+      kind: s.raw_id ? "snapshot" : "uncaptured",
+      sourceId: s.raw_id ?? null,
+      type: s.type,
+      url: s.url,
+      fetched: s.fetched,
+      triggeredBy: s.triggered_by,
+    }));
+    const firstSnapshot = items.find((it) => it.kind === "snapshot")!;
+    initialKey = firstSnapshot.key;
+    try {
+      initialContent = (await readRawSourceById(slug, firstSnapshot.sourceId!))
+        .content;
+    } catch {
+      initialContent = null;
+    }
+  } else {
+    // Legacy page: a single latest blob, regardless of how many sources exist.
+    let blob;
+    try {
+      blob = await readRawSource(slug);
+    } catch {
+      notFound();
+    }
+    const latest = sources[0];
+    items = [
+      {
+        key: "__legacy__",
+        kind: "legacy",
+        sourceId: null,
+        type: latest?.type ?? "url",
+        url: latest?.url ?? "text-paste",
+        fetched: latest?.fetched ?? blob.modified.slice(0, 10),
+        triggeredBy: latest?.triggered_by ?? "system",
+      },
+    ];
+    initialKey = "__legacy__";
+    initialContent = blob.content;
   }
 
-  // Raw sources can be arbitrarily large (full HTML pages, PDFs, ...).
-  // Truncate anything above the inline budget and tell the user to use the
-  // download link for the full content, so the browser never chokes.
-  const tooLarge = source.size > MAX_INLINE_BYTES;
-  const displayedContent = tooLarge
-    ? source.content.slice(0, MAX_INLINE_BYTES)
-    : source.content;
-
   return (
-    <main className="mx-auto max-w-3xl px-6 py-12">
-      <Link
-        href={pagePath(pageTenant, slug)}
-        className="text-sm text-foreground/60 hover:text-foreground transition-colors"
-      >
-        ← Back to page
-      </Link>
-
-      <div className="mt-6">
-        <h1 className="font-mono text-2xl font-bold break-all">
-          {source.filename}
-        </h1>
-        <div className="mt-2 text-sm text-foreground/60">
-          {formatSize(source.size)} · Modified{" "}
-          {source.modified.slice(0, 10)} ·{" "}
-          <a
-            href={`/api/raw/${source.slug}`}
-            className="text-blue-600 underline hover:text-blue-500 dark:text-blue-400"
-          >
-            View raw
-          </a>
-        </div>
-      </div>
-
-      {tooLarge && (
-        <div className="mt-6 rounded-md border border-amber-300/60 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-800/60 dark:bg-amber-950/30 dark:text-amber-200">
-          File is {formatSize(source.size)} — showing the first{" "}
-          {formatSize(MAX_INLINE_BYTES)}. Use the{" "}
-          <a
-            href={`/api/raw/${source.slug}`}
-            className="underline hover:no-underline"
-          >
-            raw download
-          </a>{" "}
-          to see the full content.
-        </div>
-      )}
-
-      {/* Render the markdown so images and formatting show. The "View raw"
-          link above serves the unrendered plaintext via /api/raw. */}
-      <div className="mt-6 max-h-[70vh] overflow-auto rounded-lg border border-foreground/10 bg-foreground/[0.03] p-4">
-        <MarkdownRenderer content={displayedContent} />
-      </div>
-    </main>
+    <RawSourceBrowser
+      slug={slug}
+      items={items}
+      initialKey={initialKey}
+      initialContent={initialContent}
+      backHref={pagePath(pageTenant, slug)}
+    />
   );
 }

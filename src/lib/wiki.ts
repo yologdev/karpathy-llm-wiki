@@ -560,7 +560,7 @@ export async function updateIndexUnsafe(entries: IndexEntry[]): Promise<void> {
 }
 
 // Re-export raw source utilities for backward compatibility
-export { saveRawSource, listRawSources, readRawSource } from "./raw";
+export { saveRawSource, saveRawSourceFor, listRawSources, readRawSource, readRawSourceById } from "./raw";
 export type { RawSource, RawSourceWithContent } from "./raw";
 
 // ---------------------------------------------------------------------------

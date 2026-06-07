@@ -1,20 +1,20 @@
 import { NextResponse } from "next/server";
 import { decodeSlug } from "@/lib/slugify";
-import { readRawSource } from "@/lib/wiki";
+import { readRawSource, readRawSourceById } from "@/lib/wiki";
 import { getPrincipal } from "@/lib/auth";
 import { canReadSlug } from "@/lib/authz";
 import { getErrorMessage } from "@/lib/errors";
 
 /**
- * GET /api/raw/[slug]
+ * GET /api/raw/[slug][?source=<rawId>]
  *
- * Returns a single raw source as `text/plain`, suitable for download or
- * programmatic inspection. This is a thin read-only wrapper over
- * {@link readRawSource}; the library function owns both the path-traversal
- * guard and the not-found semantics.
+ * Returns a raw source as `text/plain`, suitable for download or programmatic
+ * inspection. Without `?source`, returns the latest single blob; with a
+ * `?source=<rawId>`, returns that per-source snapshot. Thin read-only wrapper —
+ * the library functions own the path-traversal guard and not-found semantics.
  */
 export async function GET(
-  _req: Request,
+  req: Request,
   { params }: { params: Promise<{ slug: string }> },
 ) {
   try {
@@ -24,7 +24,10 @@ export async function GET(
     if (!(await canReadSlug(slug, await getPrincipal()))) {
       return NextResponse.json({ error: "not found" }, { status: 404 });
     }
-    const source = await readRawSource(slug);
+    const sourceId = new URL(req.url).searchParams.get("source");
+    const source = sourceId
+      ? await readRawSourceById(slug, sourceId)
+      : await readRawSource(slug);
     return new NextResponse(source.content, {
       status: 200,
       headers: {

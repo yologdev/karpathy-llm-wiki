@@ -2,7 +2,13 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import fs from "fs/promises";
 import os from "os";
 import path from "path";
-import { saveRawSource, listRawSources, readRawSource } from "../raw";
+import {
+  saveRawSource,
+  saveRawSourceFor,
+  listRawSources,
+  readRawSource,
+  readRawSourceById,
+} from "../raw";
 import { ensureDirectories } from "../wiki";
 
 let tmpDir: string;
@@ -216,5 +222,51 @@ describe("readRawSource", () => {
 
     const source = await readRawSource("mutable");
     expect(source.content).toBe("version 2");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// saveRawSourceFor / readRawSourceById (per-source snapshots)
+// ---------------------------------------------------------------------------
+
+describe("per-source raw snapshots", () => {
+  it("round-trips a per-source snapshot at raw/<slug>/<rawId>.md", async () => {
+    await ensureDirectories();
+    await saveRawSourceFor("agentic-systems", "deadbeef", "raw source one");
+    const got = await readRawSourceById("agentic-systems", "deadbeef");
+    expect(got.content).toBe("raw source one");
+    expect(got.filename).toBe("deadbeef.md");
+    expect(got.slug).toBe("agentic-systems");
+  });
+
+  it("keeps multiple sources for the same slug side by side", async () => {
+    await ensureDirectories();
+    await saveRawSourceFor("p", "aaa111", "source A");
+    await saveRawSourceFor("p", "bbb222", "source B");
+    expect((await readRawSourceById("p", "aaa111")).content).toBe("source A");
+    expect((await readRawSourceById("p", "bbb222")).content).toBe("source B");
+  });
+
+  it("rejects a non-hex raw id (path-traversal guard)", async () => {
+    await ensureDirectories();
+    await expect(saveRawSourceFor("p", "../evil", "x")).rejects.toThrow();
+    await expect(readRawSourceById("p", "../../etc/passwd")).rejects.toThrow(
+      /not found/,
+    );
+  });
+
+  it("throws not-found for a missing snapshot", async () => {
+    await ensureDirectories();
+    await expect(readRawSourceById("p", "abc123")).rejects.toThrow(/not found/);
+  });
+
+  it("does not pollute the flat listRawSources() (subdirs are skipped)", async () => {
+    await ensureDirectories();
+    await saveRawSource("flat-one", "flat");
+    await saveRawSourceFor("flat-one", "cafe01", "nested snapshot");
+    const slugs = (await listRawSources()).map((s) => s.slug);
+    expect(slugs).toContain("flat-one");
+    // The per-source subdir is not surfaced as a flat raw source.
+    expect(slugs).not.toContain("cafe01");
   });
 });

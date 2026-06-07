@@ -78,11 +78,13 @@ export function buildSourceEntry(
   url: string,
   type: SourceEntry["type"] = "url",
   triggeredBy = "system",
+  rawId?: string,
 ): SourceEntry {
   return {
     type,
     url,
     fetched: new Date().toISOString().slice(0, 10),
     triggered_by: triggeredBy,
+    ...(rawId ? { raw_id: rawId } : {}),
   };
 }

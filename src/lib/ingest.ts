@@ -1,5 +1,6 @@
 import {
   saveRawSource,
+  saveRawSourceFor,
   writeWikiPageWithSideEffects,
   readWikiPageWithFrontmatter,
   serializeFrontmatter,
@@ -31,7 +32,14 @@ function mergeSourceEntry(sources: SourceEntry[], entry: SourceEntry): SourceEnt
       : sources;
   const idx = base.findIndex((s) => s.url === entry.url && s.type === entry.type);
   if (idx >= 0) {
-    base[idx] = { ...base[idx], fetched: entry.fetched, triggered_by: entry.triggered_by };
+    base[idx] = {
+      ...base[idx],
+      fetched: entry.fetched,
+      triggered_by: entry.triggered_by,
+      // Carry the new snapshot id (same URL → same id; also upgrades a legacy
+      // entry that predates per-source raw).
+      ...(entry.raw_id ? { raw_id: entry.raw_id } : {}),
+    };
   } else {
     base.push(entry);
   }
@@ -1352,11 +1360,19 @@ export async function ingest(
     frontmatter.source_url = options.sourceUrl;
   }
 
-  // Build the structured sources[] provenance entry for this ingest.
+  // Build the structured sources[] provenance entry for this ingest, and keep a
+  // per-source raw snapshot so a multi-source page can show each source's raw.
+  // The id is keyed on the source URL (so re-ingesting a URL refreshes that
+  // snapshot, matching how mergeSourceEntry dedups by url); paste/upload key on
+  // content instead, since they share the "text-paste" placeholder url.
   const sourceType = options?.sourceType
     ?? (options?.sourceUrl ? "url" : "text");
   const sourceUrl = options?.sourceUrl ?? "text-paste";
-  const sourceEntry = buildSourceEntry(sourceUrl, sourceType, options?.triggeredBy);
+  const rawId = contentHash(
+    sourceUrl !== "text-paste" && sourceUrl !== "upload" ? sourceUrl : content,
+  );
+  await saveRawSourceFor(slug, rawId, content);
+  const sourceEntry = buildSourceEntry(sourceUrl, sourceType, options?.triggeredBy, rawId);
   frontmatter.sources = serializeSources([sourceEntry]);
 
   // Apply tags from options (will be merged with existing tags below for re-ingests).

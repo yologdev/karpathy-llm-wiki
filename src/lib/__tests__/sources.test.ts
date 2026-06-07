@@ -156,6 +156,16 @@ describe("buildSourceEntry", () => {
       fetched: "2026-05-02",
       triggered_by: "system",
     });
+    // No raw_id key when none is supplied (legacy-compatible shape).
+    expect("raw_id" in entry).toBe(false);
+  });
+
+  it("includes raw_id when supplied, and round-trips through serialize/parse", () => {
+    const entry = buildSourceEntry("https://example.com", "pdf", "yuanhao", "cafe1234");
+    expect(entry.raw_id).toBe("cafe1234");
+    const parsed = parseSources(serializeSources([entry]));
+    expect(parsed[0].raw_id).toBe("cafe1234");
+    expect(parsed[0].type).toBe("pdf");
   });
 
   it("builds a text-type entry", () => {

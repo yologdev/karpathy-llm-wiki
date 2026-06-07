@@ -16,6 +16,62 @@ export async function saveRawSource(
   return `${getRawDir()}/${id}.md`;
 }
 
+/** A per-source raw id is a hex hash — path-safe by construction. */
+const RAW_ID_RE = /^[a-f0-9]+$/;
+
+/**
+ * Save the raw snapshot of ONE source of a page at `raw/<slug>/<rawId>.md`.
+ * Unlike {@link saveRawSource} (a single latest blob per slug), this keeps every
+ * source's raw separately so a page built from multiple sources can show them
+ * all. `rawId` must be a hex hash; `slug` is validated as a path segment.
+ */
+export async function saveRawSourceFor(
+  slug: string,
+  rawId: string,
+  content: string,
+): Promise<string> {
+  validateSlug(slug);
+  if (!RAW_ID_RE.test(rawId)) {
+    throw new Error("Invalid raw id: must be a hex hash");
+  }
+  await ensureDirectories();
+  await getStorage().writeFile(rawRelPath(`${slug}/${rawId}.md`), content);
+  return `${getRawDir()}/${slug}/${rawId}.md`;
+}
+
+/**
+ * Read one per-source raw snapshot written by {@link saveRawSourceFor}.
+ * Both `slug` and `rawId` are validated before any filesystem access (the slug
+ * can't contain path separators; the id is a hex hash), so traversal is
+ * impossible. Throws "not found" when the snapshot doesn't exist.
+ */
+export async function readRawSourceById(
+  slug: string,
+  rawId: string,
+): Promise<RawSourceWithContent> {
+  validateSlug(slug);
+  if (!RAW_ID_RE.test(rawId)) {
+    throw new Error(`raw source not found: ${slug}/${rawId}`);
+  }
+  const rel = rawRelPath(`${slug}/${rawId}.md`);
+  let content: string;
+  try {
+    content = await getStorage().readFile(rel);
+  } catch {
+    throw new Error(`raw source not found: ${slug}/${rawId}`);
+  }
+  let size = content.length;
+  let modified = new Date().toISOString();
+  try {
+    const stat = await getStorage().stat(rel);
+    size = stat.size;
+    modified = stat.lastModified.toISOString();
+  } catch {
+    // stat is best-effort — content already read successfully.
+  }
+  return { slug, filename: `${rawId}.md`, size, modified, content };
+}
+
 // ---------------------------------------------------------------------------
 // Raw source browsing (read-only)
 // ---------------------------------------------------------------------------

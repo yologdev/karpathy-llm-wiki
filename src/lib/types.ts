@@ -137,6 +137,12 @@ export interface SourceEntry {
   fetched: string;
   /** Who triggered the ingest (user handle or "system"). */
   triggered_by: string;
+  /**
+   * Identifier of this source's per-source raw snapshot at
+   * `raw/<slug>/<raw_id>.md`. Absent on legacy pages ingested before per-source
+   * raw existed (those keep only the single latest `raw/<slug>.md`).
+   */
+  raw_id?: string;
 }
 
 // ---------------------------------------------------------------------------
