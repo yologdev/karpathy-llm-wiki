@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { MarkdownRenderer } from "@/components/MarkdownRenderer";
 import { Alert } from "@/components/Alert";
 import { Icon } from "@/components/folio/icons";
@@ -71,11 +71,16 @@ function MetaCell({ label, children }: { label: string; children: React.ReactNod
 export function IngestReview({ preview, loading, onApprove, onCancel, error }: Props) {
   const [showDraft, setShowDraft] = useState(false);
   const [editing, setEditing] = useState(false);
-  // Editable copy of the synthesized markdown; published as-is on approve.
+  // Editable copy of the synthesized markdown; the edited text is what gets
+  // published on approve (when it differs from the original).
   const [draft, setDraft] = useState(preview.previewContent);
-  // Resync if a new draft arrives (e.g. re-synthesis) and nothing's been edited.
+  // Adopt a freshly synthesized draft if one arrives, but never clobber the
+  // reviewer's unsaved edits: only resync when the buffer still matches the
+  // last value we synced from (i.e. it hasn't been hand-edited).
+  const lastSynced = useRef(preview.previewContent);
   useEffect(() => {
-    setDraft(preview.previewContent);
+    setDraft((cur) => (cur === lastSynced.current ? preview.previewContent : cur));
+    lastSynced.current = preview.previewContent;
   }, [preview.previewContent]);
   const edited = draft !== preview.previewContent;
   const meta = preview.meta;

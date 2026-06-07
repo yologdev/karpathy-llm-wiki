@@ -179,13 +179,18 @@ export function useIngest(): UseIngestReturn {
    */
   async function handleApprove(editedContent?: string) {
     if (!preview) return;
+
+    // An edit was passed but it's blank — surface it instead of silently
+    // publishing the original AI draft (the opposite of the user's intent).
+    if (editedContent !== undefined && !editedContent.trim()) {
+      setError("The draft is empty — add content or discard to cancel.");
+      return;
+    }
+
     setLoading(true);
     setError(null);
 
-    const generated =
-      editedContent && editedContent.trim()
-        ? editedContent
-        : preview.previewContent;
+    const generated = editedContent ?? preview.previewContent;
 
     try {
       const body = preview.url
