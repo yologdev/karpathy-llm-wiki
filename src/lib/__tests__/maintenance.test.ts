@@ -69,9 +69,15 @@ describe("scanForMaintenance", () => {
     expect(tasks).toContainEqual({ kind: "maintain", op: "staleness", slug: "stale" });
   });
 
-  it("does NOT flag an expired page with no source_url (nothing to refresh from)", async () => {
+  it("enqueues a stale-page fix for an expired page with no source_url", async () => {
     await seed("expired-nosource", { expiry: PAST });
-    expect(await scanForMaintenance()).toHaveLength(0);
+    const tasks = await scanForMaintenance();
+    expect(tasks).toContainEqual({
+      kind: "maintain",
+      op: "fix",
+      slug: "expired-nosource",
+      lintType: "stale-page",
+    });
   });
 
   it("enqueues a reconcile when a disputed page has an open thread awaiting a human reply", async () => {

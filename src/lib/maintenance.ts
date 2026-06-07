@@ -165,17 +165,20 @@ export async function scanForMaintenance(
       continue;
     }
 
-    // (3) Stale (expiry passed) with a source to refresh from → re-ingest.
+    // (3) Stale (expiry passed) → re-ingest if source URL exists, else bump
+    //     expiry via the deterministic `stale-page` fixer.
     const expiry = fm.expiry;
     const sourceUrl = fm.source_url;
     if (
       typeof expiry === "string" &&
       expiry !== "" &&
-      expiry <= today &&
-      typeof sourceUrl === "string" &&
-      sourceUrl.trim() !== ""
+      expiry <= today
     ) {
-      tasks.push({ kind: "maintain", op: "staleness", slug: entry.slug });
+      if (typeof sourceUrl === "string" && sourceUrl.trim() !== "") {
+        tasks.push({ kind: "maintain", op: "staleness", slug: entry.slug });
+      } else {
+        tasks.push({ kind: "maintain", op: "fix", slug: entry.slug, lintType: "stale-page" });
+      }
     }
   }
 

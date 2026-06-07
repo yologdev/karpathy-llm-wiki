@@ -66,7 +66,8 @@ export type MaintainFixType =
   | "broken-link"
   | "orphan-page"
   | "empty-page"
-  | "missing-crossref";
+  | "missing-crossref"
+  | "stale-page";
 
 const MAINTAIN_FIX_TYPES = new Set<MaintainFixType>([
   "unmigrated-page",
@@ -76,6 +77,7 @@ const MAINTAIN_FIX_TYPES = new Set<MaintainFixType>([
   "orphan-page",
   "empty-page",
   "missing-crossref",
+  "stale-page",
 ]);
 
 /** Minimal Cloudflare Queue producer binding — we only ever call `send`. */
