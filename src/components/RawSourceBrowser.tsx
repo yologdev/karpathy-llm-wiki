@@ -61,6 +61,35 @@ function downloadHref(slug: string, item: RawItem): string {
     : `/api/raw/${slug}`;
 }
 
+/**
+ * Does the raw content carry markdown structure worth rendering (headings,
+ * images, lists, blockquotes, or paragraph breaks)? Extracted PDF / pasted text
+ * is often a structureless blob — rendering THAT through markdown collapses it
+ * into one giant paragraph, so we show it as faithful preformatted text instead.
+ */
+function looksLikeMarkdown(s: string): boolean {
+  const t = s.trimStart();
+  return (
+    /(^|\n)#{1,6}\s/.test(t) || // headings
+    /!\[[^\]]*\]\([^)]+\)/.test(t) || // images
+    /(^|\n)[-*+]\s/.test(t) || // bullet lists
+    /(^|\n)>\s/.test(t) || // blockquotes
+    /\n\n/.test(t) // paragraph breaks
+  );
+}
+
+/** Render raw content: markdown when it's structured, else faithful plaintext. */
+function RawContent({ text }: { text: string }) {
+  if (looksLikeMarkdown(text)) {
+    return <MarkdownRenderer content={text} />;
+  }
+  return (
+    <pre className="whitespace-pre-wrap break-words font-mono text-sm leading-relaxed text-foreground/80">
+      {text}
+    </pre>
+  );
+}
+
 export function RawSourceBrowser({
   slug,
   items,
@@ -219,10 +248,10 @@ export function RawSourceBrowser({
                       </a>{" "}
                       for the full content.
                     </div>
-                    <MarkdownRenderer content={content.slice(0, MAX_INLINE)} />
+                    <RawContent text={content.slice(0, MAX_INLINE)} />
                   </>
                 ) : (
-                  <MarkdownRenderer content={content} />
+                  <RawContent text={content} />
                 )}
               </div>
             </>

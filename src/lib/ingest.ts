@@ -335,8 +335,12 @@ export async function ingestPdf(
   const { getDocumentProxy, extractText } = await import("unpdf");
   const doc = await getDocumentProxy(new Uint8Array(bytes));
   try {
-    const { text } = await extractText(doc, { mergePages: true });
-    const trimmed = text.trim();
+    // Per-page (mergePages: false) joined with blank lines, so the extracted
+    // text keeps page-level paragraph breaks instead of collapsing into one
+    // unreadable blob — both for synthesis and for the stored raw snapshot.
+    const { text } = await extractText(doc, { mergePages: false });
+    const joined = Array.isArray(text) ? text.join("\n\n") : text;
+    const trimmed = joined.trim();
     if (!trimmed) {
       throw new ClientInputError(
         "PDF has no extractable text layer. Scanned/image-only PDFs are not supported yet.",
