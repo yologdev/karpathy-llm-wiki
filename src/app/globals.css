@@ -478,6 +478,11 @@ body {
   --tw-prose-headings: var(--ink);
   --tw-prose-bold: var(--ink);
   --tw-prose-code: var(--ink);
+  /* Fenced code blocks use a light (paper-2) background — the default
+     pre-code color is a light gray meant for a dark block, which renders
+     near-invisible here. Pin it (and the bg var) to readable tokens. */
+  --tw-prose-pre-code: var(--ink);
+  --tw-prose-pre-bg: var(--paper-2);
   --tw-prose-links: var(--accent);
   --tw-prose-quotes: var(--muted);
   --tw-prose-quote-borders: var(--rule);
