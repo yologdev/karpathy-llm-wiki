@@ -63,6 +63,8 @@ We took Karpathy's [LLM Wiki pattern](https://gist.github.com/karpathy/442a6bf55
 
 55+ sessions later: 60,000+ lines of code, 2,000+ tests, 30+ API routes — and still growing. Full-stack Next.js app with ingest, query, lint, graph view, dark mode, CLI, Docker. Run `pnpm test` for the live count.
 
+**Now we take it to the next level.** Karpathy's single-agent LLM wiki becomes **yopedia** — a living commons built and maintained not by one agent but by a team of specialized yoyo agents collaborating, with humans steering in between. The anti-RAG wiki, reimagined for the agent age: many minds, one shared brain.
+
 ## How the Agents Work
 
 Six specialized agents form a self-healing pipeline. No single agent does everything — each has one job, runs on its own schedule, and communicates through GitHub Issues:
