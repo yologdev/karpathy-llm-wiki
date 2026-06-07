@@ -26,8 +26,12 @@ export interface UseStreamingQueryReturn {
   error: string | null;
   setError: (e: string | null) => void;
   submit: (e: React.FormEvent) => void;
-  /** Run a query programmatically (e.g. from a `?q=` deep link). */
-  runQuery: (q: string) => void;
+  /**
+   * Run a query programmatically (e.g. from a `?q=` deep link). `scopeOverride`
+   * applies that scope to THIS run directly — pass it when the scope arrives in
+   * the same tick (deep link) and `scope` state may not have propagated yet.
+   */
+  runQuery: (q: string, scopeOverride?: string) => void;
   isProcessing: boolean;
 }
 
@@ -68,9 +72,12 @@ export function useStreamingQuery(
   // by the form (submit) and programmatically (runQuery), with no state-timing
   // race between setQuestion() and reading `question` back.
   const execute = useCallback(
-    async (rawQuestion: string) => {
+    async (rawQuestion: string, scopeOverride?: string) => {
       const trimmed = rawQuestion.trim();
       if (!trimmed) return;
+      // Use the explicit scope when given (deep-link arriving the same tick that
+      // setScope was called, before state propagates); else the current state.
+      const effectiveScope = scopeOverride ?? scope;
 
       // Abort any previous in-flight request
       abortControllerRef.current?.abort();
@@ -88,7 +95,7 @@ export function useStreamingQuery(
         const res = await fetch("/api/query/stream", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ question: trimmed, format, scope }),
+          body: JSON.stringify({ question: trimmed, format, scope: effectiveScope }),
           signal: controller.signal,
         });
 
@@ -101,7 +108,7 @@ export function useStreamingQuery(
           const fallbackRes = await fetch("/api/query", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ question: trimmed, format, scope }),
+            body: JSON.stringify({ question: trimmed, format, scope: effectiveScope }),
             signal: controller.signal,
           });
 
@@ -191,9 +198,10 @@ export function useStreamingQuery(
   // Programmatic run — submits with the given question directly (also reflects
   // it in the input via setQuestion).
   const runQuery = useCallback(
-    (q: string) => {
+    (q: string, scopeOverride?: string) => {
       setQuestion(q);
-      execute(q);
+      if (scopeOverride !== undefined) setScope(scopeOverride);
+      execute(q, scopeOverride);
     },
     [execute],
   );

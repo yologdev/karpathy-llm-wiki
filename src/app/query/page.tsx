@@ -131,9 +131,10 @@ export default function QueryPage() {
     if (deepLink) setScope(deepLink);
   }, [isLoaded, setScope]);
 
-  // Auto-run a `?q=` deep link once (e.g. arriving from the homepage Ask). Runs
-  // after the scope init above so any scope deep-link is applied first. Strips
-  // `?q=` from the URL afterward so a refresh doesn't silently re-run the query.
+  // Auto-run a `?q=` deep link once (e.g. arriving from the homepage Ask). Any
+  // `?scope=` in the same URL is passed to runQuery explicitly — the scope-init
+  // effect's setScope() hasn't propagated to `scope` state yet in this commit.
+  // Strips `?q=` from the URL afterward so a refresh doesn't silently re-run.
   const didInitQuestion = useRef(false);
   useEffect(() => {
     if (didInitQuestion.current || !isLoaded) return;
@@ -141,7 +142,8 @@ export default function QueryPage() {
     const params = new URLSearchParams(window.location.search);
     const q = params.get("q");
     if (!q) return;
-    runQuery(q);
+    const scopeParam = params.get("scope") || undefined;
+    runQuery(q, scopeParam);
     params.delete("q");
     const rest = params.toString();
     window.history.replaceState(
