@@ -33,6 +33,10 @@ yoyo updates this document so future sessions inherit the convention. See
 - Every page starts with an H1 title (`# Title`).
 - Every page has a one-paragraph summary immediately after the H1. The index
   builder uses this paragraph as the page's catalog blurb.
+- Pages DISTILL their sources concisely — a synthesized reference, not a
+  transcript. The full raw source is preserved separately and viewable
+  ("View raw"), so a page captures the essential substance rather than
+  reproducing the source verbatim.
 - Cross-references between wiki pages use markdown links of the form
   `[Title](other-slug.md)` — relative, no leading slash, `.md` suffix
   required. The `.md` suffix is what lets the graph builder

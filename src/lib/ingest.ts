@@ -655,14 +655,15 @@ Then, on the following lines, the wiki article. Include:
 - A brief summary section (## Summary)
 - Key points or takeaways (## Key Points)
 - Notable entities, concepts, or terms worth remembering (## Concepts)
-- A detailed section (## Details) that faithfully preserves the source's
-  substantive content — important explanations, definitions, examples, steps,
-  data, and notable passages — written as readable prose and lists, not just
-  one-line bullets. Aim to retain what a reader would need so the page can
-  stand in for the source. Do not pad, repeat the summary, or invent anything
-  not supported by the source.
+- A detailed section (## Details) that DISTILLS the source's essential substance
+  — the key explanations, definitions, mechanisms, steps, and notable specifics
+  a reader needs to understand the concept — as readable prose and lists. Be
+  concise: omit boilerplate, marketing, repetition, and tangents; summarize
+  rather than transcribe. The full raw source is preserved separately and one
+  click away ("View raw"), so do NOT try to reproduce it. Invent nothing not
+  supported by the source.
 
-Output the CONCEPT and ALIASES lines, then pure markdown, and nothing else. Do not wrap in code fences.`;
+Write a focused, distilled page, not a transcript of the source. Output the CONCEPT and ALIASES lines, then pure markdown, and nothing else. Do not wrap in code fences.`;
 
 /**
  * System prompt for continuation chunks when a long source document has been
