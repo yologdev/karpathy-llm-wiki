@@ -275,7 +275,9 @@ export async function fetchUrlContent(
   // missing — downloadImages() then localizes them (or keeps the URL). Appended
   // AFTER truncation so a long article never drops its figures. HTML path only.
   if (mimeType !== "text/plain" && mimeType !== "text/markdown") {
-    const salvaged = extractImageUrls(body).filter((u) => !content.includes(u));
+    const salvaged = extractImageUrls(body, url).filter(
+      (u) => !content.includes(u),
+    );
     if (salvaged.length > 0) {
       content += "\n\n" + salvaged.map((u) => `![](${u})`).join("\n\n");
     }

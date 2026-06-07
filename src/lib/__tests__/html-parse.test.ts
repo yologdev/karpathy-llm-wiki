@@ -262,12 +262,24 @@ describe("extractImageUrls", () => {
     expect(urls).toEqual(["https://x.com/real-diagram.png"]);
   });
 
+  it("unwraps Next.js image-proxy URLs and resolves relative srcs against baseUrl", () => {
+    const html = `<article>
+      <img loading="lazy" width="2401" height="1000" src="/_next/image?url=https%3A%2F%2Fcdn.example.com%2Fimages%2Fdiagram.png&w=3840&q=75"/>
+      <img src="/static/figures/chart.png" width="800" height="400"/>
+    </article>`;
+    const urls = extractImageUrls(html, "https://blog.example.com/post");
+    // proxy ?url= unwrapped to the real CDN target
+    expect(urls).toContain("https://cdn.example.com/images/diagram.png");
+    // plain relative resolved against the page URL
+    expect(urls).toContain("https://blog.example.com/static/figures/chart.png");
+  });
+
   it("respects the max cap", () => {
     const imgs = Array.from(
       { length: 20 },
       (_, i) => `<img src="https://x.com/img${i}.png"/>`,
     ).join("");
-    expect(extractImageUrls(`<article>${imgs}</article>`, 5)).toHaveLength(5);
+    expect(extractImageUrls(`<article>${imgs}</article>`, undefined, 5)).toHaveLength(5);
   });
 });
 

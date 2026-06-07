@@ -247,12 +247,21 @@ export function extractTitle(html: string): string {
  * Salvage plausible *content* image URLs from raw HTML — a generic fallback for
  * figures Readability drops (lazy-loaded, empty-alt, `<picture>`/`<source>`, SVG
  * diagrams). Parses with linkedom (the same DOM lib Readability uses here) rather
- * than regex, so it's robust to attribute order/quoting on any site. Strips
- * chrome (nav/header/footer/script/style/aside) so we don't grab logos/sprites,
- * skips data URIs + icon/logo/avatar URLs + tiny declared sizes, and dedupes.
- * Absolute http(s) URLs only, capped at `max`.
+ * than regex, so it's robust to attribute order/quoting on any site.
+ *
+ * Each candidate is resolved against `baseUrl` (so relative `/images/x.png`
+ * become absolute) and image-proxy URLs are unwrapped to their real target —
+ * e.g. Next.js `/_next/image?url=<encoded CDN url>&w=…` → the CDN url. Many
+ * modern sites (Anthropic's blog included) serve every figure through that
+ * proxy, so without unwrapping virtually all diagrams are missed. Strips chrome
+ * (nav/header/footer/aside) so we don't grab logos/sprites, skips data URIs +
+ * icon/logo/avatar URLs + tiny declared sizes, and dedupes. Capped at `max`.
  */
-export function extractImageUrls(html: string, max = 12): string[] {
+export function extractImageUrls(
+  html: string,
+  baseUrl?: string,
+  max = 12,
+): string[] {
   let document: ReturnType<typeof parseHTML>["document"];
   try {
     document = parseHTML(html).document;
@@ -264,11 +273,26 @@ export function extractImageUrls(html: string, max = 12): string[] {
     .querySelectorAll("script,style,nav,header,footer,noscript,aside")
     .forEach((el) => el.remove());
 
+  // Resolve a raw src/srcset URL to an absolute http(s) target, unwrapping a
+  // common image-proxy `?url=<encoded absolute>` param when present.
+  const resolve = (raw?: string | null): string | null => {
+    const v = raw?.trim();
+    if (!v) return null;
+    try {
+      const abs = baseUrl ? new URL(v, baseUrl) : new URL(v);
+      const proxied = abs.searchParams.get("url");
+      if (proxied && /^https?:\/\//i.test(proxied)) return proxied;
+      return /^https?:$/i.test(abs.protocol) ? abs.href : null;
+    } catch {
+      return null;
+    }
+  };
+
   const urls: string[] = [];
   const seen = new Set<string>();
-  const push = (u?: string | null) => {
-    const url = u?.trim();
-    if (!url || !/^https?:\/\//i.test(url)) return;
+  const push = (raw?: string | null) => {
+    const url = resolve(raw);
+    if (!url) return;
     if (/(logo|sprite|icon|favicon|avatar|emoji)/i.test(url)) return;
     if (seen.has(url)) return;
     seen.add(url);
