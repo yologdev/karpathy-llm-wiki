@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { useUser, useClerk, SignInButton } from "@clerk/nextjs";
 import { useStreamingQuery } from "@/hooks/useStreamingQuery";
 import { QueryResultPanel } from "./QueryResultPanel";
@@ -18,16 +19,23 @@ const EXAMPLES = [
 const DEMO_USED_KEY = "yopedia_demo_used";
 
 /**
- * The homepage hero. Signed-in: ask the wiki live, streamed in place. Signed
- * OUT: clicking a sample question shows a cached, pre-computed answer (a "taste"
- * — no LLM cost, served from /api/query/demo) with a simulated stream; the next
- * question enforces sign-in.
+ * The homepage hero / launcher. Signed-in: submitting (or clicking a sample)
+ * navigates to /query?q=… which auto-runs the answer there. Signed-OUT: clicking
+ * a sample shows a cached, pre-computed answer (a "taste" — no LLM cost, served
+ * from /api/query/demo); the next question enforces sign-in.
  */
 export function HomeAsk() {
+  const router = useRouter();
   const { isSignedIn } = useUser();
   const { openSignIn } = useClerk();
-  const { question, setQuestion, result, streaming, error, submit, isProcessing } =
-    useStreamingQuery();
+  // Only the question input is used here; signed-in asks run on /query, not inline.
+  const { question, setQuestion } = useStreamingQuery();
+
+  /** Hand the question off to /query, which reads ?q= and auto-runs it. */
+  function goToQuery(q: string) {
+    const trimmed = q.trim();
+    if (trimmed) router.push(`/query?q=${encodeURIComponent(trimmed)}`);
+  }
 
   // Signed-out demo state.
   const [demo, setDemo] = useState<{ answer: string; sources: string[] } | null>(
@@ -98,7 +106,7 @@ export function HomeAsk() {
 
   function onChip(q: string) {
     if (isSignedIn) {
-      setQuestion(q);
+      goToQuery(q);
       return;
     }
     // Signed-out: one free demo, then enforce sign-in.
@@ -116,7 +124,10 @@ export function HomeAsk() {
       <form
         onSubmit={
           isSignedIn
-            ? submit
+            ? (e) => {
+                e.preventDefault();
+                goToQuery(question);
+              }
             : (e) => {
                 e.preventDefault();
                 openSignIn();
@@ -150,7 +161,7 @@ export function HomeAsk() {
               }}
               placeholder="Consult the commons — ask, and get an answer cited to the pages it stands on…"
               rows={2}
-              disabled={!isSignedIn || isProcessing}
+              disabled={!isSignedIn}
               style={{
                 flex: 1,
                 border: 0,
@@ -203,11 +214,10 @@ export function HomeAsk() {
             {isSignedIn ? (
               <button
                 type="submit"
-                disabled={isProcessing || !question.trim()}
+                disabled={!question.trim()}
                 className="btn primary shrink-0 disabled:opacity-50"
               >
-                {isProcessing ? "Thinking…" : "Ask"}
-                {!isProcessing && <Icon.arrow width="16" height="16" />}
+                Ask <Icon.arrow width="16" height="16" />
               </button>
             ) : (
               <SignInButton mode="modal">
@@ -232,26 +242,14 @@ export function HomeAsk() {
         </p>
       )}
 
-      {(error || demoError) && (
+      {demoError && (
         <div className="mt-4">
-          <Alert variant="error">{error ?? demoError}</Alert>
+          <Alert variant="error">{demoError}</Alert>
         </div>
       )}
 
       {!isSignedIn && demoLoading && (
         <p className="mt-4 text-sm text-muted">Thinking…</p>
-      )}
-
-      {/* Signed-in live result */}
-      {isSignedIn && result && (
-        <div className="mt-6">
-          <QueryResultPanel
-            result={result}
-            streaming={streaming}
-            question={question}
-            currentHistoryId={null}
-          />
-        </div>
       )}
 
       {/* Signed-out demo result (read-only — no save) */}

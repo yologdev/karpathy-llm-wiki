@@ -112,6 +112,7 @@ export default function QueryPage() {
     error,
     setError,
     submit,
+    runQuery,
     isProcessing,
   } = useStreamingQuery({
     onComplete: saveToHistory,
@@ -129,6 +130,26 @@ export default function QueryPage() {
       new URLSearchParams(window.location.search).get("scope") || undefined;
     if (deepLink) setScope(deepLink);
   }, [isLoaded, setScope]);
+
+  // Auto-run a `?q=` deep link once (e.g. arriving from the homepage Ask). Runs
+  // after the scope init above so any scope deep-link is applied first. Strips
+  // `?q=` from the URL afterward so a refresh doesn't silently re-run the query.
+  const didInitQuestion = useRef(false);
+  useEffect(() => {
+    if (didInitQuestion.current || !isLoaded) return;
+    didInitQuestion.current = true;
+    const params = new URLSearchParams(window.location.search);
+    const q = params.get("q");
+    if (!q) return;
+    runQuery(q);
+    params.delete("q");
+    const rest = params.toString();
+    window.history.replaceState(
+      null,
+      "",
+      window.location.pathname + (rest ? `?${rest}` : ""),
+    );
+  }, [isLoaded, runQuery]);
 
   // A deep-linked owner:<handle> scope renders as a dismissible chip; otherwise
   // the Public + your-vaults selector drives `scope` (undefined=Public vs

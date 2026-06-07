@@ -26,6 +26,8 @@ export interface UseStreamingQueryReturn {
   error: string | null;
   setError: (e: string | null) => void;
   submit: (e: React.FormEvent) => void;
+  /** Run a query programmatically (e.g. from a `?q=` deep link). */
+  runQuery: (q: string) => void;
   isProcessing: boolean;
 }
 
@@ -62,10 +64,13 @@ export function useStreamingQuery(
     };
   }, []);
 
-  const handleSubmit = useCallback(
-    async (e: React.FormEvent) => {
-      e.preventDefault();
-      if (!question.trim()) return;
+  // Core query runner — takes the question explicitly so it can be driven both
+  // by the form (submit) and programmatically (runQuery), with no state-timing
+  // race between setQuestion() and reading `question` back.
+  const execute = useCallback(
+    async (rawQuestion: string) => {
+      const trimmed = rawQuestion.trim();
+      if (!trimmed) return;
 
       // Abort any previous in-flight request
       abortControllerRef.current?.abort();
@@ -77,8 +82,6 @@ export function useStreamingQuery(
       setError(null);
       setResult(null);
       onSubmitStartRef.current?.();
-
-      const trimmed = question.trim();
 
       try {
         // Try the streaming endpoint first
@@ -173,7 +176,26 @@ export function useStreamingQuery(
         setStreaming(false);
       }
     },
-    [question, format, scope],
+    [format, scope],
+  );
+
+  // Form submit — reads the current question from state.
+  const handleSubmit = useCallback(
+    (e: React.FormEvent) => {
+      e.preventDefault();
+      execute(question);
+    },
+    [execute, question],
+  );
+
+  // Programmatic run — submits with the given question directly (also reflects
+  // it in the input via setQuestion).
+  const runQuery = useCallback(
+    (q: string) => {
+      setQuestion(q);
+      execute(q);
+    },
+    [execute],
   );
 
   const isProcessing = loading || streaming;
@@ -194,6 +216,7 @@ export function useStreamingQuery(
     error,
     setError,
     submit: handleSubmit,
+    runQuery,
     isProcessing,
   };
 }
