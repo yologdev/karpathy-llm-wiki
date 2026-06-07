@@ -472,7 +472,7 @@ export function tokenizeSourceImages(content: string): {
     if (DECORATIVE_IMAGE_RE.test(ref) || DECORATIVE_IMAGE_RE.test(alt)) {
       return ""; // strip decorative images so the LLM never sees them
     }
-    if (refs.length >= MAX_APPENDED_IMAGES) return whole; // cap; leave extras as-is
+    if (refs.length >= MAX_APPENDED_IMAGES) return ""; // past the cap → drop (don't leak a raw ref)
     refs.push({ alt, ref });
     return `\n\n[[IMG:${refs.length}]]\n\n`;
   });
