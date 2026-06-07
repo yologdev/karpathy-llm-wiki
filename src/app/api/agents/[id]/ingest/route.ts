@@ -11,6 +11,22 @@ interface RouteParams {
 /** Page `type` that marks ingested content as the agent's scoped knowledge. */
 const AGENT_KNOWLEDGE_TYPE = "agent-knowledge";
 
+/** Pattern matching x.com or twitter.com post URLs. */
+const X_URL_PATTERN = /^https?:\/\/(www\.)?(x\.com|twitter\.com)\//i;
+
+/**
+ * Derive `sourceType` from the request inputs.
+ * - X/Twitter URLs → "x-mention"
+ * - Other URLs → "url"
+ * - Text-only (no URL) → "text"
+ */
+function deriveSourceType(url: string, _text: string): "x-mention" | "url" | "text" {
+  if (url) {
+    return X_URL_PATTERN.test(url) ? "x-mention" : "url";
+  }
+  return "text";
+}
+
 /**
  * POST /api/agents/[id]/ingest — the agent ingests a source into its OWN
  * knowledge.
@@ -127,7 +143,7 @@ export async function POST(req: Request, { params }: RouteParams) {
     if (asOwner) {
       // Save into the owner's wiki — a normal page attributed to the user.
       const owner = agentRecord!.owner;
-      opts = { author: owner, owner, triggeredBy: owner, sourceType: "x-mention" };
+      opts = { author: owner, owner, triggeredBy: owner, sourceType: deriveSourceType(url, text) };
     } else {
       // Ingest as the agent: scoped type, attributed to the agent.
       opts = {

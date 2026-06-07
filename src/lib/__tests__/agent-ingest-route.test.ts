@@ -193,10 +193,52 @@ describe("POST /api/agents/[id]/ingest", () => {
       expect(res.status).toBe(200);
       // Owner-attributed, normal page — NO agent-knowledge scope.
       const opts = mockedIngestUrl.mock.calls[0][1];
-      expect(opts).toMatchObject({ author: "alice", owner: "alice", sourceType: "x-mention" });
+      expect(opts).toMatchObject({ author: "alice", owner: "alice", sourceType: "url" });
       expect(opts).not.toHaveProperty("pageType");
       // Owner content is not appended to the agent's learnings.
       expect(mockedAddLearning).not.toHaveBeenCalled();
+    });
+
+    it("asOwner: derives sourceType 'x-mention' for X/Twitter URLs", async () => {
+      mockedVerify.mockResolvedValue(null);
+      mockedServicePrincipal.mockReturnValue({ id: "service:yopedia", handle: "yopedia" });
+      mockedGetAgent.mockResolvedValue({ id: "alice--yoyo", owner: "alice" } as never);
+
+      const res = await POST(
+        req({ url: "https://x.com/user/status/123", asOwner: true }, "sys-token"),
+        { params },
+      );
+      expect(res.status).toBe(200);
+      const opts = mockedIngestUrl.mock.calls[0][1];
+      expect(opts).toMatchObject({ sourceType: "x-mention" });
+    });
+
+    it("asOwner: derives sourceType 'x-mention' for twitter.com URLs", async () => {
+      mockedVerify.mockResolvedValue(null);
+      mockedServicePrincipal.mockReturnValue({ id: "service:yopedia", handle: "yopedia" });
+      mockedGetAgent.mockResolvedValue({ id: "alice--yoyo", owner: "alice" } as never);
+
+      const res = await POST(
+        req({ url: "https://twitter.com/user/status/456", asOwner: true }, "sys-token"),
+        { params },
+      );
+      expect(res.status).toBe(200);
+      const opts = mockedIngestUrl.mock.calls[0][1];
+      expect(opts).toMatchObject({ sourceType: "x-mention" });
+    });
+
+    it("asOwner: derives sourceType 'text' for text-only ingests", async () => {
+      mockedVerify.mockResolvedValue(null);
+      mockedServicePrincipal.mockReturnValue({ id: "service:yopedia", handle: "yopedia" });
+      mockedGetAgent.mockResolvedValue({ id: "alice--yoyo", owner: "alice" } as never);
+
+      const res = await POST(
+        req({ text: "some note", title: "My Note", asOwner: true }, "sys-token"),
+        { params },
+      );
+      expect(res.status).toBe(200);
+      const opts = mockedIngest.mock.calls[0][2];
+      expect(opts).toMatchObject({ sourceType: "text" });
     });
 
     it("asOwner is rejected (403) for a per-agent token — agents can't write to the owner's space", async () => {
