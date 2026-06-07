@@ -62,44 +62,79 @@ const ALLOWED_CONTENT_TYPES = [
 ];
 
 /**
- * Extract text from a PDF ArrayBuffer using unpdf (serverless pdf.js).
- * Returns { title, content } or throws on empty/unreadable PDFs.
- * Uses dynamic import to avoid loading the ~1.6 MB pdf.js bundle on every request.
+ * Extract a PDF's text WITH layout structure preserved.
+ *
+ * unpdf's `extractText` flattens every text item into a single space-joined run
+ * (no line breaks), turning a long PDF into one unreadable wall — bad for the
+ * human "View raw" surface and weaker as synthesis input. Instead we read
+ * pdf.js' per-item text and use each item's `hasEOL` flag to rebuild lines, with
+ * a blank line between pages. Falls back to `extractText` when the structured
+ * API isn't available (e.g. a stubbed doc) or yields nothing. Shared by the URL
+ * and upload PDF paths. Uses a dynamic import to avoid the ~1.6 MB pdf.js bundle
+ * on every request.
  */
+export async function pdfToText(buffer: ArrayBuffer): Promise<string> {
+  const { getDocumentProxy, extractText } = await import("unpdf");
+  const doc = await getDocumentProxy(new Uint8Array(buffer));
+  try {
+    try {
+      if (typeof doc.getPage === "function" && doc.numPages > 0) {
+        const pages: string[] = [];
+        for (let p = 1; p <= doc.numPages; p++) {
+          const page = await doc.getPage(p);
+          const content = await page.getTextContent();
+          const lines: string[] = [];
+          let line = "";
+          for (const item of content.items as Array<{
+            str?: string;
+            hasEOL?: boolean;
+          }>) {
+            if (typeof item.str !== "string") continue;
+            line += item.str;
+            if (item.hasEOL) {
+              lines.push(line.trimEnd());
+              line = "";
+            }
+          }
+          if (line.trim()) lines.push(line.trimEnd());
+          pages.push(lines.join("\n"));
+        }
+        const structured = pages.join("\n\n").trim();
+        if (structured) return structured;
+      }
+    } catch {
+      // Structured extraction unavailable/failed — fall through to flat text.
+    }
+    const { text } = await extractText(doc, { mergePages: false });
+    return (Array.isArray(text) ? text.join("\n\n") : text).trim();
+  } finally {
+    await doc.cleanup();
+  }
+}
+
 async function extractPdfText(
   buffer: ArrayBuffer,
   fallbackTitle: string,
 ): Promise<{ title: string; content: string }> {
-  const { getDocumentProxy, extractText } = await import("unpdf");
-  const doc = await getDocumentProxy(new Uint8Array(buffer));
-  try {
-    // Per-page joined with blank lines, so the text keeps page-level paragraph
-    // breaks instead of collapsing into one unreadable blob (synthesis + raw).
-    const { text } = await extractText(doc, { mergePages: false });
-    const joined = Array.isArray(text) ? text.join("\n\n") : text;
-
-    const trimmed = joined.trim();
-    if (!trimmed) {
-      throw new ClientInputError(
-        "PDF has no extractable text layer. Scanned/image-only PDFs are not supported yet.",
-      );
-    }
-
-    // Try to derive title from first non-empty line (often the document title)
-    const firstLine =
-      trimmed.split("\n").find((l) => l.trim().length > 0)?.trim() ??
-      fallbackTitle;
-    const title = firstLine.length > 200 ? firstLine.slice(0, 200) : firstLine;
-
-    const content =
-      trimmed.length > MAX_CONTENT_LENGTH
-        ? trimmed.slice(0, MAX_CONTENT_LENGTH) + "\n\n[Content truncated]"
-        : trimmed;
-
-    return { title: title || fallbackTitle, content };
-  } finally {
-    await doc.cleanup();
+  const trimmed = (await pdfToText(buffer)).trim();
+  if (!trimmed) {
+    throw new ClientInputError(
+      "PDF has no extractable text layer. Scanned/image-only PDFs are not supported yet.",
+    );
   }
+
+  // Title from the first non-empty line (often the document title).
+  const firstLine =
+    trimmed.split("\n").find((l) => l.trim().length > 0)?.trim() ??
+    fallbackTitle;
+  const title = firstLine.length > 200 ? firstLine.slice(0, 200) : firstLine;
+
+  const content =
+    trimmed.length > MAX_CONTENT_LENGTH
+      ? trimmed.slice(0, MAX_CONTENT_LENGTH) + "\n\n[Content truncated]"
+      : trimmed;
+
+  return { title: title || fallbackTitle, content };
 }
 
 /**

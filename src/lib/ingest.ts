@@ -9,7 +9,7 @@ import {
   type Frontmatter,
 } from "./wiki";
 import { callLLM, hasLLMKey } from "./llm";
-import { fetchUrlContent, downloadImages, fetchImageBytes, storeImageBytes } from "./fetch";
+import { fetchUrlContent, downloadImages, fetchImageBytes, storeImageBytes, pdfToText } from "./fetch";
 import { describeImage } from "./vision";
 import { isYouTubeUrl, fetchYouTubeContent } from "./youtube";
 import type { IngestResult, IngestPreviewMeta, SourceEntry } from "./types";
@@ -332,44 +332,32 @@ export async function ingestPdf(
     );
   }
 
-  const { getDocumentProxy, extractText } = await import("unpdf");
-  const doc = await getDocumentProxy(new Uint8Array(bytes));
-  try {
-    // Per-page (mergePages: false) joined with blank lines, so the extracted
-    // text keeps page-level paragraph breaks instead of collapsing into one
-    // unreadable blob — both for synthesis and for the stored raw snapshot.
-    const { text } = await extractText(doc, { mergePages: false });
-    const joined = Array.isArray(text) ? text.join("\n\n") : text;
-    const trimmed = joined.trim();
-    if (!trimmed) {
-      throw new ClientInputError(
-        "PDF has no extractable text layer. Scanned/image-only PDFs are not supported yet.",
-      );
-    }
-    const content =
-      trimmed.length > MAX_CONTENT_LENGTH
-        ? trimmed.slice(0, MAX_CONTENT_LENGTH)
-        : trimmed;
-
-    // Derive title from first line or filename
-    const firstLine =
-      trimmed.split("\n").find((l) => l.trim().length > 0)?.trim() ?? "";
-    const derivedTitle =
-      firstLine.length > 200 ? firstLine.slice(0, 200) : firstLine;
-    const title =
-      options?.title ||
-      derivedTitle ||
-      filename.replace(/\.pdf$/i, "") ||
-      "PDF Document";
-
-    const result = await ingest(title, content, {
-      ...options,
-      sourceType: "pdf",
-    });
-    return options?.preview ? { ...result, sourceContent: content } : result;
-  } finally {
-    await doc.cleanup();
+  // Layout-aware extraction (preserves line/paragraph structure) — shared with
+  // the URL PDF path so the raw stays readable and synthesis gets better input.
+  const trimmed = (await pdfToText(bytes)).trim();
+  if (!trimmed) {
+    throw new ClientInputError(
+      "PDF has no extractable text layer. Scanned/image-only PDFs are not supported yet.",
+    );
   }
+  const content =
+    trimmed.length > MAX_CONTENT_LENGTH
+      ? trimmed.slice(0, MAX_CONTENT_LENGTH)
+      : trimmed;
+
+  // Derive title from first line or filename.
+  const firstLine =
+    trimmed.split("\n").find((l) => l.trim().length > 0)?.trim() ?? "";
+  const derivedTitle =
+    firstLine.length > 200 ? firstLine.slice(0, 200) : firstLine;
+  const title =
+    options?.title || derivedTitle || filename.replace(/\.pdf$/i, "") || "PDF Document";
+
+  const result = await ingest(title, content, {
+    ...options,
+    sourceType: "pdf",
+  });
+  return options?.preview ? { ...result, sourceContent: content } : result;
 }
 
 /**

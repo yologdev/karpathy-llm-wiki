@@ -63,6 +63,31 @@ describe("PDF extraction via fetchUrlContent", () => {
     expect(mockCleanup).toHaveBeenCalled();
   });
 
+  it("reconstructs line breaks from pdf.js text items (hasEOL) per page", async () => {
+    // A doc with getPage/getTextContent → the structured (layout-aware) path.
+    const page = {
+      getTextContent: vi.fn().mockResolvedValue({
+        items: [
+          { str: "Title Line", hasEOL: true },
+          { str: "first wrapped ", hasEOL: false },
+          { str: "sentence.", hasEOL: true },
+        ],
+      }),
+    };
+    mockGetDocumentProxy.mockResolvedValue({
+      numPages: 1,
+      getPage: vi.fn().mockResolvedValue(page),
+      cleanup: mockCleanup,
+    });
+    stubPdfFetch(new ArrayBuffer(300));
+
+    const result = await fetchUrlContent("https://example.com/structured.pdf");
+    expect(result.title).toBe("Title Line");
+    // hasEOL split lines (not one flattened blob); the non-EOL items joined.
+    expect(result.content).toContain("Title Line\nfirst wrapped sentence.");
+    expect(mockCleanup).toHaveBeenCalled();
+  });
+
   it("joins per-page text with blank lines (mergePages:false → string[])", async () => {
     setupDocProxy();
     // unpdf with mergePages:false returns text as a per-page array.

@@ -69,12 +69,18 @@ function downloadHref(slug: string, item: RawItem): string {
  */
 function looksLikeMarkdown(s: string): boolean {
   const t = s.trimStart();
+  // Require actual markdown markers — NOT bare blank lines, which extracted PDF
+  // text also has (rendering THAT through markdown would re-collapse its
+  // layout-preserved line breaks into a wall).
   return (
     /(^|\n)#{1,6}\s/.test(t) || // headings
     /!\[[^\]]*\]\([^)]+\)/.test(t) || // images
-    /(^|\n)[-*+]\s/.test(t) || // bullet lists
+    /\[[^\]]+\]\([^)\s]+\)/.test(t) || // links
+    /(^|\n)\s*[-*+]\s/.test(t) || // bullet lists
+    /(^|\n)\s*\d+\.\s/.test(t) || // numbered lists
     /(^|\n)>\s/.test(t) || // blockquotes
-    /\n\n/.test(t) // paragraph breaks
+    /(^|\n)```/.test(t) || // code fences
+    /(^|\n)\|.+\|/.test(t) // tables
   );
 }
 
