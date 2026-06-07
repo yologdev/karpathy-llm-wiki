@@ -467,13 +467,17 @@ export function tokenizeSourceImages(content: string): {
   refs: SourceImageRef[];
 } {
   const refs: SourceImageRef[] = [];
+  const tokenByRef = new Map<string, number>(); // dedup: same ref → same token
   const re = /!\[([^\]]*)\]\(((?:assets\/|https?:\/\/)[^)\s]+)\)/g;
-  const text = content.replace(re, (whole, alt: string, ref: string) => {
+  const text = content.replace(re, (_whole, alt: string, ref: string) => {
     if (DECORATIVE_IMAGE_RE.test(ref) || DECORATIVE_IMAGE_RE.test(alt)) {
       return ""; // strip decorative images so the LLM never sees them
     }
+    const existing = tokenByRef.get(ref);
+    if (existing) return `\n\n[[IMG:${existing}]]\n\n`; // reuse — don't spend a cap slot
     if (refs.length >= MAX_APPENDED_IMAGES) return ""; // past the cap → drop (don't leak a raw ref)
     refs.push({ alt, ref });
+    tokenByRef.set(ref, refs.length);
     return `\n\n[[IMG:${refs.length}]]\n\n`;
   });
   return { text, refs };
@@ -485,10 +489,20 @@ export function tokenizeSourceImages(content: string): {
  * an out-of-range/invalid `n` (hallucinated) are dropped.
  */
 export function restoreImageTokens(body: string, refs: SourceImageRef[]): string {
-  return body.replace(/\[\[IMG:(\d+)\]\]/g, (_whole, n: string) => {
-    const img = refs[Number(n) - 1];
-    return img ? `![${img.alt}](${img.ref})` : "";
+  const kept = new Set<number>();
+  const out = body.replace(/\[\[IMG:(\d+)\]\]/g, (_whole, n: string) => {
+    const idx = Number(n) - 1;
+    const img = refs[idx];
+    if (!img) return "";
+    kept.add(idx);
+    return `![${img.alt}](${img.ref})`;
   });
+  // Observability: a sudden "kept 0/N" signals a prompt/truncation regression
+  // silently dropping real figures (which otherwise leaves no trace).
+  if (refs.length > 0) {
+    logger.debug("ingest", `inline images: kept ${kept.size}/${refs.length}`);
+  }
+  return out;
 }
 
 // ---------------------------------------------------------------------------
@@ -675,7 +689,7 @@ Then, on the following lines, the wiki article. Include:
   click away ("View raw"), so do NOT try to reproduce it. Invent nothing not
   supported by the source.
 
-Images: the source may contain placeholder tokens like \`[[IMG:1]]\`. KEEP the ones that are genuine content — diagrams, figures, charts, screenshots that illustrate the topic — by writing the SAME token on its own line at the most relevant point in the article (next to the text it illustrates). OMIT tokens for decorative/branding/UI images. Never invent tokens or change their numbers; output each kept token verbatim.
+Images: the source may contain placeholder tokens like \`[[IMG:1]]\`. KEEP the ones that are genuine content — diagrams, figures, charts, screenshots that illustrate the topic — by writing the SAME token on its own line at the most relevant point in the article (next to the text it illustrates). Omit any token whose image is clearly decorative/branding/UI. Never invent tokens or change their numbers; output each kept token verbatim.
 
 Write a focused, distilled page, not a transcript of the source. Output the CONCEPT and ALIASES lines, then pure markdown, and nothing else. Do not wrap in code fences.`;
 
@@ -689,7 +703,7 @@ const CONTINUATION_SYSTEM_PROMPT = `You are a wiki editor. You have already star
 
 Add new key points, concepts, and details from the additional source material. Do NOT repeat the title, summary, or any content already in the article. Only output the new sections or bullet points to append.
 
-Images: the source may contain placeholder tokens like \`[[IMG:1]]\`. Keep genuine content images (diagrams, figures, charts, screenshots) by writing the SAME token on its own line where relevant; omit decorative/branding/UI images. Never invent tokens or change their numbers.
+Images: the source may contain placeholder tokens like \`[[IMG:1]]\`. Keep genuine content images (diagrams, figures, charts, screenshots) by writing the SAME token on its own line where relevant; omit any whose image is clearly decorative/branding/UI. Never invent tokens or change their numbers.
 
 Output pure markdown and nothing else. Do not wrap in code fences.`;
 

@@ -3021,6 +3021,14 @@ describe("tokenizeSourceImages / restoreImageTokens", () => {
     );
   });
 
+  it("dedups a repeated ref to one entry, reusing its token", () => {
+    const { text, refs } = tokenizeSourceImages(
+      "![x](assets/p/a.png)\n\nmid\n\n![x again](assets/p/a.png)",
+    );
+    expect(refs).toEqual([{ alt: "x", ref: "assets/p/a.png" }]); // one entry
+    expect((text.match(/\[\[IMG:1\]\]/g) ?? []).length).toBe(2); // both reuse token 1
+  });
+
   it("caps the number of tokenized images", () => {
     const imgs = Array.from(
       { length: 20 },

@@ -17,7 +17,7 @@ import { ingest, ingestImage } from "../ingest";
 import { hasLLMKey, callLLM } from "../llm";
 import { describeImage } from "../vision";
 import { fetchImageBytes, storeImageBytes } from "../fetch";
-import { readWikiPageWithFrontmatter } from "../wiki";
+import { readWikiPageWithFrontmatter, readRawSourceById } from "../wiki";
 import { parseSources } from "../sources";
 import { resetSourceIndex } from "../source-index";
 import { resetAliasIndex } from "../alias-index";
@@ -147,6 +147,13 @@ describe("inline source images (via ingest, LLM path)", () => {
     expect(page!.content).toContain("![a chart](assets/doc/chart.png)");
     expect(page!.content).not.toContain("## Images");
     expect(page!.content).not.toContain("[[IMG:"); // token substituted, none left
+
+    // Invariant: the RAW source keeps the original refs untokenized — tokenizing
+    // only the LLM input, never `content` (which feeds saveRawSource + dedup hash).
+    const rawId = parseSources(page!.frontmatter.sources as string)[0]?.raw_id;
+    const raw = await readRawSourceById(result.primarySlug, rawId!);
+    expect(raw.content).toContain("![a chart](assets/doc/chart.png)");
+    expect(raw.content).not.toContain("[[IMG:");
   });
 
   it("drops an image whose token the LLM omitted (relevance filtering)", async () => {
@@ -177,6 +184,9 @@ describe("inline source images (via ingest, LLM path)", () => {
 
     const page = await readWikiPageWithFrontmatter(result.primarySlug);
     expect(page!.content).not.toContain("logo.png");
+    // Distinguish "logo stripped" from "feature silently no-op": the token the
+    // LLM emitted had no ref to restore, so it must be dropped, not left raw.
+    expect(page!.content).not.toContain("[[IMG:");
   });
 });
 
