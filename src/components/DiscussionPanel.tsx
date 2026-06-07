@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useCallback } from "react";
+import { useUser, SignInButton } from "@clerk/nextjs";
 import type { TalkThread } from "@/lib/types";
 import { formatRelativeTime } from "@/lib/format";
 import { ThreadForm } from "./ThreadForm";
@@ -25,6 +26,23 @@ function StatusBadge({ status }: { status: TalkThread["status"] }) {
 }
 
 // ---------------------------------------------------------------------------
+// Resolve the viewer's handle the same way the server does (auth.ts
+// resolveHandle): prefer the Clerk username, else the username on the
+// X/Twitter external account (SSO users often have no Clerk username set).
+// ---------------------------------------------------------------------------
+function useViewerHandle(): string | null {
+  const { isLoaded, isSignedIn, user } = useUser();
+  if (!isLoaded || !isSignedIn || !user) return null;
+  return (
+    user.username ??
+    user.externalAccounts?.find(
+      (a) => typeof a.provider === "string" && /(^|_)(x|twitter)$/i.test(a.provider),
+    )?.username ??
+    null
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Main DiscussionPanel
 // ---------------------------------------------------------------------------
 
@@ -35,6 +53,8 @@ function StatusBadge({ status }: { status: TalkThread["status"] }) {
  * user expands the section, manages all state client-side.
  */
 export function DiscussionPanel({ slug }: DiscussionPanelProps) {
+  const userHandle = useViewerHandle();
+
   const [open, setOpen] = useState(false);
   const [threads, setThreads] = useState<TalkThread[] | null>(null);
   const [loading, setLoading] = useState(false);
@@ -109,14 +129,14 @@ export function DiscussionPanel({ slug }: DiscussionPanelProps) {
     await refreshThread(idx);
   }
 
-  async function handleCreateThread(title: string, author: string, body: string) {
+  async function handleCreateThread(title: string, body: string) {
     setCreating(true);
     setError(null);
     try {
       const res = await fetch(`/api/wiki/${encodeURIComponent(slug)}/discuss`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title, author, body }),
+        body: JSON.stringify({ title, body }),
       });
       if (!res.ok) {
         const errBody = (await res.json().catch(() => ({}))) as { error?: string };
@@ -133,7 +153,7 @@ export function DiscussionPanel({ slug }: DiscussionPanelProps) {
     }
   }
 
-  async function handleAddComment(author: string, body: string) {
+  async function handleAddComment(body: string) {
     if (expandedIdx === null) return;
     setError(null);
     try {
@@ -142,7 +162,7 @@ export function DiscussionPanel({ slug }: DiscussionPanelProps) {
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ author, body }),
+          body: JSON.stringify({ body }),
         },
       );
       if (!res.ok) {
@@ -157,7 +177,7 @@ export function DiscussionPanel({ slug }: DiscussionPanelProps) {
     }
   }
 
-  async function handleReplySubmit(parentId: string, author: string, body: string) {
+  async function handleReplySubmit(parentId: string, body: string) {
     if (expandedIdx === null) return;
     setReplySubmitting(true);
     setError(null);
@@ -167,7 +187,7 @@ export function DiscussionPanel({ slug }: DiscussionPanelProps) {
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ author, body, parentId }),
+          body: JSON.stringify({ body, parentId }),
         },
       );
       if (!res.ok) {
@@ -252,24 +272,36 @@ export function DiscussionPanel({ slug }: DiscussionPanelProps) {
             <p className="text-sm text-foreground/50">Loading discussions…</p>
           )}
 
-          {/* New thread button / form */}
+          {/* New thread button / form — gated on authentication */}
           {!loading && threads !== null && (
             <div>
-              {!showNewForm ? (
-                <button
-                  type="button"
-                  onClick={() => setShowNewForm(true)}
-                  className="text-sm text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
-                >
-                  + New thread
-                </button>
+              {userHandle ? (
+                !showNewForm ? (
+                  <button
+                    type="button"
+                    onClick={() => setShowNewForm(true)}
+                    className="text-sm text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
+                  >
+                    + New thread
+                  </button>
+                ) : (
+                  <ThreadForm
+                    onSubmit={handleCreateThread}
+                    onCancel={() => setShowNewForm(false)}
+                    creating={creating}
+                    inputClasses={inputClasses}
+                    userHandle={userHandle}
+                  />
+                )
               ) : (
-                <ThreadForm
-                  onSubmit={handleCreateThread}
-                  onCancel={() => setShowNewForm(false)}
-                  creating={creating}
-                  inputClasses={inputClasses}
-                />
+                <p className="text-sm text-foreground/50">
+                  <SignInButton mode="modal">
+                    <button type="button" className="text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 underline underline-offset-2">
+                      Sign in
+                    </button>
+                  </SignInButton>
+                  {" "}to start or join a discussion.
+                </p>
               )}
             </div>
           )}
@@ -306,8 +338,9 @@ export function DiscussionPanel({ slug }: DiscussionPanelProps) {
                       onSubmitReply={handleReplySubmit}
                       onResolve={(status) => handleResolve(idx, status)}
                       onAddComment={handleAddComment}
-                      onAskYoyo={() => handleAskYoyo(idx)}
+                      onAskYoyo={userHandle ? () => handleAskYoyo(idx) : undefined}
                       inputClasses={inputClasses}
+                      userHandle={userHandle}
                     />
                   )}
 

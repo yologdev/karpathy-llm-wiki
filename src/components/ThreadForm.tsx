@@ -3,29 +3,31 @@
 import { useState } from "react";
 
 interface ThreadFormProps {
-  onSubmit: (title: string, author: string, body: string) => Promise<void>;
+  onSubmit: (title: string, body: string) => Promise<void>;
   onCancel: () => void;
   creating: boolean;
   inputClasses: string;
+  /** The authenticated user's handle, shown as a read-only author badge. */
+  userHandle: string;
 }
 
-export function ThreadForm({ onSubmit, onCancel, creating, inputClasses }: ThreadFormProps) {
+export function ThreadForm({ onSubmit, onCancel, creating, inputClasses, userHandle }: ThreadFormProps) {
   const [title, setTitle] = useState("");
-  const [author, setAuthor] = useState("");
   const [body, setBody] = useState("");
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    await onSubmit(title, author, body);
+    await onSubmit(title, body);
     setTitle("");
-    setAuthor("");
     setBody("");
   }
 
   return (
     <form onSubmit={handleSubmit} className="space-y-2 rounded border border-foreground/10 p-3">
       <input type="text" placeholder="Thread title" value={title} onChange={(e) => setTitle(e.target.value)} required className={inputClasses} />
-      <input type="text" placeholder="Your name" value={author} onChange={(e) => setAuthor(e.target.value)} required className={inputClasses} />
+      <p className="flex items-center gap-1.5 text-xs text-foreground/50">
+        Posting as <span className="rounded bg-foreground/10 px-1.5 py-0.5 font-medium text-foreground/70">@{userHandle}</span>
+      </p>
       <textarea placeholder="What would you like to discuss?" value={body} onChange={(e) => setBody(e.target.value)} required rows={3} className={inputClasses} />
       <div className="flex gap-2">
         <button type="submit" disabled={creating} className="rounded bg-blue-600 px-3 py-1 text-sm text-white hover:bg-blue-700 disabled:opacity-50">

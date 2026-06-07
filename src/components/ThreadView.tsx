@@ -10,13 +10,15 @@ interface ThreadViewProps {
   replySubmitting: boolean;
   onReplyClick: (commentId: string) => void;
   onCancelReply: () => void;
-  onSubmitReply: (parentId: string, author: string, body: string) => Promise<void>;
+  onSubmitReply: (parentId: string, body: string) => Promise<void>;
   onResolve: (status: "open" | "resolved" | "wontfix") => void;
-  onAddComment: (author: string, body: string) => Promise<void>;
+  onAddComment: (body: string) => Promise<void>;
   /** Ask yoyo to address this thread (enqueue a reconcile task). Omitted when
    *  the viewer isn't signed in. */
   onAskYoyo?: () => Promise<void>;
   inputClasses: string;
+  /** The authenticated user's handle, shown as a read-only author badge. Null when not signed in. */
+  userHandle: string | null;
 }
 
 export function ThreadView({
@@ -30,8 +32,8 @@ export function ThreadView({
   onAddComment,
   onAskYoyo,
   inputClasses,
+  userHandle,
 }: ThreadViewProps) {
-  const [commentAuthor, setCommentAuthor] = useState("");
   const [commentBody, setCommentBody] = useState("");
   const [commenting, setCommenting] = useState(false);
   const [asking, setAsking] = useState(false);
@@ -50,8 +52,7 @@ export function ThreadView({
     e.preventDefault();
     setCommenting(true);
     try {
-      await onAddComment(commentAuthor, commentBody);
-      setCommentAuthor("");
+      await onAddComment(commentBody);
       setCommentBody("");
     } finally {
       setCommenting(false);
@@ -73,6 +74,7 @@ export function ThreadView({
             onSubmitReply={onSubmitReply}
             inputClasses={inputClasses}
             replying={replySubmitting}
+            userHandle={userHandle}
           />
         ))}
       </div>
@@ -121,15 +123,23 @@ export function ThreadView({
         </div>
       )}
 
-      {/* Top-level comment form */}
-      <form onSubmit={handleAddComment} className="space-y-2 border-t border-foreground/10 pt-3">
-        <p className="text-xs font-medium text-foreground/50 uppercase tracking-wide">Add a comment</p>
-        <input type="text" placeholder="Your name" value={commentAuthor} onChange={(e) => setCommentAuthor(e.target.value)} required className={inputClasses} />
-        <textarea placeholder="Write a comment…" value={commentBody} onChange={(e) => setCommentBody(e.target.value)} required rows={2} className={inputClasses} />
-        <button type="submit" disabled={commenting} className="rounded bg-blue-600 px-3 py-1 text-sm text-white hover:bg-blue-700 disabled:opacity-50">
-          {commenting ? "Posting…" : "Comment"}
-        </button>
-      </form>
+      {/* Top-level comment form — only for authenticated users */}
+      {userHandle ? (
+        <form onSubmit={handleAddComment} className="space-y-2 border-t border-foreground/10 pt-3">
+          <p className="text-xs font-medium text-foreground/50 uppercase tracking-wide">Add a comment</p>
+          <p className="flex items-center gap-1.5 text-xs text-foreground/50">
+            Commenting as <span className="rounded bg-foreground/10 px-1.5 py-0.5 font-medium text-foreground/70">@{userHandle}</span>
+          </p>
+          <textarea placeholder="Write a comment…" value={commentBody} onChange={(e) => setCommentBody(e.target.value)} required rows={2} className={inputClasses} />
+          <button type="submit" disabled={commenting} className="rounded bg-blue-600 px-3 py-1 text-sm text-white hover:bg-blue-700 disabled:opacity-50">
+            {commenting ? "Posting…" : "Comment"}
+          </button>
+        </form>
+      ) : (
+        <div className="border-t border-foreground/10 pt-3">
+          <p className="text-sm text-foreground/50">Sign in to join the discussion.</p>
+        </div>
+      )}
     </div>
   );
 }

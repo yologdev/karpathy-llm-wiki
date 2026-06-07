@@ -48,9 +48,11 @@ export interface CommentNodeProps {
   replyingTo: string | null;
   onReplyClick: (commentId: string) => void;
   onCancelReply: () => void;
-  onSubmitReply: (parentId: string, author: string, body: string) => Promise<void>;
+  onSubmitReply: (parentId: string, body: string) => Promise<void>;
   inputClasses: string;
   replying: boolean;
+  /** The authenticated user's handle, shown as a read-only author badge. Omitted when not signed in. */
+  userHandle: string | null;
 }
 
 export function CommentNode({
@@ -62,8 +64,8 @@ export function CommentNode({
   onSubmitReply,
   inputClasses,
   replying,
+  userHandle,
 }: CommentNodeProps) {
-  const [replyAuthor, setReplyAuthor] = useState("");
   const [replyBody, setReplyBody] = useState("");
 
   // Cap visual indentation at MAX_VISUAL_DEPTH
@@ -76,8 +78,7 @@ export function CommentNode({
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    await onSubmitReply(node.comment.id, replyAuthor, replyBody);
-    setReplyAuthor("");
+    await onSubmitReply(node.comment.id, replyBody);
     setReplyBody("");
   }
 
@@ -92,26 +93,23 @@ export function CommentNode({
           <span>{formatRelativeTime(node.comment.created)}</span>
         </div>
         <p className="mt-1 text-sm whitespace-pre-wrap">{node.comment.body}</p>
-        <button
-          type="button"
-          onClick={() => onReplyClick(node.comment.id)}
-          className="mt-1 text-xs text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
-        >
-          Reply
-        </button>
+        {userHandle && (
+          <button
+            type="button"
+            onClick={() => onReplyClick(node.comment.id)}
+            className="mt-1 text-xs text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
+          >
+            Reply
+          </button>
+        )}
       </div>
 
       {/* Inline reply form */}
-      {isReplyFormOpen && (
+      {isReplyFormOpen && userHandle && (
         <form onSubmit={handleSubmit} className="mt-2 ml-4 space-y-2 rounded border border-foreground/10 p-2">
-          <input
-            type="text"
-            placeholder="Your name"
-            value={replyAuthor}
-            onChange={(e) => setReplyAuthor(e.target.value)}
-            required
-            className={inputClasses}
-          />
+          <p className="flex items-center gap-1.5 text-xs text-foreground/50">
+            Replying as <span className="rounded bg-foreground/10 px-1.5 py-0.5 font-medium text-foreground/70">@{userHandle}</span>
+          </p>
           <textarea
             placeholder={`Reply to ${node.comment.author}…`}
             value={replyBody}
@@ -153,6 +151,7 @@ export function CommentNode({
               onSubmitReply={onSubmitReply}
               inputClasses={inputClasses}
               replying={replying}
+              userHandle={userHandle}
             />
           ))}
         </div>
