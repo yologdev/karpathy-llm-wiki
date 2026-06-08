@@ -5,31 +5,13 @@ import { createOllama } from "ollama-ai-provider-v2";
 import { getCloudflareContext } from "@opennextjs/cloudflare";
 import type { EmbeddingModel } from "ai";
 import type { Ai } from "./storage/cloudflare-types";
-import { wikiRelPath, listWikiPages, readWikiPage } from "./wiki";
+import { listWikiPages, readWikiPage } from "./wiki";
 import { getStorage } from "./storage";
 import { detectEnvProvider, loadConfigSync, getEmbeddingModelOverride, getOllamaBaseUrl } from "./config";
 import { EMBEDDING_PROVIDERS, isEmbeddingProvider, type EmbeddingProvider } from "./providers";
 import { withFileLock } from "./lock";
-import { isEnoent } from "./errors";
 import { MAX_EMBED_CHARS } from "./constants";
 import { logger } from "./logger";
-
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
-
-export interface VectorEntry {
-  slug: string;
-  embedding: number[];
-  /** Hash of the page content — used to detect stale embeddings */
-  contentHash: string;
-}
-
-export interface VectorStore {
-  /** e.g. "text-embedding-3-small" — if model changes, invalidate all */
-  model: string;
-  entries: VectorEntry[];
-}
 
 // ---------------------------------------------------------------------------
 // Embedding provider detection
@@ -351,40 +333,30 @@ export function contentHash(content: string): string {
 // ---------------------------------------------------------------------------
 // Vector store persistence
 // ---------------------------------------------------------------------------
+//
+// Vectors live in the StorageProvider's embedding store (Cloudflare Vectorize
+// in production, KV brute-force when Vectorize is unbound, a local JSON file in
+// dev/tests). Each vector carries `EmbeddingMeta` in its metadata: `model` (to
+// drop vectors from a stale embedding model on read) and `contentHash` (to skip
+// re-embedding unchanged content on write).
 
-const VECTOR_STORE_FILENAME = ".vectors.json";
-
-/** Storage-relative path to the vector store file. */
-function vectorStoreRelPath(): string {
-  return wikiRelPath(VECTOR_STORE_FILENAME);
+/** Per-vector metadata persisted alongside the embedding. */
+interface EmbeddingMeta extends Record<string, string> {
+  model: string;
+  contentHash: string;
 }
 
-/**
- * Read the vector store from disk. Returns null if the file doesn't exist.
- */
-export async function loadVectorStore(): Promise<VectorStore | null> {
-  try {
-    const raw = await getStorage().readFile(vectorStoreRelPath());
-    return JSON.parse(raw) as VectorStore;
-  } catch (err) {
-    if (!isEnoent(err)) {
-      logger.warn("embeddings", "load vector store failed:", err);
-    }
-    return null;
-  }
+/** Drop matches whose stored model differs from the active one (stale vectors). */
+function modelMatches(metadata: Record<string, string>, model: string | null): boolean {
+  // Unknown active model or unlabelled legacy vector → don't filter it out.
+  return !model || !metadata.model || metadata.model === model;
 }
 
-/**
- * Write the vector store to disk atomically.
- *
- * The StorageProvider's `writeFile` handles directory creation and atomicity
- * (the filesystem provider uses write-to-tmp + rename internally).
- */
-export async function saveVectorStore(store: VectorStore): Promise<void> {
-  await getStorage().writeFile(
-    vectorStoreRelPath(),
-    JSON.stringify(store, null, 2),
-  );
+/** Remove every stored embedding (used by the admin content reset). */
+export async function clearEmbeddings(): Promise<void> {
+  await withFileLock("vectors", async () => {
+    await getStorage().clearEmbeddings();
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -407,36 +379,23 @@ export async function upsertEmbedding(
     if (!modelName) return; // No embedding support
 
     const hash = contentHash(content);
-    let store = await loadVectorStore();
 
-    // Model migration: if the stored model doesn't match, start fresh.
-    if (store && store.model !== modelName) {
-      store = { model: modelName, entries: [] };
+    // Skip when the stored vector already matches this content AND model — same
+    // optimization as before, now via a single id lookup instead of a full scan.
+    const existing = await getStorage().getEmbeddingById(slug);
+    if (
+      existing &&
+      existing.metadata.contentHash === hash &&
+      existing.metadata.model === modelName
+    ) {
+      return;
     }
 
-    if (!store) {
-      store = { model: modelName, entries: [] };
-    }
-
-    // Check if already up-to-date
-    const existing = store.entries.find((e) => e.slug === slug);
-    if (existing && existing.contentHash === hash) {
-      return; // Already embedded with same content
-    }
-
-    // Embed the content
     const embedding = await embedText(content);
     if (!embedding) return;
 
-    // Upsert
-    if (existing) {
-      existing.embedding = embedding;
-      existing.contentHash = hash;
-    } else {
-      store.entries.push({ slug, embedding, contentHash: hash });
-    }
-
-    await saveVectorStore(store);
+    const meta: EmbeddingMeta = { model: modelName, contentHash: hash };
+    await getStorage().upsertEmbedding(slug, embedding, meta);
   });
 }
 
@@ -445,15 +404,7 @@ export async function upsertEmbedding(
  */
 export async function removeEmbedding(slug: string): Promise<void> {
   return withFileLock("vectors", async () => {
-    const store = await loadVectorStore();
-    if (!store) return;
-
-    const before = store.entries.length;
-    store.entries = store.entries.filter((e) => e.slug !== slug);
-
-    if (store.entries.length !== before) {
-      await saveVectorStore(store);
-    }
+    await getStorage().removeEmbedding(slug);
   });
 }
 
@@ -508,22 +459,11 @@ export async function searchByVector(
   const queryEmbedding = await embedText(query);
   if (!queryEmbedding) return [];
 
-  const store = await loadVectorStore();
-  if (!store || store.entries.length === 0) return [];
-
-  // Guard: if the store was built with a different model the embeddings are
-  // incompatible — return nothing.  The store will be rebuilt on the next
-  // upsert or manual rebuild.
   const currentModel = getEmbeddingModelName();
-  if (currentModel && store.model !== currentModel) return [];
-
-  const scored = store.entries.map((entry) => ({
-    slug: entry.slug,
-    score: cosineSimilarity(queryEmbedding, entry.embedding),
-  }));
-
-  scored.sort((a, b) => b.score - a.score);
-  return scored.slice(0, topK);
+  const matches = await getStorage().queryEmbeddings(queryEmbedding, topK);
+  return matches
+    .filter((m) => modelMatches(m.metadata, currentModel))
+    .map((m) => ({ slug: m.id, score: m.score }));
 }
 
 /**
@@ -539,20 +479,18 @@ export async function relatedByVector(
   slug: string,
   topK: number = 10,
 ): Promise<Array<{ slug: string; score: number }>> {
-  const store = await loadVectorStore();
-  if (!store || store.entries.length === 0) return [];
-
-  const currentModel = getEmbeddingModelName();
-  if (currentModel && store.model !== currentModel) return [];
-
-  const self = store.entries.find((e) => e.slug === slug);
+  const self = await getStorage().getEmbeddingById(slug);
   if (!self) return [];
 
-  return store.entries
-    .filter((e) => e.slug !== slug)
-    .map((e) => ({ slug: e.slug, score: cosineSimilarity(self.embedding, e.embedding) }))
-    .sort((a, b) => b.score - a.score)
-    .slice(0, topK);
+  const currentModel = getEmbeddingModelName();
+  if (!modelMatches(self.metadata, currentModel)) return [];
+
+  // Over-fetch by one to absorb the page's own vector, then drop it.
+  const matches = await getStorage().queryEmbeddings(self.vector, topK + 1);
+  return matches
+    .filter((m) => m.id !== slug && modelMatches(m.metadata, currentModel))
+    .slice(0, topK)
+    .map((m) => ({ slug: m.id, score: m.score }));
 }
 
 // ---------------------------------------------------------------------------
@@ -589,11 +527,15 @@ export async function rebuildVectorStore(
 
   const entries = await listWikiPages();
   const total = entries.length;
+  const storage = getStorage();
 
-  const store: VectorStore = { model: modelName, entries: [] };
   let embedded = 0;
   let skipped = 0;
 
+  // Upsert every current page. This overwrites in place; embeddings for pages
+  // that no longer exist are left untouched (no bulk-clear on a managed index),
+  // but they're harmless — every read intersects results with the caller's
+  // readable/scoped slug set, so an orphan vector can never surface.
   for (let i = 0; i < entries.length; i++) {
     const entry = entries[i];
     const page = await readWikiPage(entry.slug);
@@ -612,11 +554,13 @@ export async function rebuildVectorStore(
         continue;
       }
 
-      store.entries.push({
-        slug: entry.slug,
-        embedding,
+      const meta: EmbeddingMeta = {
+        model: modelName,
         contentHash: contentHash(page.content),
-      });
+      };
+      await withFileLock("vectors", () =>
+        storage.upsertEmbedding(entry.slug, embedding, meta),
+      );
       embedded++;
     } catch (err) {
       logger.warn("embeddings", `embed page "${entry.slug}" failed:`, err);
@@ -625,10 +569,6 @@ export async function rebuildVectorStore(
 
     onProgress?.(i + 1, total);
   }
-
-  await withFileLock("vectors", async () => {
-    await saveVectorStore(store);
-  });
 
   return { total, embedded, skipped, model: modelName };
 }

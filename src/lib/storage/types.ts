@@ -249,9 +249,23 @@ export interface StorageProvider {
   queryEmbeddings(vector: number[], topK: number): Promise<EmbeddingMatch[]>;
 
   /**
+   * Fetch a single stored embedding (vector + metadata) by id, or null when it
+   * isn't present. Used to reuse a page's own vector (related-pages) and to skip
+   * re-embedding unchanged content (contentHash compare) without a similarity scan.
+   */
+  getEmbeddingById(id: string): Promise<EmbeddingEntry | null>;
+
+  /**
    * Remove an embedding by id.
    * No-op if the id doesn't exist.
    * @param id — the identifier to remove
    */
   removeEmbedding(id: string): Promise<void>;
+
+  /**
+   * Remove ALL embeddings (content reset). On a managed index that lacks a
+   * bulk-clear primitive this may be best-effort — see the provider's note —
+   * but it must never throw.
+   */
+  clearEmbeddings(): Promise<void>;
 }

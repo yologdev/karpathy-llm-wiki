@@ -3,7 +3,7 @@ import { getServicePrincipal } from "@/lib/auth";
 import { getStorage } from "@/lib/storage";
 import { rebuildCommonsIndex } from "@/lib/commons";
 import { rebuildDerivedIndexes } from "@/lib/maintenance";
-import { saveVectorStore } from "@/lib/embeddings";
+import { clearEmbeddings } from "@/lib/embeddings";
 import { logger } from "@/lib/logger";
 
 /**
@@ -77,7 +77,7 @@ export async function POST(req: Request) {
   const indexes = await rebuildDerivedIndexes();
   let embeddings = true;
   try {
-    await saveVectorStore({ model: "", entries: [] });
+    await clearEmbeddings();
   } catch (err) {
     embeddings = false;
     logger.error("admin", "clear embeddings failed:", err);

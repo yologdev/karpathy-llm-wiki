@@ -270,9 +270,18 @@ export class FilesystemStorageProvider implements StorageProvider {
     return scored.slice(0, topK);
   }
 
+  async getEmbeddingById(id: string): Promise<EmbeddingEntry | null> {
+    const entries = await this.loadEmbeddings();
+    return entries.find((e) => e.id === id) ?? null;
+  }
+
   async removeEmbedding(id: string): Promise<void> {
     const entries = await this.loadEmbeddings();
     const filtered = entries.filter((e) => e.id !== id);
     await this.saveEmbeddings(filtered);
+  }
+
+  async clearEmbeddings(): Promise<void> {
+    await this.saveEmbeddings([]);
   }
 }

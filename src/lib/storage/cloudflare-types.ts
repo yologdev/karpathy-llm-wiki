@@ -94,6 +94,8 @@ export interface VectorizeIndex {
   upsert(vectors: VectorizeVector[]): Promise<{ count: number }>;
   query(vector: number[], options: VectorizeQueryOptions): Promise<VectorizeMatches>;
   deleteByIds(ids: string[]): Promise<{ count: number }>;
+  /** Fetch stored vectors (values + metadata) by id. Absent ids are omitted. */
+  getByIds(ids: string[]): Promise<VectorizeVector[]>;
 }
 
 // ---------------------------------------------------------------------------

@@ -238,6 +238,15 @@ function createMockVectorize(): VectorizeIndex {
       }
       return { count };
     },
+
+    async getByIds(ids: string[]): Promise<VectorizeVector[]> {
+      const out: VectorizeVector[] = [];
+      for (const id of ids) {
+        const v = vectors.get(id);
+        if (v) out.push({ id, values: v.values, metadata: v.metadata });
+      }
+      return out;
+    },
   };
 }
 
@@ -528,6 +537,20 @@ describe("R2StorageProvider", () => {
       expect(results[0].id).toBe("page1");
       expect(results[0].metadata.hash).toBe("b");
     });
+
+    it("getEmbeddingById returns the vector + metadata, or null", async () => {
+      await provider.upsertEmbedding("page1", [1, 0, 0], { hash: "a" });
+      const got = await provider.getEmbeddingById("page1");
+      expect(got).toEqual({ id: "page1", vector: [1, 0, 0], metadata: { hash: "a" } });
+      expect(await provider.getEmbeddingById("missing")).toBeNull();
+    });
+
+    it("clearEmbeddings empties the KV store", async () => {
+      await provider.upsertEmbedding("page1", [1, 0, 0], { hash: "a" });
+      await provider.clearEmbeddings();
+      expect(await provider.getEmbeddingById("page1")).toBeNull();
+      expect(await provider.queryEmbeddings([1, 0, 0], 5)).toHaveLength(0);
+    });
   });
 
   // -------------------------------------------------------------------------
@@ -558,6 +581,25 @@ describe("R2StorageProvider", () => {
 
       const results = await vecProvider.queryEmbeddings([1, 0, 0], 5);
       expect(results).toHaveLength(0);
+    });
+
+    it("getEmbeddingById fetches a stored vector via getByIds", async () => {
+      await vecProvider.upsertEmbedding("page1", [1, 0, 0], { model: "bge-m3", contentHash: "a" });
+      const got = await vecProvider.getEmbeddingById("page1");
+      expect(got).toEqual({
+        id: "page1",
+        vector: [1, 0, 0],
+        metadata: { model: "bge-m3", contentHash: "a" },
+      });
+      expect(await vecProvider.getEmbeddingById("missing")).toBeNull();
+    });
+
+    it("clearEmbeddings is a best-effort no-op for Vectorize (no bulk-clear)", async () => {
+      await vecProvider.upsertEmbedding("page1", [1, 0, 0], { hash: "a" });
+      // Must not throw; the managed index has no bulk-clear, so the vector
+      // remains and is filtered at query time by the caller.
+      await expect(vecProvider.clearEmbeddings()).resolves.toBeUndefined();
+      expect(await vecProvider.getEmbeddingById("page1")).not.toBeNull();
     });
   });
 

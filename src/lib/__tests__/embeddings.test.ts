@@ -45,8 +45,7 @@ import {
   hasEmbeddingSupport,
   getEmbeddingModelName,
   getEmbeddingModel,
-  loadVectorStore,
-  saveVectorStore,
+  clearEmbeddings,
   upsertEmbedding,
   removeEmbedding,
   searchByVector,
@@ -54,11 +53,26 @@ import {
   embedText,
   embedTexts,
   rebuildVectorStore,
-  type VectorStore,
 } from "../embeddings";
+import { getStorage, _resetStorage } from "../storage";
 import { loadConfigSync } from "../config";
 import { listWikiPages, readWikiPage } from "../wiki";
 import { getCloudflareContext } from "@opennextjs/cloudflare";
+
+const DEFAULT_TEST_MODEL = "text-embedding-3-small";
+
+/**
+ * Seed an embedding through the storage provider (the new persistence layer),
+ * mirroring what upsertEmbedding writes: vector + { model, contentHash }.
+ */
+async function seedVector(
+  slug: string,
+  vector: number[],
+  model = DEFAULT_TEST_MODEL,
+  hash = "h",
+): Promise<void> {
+  await getStorage().upsertEmbedding(slug, vector, { model, contentHash: hash });
+}
 
 // Cast for convenience
 const mockLoadConfigSync = loadConfigSync as ReturnType<typeof vi.fn>;
@@ -343,87 +357,41 @@ describe("embedText / embedTexts with mocked provider", () => {
 // Vector store persistence — round-trip to tmp dir
 // ---------------------------------------------------------------------------
 
-describe("vector store persistence", () => {
+describe("vector store persistence (storage provider)", () => {
   let tmpDir: string;
 
   beforeEach(async () => {
     tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "embeddings-test-"));
     process.env.WIKI_DIR = tmpDir;
+    process.env.DATA_DIR = tmpDir;
+    _resetStorage();
   });
 
   afterEach(async () => {
+    delete process.env.DATA_DIR;
+    _resetStorage();
     await fs.rm(tmpDir, { recursive: true, force: true });
   });
 
-  it("loadVectorStore returns null when no file exists", async () => {
-    expect(await loadVectorStore()).toBeNull();
+  it("getEmbeddingById returns null when nothing is stored", async () => {
+    expect(await getStorage().getEmbeddingById("missing")).toBeNull();
   });
 
-  it("round-trips a vector store to disk", async () => {
-    const store: VectorStore = {
-      model: "text-embedding-3-small",
-      entries: [
-        {
-          slug: "test-page",
-          embedding: [0.1, 0.2, 0.3],
-          contentHash: "abc123",
-        },
-        {
-          slug: "another-page",
-          embedding: [0.4, 0.5, 0.6],
-          contentHash: "def456",
-        },
-      ],
-    };
-
-    await saveVectorStore(store);
-    const loaded = await loadVectorStore();
-
-    expect(loaded).not.toBeNull();
-    expect(loaded!.model).toBe("text-embedding-3-small");
-    expect(loaded!.entries).toHaveLength(2);
-    expect(loaded!.entries[0].slug).toBe("test-page");
-    expect(loaded!.entries[0].embedding).toEqual([0.1, 0.2, 0.3]);
-    expect(loaded!.entries[1].slug).toBe("another-page");
+  it("round-trips a vector + metadata through the provider", async () => {
+    await seedVector("test-page", [0.1, 0.2, 0.3], DEFAULT_TEST_MODEL, "abc123");
+    const got = await getStorage().getEmbeddingById("test-page");
+    expect(got).not.toBeNull();
+    expect(got!.vector).toEqual([0.1, 0.2, 0.3]);
+    expect(got!.metadata.model).toBe(DEFAULT_TEST_MODEL);
+    expect(got!.metadata.contentHash).toBe("abc123");
   });
 
-  it("saveVectorStore creates the wiki directory if needed", async () => {
-    const nestedDir = path.join(tmpDir, "nested", "wiki");
-    process.env.WIKI_DIR = nestedDir;
-
-    const store: VectorStore = {
-      model: "test-model",
-      entries: [],
-    };
-
-    await saveVectorStore(store);
-    const loaded = await loadVectorStore();
-    expect(loaded).not.toBeNull();
-    expect(loaded!.model).toBe("test-model");
-  });
-
-  it("writes valid JSON and leaves no .tmp file behind", async () => {
-    const store: VectorStore = {
-      model: "atomic-test",
-      entries: [
-        { slug: "p1", embedding: [0.1], contentHash: "h1" },
-      ],
-    };
-
-    await saveVectorStore(store);
-
-    // The persisted file should be valid JSON
-    const raw = await fs.readFile(
-      path.join(tmpDir, ".vectors.json"),
-      "utf-8",
-    );
-    const parsed = JSON.parse(raw);
-    expect(parsed.model).toBe("atomic-test");
-    expect(parsed.entries).toHaveLength(1);
-
-    // No leftover .tmp file after a successful write
-    const files = await fs.readdir(tmpDir);
-    expect(files).not.toContain(".vectors.json.tmp");
+  it("clearEmbeddings removes every stored vector", async () => {
+    await seedVector("p1", [1, 0]);
+    await seedVector("p2", [0, 1]);
+    await clearEmbeddings();
+    expect(await getStorage().getEmbeddingById("p1")).toBeNull();
+    expect(await getStorage().getEmbeddingById("p2")).toBeNull();
   });
 });
 
@@ -437,24 +405,25 @@ describe("relatedByVector", () => {
   beforeEach(async () => {
     tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "embeddings-test-"));
     process.env.WIKI_DIR = tmpDir;
+    process.env.DATA_DIR = tmpDir;
+    _resetStorage();
   });
 
   afterEach(async () => {
+    delete process.env.DATA_DIR;
+    _resetStorage();
     await fs.rm(tmpDir, { recursive: true, force: true });
   });
 
-  const store: VectorStore = {
-    model: "text-embedding-3-small",
-    entries: [
-      { slug: "anchor", embedding: [1, 0, 0], contentHash: "a" },
-      { slug: "near", embedding: [0.9, 0.1, 0], contentHash: "b" },
-      { slug: "mid", embedding: [0.6, 0.6, 0], contentHash: "c" },
-      { slug: "far", embedding: [0, 1, 0], contentHash: "d" },
-    ],
-  };
+  async function seedAnchorSet(model = DEFAULT_TEST_MODEL): Promise<void> {
+    await seedVector("anchor", [1, 0, 0], model, "a");
+    await seedVector("near", [0.9, 0.1, 0], model, "b");
+    await seedVector("mid", [0.6, 0.6, 0], model, "c");
+    await seedVector("far", [0, 1, 0], model, "d");
+  }
 
   it("ranks other pages by similarity to the anchor and excludes the anchor itself", async () => {
-    await saveVectorStore(store);
+    await seedAnchorSet();
     process.env.EMBEDDING_MODEL = "text-embedding-3-small";
     process.env.OPENAI_API_KEY = "sk-test";
 
@@ -465,7 +434,7 @@ describe("relatedByVector", () => {
   });
 
   it("respects topK", async () => {
-    await saveVectorStore(store);
+    await seedAnchorSet();
     process.env.EMBEDDING_MODEL = "text-embedding-3-small";
     process.env.OPENAI_API_KEY = "sk-test";
 
@@ -474,15 +443,15 @@ describe("relatedByVector", () => {
   });
 
   it("returns [] when the anchor has no stored vector", async () => {
-    await saveVectorStore(store);
+    await seedAnchorSet();
     process.env.EMBEDDING_MODEL = "text-embedding-3-small";
     process.env.OPENAI_API_KEY = "sk-test";
 
     expect(await relatedByVector("ghost", 10)).toEqual([]);
   });
 
-  it("returns [] when the store was built with a different model (stale)", async () => {
-    await saveVectorStore(store); // built with text-embedding-3-small
+  it("returns [] when the anchor's vector is from a different model (stale)", async () => {
+    await seedAnchorSet("text-embedding-3-small");
     process.env.EMBEDDING_MODEL = "text-embedding-3-large"; // current model differs
     process.env.OPENAI_API_KEY = "sk-test";
 
@@ -500,44 +469,35 @@ describe("removeEmbedding", () => {
   beforeEach(async () => {
     tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "embeddings-test-"));
     process.env.WIKI_DIR = tmpDir;
+    process.env.DATA_DIR = tmpDir;
+    _resetStorage();
   });
 
   afterEach(async () => {
+    delete process.env.DATA_DIR;
+    _resetStorage();
     await fs.rm(tmpDir, { recursive: true, force: true });
   });
 
   it("removes the correct slug from the store", async () => {
-    const store: VectorStore = {
-      model: "test-model",
-      entries: [
-        { slug: "keep-me", embedding: [1, 0], contentHash: "a" },
-        { slug: "remove-me", embedding: [0, 1], contentHash: "b" },
-        { slug: "also-keep", embedding: [1, 1], contentHash: "c" },
-      ],
-    };
-    await saveVectorStore(store);
+    await seedVector("keep-me", [1, 0], DEFAULT_TEST_MODEL, "a");
+    await seedVector("remove-me", [0, 1], DEFAULT_TEST_MODEL, "b");
+    await seedVector("also-keep", [1, 1], DEFAULT_TEST_MODEL, "c");
 
     await removeEmbedding("remove-me");
 
-    const loaded = await loadVectorStore();
-    expect(loaded!.entries).toHaveLength(2);
-    expect(loaded!.entries.map((e) => e.slug)).toEqual([
-      "keep-me",
-      "also-keep",
-    ]);
+    const storage = getStorage();
+    expect(await storage.getEmbeddingById("remove-me")).toBeNull();
+    expect(await storage.getEmbeddingById("keep-me")).not.toBeNull();
+    expect(await storage.getEmbeddingById("also-keep")).not.toBeNull();
   });
 
   it("does nothing if the slug is not in the store", async () => {
-    const store: VectorStore = {
-      model: "test-model",
-      entries: [{ slug: "existing", embedding: [1, 0], contentHash: "a" }],
-    };
-    await saveVectorStore(store);
+    await seedVector("existing", [1, 0], DEFAULT_TEST_MODEL, "a");
 
     await removeEmbedding("nonexistent");
 
-    const loaded = await loadVectorStore();
-    expect(loaded!.entries).toHaveLength(1);
+    expect(await getStorage().getEmbeddingById("existing")).not.toBeNull();
   });
 
   it("does nothing if the store does not exist", async () => {
@@ -556,120 +516,89 @@ describe("upsertEmbedding", () => {
   beforeEach(async () => {
     tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "embeddings-test-"));
     process.env.WIKI_DIR = tmpDir;
+    process.env.DATA_DIR = tmpDir;
     process.env.OPENAI_API_KEY = "sk-test-key";
+    _resetStorage();
   });
 
   afterEach(async () => {
+    delete process.env.DATA_DIR;
+    _resetStorage();
     await fs.rm(tmpDir, { recursive: true, force: true });
   });
 
-  it("skips re-embedding when contentHash matches", async () => {
+  it("skips re-embedding when contentHash and model match", async () => {
     const content = "hello world";
     const hash = contentHash(content);
-
-    // Pre-seed the store with a matching hash
-    const store: VectorStore = {
-      model: "text-embedding-3-small",
-      entries: [
-        { slug: "test-page", embedding: [0.1, 0.2], contentHash: hash },
-      ],
-    };
-    await saveVectorStore(store);
+    // Pre-seed with the matching hash + the current model.
+    await seedVector("test-page", [0.1, 0.2], "text-embedding-3-small", hash);
 
     await upsertEmbedding("test-page", content);
 
-    // embed should NOT have been called since hash matches
+    // embed should NOT have been called since hash + model match
     expect(mockEmbed).not.toHaveBeenCalled();
   });
 
-  it("clears all entries when model changes", async () => {
-    // Store was created with a different model
-    const store: VectorStore = {
-      model: "old-model-v1",
-      entries: [
-        { slug: "page-a", embedding: [1, 0], contentHash: "aaa" },
-        { slug: "page-b", embedding: [0, 1], contentHash: "bbb" },
-      ],
-    };
-    await saveVectorStore(store);
-
-    // Mock the AI SDK embed function
+  it("re-embeds when the stored vector is from a different model", async () => {
+    const content = "hello world";
+    const hash = contentHash(content);
+    // Same content hash, but a stale model → must re-embed (not skip).
+    await seedVector("test-page", [0.1, 0.2], "old-model-v1", hash);
     mockEmbed.mockResolvedValue({ embedding: [0.5, 0.5] });
 
-    await upsertEmbedding("new-page", "new content");
+    await upsertEmbedding("test-page", content);
 
-    const loaded = await loadVectorStore();
-    expect(loaded!.model).toBe("text-embedding-3-small"); // current model
-    // Old entries should be gone, only the new one remains
-    expect(loaded!.entries).toHaveLength(1);
-    expect(loaded!.entries[0].slug).toBe("new-page");
+    expect(mockEmbed).toHaveBeenCalled();
+    const got = await getStorage().getEmbeddingById("test-page");
+    expect(got!.vector).toEqual([0.5, 0.5]);
+    expect(got!.metadata.model).toBe("text-embedding-3-small");
   });
 
   it("adds a new entry when slug is not in store", async () => {
-    const store: VectorStore = {
-      model: "text-embedding-3-small",
-      entries: [
-        { slug: "existing", embedding: [1, 0], contentHash: "aaa" },
-      ],
-    };
-    await saveVectorStore(store);
-
+    await seedVector("existing", [1, 0], "text-embedding-3-small", "aaa");
     mockEmbed.mockResolvedValue({ embedding: [0.3, 0.7] });
 
     await upsertEmbedding("new-page", "some content");
 
-    const loaded = await loadVectorStore();
-    expect(loaded!.entries).toHaveLength(2);
-    expect(loaded!.entries[1].slug).toBe("new-page");
-    expect(loaded!.entries[1].embedding).toEqual([0.3, 0.7]);
+    const got = await getStorage().getEmbeddingById("new-page");
+    expect(got).not.toBeNull();
+    expect(got!.vector).toEqual([0.3, 0.7]);
   });
 
   it("updates an existing entry when content changes", async () => {
-    const store: VectorStore = {
-      model: "text-embedding-3-small",
-      entries: [
-        { slug: "my-page", embedding: [1, 0], contentHash: "old-hash" },
-      ],
-    };
-    await saveVectorStore(store);
-
+    await seedVector("my-page", [1, 0], "text-embedding-3-small", "old-hash");
     mockEmbed.mockResolvedValue({ embedding: [0.9, 0.1] });
 
     await upsertEmbedding("my-page", "updated content");
 
-    const loaded = await loadVectorStore();
-    expect(loaded!.entries).toHaveLength(1);
-    expect(loaded!.entries[0].slug).toBe("my-page");
-    expect(loaded!.entries[0].embedding).toEqual([0.9, 0.1]);
-    expect(loaded!.entries[0].contentHash).toBe(contentHash("updated content"));
+    const got = await getStorage().getEmbeddingById("my-page");
+    expect(got!.vector).toEqual([0.9, 0.1]);
+    expect(got!.metadata.contentHash).toBe(contentHash("updated content"));
   });
 
   it("does nothing when no embedding provider is available", async () => {
     delete process.env.OPENAI_API_KEY;
 
-    // Should not throw and should not create a store
+    // Should not throw and should not store anything.
     await upsertEmbedding("test", "content");
 
-    const loaded = await loadVectorStore();
-    expect(loaded).toBeNull();
+    expect(await getStorage().getEmbeddingById("test")).toBeNull();
     expect(mockEmbed).not.toHaveBeenCalled();
   });
 
   it("concurrent upserts don't clobber each other", async () => {
     process.env.OPENAI_API_KEY = "sk-test-concurrent";
-
     mockEmbed.mockResolvedValue({ embedding: [0.5, 0.5] });
 
-    // Fire two upserts concurrently with different slugs
+    // Fire two upserts concurrently with different slugs.
     await Promise.all([
       upsertEmbedding("page-alpha", "content alpha"),
       upsertEmbedding("page-beta", "content beta"),
     ]);
 
-    const loaded = await loadVectorStore();
-    expect(loaded).not.toBeNull();
-    const slugs = loaded!.entries.map((e) => e.slug).sort();
-    expect(slugs).toEqual(["page-alpha", "page-beta"]);
+    const storage = getStorage();
+    expect(await storage.getEmbeddingById("page-alpha")).not.toBeNull();
+    expect(await storage.getEmbeddingById("page-beta")).not.toBeNull();
   });
 });
 
@@ -683,9 +612,13 @@ describe("searchByVector", () => {
   beforeEach(async () => {
     tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "embeddings-test-"));
     process.env.WIKI_DIR = tmpDir;
+    process.env.DATA_DIR = tmpDir;
+    _resetStorage();
   });
 
   afterEach(async () => {
+    delete process.env.DATA_DIR;
+    _resetStorage();
     await fs.rm(tmpDir, { recursive: true, force: true });
   });
 
@@ -696,19 +629,11 @@ describe("searchByVector", () => {
   });
 
   it("returns correct ranking order", async () => {
-    // Pre-load a store with known embeddings
-    const store: VectorStore = {
-      model: "text-embedding-3-small",
-      entries: [
-        { slug: "low-match", embedding: [0, 1, 0], contentHash: "a" },
-        { slug: "high-match", embedding: [1, 0, 0], contentHash: "b" },
-        { slug: "mid-match", embedding: [0.7, 0.7, 0], contentHash: "c" },
-      ],
-    };
-    await saveVectorStore(store);
+    await seedVector("low-match", [0, 1, 0], DEFAULT_TEST_MODEL, "a");
+    await seedVector("high-match", [1, 0, 0], DEFAULT_TEST_MODEL, "b");
+    await seedVector("mid-match", [0.7, 0.7, 0], DEFAULT_TEST_MODEL, "c");
 
     process.env.OPENAI_API_KEY = "sk-test";
-
     // Mock embed to return a query vector closest to high-match
     mockEmbed.mockResolvedValue({ embedding: [1, 0, 0] });
 
@@ -723,15 +648,9 @@ describe("searchByVector", () => {
   });
 
   it("respects topK limit", async () => {
-    const store: VectorStore = {
-      model: "text-embedding-3-small",
-      entries: [
-        { slug: "a", embedding: [1, 0], contentHash: "a" },
-        { slug: "b", embedding: [0.9, 0.1], contentHash: "b" },
-        { slug: "c", embedding: [0.5, 0.5], contentHash: "c" },
-      ],
-    };
-    await saveVectorStore(store);
+    await seedVector("a", [1, 0], DEFAULT_TEST_MODEL, "a");
+    await seedVector("b", [0.9, 0.1], DEFAULT_TEST_MODEL, "b");
+    await seedVector("c", [0.5, 0.5], DEFAULT_TEST_MODEL, "c");
 
     process.env.OPENAI_API_KEY = "sk-test";
     mockEmbed.mockResolvedValue({ embedding: [1, 0] });
@@ -740,13 +659,7 @@ describe("searchByVector", () => {
     expect(results).toHaveLength(2);
   });
 
-  it("returns empty array when store is empty", async () => {
-    const store: VectorStore = {
-      model: "text-embedding-3-small",
-      entries: [],
-    };
-    await saveVectorStore(store);
-
+  it("returns empty array when the store is empty", async () => {
     process.env.OPENAI_API_KEY = "sk-test";
     mockEmbed.mockResolvedValue({ embedding: [1, 0] });
 
@@ -754,23 +667,17 @@ describe("searchByVector", () => {
     expect(results).toEqual([]);
   });
 
-  it("returns empty array when store model differs from current model", async () => {
-    // Store was built with a different model than the current provider uses
-    const store: VectorStore = {
-      model: "old-model-from-different-provider",
-      entries: [
-        { slug: "page-a", embedding: [1, 0, 0], contentHash: "a" },
-        { slug: "page-b", embedding: [0, 1, 0], contentHash: "b" },
-      ],
-    };
-    await saveVectorStore(store);
+  it("drops matches whose stored model differs from the current model", async () => {
+    // Vectors were embedded by a different model than the current provider uses.
+    await seedVector("page-a", [1, 0, 0], "old-model-from-different-provider", "a");
+    await seedVector("page-b", [0, 1, 0], "old-model-from-different-provider", "b");
 
     process.env.OPENAI_API_KEY = "sk-test";
     mockEmbed.mockResolvedValue({ embedding: [1, 0, 0] });
 
     const results = await searchByVector("test query", 10);
 
-    // Should return empty because store model doesn't match current model
+    // All matches filtered out — stale model.
     expect(results).toEqual([]);
   });
 });
@@ -1017,10 +924,14 @@ describe("rebuildVectorStore", () => {
   beforeEach(async () => {
     tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "embeddings-rebuild-"));
     process.env.WIKI_DIR = tmpDir;
+    process.env.DATA_DIR = tmpDir;
     process.env.OPENAI_API_KEY = "sk-test-key";
+    _resetStorage();
   });
 
   afterEach(async () => {
+    delete process.env.DATA_DIR;
+    _resetStorage();
     await fs.rm(tmpDir, { recursive: true, force: true });
   });
 
@@ -1033,7 +944,7 @@ describe("rebuildVectorStore", () => {
     );
   });
 
-  it("creates a fresh store with all wiki pages embedded", async () => {
+  it("embeds all wiki pages into the store", async () => {
     mockListWikiPages.mockResolvedValue([
       { title: "Page A", slug: "page-a", summary: "Summary A" },
       { title: "Page B", slug: "page-b", summary: "Summary B" },
@@ -1061,13 +972,12 @@ describe("rebuildVectorStore", () => {
     expect(result.skipped).toBe(0);
     expect(result.model).toBe("text-embedding-3-small");
 
-    const store = await loadVectorStore();
-    expect(store).not.toBeNull();
-    expect(store!.model).toBe("text-embedding-3-small");
-    expect(store!.entries).toHaveLength(2);
-    expect(store!.entries[0].slug).toBe("page-a");
-    expect(store!.entries[0].contentHash).toBe(contentHash("Content A"));
-    expect(store!.entries[1].slug).toBe("page-b");
+    const storage = getStorage();
+    const a = await storage.getEmbeddingById("page-a");
+    expect(a).not.toBeNull();
+    expect(a!.metadata.model).toBe("text-embedding-3-small");
+    expect(a!.metadata.contentHash).toBe(contentHash("Content A"));
+    expect(await storage.getEmbeddingById("page-b")).not.toBeNull();
   });
 
   it("skips pages with empty content", async () => {
@@ -1093,9 +1003,9 @@ describe("rebuildVectorStore", () => {
     expect(result.embedded).toBe(1);
     expect(result.skipped).toBe(1);
 
-    const store = await loadVectorStore();
-    expect(store!.entries).toHaveLength(1);
-    expect(store!.entries[0].slug).toBe("good");
+    const storage = getStorage();
+    expect(await storage.getEmbeddingById("good")).not.toBeNull();
+    expect(await storage.getEmbeddingById("empty")).toBeNull();
   });
 
   it("skips pages where readWikiPage returns null", async () => {
@@ -1111,15 +1021,9 @@ describe("rebuildVectorStore", () => {
     expect(result.skipped).toBe(1);
   });
 
-  it("replaces existing store completely", async () => {
-    // Pre-seed a store with old data
-    const oldStore: VectorStore = {
-      model: "old-model",
-      entries: [
-        { slug: "old-page", embedding: [1, 0], contentHash: "old" },
-      ],
-    };
-    await saveVectorStore(oldStore);
+  it("upserts current pages (orphans from deleted pages are left for query-time filtering)", async () => {
+    // Pre-seed an orphan (a page no longer in the index).
+    await seedVector("old-page", [1, 0], "old-model", "old");
 
     mockListWikiPages.mockResolvedValue([
       { title: "New", slug: "new-page", summary: "Brand new" },
@@ -1135,12 +1039,11 @@ describe("rebuildVectorStore", () => {
     const result = await rebuildVectorStore();
 
     expect(result.embedded).toBe(1);
-
-    const store = await loadVectorStore();
-    expect(store!.model).toBe("text-embedding-3-small");
-    // Old entry should be gone
-    expect(store!.entries).toHaveLength(1);
-    expect(store!.entries[0].slug).toBe("new-page");
+    const newPage = await getStorage().getEmbeddingById("new-page");
+    expect(newPage).not.toBeNull();
+    expect(newPage!.metadata.model).toBe("text-embedding-3-small");
+    // The orphan isn't actively purged (no bulk-clear on a managed index); it's
+    // harmless because reads intersect with the readable slug set.
   });
 
   it("calls onProgress callback", async () => {
@@ -1175,10 +1078,6 @@ describe("rebuildVectorStore", () => {
     expect(result.total).toBe(0);
     expect(result.embedded).toBe(0);
     expect(result.skipped).toBe(0);
-
-    const store = await loadVectorStore();
-    expect(store).not.toBeNull();
-    expect(store!.entries).toHaveLength(0);
   });
 
   it("skips pages where embedding throws an error", async () => {
