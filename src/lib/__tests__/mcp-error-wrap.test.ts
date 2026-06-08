@@ -6,7 +6,7 @@ vi.mock("../search", async (importOriginal) => {
   const orig = await importOriginal<typeof import("../search")>();
   return {
     ...orig,
-    searchWikiContent: vi
+    fuzzySearchWikiContent: vi
       .fn()
       .mockRejectedValue(new Error("search index corrupted")),
   };

@@ -196,6 +196,7 @@ describe("search_wiki", () => {
     expect(results[0].title).toBe("Neural Networks");
     expect(results[0].snippet).toBeDefined();
     expect(typeof results[0].score).toBe("number");
+    expect(typeof results[0].summary).toBe("string");
   });
 
   it("returns empty array for no matches", async () => {
@@ -251,6 +252,22 @@ describe("search_wiki", () => {
     const results = await handleSearchWiki({ query: "unique searchable content alpha" });
     expect(results.length).toBeGreaterThanOrEqual(1);
     expect(results[0].slug).toBe("page-x");
+  });
+
+  it("returns fuzzy matches with fuzzy flag for near-miss queries", async () => {
+    // Write a page with a specific term
+    await writeTestPage(
+      "photosynthesis",
+      "# Photosynthesis\n\nPhotosynthesis is the process by which plants convert sunlight into energy.",
+    );
+
+    // Search with a typo — "photosynthsis" (missing 'e')
+    const results = await handleSearchWiki({ query: "photosynthsis" });
+    expect(results.length).toBeGreaterThanOrEqual(1);
+    const match = results.find((r) => r.slug === "photosynthesis");
+    expect(match).toBeDefined();
+    expect(match!.fuzzy).toBe(true);
+    expect(typeof match!.summary).toBe("string");
   });
 });
 

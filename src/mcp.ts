@@ -48,7 +48,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import * as z from "zod/v4";
 import {
-  searchWikiContent,
+  fuzzySearchWikiContent,
   readWikiPage,
   readWikiPageWithFrontmatter,
   listReadableWikiPages,
@@ -88,10 +88,10 @@ export async function handleSearchWiki(args: {
   query: string;
   limit?: number | undefined;
   scope?: string | undefined;
-}): Promise<{ slug: string; title: string; snippet: string; score: number }[]> {
+}): Promise<{ slug: string; title: string; summary: string; snippet: string; score: number; fuzzy?: boolean }[]> {
   const limit = args.limit ?? 10;
   const scope = args.scope ? await resolveScope(args.scope) : undefined;
-  const results: ContentSearchResult[] = await searchWikiContent(
+  const results: ContentSearchResult[] = await fuzzySearchWikiContent(
     args.query,
     limit,
     scope ?? undefined,
@@ -100,8 +100,10 @@ export async function handleSearchWiki(args: {
   return results.map((r) => ({
     slug: r.slug,
     title: r.title,
+    summary: r.summary,
     snippet: r.snippet,
     score: r.score,
+    ...(r.fuzzy ? { fuzzy: true } : {}),
   }));
 }
 
