@@ -63,8 +63,11 @@ describe("validateIngestInput", () => {
 
   // ── batch mode (falls through to text branch) ────────────────────────
 
-  it("batch mode without title → error (uses text branch)", () => {
-    expect(validateIngestInput("batch", "", "content", "")).toBe(
+  it("image/pdf mode without title → error (title still required there)", () => {
+    expect(validateIngestInput("image", "", "content", "")).toBe(
+      "Please enter a title",
+    );
+    expect(validateIngestInput("pdf", "", "content", "")).toBe(
       "Please enter a title",
     );
   });

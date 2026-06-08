@@ -151,6 +151,47 @@ describe("ingest — title derivation", () => {
     await expect(ingest("!!!", "###  \n  ")).rejects.toThrow(/could be derived/);
     await expect(ingest("   ", "   ")).rejects.toThrow(/could be derived/);
   });
+
+  it("a title-less paste with an LLM CONCEPT lands on the concept slug + records the derived title as an alias", async () => {
+    mockedHasLLMKey.mockReturnValue(true);
+    try {
+      mockedCallLLM.mockResolvedValue(
+        "CONCEPT: Vector Databases\nALIASES: none\n\n# Vector Databases\n\n## Summary\n\nThey store embeddings.",
+      );
+      const result = await ingest(
+        "",
+        "Vector search systems store embeddings for similarity.",
+      );
+      // Concept slug wins over the first-line-derived provisional slug.
+      expect(result.primarySlug).toBe("vector-databases");
+      const page = await readWikiPageWithFrontmatter("vector-databases");
+      const aliases = (page!.frontmatter.aliases ?? []) as string[];
+      // The derived provisional title becomes an alias; no empty string leaks.
+      expect(aliases).toContain(
+        "Vector search systems store embeddings for similarity",
+      );
+      expect(aliases).not.toContain("");
+    } finally {
+      mockedHasLLMKey.mockReturnValue(false);
+      mockedCallLLM.mockReset();
+    }
+  });
+
+  it("commit-from-preview for a title-less paste stays on the concept slug (no fork)", async () => {
+    mockedHasLLMKey.mockReturnValue(true);
+    try {
+      // Commit a reviewed draft (generatedContent) with no title — the body H1
+      // drives the slug, not the empty/derived title.
+      const result = await ingest("", "some pasted content here.", {
+        generatedContent: "# Topic X\n\n## Summary\n\nApproved body.",
+      });
+      expect(result.primarySlug).toBe("topic-x");
+      expect(await readWikiPageWithFrontmatter("topic-x")).not.toBeNull();
+    } finally {
+      mockedHasLLMKey.mockReturnValue(false);
+      mockedCallLLM.mockReset();
+    }
+  });
 });
 
 // ---------------------------------------------------------------------------
