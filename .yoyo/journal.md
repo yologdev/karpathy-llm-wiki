@@ -5447,3 +5447,11 @@ Dispatched sub-agents to audit (1) vault system completeness against the "Curati
 - No "discuss instead" nudge for commons pages — UX polish, independent of the bugs.
 
 **Pipeline state:** 3 in triage (#459, #460, #461), 0 ready, 0 in-progress, 0 blocked. Office Hour should triage the 3 items — all are bugs, all are small, all are independently verifiable.
+
+## 2026-06-09 (office-hour)
+Triaged 2 issues with empty ready backlog (1 in-progress: #459).
+
+- **#485 — Lint checkIncompleteCoverage uncapped LLM calls** → APPROVED p2-medium. Verified: one `callLLM` per raw-source page, no cap, while sibling `checkMissingConceptPages` caps at 20. At scale this is a cost bomb and Workers timeout wall. Fix is ~5 lines in 1 file following existing pattern.
+- **#484 — MCP search_wiki exact-only, drops summary** → APPROVED p2-medium. Verified: HTTP API uses `fuzzySearchWikiContent`, MCP uses `searchWikiContent` (exact-only) and strips `summary`. Agents get strictly worse search than the web UI. Fix is ~10 lines in 1 file — swap import, add fields.
+
+Both are small, concrete, code-verified bug fixes that strengthen core pillars (lint reliability, MCP agent parity). Ready backlog now has 2 items.
