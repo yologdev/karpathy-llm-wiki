@@ -11,6 +11,8 @@ import {
   chunkText,
   parseConceptMarker,
   parseDisputedMarker,
+  normalizeTags,
+  collectTagVocabulary,
   tokenizeSourceImages,
   restoreImageTokens,
 } from "../ingest";
@@ -309,6 +311,63 @@ describe("ingest", () => {
 // ---------------------------------------------------------------------------
 // ingest — YAML frontmatter
 // ---------------------------------------------------------------------------
+
+describe("ingest — auto tags", () => {
+  beforeEach(() => {
+    mockedHasLLMKey.mockReturnValue(true);
+  });
+  afterEach(() => {
+    mockedHasLLMKey.mockReturnValue(false);
+  });
+
+  it("persists LLM-synthesized TAGS to the page frontmatter", async () => {
+    mockedCallLLM.mockResolvedValueOnce(
+      "CONCEPT: Vector Databases\nTAGS: Databases, vector-search, #AI\n\n# Vector Databases\n\n## Summary\n\nStores embeddings.",
+    );
+
+    const result = await ingest("Vector DBs", "A source about vector databases and ANN search.");
+    const page = await readWikiPageWithFrontmatter(result.primarySlug);
+    expect(page!.frontmatter.tags).toEqual(["databases", "vector-search", "ai"]);
+  });
+
+  it("merges synthesized tags with caller-supplied tags (deduped)", async () => {
+    mockedCallLLM.mockResolvedValueOnce(
+      "CONCEPT: Caching\nTAGS: performance, caching\n\n# Caching\n\nBody.",
+    );
+
+    const result = await ingest("Caching", "Source about caching.", {
+      tags: ["systems", "caching"],
+    });
+    const page = await readWikiPageWithFrontmatter(result.primarySlug);
+    expect((page!.frontmatter.tags as string[]).sort()).toEqual([
+      "caching",
+      "performance",
+      "systems",
+    ]);
+  });
+
+  it("collectTagVocabulary reflects tags across ingested pages, most-used first", async () => {
+    mockedCallLLM.mockResolvedValueOnce("CONCEPT: Alpha\nTAGS: ml, nlp\n\n# Alpha\n\nBody.");
+    await ingest("Alpha", "source alpha about ml and nlp");
+    mockedCallLLM.mockResolvedValueOnce("CONCEPT: Beta\nTAGS: ml\n\n# Beta\n\nBody.");
+    await ingest("Beta", "source beta about ml");
+
+    const vocab = await collectTagVocabulary();
+    expect(vocab[0]).toBe("ml"); // used by both pages → ranked first
+    expect(vocab).toContain("nlp");
+  });
+
+  it("buildIngestSystemPrompt injects the existing tag vocabulary for reuse", async () => {
+    mockedCallLLM.mockResolvedValueOnce(
+      "CONCEPT: Gamma\nTAGS: machine-learning, nlp\n\n# Gamma\n\nBody.",
+    );
+    await ingest("Gamma", "source gamma");
+
+    const prompt = await buildIngestSystemPrompt();
+    expect(prompt).toContain("Tags already used across this wiki");
+    expect(prompt).toContain("machine-learning");
+  });
+});
 
 describe("ingest — YAML frontmatter", () => {
   it("prepends a frontmatter block to new pages", async () => {
@@ -1642,6 +1701,12 @@ describe("schema-aware ingest prompt", () => {
     // substantive source content (not just a thin summary).
     expect(prompt).toContain("## Details");
   });
+
+  it("buildIngestSystemPrompt asks for a TAGS line in the output spec", async () => {
+    const prompt = await buildIngestSystemPrompt();
+    expect(prompt).toContain("TAGS:");
+    expect(prompt).toContain("lowercase, hyphenated");
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -1707,6 +1772,49 @@ describe("parseConceptMarker", () => {
     const { concept, body } = parseConceptMarker(raw);
     expect(concept).toBe("");
     expect(body).toBe(raw);
+  });
+
+  it("parses a TAGS line (normalized) and strips all three headers", () => {
+    const { concept, aliases, tags, body } = parseConceptMarker(
+      "CONCEPT: Transformer\nALIASES: none\nTAGS: Machine Learning, deep-learning, #NLP\n\n# Transformer\n\nBody.",
+    );
+    expect(concept).toBe("Transformer");
+    expect(aliases).toEqual([]);
+    expect(tags).toEqual(["machine-learning", "deep-learning", "nlp"]);
+    expect(body).toBe("# Transformer\n\nBody.");
+    expect(body).not.toContain("TAGS:");
+  });
+
+  it("parses TAGS even when it precedes ALIASES", () => {
+    const { aliases, tags, body } = parseConceptMarker(
+      "CONCEPT: RAG\nTAGS: retrieval, llm\nALIASES: retrieval-augmented generation\n\n# RAG\n",
+    );
+    expect(tags).toEqual(["retrieval", "llm"]);
+    expect(aliases).toEqual(["retrieval-augmented generation"]);
+    expect(body).toBe("# RAG\n");
+  });
+
+  it("returns no tags when the TAGS line is absent or 'none'", () => {
+    expect(parseConceptMarker("CONCEPT: X\n\n# X\n").tags).toEqual([]);
+    expect(parseConceptMarker("CONCEPT: X\nTAGS: none\n\n# X\n").tags).toEqual([]);
+  });
+});
+
+describe("normalizeTags", () => {
+  it("lowercases, hyphenates, strips '#', and dedupes", () => {
+    expect(normalizeTags(["Machine Learning", "#NLP", "machine  learning", "deep_learning"])).toEqual([
+      "machine-learning",
+      "nlp",
+      "deep-learning",
+    ]);
+  });
+
+  it("caps the number of tags", () => {
+    expect(normalizeTags(["a", "b", "c", "d", "e", "f", "g", "h"], 3)).toEqual(["a", "b", "c"]);
+  });
+
+  it("drops entries that normalize to empty", () => {
+    expect(normalizeTags(["###", "  ", "ok"])).toEqual(["ok"]);
   });
 });
 

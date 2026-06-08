@@ -52,6 +52,8 @@ import {
   MAX_APPENDED_IMAGES,
   MAX_CONTENT_LENGTH,
   MAX_PDF_SIZE,
+  MAX_AUTO_TAGS,
+  TAG_VOCAB_LIMIT,
 } from "./constants";
 import { ClientInputError } from "./errors";
 import { slugify } from "./slugify";
@@ -684,11 +686,13 @@ function splitSentences(text: string): string[] {
 // Conventions are documented in SCHEMA.md at the repo root.
 const INGEST_SYSTEM_PROMPT_BASE = `You are a wiki editor. Given a source document, generate a wiki article in markdown format.
 
-Begin your output with these two header lines in EXACTLY this form:
+Begin your output with these three header lines in EXACTLY this form:
 CONCEPT: <canonical concept name>
 ALIASES: <comma-separated alternative names / synonyms for the concept, or "none">
+TAGS: <3-6 lowercase, hyphenated topic tags, comma-separated>
 CONCEPT names the one CANONICAL CONCEPT the document is about — the established term other writers on the same topic would also use (a concept, NOT the article's headline). Pick a granularity that is one coherent topic: general enough that other articles on the same subject would share it, specific enough not to lump distinct topics together.
 ALIASES lists other names the SAME concept is known by (acronyms, expansions, common synonyms) so future sources under those names converge here — not narrower sub-topics or related concepts. Use "none" if there are no real synonyms.
+TAGS are 3-6 broad topical labels for browsing/filtering (e.g. \`machine-learning\`, \`distributed-systems\`) — lowercase, hyphenated, no \`#\`. Tags are coarser than the CONCEPT: they group MANY pages, so reuse shared themes rather than coining a unique tag per page.
 
 Then, on the following lines, the wiki article. Include:
 - A title as a level-1 heading (# Title) — use the SAME canonical concept
@@ -705,7 +709,7 @@ Then, on the following lines, the wiki article. Include:
 
 Images: the source may contain placeholder tokens like \`[[IMG:1]]\`. KEEP the ones that are genuine content — diagrams, figures, charts, screenshots that illustrate the topic — by writing the SAME token on its own line at the most relevant point in the article (next to the text it illustrates). Omit any token whose image is clearly decorative/branding/UI. Never invent tokens or change their numbers; output each kept token verbatim.
 
-Write a focused, distilled page, not a transcript of the source. Output the CONCEPT and ALIASES lines, then pure markdown, and nothing else. Do not wrap in code fences.`;
+Write a focused, distilled page, not a transcript of the source. Output the CONCEPT, ALIASES, and TAGS lines, then pure markdown, and nothing else. Do not wrap in code fences.`;
 
 /**
  * System prompt for continuation chunks when a long source document has been
@@ -763,27 +767,68 @@ Output the optional DISPUTED line, then pure markdown, and nothing else. Do not 
 export function parseConceptMarker(raw: string): {
   concept: string;
   aliases: string[];
+  tags: string[];
   body: string;
 } {
   const conceptM = raw.match(/^\uFEFF?\s*CONCEPT:[ \t]*(.+?)[ \t]*(?:\r?\n|$)/i);
-  if (!conceptM) return { concept: "", aliases: [], body: raw };
+  if (!conceptM) return { concept: "", aliases: [], tags: [], body: raw };
 
   let rest = raw.slice(conceptM[0].length);
   let aliases: string[] = [];
-  const aliasM = rest.match(/^\s*ALIASES:[ \t]*(.*?)[ \t]*(?:\r?\n|$)/i);
-  if (aliasM) {
-    rest = rest.slice(aliasM[0].length);
-    aliases = aliasM[1]
+  let tags: string[] = [];
+  const splitList = (s: string) =>
+    s
       .split(/[;,]/)
-      .map((s) => s.trim())
-      .filter((s) => s !== "" && s.toLowerCase() !== "none");
+      .map((x) => x.trim())
+      .filter((x) => x !== "" && x.toLowerCase() !== "none");
+
+  // Consume the optional ALIASES / TAGS header lines in either order.
+  for (let i = 0; i < 2; i++) {
+    const aliasM = rest.match(/^\s*ALIASES:[ \t]*(.*?)[ \t]*(?:\r?\n|$)/i);
+    if (aliasM && aliases.length === 0) {
+      rest = rest.slice(aliasM[0].length);
+      aliases = splitList(aliasM[1]);
+      continue;
+    }
+    const tagM = rest.match(/^\s*TAGS:[ \t]*(.*?)[ \t]*(?:\r?\n|$)/i);
+    if (tagM && tags.length === 0) {
+      rest = rest.slice(tagM[0].length);
+      tags = normalizeTags(splitList(tagM[1]));
+      continue;
+    }
+    break;
   }
 
   return {
     concept: conceptM[1].trim(),
     aliases,
+    tags,
     body: rest.replace(/^\s+/, ""),
   };
+}
+
+/**
+ * Normalize free-text tags to the wiki's canonical form: lowercase,
+ * hyphen-separated, no leading `#`, deduped, capped at {@link MAX_AUTO_TAGS}.
+ * Keeps tags consistent regardless of how the LLM (or a caller) cased/spaced them.
+ */
+export function normalizeTags(raw: string[], max: number = MAX_AUTO_TAGS): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const t of raw) {
+    const tag = t
+      .toLowerCase()
+      .trim()
+      .replace(/^#+/, "")
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "");
+    if (tag && !seen.has(tag)) {
+      seen.add(tag);
+      out.push(tag);
+      if (out.length >= max) break;
+    }
+  }
+  return out;
 }
 
 /** Cosine-similarity floor for treating the nearest existing page as the SAME
@@ -898,16 +943,54 @@ async function reconcilePage(
  * call (no caching) so live edits to SCHEMA.md take effect immediately —
  * the whole point is to keep prompt and schema co-evolving.
  */
+/**
+ * The wiki's existing tag vocabulary (most-used first), so the synthesis LLM can
+ * PREFER reusing established tags over coining near-duplicates ("llm" vs "llms").
+ * Capped at {@link TAG_VOCAB_LIMIT} to bound prompt size. Best-effort: returns
+ * `[]` if the index can't be read.
+ */
+export async function collectTagVocabulary(
+  limit: number = TAG_VOCAB_LIMIT,
+): Promise<string[]> {
+  try {
+    const counts = new Map<string, number>();
+    for (const entry of await listWikiPages()) {
+      for (const t of entry.tags ?? []) {
+        if (typeof t === "string" && t.trim() !== "") {
+          counts.set(t, (counts.get(t) ?? 0) + 1);
+        }
+      }
+    }
+    return [...counts.entries()]
+      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+      .slice(0, limit)
+      .map(([tag]) => tag);
+  } catch {
+    return [];
+  }
+}
+
 export async function buildIngestSystemPrompt(): Promise<string> {
   const conventions = await loadPageConventions();
-  if (conventions === "") return INGEST_SYSTEM_PROMPT_BASE;
-  return `${INGEST_SYSTEM_PROMPT_BASE}
+  const vocab = await collectTagVocabulary();
+
+  let prompt = INGEST_SYSTEM_PROMPT_BASE;
+  if (conventions !== "") {
+    prompt += `
 
 The wiki you are editing follows these conventions (from SCHEMA.md):
 
 ${conventions}
 
 Follow these conventions when generating the page.`;
+  }
+  if (vocab.length > 0) {
+    prompt += `
+
+Tags already used across this wiki (PREFER reusing an existing tag when it fits; only coin a new one when none apply):
+${vocab.join(", ")}`;
+  }
+  return prompt;
 }
 
 // ---------------------------------------------------------------------------
@@ -1223,6 +1306,7 @@ export async function ingest(
   const {
     concept,
     aliases: conceptSynonyms,
+    tags: conceptTags,
     body: conceptStrippedBody,
   } = parseConceptMarker(wikiContent);
   wikiContent = conceptStrippedBody;
@@ -1331,8 +1415,15 @@ export async function ingest(
       }
     }
 
+    // Synthesized tags + any existing/caller tags. The reviewer sees these in
+    // the card and (via the commit-from-preview path) they're sent back as
+    // options.tags on approve, so the published page keeps them.
     const tags = Array.from(
-      new Set([...(existingEntry?.tags ?? []), ...(options?.tags ?? [])]),
+      new Set([
+        ...(existingEntry?.tags ?? []),
+        ...(options?.tags ?? []),
+        ...conceptTags,
+      ]),
     );
 
     const previewMeta: IngestPreviewMeta = {
@@ -1417,9 +1508,11 @@ export async function ingest(
   const sourceEntry = buildSourceEntry(sourceUrl, sourceType, options?.triggeredBy, rawId);
   frontmatter.sources = serializeSources([sourceEntry]);
 
-  // Apply tags from options (will be merged with existing tags below for re-ingests).
-  if (options?.tags && options.tags.length > 0) {
-    frontmatter.tags = options.tags;
+  // Tags: synthesized (conceptTags, empty on commit-from-preview/fallback) plus
+  // any caller-supplied tags. Merged with existing tags below for re-ingests.
+  const newTags = [...new Set([...(options?.tags ?? []), ...conceptTags])];
+  if (newTags.length > 0) {
+    frontmatter.tags = newTags;
   }
 
   const existing = await readWikiPageWithFrontmatter(slug);
@@ -1443,7 +1536,6 @@ export async function ingest(
       const existingTags = existing.frontmatter.tags.filter(
         (t): t is string => typeof t === "string",
       );
-      const newTags = options?.tags ?? [];
       const merged = [...new Set([...existingTags, ...newTags])];
       frontmatter.tags = merged;
     }

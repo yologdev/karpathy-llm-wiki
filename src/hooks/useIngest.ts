@@ -191,14 +191,19 @@ export function useIngest(): UseIngestReturn {
     setError(null);
 
     const generated = editedContent ?? preview.previewContent;
+    // The synthesized tags shown in the review card live only in the preview
+    // meta; forward them on commit so the published page keeps them (the
+    // commit-from-preview path skips the LLM and re-derives nothing).
+    const tags = preview.meta?.tags;
 
     try {
       const body = preview.url
-        ? { url: preview.url, generatedContent: generated }
+        ? { url: preview.url, generatedContent: generated, ...(tags?.length ? { tags } : {}) }
         : {
             title: preview.title,
             content: preview.content,
             generatedContent: generated,
+            ...(tags?.length ? { tags } : {}),
             // Preserve PDF/image provenance through the text commit path.
             ...(preview.sourceType ? { sourceType: preview.sourceType } : {}),
             ...(preview.sourceUrl ? { sourceUrl: preview.sourceUrl } : {}),

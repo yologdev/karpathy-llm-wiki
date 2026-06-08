@@ -39,6 +39,15 @@ export const MAX_IMAGES_PER_SOURCE = 20;
 /** Maximum number of source images tokenized for inline placement during synthesis. */
 export const MAX_APPENDED_IMAGES = 12;
 
+/** Max auto-generated tags persisted per page during synthesis. */
+export const MAX_AUTO_TAGS = 6;
+
+/**
+ * Max existing tags shown to the synthesis LLM as the reuse vocabulary. Bounds
+ * prompt size on large wikis (most-used tags first).
+ */
+export const TAG_VOCAB_LIMIT = 60;
+
 // ---- Batch ingest ---------------------------------------------------------
 
 /** Maximum number of URLs accepted in a single batch-ingest request. */
