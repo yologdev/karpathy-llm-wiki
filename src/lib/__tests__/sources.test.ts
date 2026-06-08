@@ -41,6 +41,23 @@ describe("dedupeSourcesForDisplay", () => {
     expect(out).toHaveLength(2);
     expect(out.map((s) => s.type)).toEqual(["text", "x-mention"]);
   });
+
+  it("keeps distinct uploads separate by snapshot id (same 'upload' sentinel URL)", () => {
+    const withRaw = (rawId: string): SourceEntry => ({
+      type: "image",
+      url: "upload",
+      fetched: "2026-01-01",
+      triggered_by: "system",
+      raw_id: rawId,
+    });
+    const out = dedupeSourcesForDisplay([
+      withRaw("hashA"),
+      withRaw("hashB"),
+      withRaw("hashA"), // dup → dropped
+    ]);
+    expect(out).toHaveLength(2);
+    expect(out.map((s) => s.raw_id)).toEqual(["hashA", "hashB"]);
+  });
 });
 
 describe("newestSourceType", () => {

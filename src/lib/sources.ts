@@ -68,17 +68,21 @@ export function parseSources(raw: string | string[] | undefined): SourceEntry[] 
 }
 
 /**
- * Collapse duplicate sources for DISPLAY — a real source is the same source if
- * it shares a URL (even if a past ingest recorded it under a different type),
- * keeping the first occurrence. `text-paste` placeholders carry no real URL, so
- * they stay distinct per type. Display-only: never use this where the full
- * `sources[]` is needed (the ingest merge dedups at write time on its own).
+ * Collapse duplicate sources for DISPLAY — a real (http/https) source is the
+ * same source if it shares a URL, even if a past ingest recorded it under a
+ * different type; the first occurrence wins. Sentinel "URLs" (`text-paste`,
+ * `upload`) carry no real address, so they're distinguished by their snapshot
+ * id (falling back to type) — distinct pastes/uploads stay separate.
+ *
+ * Display-only: never use this where the full `sources[]` is needed (the ingest
+ * merge dedups at write time on its own).
  */
 export function dedupeSourcesForDisplay(sources: SourceEntry[]): SourceEntry[] {
   const seen = new Set<string>();
   const out: SourceEntry[] = [];
   for (const s of sources) {
-    const key = s.url === "text-paste" ? `text-paste:${s.type}` : s.url;
+    const isHttp = /^https?:\/\//i.test(s.url);
+    const key = isHttp ? s.url : `${s.url}:${s.raw_id ?? s.type}`;
     if (seen.has(key)) continue;
     seen.add(key);
     out.push(s);
