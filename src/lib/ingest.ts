@@ -54,6 +54,43 @@ function mergeSourceEntry(sources: SourceEntry[], entry: SourceEntry): SourceEnt
   }
   return base;
 }
+
+/**
+ * Authority baseline per source type for the confidence heuristic — higher for
+ * documents/articles, lower for social/unverified provenance.
+ */
+const SOURCE_TYPE_WEIGHT: Record<SourceEntry["type"], number> = {
+  pdf: 0.75,
+  "wiki-ref": 0.72,
+  url: 0.7,
+  youtube: 0.62,
+  image: 0.55,
+  text: 0.55,
+  "x-mention": 0.55,
+};
+
+/**
+ * Heuristic page confidence from real provenance signals — replaces the old
+ * constant 0.7:
+ *  - authority of the STRONGEST source type present,
+ *  - corroboration: +0.05 per additional DISTINCT source URL (cap +0.15),
+ *  - a `disputed` page is capped at 0.5.
+ * Clamped to [0.3, 0.95], rounded to 2 decimals. An empty source set → 0.6.
+ */
+export function computeConfidence(
+  sources: SourceEntry[],
+  disputed: boolean,
+): number {
+  if (sources.length === 0) return 0.6;
+  const base = Math.max(
+    ...sources.map((s) => SOURCE_TYPE_WEIGHT[s.type] ?? 0.6),
+  );
+  const distinctUrls = new Set(sources.map((s) => s.url)).size;
+  const corroboration = Math.min(0.15, Math.max(0, distinctUrls - 1) * 0.05);
+  let score = base + corroboration;
+  if (disputed) score = Math.min(score, 0.5);
+  return Math.round(Math.min(0.95, Math.max(0.3, score)) * 100) / 100;
+}
 import {
   MAX_LLM_INPUT_CHARS,
   INGEST_MAX_OUTPUT_TOKENS,
@@ -1441,22 +1478,38 @@ export async function ingest(
 
     // Mirror exactly what the commit path below would write so the review card
     // never promises a value publish won't honor. Review-by always resets to
-    // now + 90 days (a re-ingest refreshes the page). Confidence defaults to 0.7
-    // and is only preserved on a merge when the existing page was set HIGHER
-    // (the > 0.7 rule at the re-ingest frontmatter merge below).
+    // now + 90 days (a re-ingest refreshes the page). Confidence is computed
+    // from the prospective source set with the same heuristic as the commit.
     const reviewExpiry = new Date();
     reviewExpiry.setDate(reviewExpiry.getDate() + 90);
     const reviewBy = reviewExpiry.toISOString().slice(0, 10);
-    let confidence = 0.7;
+    const previewSourceType =
+      options?.sourceType ?? (options?.sourceUrl ? "url" : "text");
+    const previewEntry = buildSourceEntry(
+      options?.sourceUrl ?? "text-paste",
+      previewSourceType,
+      options?.triggeredBy,
+    );
+    let previewSources: SourceEntry[] = [previewEntry];
+    let previewDisputed = false;
     if (existingEntry) {
       const ex = await readWikiPageWithFrontmatter(existingEntry.slug);
-      if (
-        typeof ex?.frontmatter.confidence === "number" &&
-        ex.frontmatter.confidence > 0.7
-      ) {
-        confidence = ex.frontmatter.confidence;
+      if (ex) {
+        const exSources = ex.frontmatter.sources;
+        previewSources = mergeSourceEntry(
+          parseSources(
+            typeof exSources === "string"
+              ? exSources
+              : Array.isArray(exSources)
+                ? exSources
+                : undefined,
+          ),
+          previewEntry,
+        );
+        previewDisputed = ex.frontmatter.disputed === true;
       }
     }
+    const confidence = computeConfidence(previewSources, previewDisputed);
 
     // Synthesized tags + any existing/caller tags. The reviewer sees these in
     // the card and (via the commit-from-preview path) they're sent back as
@@ -1647,11 +1700,8 @@ export async function ingest(
     // Expiry resets to 90 days from now (re-ingest refreshes the page).
     // valid_from also resets to now (the page's information is re-verified).
     // (both already set above — no need to change)
-    // Preserve confidence if existing was higher (manually set).
-    const existingConf = existing.frontmatter.confidence;
-    if (typeof existingConf === "number" && existingConf > 0.7) {
-      frontmatter.confidence = existingConf;
-    }
+    // Confidence is recomputed from signals below (not preserved), so adding a
+    // corroborating source raises it on re-ingest.
   }
 
   // Re-synthesize on merge (accumulate-and-reconcile): when this ingest lands on
@@ -1701,6 +1751,15 @@ export async function ingest(
     }
     frontmatter.aliases = aliasList;
   }
+
+  // Confidence from provenance signals — computed last, when sources[] and the
+  // disputed flag are final (after the re-ingest merge and reconcile).
+  frontmatter.confidence = computeConfidence(
+    parseSources(
+      typeof frontmatter.sources === "string" ? frontmatter.sources : undefined,
+    ),
+    frontmatter.disputed === true,
+  );
 
   const contentWithFm = serializeFrontmatter(frontmatter, wikiContent);
 

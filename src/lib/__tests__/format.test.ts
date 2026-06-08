@@ -54,6 +54,15 @@ describe("formatRelativeTime", () => {
     expect(formatRelativeTime(iso)).toBe("1y ago");
   });
 
+  it("renders a date-only (YYYY-MM-DD) value at day granularity, not bogus hours", () => {
+    // 09:00 UTC on 2026-06-08 — a same-day date must read "today", never "9h ago".
+    vi.spyOn(Date, "now").mockReturnValue(Date.parse("2026-06-08T09:00:00Z"));
+    expect(formatRelativeTime("2026-06-08")).toBe("today");
+    expect(formatRelativeTime("2026-06-07")).toBe("yesterday");
+    expect(formatRelativeTime("2026-06-05")).toBe("3d ago");
+    expect(formatRelativeTime("2026-05-25")).toBe("2w ago");
+  });
+
   it("returns YYYY-MM-DD slice for unparseable input", () => {
     expect(formatRelativeTime("not-a-date")).toBe("not-a-date");
   });

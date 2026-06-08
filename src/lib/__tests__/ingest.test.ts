@@ -13,6 +13,7 @@ import {
   parseDisputedMarker,
   normalizeTags,
   collectTagVocabulary,
+  computeConfidence,
   tokenizeSourceImages,
   restoreImageTokens,
 } from "../ingest";
@@ -40,7 +41,7 @@ import {
 import { resetSourceIndex } from "../source-index";
 import { resetAliasIndex } from "../alias-index";
 import { hasEmbeddingSupport, searchByVector, contentHash } from "../embeddings";
-import type { IndexEntry } from "../types";
+import type { IndexEntry, SourceEntry } from "../types";
 
 const mockedHasEmbeddingSupport = vi.mocked(hasEmbeddingSupport);
 const mockedSearchByVector = vi.mocked(searchByVector);
@@ -469,7 +470,8 @@ describe("ingest — Phase 1 frontmatter fields", () => {
     const page = await readWikiPageWithFrontmatter("phase1-new");
     expect(page).not.toBeNull();
 
-    expect(page!.frontmatter.confidence).toBe(0.7);
+    // Heuristic: a single text source → 0.55 (no longer a constant 0.7).
+    expect(page!.frontmatter.confidence).toBe(0.55);
     expect(page!.frontmatter.disputed).toBe(false);
     expect(page!.frontmatter.authors).toEqual(["system"]);
     expect(page!.frontmatter.contributors).toEqual([]);
@@ -521,8 +523,10 @@ describe("ingest — Phase 1 frontmatter fields", () => {
     expect(page!.frontmatter.supersedes).toBe("old-page");
     // aliases preserved
     expect(page!.frontmatter.aliases).toEqual(["p1r", "phase-one"]);
-    // confidence preserved because existing (0.9) > 0.7
-    expect(page!.frontmatter.confidence).toBe(0.9);
+    // confidence is recomputed from signals (not preserved). The manually
+    // written page had no sources[], so the re-ingest's single text source +
+    // the preserved disputed=true flag caps it at 0.5.
+    expect(page!.frontmatter.confidence).toBe(0.5);
 
     // expiry reset to ~90 days from now (not the old 2024-09-01)
     const expiry = page!.frontmatter.expiry as string;
@@ -559,10 +563,10 @@ describe("ingest — Phase 1 frontmatter fields", () => {
     expect(page!.frontmatter.contributors).toEqual(["system", "editor"]);
   });
 
-  it("re-ingest keeps lower confidence at 0.7 when existing is lower", async () => {
+  it("re-ingest recomputes confidence from signals (ignores a manually-set value)", async () => {
     await ingest("Phase1 LowConf", "Content for confidence test. Details here.");
 
-    // Manually set confidence to 0.5 (below default)
+    // Manually set confidence to 0.5; the re-ingest should recompute, not keep it.
     await writeWikiPage(
       "phase1-lowconf",
       `---\ncreated: 2024-06-01\nupdated: 2024-06-01\nsource_count: 1\ntags: []\nconfidence: 0.5\nexpiry: 2024-09-01\nauthors: [system]\ncontributors: []\ndisputed: false\nsupersedes:\naliases: []\n---\n\n# Phase1 LowConf\n\nBody.\n`,
@@ -574,8 +578,8 @@ describe("ingest — Phase 1 frontmatter fields", () => {
     const page = await readWikiPageWithFrontmatter("phase1-lowconf");
     expect(page).not.toBeNull();
 
-    // confidence stays at 0.7 (default) since existing 0.5 is not higher
-    expect(page!.frontmatter.confidence).toBe(0.7);
+    // Recomputed from the single text source (0.55) — not the manual 0.5.
+    expect(page!.frontmatter.confidence).toBe(0.55);
   });
 });
 
@@ -1825,6 +1829,48 @@ describe("parseConceptMarker", () => {
   it("returns no tags when the TAGS line is absent or 'none'", () => {
     expect(parseConceptMarker("CONCEPT: X\n\n# X\n").tags).toEqual([]);
     expect(parseConceptMarker("CONCEPT: X\nTAGS: none\n\n# X\n").tags).toEqual([]);
+  });
+});
+
+describe("computeConfidence", () => {
+  const src = (type: SourceEntry["type"], url: string): SourceEntry => ({
+    type,
+    url,
+    fetched: "2026-01-01",
+    triggered_by: "system",
+  });
+
+  it("scores by the strongest source type present", () => {
+    expect(computeConfidence([src("text", "text-paste")], false)).toBe(0.55);
+    expect(computeConfidence([src("url", "https://a.com")], false)).toBe(0.7);
+    expect(computeConfidence([src("pdf", "https://a.com/p.pdf")], false)).toBe(0.75);
+    // strongest type wins (same URL → no corroboration bonus)
+    expect(
+      computeConfidence([src("text", "https://a.com"), src("pdf", "https://a.com")], false),
+    ).toBe(0.75);
+  });
+
+  it("adds corroboration for additional distinct source URLs (capped)", () => {
+    expect(
+      computeConfidence([src("url", "https://a.com"), src("url", "https://b.com")], false),
+    ).toBe(0.75); // 0.7 + 0.05
+    expect(
+      computeConfidence(
+        [
+          src("url", "https://a.com"),
+          src("url", "https://b.com"),
+          src("url", "https://c.com"),
+          src("url", "https://d.com"),
+          src("url", "https://e.com"),
+        ],
+        false,
+      ),
+    ).toBe(0.85); // 0.7 + capped 0.15
+  });
+
+  it("caps a disputed page at 0.5 and falls back to 0.6 for no sources", () => {
+    expect(computeConfidence([src("pdf", "https://a.com/p.pdf")], true)).toBe(0.5);
+    expect(computeConfidence([], false)).toBe(0.6);
   });
 });
 

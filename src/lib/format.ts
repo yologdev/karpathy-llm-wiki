@@ -32,6 +32,26 @@ export function formatRelativeTime(iso: string): string {
   const then = Date.parse(iso);
   if (!Number.isFinite(then)) return iso.slice(0, 10);
 
+  // A date-only value (`YYYY-MM-DD`) has no time component — it parses to UTC
+  // midnight, so an hour/minute relative time would be a bogus artifact of the
+  // date boundary (e.g. "9h ago" for a page ingested today). Render at DAY
+  // granularity instead, by calendar day in UTC.
+  if (/^\d{4}-\d{2}-\d{2}$/.test(iso.trim())) {
+    const startOfDay = (ms: number) => {
+      const d = new Date(ms);
+      return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
+    };
+    const days = Math.floor((startOfDay(Date.now()) - startOfDay(then)) / 864e5);
+    if (days <= 0) return "today";
+    if (days === 1) return "yesterday";
+    if (days < 7) return `${days}d ago`;
+    const weeks = Math.floor(days / 7);
+    if (weeks < 5) return `${weeks}w ago`;
+    const months = Math.floor(days / 30);
+    if (months < 12) return `${months}mo ago`;
+    return `${Math.floor(days / 365)}y ago`;
+  }
+
   const diffMs = Date.now() - then;
   if (diffMs < 0) return "just now";
 

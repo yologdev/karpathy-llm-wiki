@@ -59,7 +59,11 @@ export function Freshness({ expiry }: { expiry: string }) {
   const days = Math.round((new Date(expiry).getTime() - Date.now()) / 864e5);
   const cls = days < 0 ? "cold" : days < 30 ? "warn" : "ok";
   const txt =
-    days < 0 ? "expired" : days < 30 ? `review in ${days}d` : `fresh · ${expiry}`;
+    days < 0
+      ? "expired"
+      : days < 30
+        ? `review in ${days}d`
+        : `fresh · review by ${expiry}`;
   return (
     <span
       className="row receipt"
