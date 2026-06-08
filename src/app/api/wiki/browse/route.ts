@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getPrincipal } from "@/lib/auth";
 import { searchCommons, BROWSE_PAGE_SIZE, type BrowseSort } from "@/lib/browse";
+import { logger } from "@/lib/logger";
 
 /**
  * GET /api/wiki/browse?q=&scope=all&tag=&sort=recent&page=1&pageSize=30
@@ -24,7 +25,15 @@ export async function GET(req: Request) {
     Math.max(1, Number.parseInt(url.searchParams.get("pageSize") ?? "", 10) || BROWSE_PAGE_SIZE),
   );
 
-  const principal = await getPrincipal();
-  const data = await searchCommons(q, { scope, tag, sort, page, pageSize, principal });
-  return NextResponse.json({ ...data, page, pageSize });
+  try {
+    const principal = await getPrincipal();
+    const data = await searchCommons(q, { scope, tag, sort, page, pageSize, principal });
+    return NextResponse.json({ ...data, page, pageSize });
+  } catch (err) {
+    // A failure here (KV read, auth context, vector store) must be traceable
+    // with the request context — otherwise it surfaces as an opaque 500 that the
+    // client silently maps to "no change". Log it and return a real error status.
+    logger.error("browse", `searchCommons failed (scope=${scope} q=${q ?? ""} page=${page}):`, err);
+    return NextResponse.json({ error: "Browse search failed" }, { status: 500 });
+  }
 }

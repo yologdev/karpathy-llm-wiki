@@ -231,6 +231,10 @@ export function BrowseClient({
   const [total, setTotal] = useState(initialTotal);
   const [discussionStats, setDiscussionStats] = useState(initialDiscussionStats);
   const [loading, setLoading] = useState(false);
+  const [fetchError, setFetchError] = useState(false);
+  // Bumped to force the fetch effect to re-run on a manual "Retry" without
+  // otherwise changing the query/sort/tag/page inputs.
+  const [retryTick, setRetryTick] = useState(0);
 
   const searching = debouncedQ.trim().length > 0;
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
@@ -260,15 +264,18 @@ export function BrowseClient({
     params.set("page", String(page));
     params.set("pageSize", String(pageSize));
     fetch(`/api/wiki/browse?${params.toString()}`)
-      .then((r) => (r.ok ? r.json() : null))
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
       .then((data) => {
-        if (!active || !data) return;
+        if (!active) return;
         setResults(data.results ?? []);
         setTotal(data.total ?? 0);
         setDiscussionStats(data.discussionStats ?? {});
+        setFetchError(false);
       })
       .catch(() => {
-        /* transient fetch error — keep the last results rather than blanking */
+        // Keep the last results rather than blanking, but surface the failure so
+        // a persistent outage doesn't masquerade as "no change".
+        if (active) setFetchError(true);
       })
       .finally(() => {
         if (active) setLoading(false);
@@ -276,7 +283,7 @@ export function BrowseClient({
     return () => {
       active = false;
     };
-  }, [debouncedQ, sort, tag, page, activeScope, pageSize]);
+  }, [debouncedQ, sort, tag, page, activeScope, pageSize, retryTick]);
 
   // A filter change always returns to page 1 — reset imperatively (alongside the
   // change) so a fetch never fires with a stale page number.
@@ -495,6 +502,42 @@ export function BrowseClient({
 
         {/* Results */}
         <div>
+          {fetchError && (
+            <div
+              className="row"
+              style={{
+                gap: 12,
+                alignItems: "center",
+                justifyContent: "space-between",
+                marginBottom: 14,
+                padding: "10px 14px",
+                borderRadius: 10,
+                border: "1px solid var(--rust)",
+                background: "var(--rust-soft)",
+              }}
+            >
+              <span style={{ fontSize: 13, color: "var(--rust)" }}>
+                Couldn&apos;t refresh results — showing the last set.
+              </span>
+              <button
+                type="button"
+                onClick={() => setRetryTick((t) => t + 1)}
+                disabled={loading}
+                className="receipt"
+                style={{
+                  fontSize: 12.5,
+                  padding: "4px 12px",
+                  borderRadius: 999,
+                  border: "1px solid var(--rust)",
+                  background: "transparent",
+                  color: "var(--rust)",
+                  cursor: loading ? "default" : "pointer",
+                }}
+              >
+                Retry
+              </button>
+            </div>
+          )}
           {tag && (
             <div
               className="row"
