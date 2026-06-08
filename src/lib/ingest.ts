@@ -31,7 +31,15 @@ function mergeSourceEntry(sources: SourceEntry[], entry: SourceEntry): SourceEnt
     entry.url !== "text-paste"
       ? sources.filter((s) => !(s.type === entry.type && s.url === "text-paste"))
       : sources;
-  const idx = base.findIndex((s) => s.url === entry.url && s.type === entry.type);
+  // A real (non-text-paste) source is identified by its URL alone: the same URL
+  // is the same source even if a re-ingest classified its type differently
+  // (e.g. a PDF URL re-fetched as a plain "url"). Matching on URL+type here let
+  // such a re-ingest append a duplicate entry. text-paste placeholders have no
+  // real URL, so they still dedup on (url, type).
+  const idx =
+    entry.url !== "text-paste"
+      ? base.findIndex((s) => s.url === entry.url)
+      : base.findIndex((s) => s.url === entry.url && s.type === entry.type);
   if (idx >= 0) {
     base[idx] = {
       ...base[idx],
@@ -397,14 +405,34 @@ export async function reingest(
     throw new Error("Cannot re-ingest: no source URL recorded");
   }
 
+  // Re-fetch via the SAME routing as ingestUrl (YouTube transcript, X
+  // syndication, else plain fetch) — otherwise an X post re-fetches the JS
+  // shell ("Something went wrong") and a tweet page rebuilds from the error
+  // page. `pinSlug` keeps the result on this page instead of forking to a new
+  // concept-derived slug.
   if (isYouTubeUrl(sourceUrl)) {
     const { title, content } = await fetchYouTubeContent(sourceUrl);
-    return ingest(title, content, { sourceUrl, sourceType: "youtube", ...opts });
+    return ingest(title, content, {
+      sourceUrl,
+      sourceType: "youtube",
+      pinSlug: slug,
+      ...opts,
+    });
+  }
+
+  if (isXPostUrl(sourceUrl)) {
+    const { title, content } = await fetchXPostContent(sourceUrl);
+    return ingest(title, content, {
+      sourceUrl,
+      sourceType: "x-mention",
+      pinSlug: slug,
+      ...opts,
+    });
   }
 
   const { title, content: rawContent } = await fetchUrlContent(sourceUrl);
   const content = await downloadImages(rawContent, slug, getRawDir());
-  return ingest(title, content, { sourceUrl, ...opts });
+  return ingest(title, content, { sourceUrl, pinSlug: slug, ...opts });
 }
 
 /**
@@ -1053,6 +1081,13 @@ export interface IngestOptions {
    * existing page (its scope is preserved — see below).
    */
   pageType?: "agent-knowledge" | "agent-identity";
+  /**
+   * Pin the result to this exact slug, bypassing concept/alias slug derivation.
+   * Used by `reingest()` so re-synthesizing a page updates it IN PLACE rather
+   * than forking to a new concept-derived slug (e.g. `agentic-system` →
+   * `agentic-systems`). Only honored on the direct synthesis path.
+   */
+  pinSlug?: string;
 }
 
 /**
@@ -1216,7 +1251,8 @@ export async function ingest(
   // Provisional slug from the title. On the direct ingest path this is later
   // replaced by a content-derived *concept* slug (see the CONCEPT marker below),
   // so the same concept under different headlines converges onto one page.
-  let slug = resolvedSlug ?? rawSlug;
+  // `pinSlug` (re-ingest) overrides everything: stay on the known page.
+  let slug = options?.pinSlug ?? resolvedSlug ?? rawSlug;
   // The page title written to the index/log. Becomes the canonical concept name
   // when one is derived; otherwise stays the source title.
   let pageTitle = title;
@@ -1315,20 +1351,27 @@ export async function ingest(
   // re-ingests of the same concept (under any headline) land on one page. The
   // preview→commit path keeps the title-derived slug (commit carries no marker)
   // — preview/commit slug consistency is handled separately.
+  // `pinSlug` (re-ingest) keeps the page on its known slug, so skip concept-slug
+  // convergence — but still adopt the concept as the title and record aliases.
   let conceptAliases: string[] = [];
   if (!isPreview && !preGeneratedContent && concept) {
-    const conceptSlug = slugify(concept);
-    if (conceptSlug !== "") {
-      slug = await resolveConceptSlug(
-        conceptSlug,
-        concept,
-        conceptSynonyms,
-        wikiContent,
-        owner,
-        options?.pageType,
-      );
+    if (options?.pinSlug) {
       pageTitle = concept;
       conceptAliases = conceptSynonyms;
+    } else {
+      const conceptSlug = slugify(concept);
+      if (conceptSlug !== "") {
+        slug = await resolveConceptSlug(
+          conceptSlug,
+          concept,
+          conceptSynonyms,
+          wikiContent,
+          owner,
+          options?.pageType,
+        );
+        pageTitle = concept;
+        conceptAliases = conceptSynonyms;
+      }
     }
   }
 

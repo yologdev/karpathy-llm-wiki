@@ -1966,6 +1966,22 @@ describe("ingest — concept-slug convergence", () => {
     // Plus the source title.
     expect(aliases).toContain("A Deep Dive on RAG Systems");
   });
+
+  it("pinSlug keeps the page on its slug instead of forking to the concept slug", async () => {
+    // Even though the LLM names a different concept, pinSlug (used by reingest)
+    // must update IN PLACE rather than fork to `totally-different`.
+    mockedCallLLM.mockResolvedValue(
+      "CONCEPT: Totally Different\n\n# Totally Different\n\n## Summary\n\nBody.",
+    );
+
+    const result = await ingest("Pinned Page", "some source content here", {
+      pinSlug: "pinned-page",
+    });
+
+    expect(result.primarySlug).toBe("pinned-page");
+    expect(await readWikiPageWithFrontmatter("pinned-page")).not.toBeNull();
+    expect(await readWikiPageWithFrontmatter("totally-different")).toBeNull();
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -2777,6 +2793,25 @@ describe("reingest", () => {
     } finally {
       global.fetch = originalFetch;
     }
+  });
+
+  it("dedups a re-ingested source by URL even when the type differs", async () => {
+    // A PDF page re-fetched as a plain "url" must not create a second source
+    // entry for the same URL (the bug behind the duplicated arxiv sources).
+    await ingest("Dup Source", "First version of the content. Details.", {
+      sourceUrl: "https://example.com/paper",
+      sourceType: "pdf",
+    });
+    await ingest("Dup Source", "Second version, changed content. More.", {
+      sourceUrl: "https://example.com/paper",
+      sourceType: "url",
+    });
+
+    const page = await readWikiPageWithFrontmatter("dup-source");
+    const sources = parseSources(page!.frontmatter.sources as string);
+    expect(sources).toHaveLength(1);
+    expect(sources[0].url).toBe("https://example.com/paper");
+    expect(sources[0].type).toBe("pdf"); // original, more-specific type preserved
   });
 
   it("throws when page has no source_url", async () => {
