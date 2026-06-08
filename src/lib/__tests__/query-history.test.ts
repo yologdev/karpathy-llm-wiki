@@ -42,8 +42,8 @@ describe("appendQuery", () => {
     expect(entry.answer).toBe("Machine learning is...");
     expect(entry.sources).toEqual(["machine-learning"]);
 
-    // File should exist
-    const filePath = path.join(tmpDir, "wiki", "query-history.json");
+    // The per-owner file should exist (physical isolation, not a shared file).
+    const filePath = path.join(tmpDir, "wiki", "query-history", "tester.json");
     const raw = await fs.readFile(filePath, "utf-8");
     const data = JSON.parse(raw);
     expect(data).toHaveLength(1);
@@ -55,13 +55,66 @@ describe("appendQuery", () => {
     await appendQuery({ question: "Q2", answer: "A2", sources: ["page-a"], timestamp: "2025-01-02T00:00:00Z", owner: OWNER });
     await appendQuery({ question: "Q3", answer: "A3", sources: [], timestamp: "2025-01-03T00:00:00Z", owner: OWNER });
 
-    const filePath = path.join(tmpDir, "wiki", "query-history.json");
+    const filePath = path.join(tmpDir, "wiki", "query-history", "tester.json");
     const raw = await fs.readFile(filePath, "utf-8");
     const data = JSON.parse(raw);
     expect(data).toHaveLength(3);
     expect(data[0].question).toBe("Q1");
     expect(data[1].question).toBe("Q2");
     expect(data[2].question).toBe("Q3");
+  });
+});
+
+describe("per-owner physical isolation + legacy migration", () => {
+  const legacyPath = () => path.join(tmpDir, "wiki", "query-history.json");
+  const ownerFile = (owner: string) =>
+    path.join(tmpDir, "wiki", "query-history", `${owner}.json`);
+
+  it("writes each asker to a separate file and never a shared one", async () => {
+    await appendQuery({ question: "alice q", answer: "a", sources: [], timestamp: "2025-01-01T00:00:00Z", owner: "alice" });
+    await appendQuery({ question: "bob q", answer: "b", sources: [], timestamp: "2025-01-02T00:00:00Z", owner: "bob" });
+
+    expect(JSON.parse(await fs.readFile(ownerFile("alice"), "utf-8"))).toHaveLength(1);
+    expect(JSON.parse(await fs.readFile(ownerFile("bob"), "utf-8"))).toHaveLength(1);
+    // No shared query-history.json — there's no cross-user file to over-read.
+    await expect(fs.access(legacyPath())).rejects.toThrow();
+  });
+
+  it("migrates a legacy shared file into per-owner files, then deletes it", async () => {
+    await fs.mkdir(path.join(tmpDir, "wiki"), { recursive: true });
+    await fs.writeFile(
+      legacyPath(),
+      JSON.stringify([
+        { id: "1", question: "alice q", answer: "a", sources: [], timestamp: "2025-01-01T00:00:00Z", owner: "alice" },
+        { id: "2", question: "bob q", answer: "b", sources: [], timestamp: "2025-01-02T00:00:00Z", owner: "bob" },
+        { id: "3", question: "orphan q", answer: "o", sources: [], timestamp: "2025-01-03T00:00:00Z" }, // no owner → dropped
+      ]),
+      "utf-8",
+    );
+
+    // First read for alice triggers the migration.
+    expect((await listQueries(undefined, "alice")).map((e) => e.question)).toEqual(["alice q"]);
+    // Bob's entry was preserved (lossless), the orphan dropped, legacy removed.
+    expect((await listQueries(undefined, "bob")).map((e) => e.question)).toEqual(["bob q"]);
+    await expect(fs.access(legacyPath())).rejects.toThrow();
+    expect(JSON.parse(await fs.readFile(ownerFile("alice"), "utf-8"))).toHaveLength(1);
+  });
+
+  it("a new entry survives the migration (appended after legacy entries)", async () => {
+    await fs.mkdir(path.join(tmpDir, "wiki"), { recursive: true });
+    await fs.writeFile(
+      legacyPath(),
+      JSON.stringify([
+        { id: "old", question: "old q", answer: "a", sources: [], timestamp: "2025-01-01T00:00:00Z", owner: "alice" },
+      ]),
+      "utf-8",
+    );
+
+    await appendQuery({ question: "new q", answer: "b", sources: [], timestamp: "2025-01-02T00:00:00Z", owner: "alice" });
+
+    // Most-recent-first: the new entry, then the migrated legacy one.
+    expect((await listQueries(undefined, "alice")).map((e) => e.question)).toEqual(["new q", "old q"]);
+    await expect(fs.access(legacyPath())).rejects.toThrow();
   });
 });
 
