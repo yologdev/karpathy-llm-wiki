@@ -248,6 +248,54 @@ describe("searchWikiContent", () => {
     expect(results[0].snippet.startsWith("…")).toBe(false);
   });
 
+  it("never leaks YAML frontmatter into the snippet", async () => {
+    await ensureDirectories();
+    await writeWikiPage(
+      "fm-leak",
+      `---\ntags: [agentics, ml]\nsource_count: 1\nupdated: 2026-06-08\n---\n# Poke Assistant\n\nPoke is an AI assistant that uses an agent to triage notifications.`,
+    );
+
+    const results = await searchWikiContent("agent");
+    expect(results).toHaveLength(1);
+    const snippet = results[0].snippet;
+    // The term also appears in the `tags:` frontmatter, but the window must be
+    // drawn from the body — no frontmatter keys/values may appear.
+    expect(snippet).not.toContain("source_count");
+    expect(snippet).not.toContain("tags:");
+    expect(snippet).not.toContain("2026-06-08");
+    expect(snippet.toLowerCase()).toContain("agent");
+  });
+
+  it("cuts snippets on word boundaries (no mid-word fragments)", async () => {
+    await ensureDirectories();
+    const filler = "alpha beta gamma delta epsilon zeta eta theta iota kappa";
+    await writeWikiPage("word-cut", `# Word Cut\n\n${filler} keyword ${filler}`);
+
+    const results = await searchWikiContent("keyword");
+    const snippet = results[0].snippet.replace(/…/g, "");
+    const sourceWords = new Set(`Word Cut ${filler} keyword`.split(/\s+/));
+    // Every token in the snippet is a whole word from the source (nothing clipped).
+    for (const w of snippet.split(/\s+/).filter(Boolean)) {
+      expect(sourceWords.has(w)).toBe(true);
+    }
+    expect(snippet).toContain("keyword");
+  });
+
+  it("falls back to the clean summary when the term matched only in frontmatter", async () => {
+    await ensureDirectories();
+    await writeWikiPage(
+      "fm-only",
+      `---\ntags: [serverless]\n---\n# Cloud Topic\n\nA concise overview of deployment models.`,
+    );
+
+    const results = await searchWikiContent("serverless");
+    expect(results).toHaveLength(1);
+    // "serverless" is only in the frontmatter, so there's no body match to centre
+    // on — the snippet is the clean summary, not an empty/odd window.
+    expect(results[0].snippet).toBe(results[0].summary);
+    expect(results[0].snippet).toContain("concise overview");
+  });
+
   it("extracts title from first heading", async () => {
     await ensureDirectories();
     await writeWikiPage("heading-page", "# My Great Title\n\nSome content here.");

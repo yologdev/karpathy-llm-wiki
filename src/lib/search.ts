@@ -268,6 +268,42 @@ export interface ContentSearchResult {
   fuzzy?: boolean;
 }
 
+/** Strip a leading markdown heading marker (`#`/`>`/list bullets) from a line. */
+function stripLeadingMarkdown(text: string): string {
+  return text.replace(/^[#>\-*\s]+/, "");
+}
+
+/**
+ * Truncate to `max` chars on a WORD boundary (never mid-word), appending an
+ * ellipsis when the text was actually cut. Avoids fragments like "…es across".
+ */
+function truncateAtWord(text: string, max: number): string {
+  const clean = text.replace(/\s+/g, " ").trim();
+  if (clean.length <= max) return clean;
+  const cut = clean.slice(0, max);
+  const lastSpace = cut.lastIndexOf(" ");
+  // Keep the word-boundary cut unless it would throw away most of the budget.
+  const body = lastSpace > max * 0.6 ? cut.slice(0, lastSpace) : cut;
+  return body.trimEnd() + "…";
+}
+
+/**
+ * Build a match-context snippet from a page BODY (frontmatter already removed)
+ * centred on `matchIndex`, trimmed to whole words so neither end lands
+ * mid-word, with leading/trailing ellipses when the window is interior. Pass a
+ * body — never the raw file — so YAML frontmatter can't leak into the snippet.
+ */
+function contextSnippet(body: string, matchIndex: number, radius = 70): string {
+  const rawStart = Math.max(0, matchIndex - radius);
+  const rawEnd = Math.min(body.length, matchIndex + radius);
+  let chunk = body.slice(rawStart, rawEnd);
+  // Drop the partial words the window may have clipped at each interior edge.
+  if (rawStart > 0) chunk = chunk.replace(/^\S*\s+/, "");
+  if (rawEnd < body.length) chunk = chunk.replace(/\s+\S*$/, "");
+  chunk = stripLeadingMarkdown(chunk).replace(/\s+/g, " ").trim();
+  return (rawStart > 0 ? "…" : "") + chunk + (rawEnd < body.length ? "…" : "");
+}
+
 /**
  * Scope filter for search — restricts results to a set of known slugs.
  * The caller resolves agent IDs (or other scope sources) to slug lists
@@ -474,17 +510,23 @@ export async function searchWikiContent(
       .trim()
       .split("\n")
       .find((l) => l.trim().length > 0);
-    const summary = summaryLine
-      ? summaryLine.trim().slice(0, 120) + (summaryLine.length > 120 ? "…" : "")
-      : "";
+    const summary = summaryLine ? truncateAtWord(summaryLine, 120) : "";
 
-    // Build a snippet around the first match
-    const snippetRadius = 60;
-    const start = Math.max(0, firstMatchIndex - snippetRadius);
-    const end = Math.min(content.length, firstMatchIndex + snippetRadius);
-    let snippet = content.slice(start, end).replace(/\n/g, " ").trim();
-    if (start > 0) snippet = "…" + snippet;
-    if (end < content.length) snippet = snippet + "…";
+    // Snippet = match context from the BODY (frontmatter already stripped), cut
+    // on word boundaries. The match index is recomputed against the body so a
+    // term that matched only in the YAML frontmatter (tags, source_count, dates)
+    // can't drag the window into it; when the query matched only the
+    // frontmatter/title, fall back to the clean summary.
+    const lowerBody = body.toLowerCase();
+    let bodyMatchIndex = -1;
+    for (const term of terms) {
+      const idx = lowerBody.indexOf(term);
+      if (idx !== -1 && (bodyMatchIndex === -1 || idx < bodyMatchIndex)) {
+        bodyMatchIndex = idx;
+      }
+    }
+    const snippet =
+      bodyMatchIndex !== -1 ? contextSnippet(body, bodyMatchIndex) : summary;
 
     scored.push({ slug, title, summary, snippet, score });
   }
@@ -591,18 +633,14 @@ export async function fuzzySearchWikiContent(
       .trim()
       .split("\n")
       .find((l) => l.trim().length > 0);
-    const summary = summaryLine
-      ? summaryLine.trim().slice(0, 120) + (summaryLine.length > 120 ? "…" : "")
-      : "";
+    const summary = summaryLine ? truncateAtWord(summaryLine, 120) : "";
 
-    // For fuzzy results, use the beginning of the page as snippet
-    const snippetText = body
-      .replace(/^#\s+.+$/m, "")
-      .trim()
-      .slice(0, 120)
-      .replace(/\n/g, " ")
-      .trim();
-    const snippet = snippetText + (snippetText.length >= 120 ? "…" : "");
+    // Fuzzy matches have no exact term to centre on — use the page's opening
+    // prose (heading + frontmatter stripped, word-boundary cut) as the preview.
+    const snippet = truncateAtWord(
+      stripLeadingMarkdown(body.replace(/^#\s+.+$/m, "").trim()),
+      140,
+    );
 
     fuzzyResults.push({ slug, title, summary, snippet, score: 0, fuzzy: true });
   }
