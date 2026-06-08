@@ -275,4 +275,52 @@ describe("fetchXPostContent — X Articles", () => {
     await fetchXPostContent("https://x.com/ada/status/123");
     expect(calls.some((u) => u.includes("api.twitter.com"))).toBe(false);
   });
+
+  it("omits the byline for an /i/web/status/ article URL (no @handle)", async () => {
+    process.env.X_BEARER_TOKEN = "test-bearer";
+    mockApi({
+      apiBody: { data: { article: { title: "Anon Essay", text: "Body." } } },
+      synBody: {},
+    });
+    const { content } = await fetchXPostContent("https://x.com/i/web/status/123");
+    expect(content).toContain("# Anon Essay");
+    expect(content).toContain("Body.");
+    expect(content).not.toContain("· X Article"); // no byline line for /i/
+  });
+
+  it("renders an article with no image line when there's no cover", async () => {
+    process.env.X_BEARER_TOKEN = "test-bearer";
+    mockApi({
+      apiBody: { data: { article: { title: "No Cover", text: "Just text." } } },
+      synBody: {}, // no article.cover_media
+    });
+    const { content } = await fetchXPostContent("https://x.com/ada/status/9");
+    expect(content).toContain("# No Cover");
+    expect(content).toContain("Just text.");
+    expect(content).not.toContain("!["); // no image markdown
+  });
+
+  it("renders a title-only article (empty body) rather than falling back", async () => {
+    process.env.X_BEARER_TOKEN = "test-bearer";
+    mockApi({
+      apiBody: { data: { article: { title: "Title Only", text: "  " } } },
+      synBody: { text: "SYNDICATION TWEET", user: { name: "Ada", screen_name: "ada" } },
+    });
+    const { title, content } = await fetchXPostContent("https://x.com/ada/status/9");
+    expect(title).toBe("Title Only");
+    expect(content).toContain("# Title Only");
+    expect(content).not.toContain("SYNDICATION TWEET"); // article path, not fallback
+  });
+
+  it("defaults the heading to 'X Article' when the article has body but no title", async () => {
+    process.env.X_BEARER_TOKEN = "test-bearer";
+    mockApi({
+      apiBody: { data: { article: { text: "Body without a title." } } },
+      synBody: {},
+    });
+    const { title, content } = await fetchXPostContent("https://x.com/ada/status/9");
+    expect(title).toBe("X Article");
+    expect(content).toContain("# X Article");
+    expect(content).toContain("Body without a title.");
+  });
 });

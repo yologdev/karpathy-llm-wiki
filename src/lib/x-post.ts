@@ -252,10 +252,21 @@ async function fetchArticleViaApi(id: string, url: string): Promise<XPostContent
       { headers: { Authorization: `Bearer ${bearer}` } },
     );
     if (!res.ok) {
-      logger.warn(
-        "x-post",
-        `X API article fetch failed (HTTP ${res.status}) for ${id}; using syndication`,
-      );
+      // A 401/403 means the bearer token is bad/expired/under-privileged — a
+      // CONFIG defect that would otherwise silently degrade EVERY article to a
+      // teaser. Make it loud (error); transient 429/5xx stay a warn. Both fall
+      // back to syndication so plain-tweet ingest is never broken.
+      if (res.status === 401 || res.status === 403) {
+        logger.error(
+          "x-post",
+          `X API rejected the bearer token (HTTP ${res.status}) — X_BEARER_TOKEN is likely expired/revoked or lacks article access; article ingest is degraded to teaser-only`,
+        );
+      } else {
+        logger.warn(
+          "x-post",
+          `X API article fetch failed (HTTP ${res.status}) for ${id}; using syndication`,
+        );
+      }
       return null;
     }
     const article = ((await res.json()) as XApiTweetResponse).data?.article;
@@ -272,7 +283,8 @@ async function fetchArticleViaApi(id: string, url: string): Promise<XPostContent
     lines.push(`**Source:** [${url}](${url})`);
     return { title, content: lines.join("\n").trim() };
   } catch (err) {
-    logger.warn("x-post", `X API article fetch error for ${id}: ${String(err)}`);
+    // Pass the error object (not a string) so the stack survives in logs.
+    logger.warn("x-post", `X API article fetch error for ${id}; using syndication`, err);
     return null;
   }
 }
