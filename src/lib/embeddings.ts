@@ -352,6 +352,19 @@ function modelMatches(metadata: Record<string, string>, model: string | null): b
   return !model || !metadata.model || metadata.model === model;
 }
 
+/**
+ * Log a failed vector query at the right severity. A dimension mismatch is
+ * BENIGN — it's the expected throw mid model-migration, while the store still
+ * holds vectors of the previous dimension — so it warns. Anything else (an
+ * unbound/misconfigured Vectorize binding, an outage, a quota error) means
+ * vector search is actually down and silently degrading to BM25, so it escalates
+ * to error to reach the log sink rather than whisper.
+ */
+function logVectorQueryFailure(fn: string, err: unknown): void {
+  const benign = err instanceof Error && /dimension mismatch/i.test(err.message);
+  logger[benign ? "warn" : "error"]("embeddings", `${fn} query failed:`, err);
+}
+
 /** Remove every stored embedding (used by the admin content reset). */
 export async function clearEmbeddings(): Promise<void> {
   await withFileLock("vectors", async () => {
@@ -467,11 +480,21 @@ export async function searchByVector(
   // vector results" rather than propagating — callers fuse/fall back on [].
   try {
     const matches = await getStorage().queryEmbeddings(queryEmbedding, topK);
-    return matches
-      .filter((m) => modelMatches(m.metadata, currentModel))
-      .map((m) => ({ slug: m.id, score: m.score }));
+    const kept = matches.filter((m) => modelMatches(m.metadata, currentModel));
+    // If the store returned hits but the model filter dropped ALL of them, the
+    // active model name has drifted from what every stored vector was embedded
+    // with — vector search is silently disabled until a re-embed/rebuild. Leave
+    // a breadcrumb so that's diagnosable rather than looking like "no matches".
+    if (matches.length > 0 && kept.length === 0) {
+      logger.warn(
+        "embeddings",
+        `searchByVector: all ${matches.length} matches dropped by the model filter ` +
+          `(active="${currentModel}") — likely embedding-model drift; rebuild embeddings.`,
+      );
+    }
+    return kept.map((m) => ({ slug: m.id, score: m.score }));
   } catch (err) {
-    logger.warn("embeddings", "searchByVector query failed:", err);
+    logVectorQueryFailure("searchByVector", err);
     return [];
   }
 }
@@ -506,7 +529,7 @@ export async function relatedByVector(
       .slice(0, topK)
       .map((m) => ({ slug: m.id, score: m.score }));
   } catch (err) {
-    logger.warn("embeddings", "relatedByVector query failed:", err);
+    logVectorQueryFailure("relatedByVector", err);
     return [];
   }
 }

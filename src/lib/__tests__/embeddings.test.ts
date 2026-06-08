@@ -701,6 +701,17 @@ describe("searchByVector", () => {
 
     await expect(searchByVector("q", 10)).resolves.toEqual([]);
   });
+
+  it("keeps unlabelled (legacy) vectors with no model metadata", async () => {
+    // Pre-migration / KV-fallback vectors may carry no `model` key. The filter
+    // must NOT drop them, or the whole corpus would vanish after first deploy.
+    await getStorage().upsertEmbedding("legacy", [1, 0, 0], { contentHash: "x" });
+    process.env.OPENAI_API_KEY = "sk-test";
+    mockEmbed.mockResolvedValue({ embedding: [1, 0, 0] });
+
+    const results = await searchByVector("q", 10);
+    expect(results.map((r) => r.slug)).toContain("legacy");
+  });
 });
 
 // ---------------------------------------------------------------------------
