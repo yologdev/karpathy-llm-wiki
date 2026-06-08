@@ -68,6 +68,25 @@ export function parseSources(raw: string | string[] | undefined): SourceEntry[] 
 }
 
 /**
+ * Collapse duplicate sources for DISPLAY — a real source is the same source if
+ * it shares a URL (even if a past ingest recorded it under a different type),
+ * keeping the first occurrence. `text-paste` placeholders carry no real URL, so
+ * they stay distinct per type. Display-only: never use this where the full
+ * `sources[]` is needed (the ingest merge dedups at write time on its own).
+ */
+export function dedupeSourcesForDisplay(sources: SourceEntry[]): SourceEntry[] {
+  const seen = new Set<string>();
+  const out: SourceEntry[] = [];
+  for (const s of sources) {
+    const key = s.url === "text-paste" ? `text-paste:${s.type}` : s.url;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(s);
+  }
+  return out;
+}
+
+/**
  * Build a fresh {@link SourceEntry} with sensible defaults.
  *
  * @param url        - Source URL or `"text-paste"` for pasted content.

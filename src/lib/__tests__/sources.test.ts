@@ -4,8 +4,44 @@ import {
   parseSources,
   buildSourceEntry,
   newestSourceType,
+  dedupeSourcesForDisplay,
 } from "../sources";
 import type { SourceEntry } from "../types";
+
+describe("dedupeSourcesForDisplay", () => {
+  const mk = (
+    url: string,
+    type: SourceEntry["type"],
+    fetched = "2026-01-01",
+  ): SourceEntry => ({ type, url, fetched, triggered_by: "system" });
+
+  it("collapses the same URL even when the type differs, keeping the first", () => {
+    const out = dedupeSourcesForDisplay([
+      mk("https://arxiv.org/pdf/1.pdf", "pdf", "2026-06-07"),
+      mk("https://arxiv.org/pdf/1.pdf", "url", "2026-06-08"),
+    ]);
+    expect(out).toHaveLength(1);
+    expect(out[0]).toMatchObject({ url: "https://arxiv.org/pdf/1.pdf", type: "pdf" });
+  });
+
+  it("keeps distinct URLs", () => {
+    const out = dedupeSourcesForDisplay([
+      mk("https://a.com", "url"),
+      mk("https://b.com", "url"),
+    ]);
+    expect(out.map((s) => s.url)).toEqual(["https://a.com", "https://b.com"]);
+  });
+
+  it("keeps text-paste placeholders distinct per type", () => {
+    const out = dedupeSourcesForDisplay([
+      mk("text-paste", "text"),
+      mk("text-paste", "x-mention"),
+      mk("text-paste", "text"), // dup of the first → dropped
+    ]);
+    expect(out).toHaveLength(2);
+    expect(out.map((s) => s.type)).toEqual(["text", "x-mention"]);
+  });
+});
 
 describe("newestSourceType", () => {
   const mk = (type: SourceEntry["type"], fetched: string): SourceEntry => ({

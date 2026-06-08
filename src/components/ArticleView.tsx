@@ -7,7 +7,7 @@ import { findBacklinks, findSimilarPages, buildSlugTenantMap } from "@/lib/wiki"
 import { resolveSlugPath } from "@/lib/links";
 import { getCommonsSlugSet, belongsInCommons } from "@/lib/commons";
 import type { Principal } from "@/lib/auth";
-import { parseSources } from "@/lib/sources";
+import { parseSources, dedupeSourcesForDisplay } from "@/lib/sources";
 import type { SourceEntry } from "@/lib/types";
 import { formatRelativeTime } from "@/lib/format";
 import { Icon } from "@/components/folio/icons";
@@ -173,8 +173,10 @@ export async function ArticleView({
         : undefined,
   });
 
-  const lineageSources = parseSources(
-    page.frontmatter.sources as string | string[] | undefined,
+  // Dedup by URL for display so a page whose sources predate the write-time
+  // URL dedup (or were recorded under two types) never shows the same link twice.
+  const lineageSources = dedupeSourcesForDisplay(
+    parseSources(page.frontmatter.sources as string | string[] | undefined),
   );
 
   const toc = buildToc(page.body);
