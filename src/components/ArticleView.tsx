@@ -287,13 +287,15 @@ export async function ArticleView({
             style={{ gap: 10, marginBottom: 18, flexWrap: "wrap" }}
           >
             {tags.map((t) => (
-              <span
+              <Link
                 key={t}
+                href={`/wiki?tag=${encodeURIComponent(t)}`}
                 className="receipt"
-                style={{ fontSize: 11.5, color: "var(--accent)" }}
+                style={{ fontSize: 11.5, color: "var(--accent)", textDecoration: "none" }}
+                title={`Browse all pages tagged #${t}`}
               >
                 #{t}
-              </span>
+              </Link>
             ))}
           </div>
         )}

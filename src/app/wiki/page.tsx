@@ -12,7 +12,7 @@ export default async function WikiIndex({
 }: {
   searchParams: Promise<{ scope?: string; tag?: string }>;
 }) {
-  const { scope: scopeParam } = await searchParams;
+  const { scope: scopeParam, tag: tagParam } = await searchParams;
   const principal = await getPrincipal();
   const myHandle = principal?.handle ?? null;
 
@@ -62,6 +62,7 @@ export default async function WikiIndex({
         visibility: v.visibility,
       }))}
       discussionStats={discussionStats}
+      initialTag={tagParam ?? null}
     />
   );
 }

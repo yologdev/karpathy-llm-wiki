@@ -25,6 +25,8 @@ interface BrowseClientProps {
   /** The signed-in user's own vaults — one lens pill each. */
   myVaults: VaultLite[];
   discussionStats?: Record<string, { total: number; open: number }>;
+  /** Initial tag filter (from `?tag=` — e.g. a tag chip on an article). */
+  initialTag?: string | null;
 }
 
 /** A single editorial result row (Folio `PageRow`). */
@@ -192,6 +194,7 @@ export function BrowseClient({
   activeScope,
   myVaults,
   discussionStats,
+  initialTag,
 }: BrowseClientProps) {
   // The active vault id (if the lens is a vault scope) and whether it's one of
   // the viewer's OWN vaults — only then do rows get a per-row Remove control.
@@ -205,7 +208,7 @@ export function BrowseClient({
 
   const [q, setQ] = useState("");
   const [sort, setSort] = useState<Sort>("recent");
-  const [tag, setTag] = useState<string | null>(null);
+  const [tag, setTag] = useState<string | null>(initialTag ?? null);
 
   const allTags = useMemo(() => {
     const f = new Map<string, number>();
@@ -418,6 +421,37 @@ export function BrowseClient({
 
         {/* Results */}
         <div>
+          {tag && (
+            <div
+              className="row"
+              style={{ gap: 8, alignItems: "center", marginBottom: 14 }}
+            >
+              <span style={{ fontSize: 13, color: "var(--muted)" }}>
+                Filtered by
+              </span>
+              <span
+                className="receipt"
+                style={{ fontSize: 12.5, color: "var(--accent)" }}
+              >
+                #{tag}
+              </span>
+              <button
+                type="button"
+                onClick={() => setTag(null)}
+                className="receipt"
+                style={{
+                  fontSize: 12,
+                  color: "var(--muted)",
+                  background: "transparent",
+                  border: 0,
+                  cursor: "pointer",
+                  padding: 0,
+                }}
+              >
+                · clear ✕
+              </button>
+            </div>
+          )}
           {filtered.length === 0 ? (
             <div style={{ padding: "60px 0", textAlign: "center" }}>
               <p style={{ fontSize: 22, color: "var(--ink-2)" }}>
