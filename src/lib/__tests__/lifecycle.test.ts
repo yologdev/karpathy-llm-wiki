@@ -764,7 +764,28 @@ describe("recent trail action labeling", () => {
       .filter((e) => e.slug === "test-page")
       .map((e) => e.action);
     expect(actions).toHaveLength(2);
-    expect(actions).toContain("ingested"); // the first ingest
-    expect(actions).toContain("re-ingested"); // the second (page already existed)
+    // Exactly one of each — an inverted ternary would yield two of one label.
+    expect(actions.filter((a) => a === "ingested")).toHaveLength(1);
+    expect(actions.filter((a) => a === "re-ingested")).toHaveLength(1);
+  });
+
+  it("labels a manual edit 'edited', not re-ingested", async () => {
+    const { getRecentIndex } = await import("../recent-index");
+    await getStorage().putIndex("recent", []);
+
+    await writeWikiPageWithSideEffects(
+      makeOpts({ author: "alice", content: "# Test Page\n\nv1." }),
+    );
+    await writeWikiPageWithSideEffects(
+      makeOpts({ author: "alice", logOp: "edit", content: "# Test Page\n\nedited." }),
+    );
+
+    const idx = (await getRecentIndex()) ?? [];
+    const actions = idx
+      .filter((e) => e.slug === "test-page")
+      .map((e) => e.action);
+    expect(actions).toContain("ingested");
+    expect(actions).toContain("edited");
+    expect(actions).not.toContain("re-ingested");
   });
 });
