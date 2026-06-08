@@ -905,10 +905,16 @@ export function parseIncompleteCoverageResponse(
   });
 }
 
+/** Max pages to check per lint run (matches checkMissingConceptPages cap). */
+export const MAX_COVERAGE_CHECKS = 20;
+
 /**
  * Check for incomplete coverage — raw source content that is missing from the
  * corresponding wiki page. For each wiki page that has a matching raw source,
  * calls the LLM to compare the two and report significant gaps.
+ *
+ * At most `MAX_COVERAGE_CHECKS` pages are checked per run to avoid uncapped
+ * LLM calls. The sample is shuffled so successive runs cover different pages.
  *
  * Uses the same skip-when-no-LLM-key pattern as checkContradictions.
  */
@@ -942,11 +948,19 @@ export async function checkIncompleteCoverage(
     return [];
   }
 
+  // Shuffle so successive runs cover different pages, then cap
+  const shuffled = [...slugsWithRaw];
+  for (let i = shuffled.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+  }
+  const sample = shuffled.slice(0, MAX_COVERAGE_CHECKS);
+
   const issues: LintIssue[] = [];
   const MAX_RAW_CHARS = 8000;
   const MAX_WIKI_CHARS = 8000;
 
-  for (const slug of slugsWithRaw) {
+  for (const slug of sample) {
     const wikiPage = await readWikiPage(slug);
     if (!wikiPage) continue;
 

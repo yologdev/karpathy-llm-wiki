@@ -32,6 +32,7 @@ import {
   checkMissingConceptPages,
   parseIncompleteCoverageResponse,
   checkIncompleteCoverage,
+  MAX_COVERAGE_CHECKS,
   checkBrokenLinks,
 } from "../lint";
 import { saveRawSource } from "../raw";
@@ -1280,6 +1281,31 @@ describe("checkIncompleteCoverage", () => {
     const issues = await checkIncompleteCoverage(["complete-page"]);
 
     expect(issues).toHaveLength(0);
+  });
+
+  it("processes at most MAX_COVERAGE_CHECKS pages per run", async () => {
+    mockedHasLLMKey.mockReturnValue(true);
+
+    // Create more pages with raw sources than the cap
+    const count = MAX_COVERAGE_CHECKS + 10;
+    const slugs: string[] = [];
+    for (let i = 0; i < count; i++) {
+      const slug = `capped-page-${i}`;
+      slugs.push(slug);
+      await writeWikiPage(slug, `# Page ${i}\n\nContent for page ${i}.`);
+      await saveRawSource(slug, `# Page ${i}\n\nRaw content for page ${i}.`);
+    }
+    await updateIndex(
+      slugs.map((s, i) => ({ slug: s, title: `Page ${i}`, summary: `Page ${i}` })),
+    );
+
+    // Each LLM call returns no gaps
+    mockedCallLLM.mockResolvedValue("[]");
+
+    await checkIncompleteCoverage(slugs);
+
+    // The LLM should have been called at most MAX_COVERAGE_CHECKS times
+    expect(mockedCallLLM).toHaveBeenCalledTimes(MAX_COVERAGE_CHECKS);
   });
 });
 
