@@ -420,6 +420,41 @@ describe("findSimilarPages", () => {
     expect(related.map((r) => r.slug)).toEqual(["visible"]);
   });
 
+  it("enforces visibility: a private page is hidden from non-owners, shown to its owner", async () => {
+    await ensureDirectories();
+    await writeWikiPage("anchor", "# Anchor\n\nBody.");
+    await writeWikiPage("pub", "# Pub\n\nbody");
+    await writeWikiPage(
+      "secret",
+      serializeFrontmatter({ owner: "alice", visibility: "private" }, "# Secret\n\nbody"),
+    );
+    await updateIndex([
+      { title: "Anchor", slug: "anchor", summary: "a" },
+      { title: "Pub", slug: "pub", summary: "p" },
+      { title: "Secret", slug: "secret", summary: "s", owner: "alice", visibility: "private" },
+    ]);
+    // Ranking puts the private page above the public one — only the visibility
+    // filter (not ordering) should keep it out for non-owners.
+    mockedRelatedByVector.mockResolvedValue([
+      { slug: "secret", score: 0.9 },
+      { slug: "pub", score: 0.8 },
+    ]);
+
+    // Anonymous reader and a different signed-in user: private excluded.
+    expect((await findSimilarPages("anchor", null)).map((r) => r.slug)).toEqual(["pub"]);
+    expect(
+      (await findSimilarPages("anchor", { id: "bob", handle: "bob" })).map((r) => r.slug),
+    ).toEqual(["pub"]);
+    // The owner sees their own private page.
+    expect(
+      (await findSimilarPages("anchor", { id: "alice", handle: "alice" }))
+        .map((r) => r.slug)
+        .sort(),
+    ).toEqual(["pub", "secret"]);
+
+    mockedRelatedByVector.mockResolvedValue([]); // reset default for later tests
+  });
+
   it("respects the limit", async () => {
     await seed(["anchor", "a", "b", "c", "d"]);
     mockedRelatedByVector.mockResolvedValueOnce([
