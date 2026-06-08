@@ -7,6 +7,12 @@
  * the endpoint that powers embedded tweets), which returns the post's text,
  * author, media, and any quoted tweet as JSON — no API key required.
  *
+ * Long-form **X Articles** carry their body in the authenticated X API v2
+ * `article` field (the syndication payload only exposes the cover image), so
+ * when `X_BEARER_TOKEN` is configured we fetch the article body via the API
+ * first (matching the @yoyo mention worker) and fall back to syndication for
+ * plain tweets / no token.
+ *
  * Self-contained: URL detection, tweet-ID extraction, fetch, and markdown
  * formatting, with no dependency on the ingest pipeline (mirrors `youtube.ts`).
  */
@@ -195,6 +201,83 @@ function formatTweetAsMarkdown(tweet: SyndicationTweet, url: string): XPostConte
 }
 
 // ---------------------------------------------------------------------------
+// Long-form X Articles — via the authenticated X API v2
+// ---------------------------------------------------------------------------
+
+/** Subset of the X API v2 `GET /2/tweets/:id` response we read. */
+interface XApiTweetResponse {
+  data?: { id?: string; text?: string; article?: { title?: string; text?: string } };
+}
+
+/** The `@handle` from an X status URL (`/i/...` has none) — for the byline. */
+function handleFromUrl(url: string): string | null {
+  try {
+    const seg = new URL(url).pathname.split("/").filter(Boolean)[0];
+    return seg && seg.toLowerCase() !== "i" ? seg : null;
+  } catch {
+    return null;
+  }
+}
+
+/** The Article's cover/hero image via the syndication CDN (the API exposes
+ *  none). Best-effort: any error / shape change → null. */
+async function fetchArticleCover(id: string): Promise<string | null> {
+  try {
+    const res = await fetch(
+      `https://cdn.syndication.twimg.com/tweet-result?id=${id}&lang=en&token=${syndicationToken(id)}`,
+      { headers: { "User-Agent": "Mozilla/5.0", Accept: "application/json" } },
+    );
+    if (!res.ok) return null;
+    const data = (await res.json()) as {
+      article?: { cover_media?: { media_info?: { original_img_url?: string } } };
+    };
+    return data.article?.cover_media?.media_info?.original_img_url ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Fetch a long-form X Article's full body via the authenticated X API v2.
+ * Returns `null` (so the caller falls back to syndication) when there's no
+ * `X_BEARER_TOKEN`, the post isn't an article, or the API call fails — a
+ * token/rate-limit hiccup must never break plain-tweet ingest.
+ */
+async function fetchArticleViaApi(id: string, url: string): Promise<XPostContent | null> {
+  const bearer = process.env.X_BEARER_TOKEN;
+  if (!bearer) return null;
+  try {
+    const res = await fetch(
+      `https://api.twitter.com/2/tweets/${id}?tweet.fields=article`,
+      { headers: { Authorization: `Bearer ${bearer}` } },
+    );
+    if (!res.ok) {
+      logger.warn(
+        "x-post",
+        `X API article fetch failed (HTTP ${res.status}) for ${id}; using syndication`,
+      );
+      return null;
+    }
+    const article = ((await res.json()) as XApiTweetResponse).data?.article;
+    if (!article || (!article.text?.trim() && !article.title?.trim())) return null;
+
+    const title = article.title?.trim() || "X Article";
+    const handle = handleFromUrl(url);
+    const cover = await fetchArticleCover(id);
+    const lines: string[] = [`# ${title}`, ""];
+    if (handle) lines.push(`**@${handle}** · X Article`, "");
+    if (cover) lines.push(`![${title}](${cover})`, "");
+    const body = article.text?.trim();
+    if (body) lines.push(body, "");
+    lines.push(`**Source:** [${url}](${url})`);
+    return { title, content: lines.join("\n").trim() };
+  } catch (err) {
+    logger.warn("x-post", `X API article fetch error for ${id}: ${String(err)}`);
+    return null;
+  }
+}
+
+// ---------------------------------------------------------------------------
 // High-level entry point
 // ---------------------------------------------------------------------------
 
@@ -202,8 +285,10 @@ function formatTweetAsMarkdown(tweet: SyndicationTweet, url: string): XPostConte
  * Fetch an X/Twitter post ready for ingestion.
  *
  * 1. Extract the tweet ID (throws on an unrecognized URL).
- * 2. Read the post via the syndication CDN (no API key).
- * 3. Return the post text + media + quoted tweet as markdown.
+ * 2. If it's a long-form Article and `X_BEARER_TOKEN` is set, read the full
+ *    body via the X API v2; otherwise read the post via the syndication CDN.
+ * 3. Return the content (article body, or tweet text + media + quoted tweet)
+ *    as markdown.
  *
  * Throws a {@link ClientInputError} for a missing/private/deleted post so the
  * caller surfaces a useful message rather than ingesting an error page.
@@ -211,6 +296,10 @@ function formatTweetAsMarkdown(tweet: SyndicationTweet, url: string): XPostConte
 export async function fetchXPostContent(url: string): Promise<XPostContent> {
   const id = extractTweetId(url);
   if (!id) throw new ClientInputError(`Not a recognizable X post URL: "${url}"`);
+
+  // Long-form Article body (authenticated) when available — else plain tweet.
+  const article = await fetchArticleViaApi(id, url);
+  if (article) return article;
 
   const tweet = await fetchSyndication(id);
   // Reject only a genuinely empty payload — no renderable text/media on the
