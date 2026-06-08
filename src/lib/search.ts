@@ -481,17 +481,12 @@ export async function searchWikiContent(
 
     const lower = content.toLowerCase();
 
-    // Count how many query terms appear
+    // Score = how many query terms appear anywhere in the raw file (title,
+    // frontmatter tags, or body) — keeps recall wide; the snippet is drawn from
+    // the body separately below.
     let score = 0;
-    let firstMatchIndex = -1;
     for (const term of terms) {
-      const idx = lower.indexOf(term);
-      if (idx !== -1) {
-        score++;
-        if (firstMatchIndex === -1 || idx < firstMatchIndex) {
-          firstMatchIndex = idx;
-        }
-      }
+      if (lower.includes(term)) score++;
     }
 
     if (score === 0) continue;
