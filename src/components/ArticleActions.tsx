@@ -66,10 +66,10 @@ export function ArticleActions({
   const ownsOrContributes =
     !!handleLc &&
     (isOwner || contributors.some((c) => c.toLowerCase() === handleLc));
-  // Curate is for pulling in OTHERS' commons pages (your own are implicitly in
-  // your vault), so it shows only to signed-in non-owner/contributor viewers.
-  const canCurate =
-    isLoaded && !!isSignedIn && isCommonsPage && !ownsOrContributes;
+  // Any signed-in user can curate a commons page into their vault — including
+  // owners and contributors (owned/contributed pages are NOT automatically in
+  // vaults, so excluding them created a curation gap for the most engaged users).
+  const canCurate = isLoaded && !!isSignedIn && isCommonsPage;
 
   return (
     <div className="mt-12 border-t border-rule pt-6 flex flex-wrap items-center gap-3">

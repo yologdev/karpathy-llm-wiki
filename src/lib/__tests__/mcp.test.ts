@@ -89,6 +89,16 @@ vi.mock("../vision", () => ({
   })),
 }));
 
+// Mock callLLM so tests that reach the synthesis pipeline (e.g. reingest) do
+// not make real API calls.  hasLLMKey is kept real so no-key fallback tests work.
+vi.mock("../llm", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../llm")>();
+  return {
+    ...actual,
+    callLLM: vi.fn(async () => "CONCEPT: Mock Page\nALIASES:\n\n# Mock Page\n\nMocked LLM synthesis."),
+  };
+});
+
 import { fetchUrlContent, downloadImages } from "../fetch";
 import { fetchXPostContent } from "../x-post";
 const mockedFetchUrlContent = vi.mocked(fetchUrlContent);
