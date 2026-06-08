@@ -3,18 +3,22 @@ import fs from "fs/promises";
 import os from "os";
 import path from "path";
 
-// Mock the LLM module — search.ts imports callLLM/hasLLMKey at module level
-// for findRelatedPages, but we don't test that function here.
+// Mock the LLM module — search.ts imports callLLM/hasLLMKey at module level for
+// findRelatedPages (default off; the findRelatedPages tests opt in).
 vi.mock("../llm", () => ({
   hasLLMKey: vi.fn(() => false),
   callLLM: vi.fn(async () => "[]"),
 }));
 
-// Stub the vector primitive so findSimilarPages tests control the ranking
-// without a real embedding store; keep every other embeddings export real.
+// Stub the vector primitives so findSimilarPages / findRelatedPages tests control
+// the ranking without a real embedding store; keep every other export real.
 vi.mock("../embeddings", async (orig) => {
   const actual = await orig<typeof import("../embeddings")>();
-  return { ...actual, relatedByVector: vi.fn(async () => []) };
+  return {
+    ...actual,
+    relatedByVector: vi.fn(async () => []),
+    searchByVector: vi.fn(async () => []),
+  };
 });
 
 import {
@@ -27,6 +31,7 @@ import {
   searchWikiContent,
   findBacklinks,
   findSimilarPages,
+  findRelatedPages,
   updateRelatedPages,
   fuzzyMatch,
   levenshteinDistance,
@@ -37,15 +42,20 @@ import {
 } from "../search";
 import type { SearchScope } from "../search";
 import type { Principal } from "../auth";
+import type { IndexEntry } from "../types";
 import { registerAgent, ensureAgentsDir } from "../agents";
 import { createVault, addToVault, vaultIdFor } from "../vault";
 import { serializeFrontmatter } from "../frontmatter";
 import { isAgentScopedType } from "../wiki";
 import type { AgentProfile } from "../types";
 import { _resetStorage } from "../storage";
-import { relatedByVector } from "../embeddings";
+import { relatedByVector, searchByVector } from "../embeddings";
+import { hasLLMKey, callLLM } from "../llm";
 
 const mockedRelatedByVector = vi.mocked(relatedByVector);
+const mockedSearchByVector = vi.mocked(searchByVector);
+const mockedHasLLMKey = vi.mocked(hasLLMKey);
+const mockedCallLLM = vi.mocked(callLLM);
 
 let tmpDir: string;
 let originalWikiDir: string | undefined;
@@ -1109,5 +1119,77 @@ describe("resolveScopeSlugs", () => {
   it("an unresolvable scope → error", async () => {
     const r = await resolveScopeSlugs("user:bogus", alice);
     expect(r.error).toMatch(/Invalid scope/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// findRelatedPages — ingest-time candidate prefilter
+// ---------------------------------------------------------------------------
+
+describe("findRelatedPages — candidate prefilter", () => {
+  beforeEach(() => {
+    mockedHasLLMKey.mockReturnValue(true);
+    mockedSearchByVector.mockReset();
+    mockedSearchByVector.mockResolvedValue([]);
+    mockedCallLLM.mockReset();
+    mockedCallLLM.mockResolvedValue("[]");
+  });
+
+  afterEach(() => {
+    // Restore the suite-wide default so later describes see no LLM.
+    mockedHasLLMKey.mockReturnValue(false);
+  });
+
+  function makeEntries(n: number): IndexEntry[] {
+    return Array.from({ length: n }, (_, i) => ({
+      slug: `page-${i}`,
+      title: `Page ${i}`,
+      summary: `Summary ${i}`,
+    }));
+  }
+
+  const indexLines = (msg: string) => msg.match(/^- page-\d+:/gm) ?? [];
+
+  it("narrows the LLM candidate list to the vector hits on a large wiki", async () => {
+    const entries = makeEntries(100);
+    // The vector store says only these three are semantically near.
+    mockedSearchByVector.mockResolvedValue([
+      { slug: "page-1", score: 0.9 },
+      { slug: "page-2", score: 0.8 },
+      { slug: "page-3", score: 0.7 },
+    ]);
+    mockedCallLLM.mockResolvedValue('["page-1"]');
+
+    const related = await findRelatedPages("new-page", "some new content", entries);
+
+    expect(mockedSearchByVector).toHaveBeenCalled();
+    const userMessage = mockedCallLLM.mock.calls[0][1] as string;
+    expect(userMessage).toContain("- page-1:");
+    expect(userMessage).toContain("- page-3:");
+    expect(userMessage).not.toContain("- page-50:");
+    // Bounded by the hits — not all 100 pages.
+    expect(indexLines(userMessage)).toHaveLength(3);
+    expect(related).toEqual(["page-1"]);
+  });
+
+  it("falls back to the full index when the vector store is empty", async () => {
+    const entries = makeEntries(100);
+    mockedSearchByVector.mockResolvedValue([]); // empty / no-embedding store
+
+    await findRelatedPages("new-page", "content", entries);
+
+    const userMessage = mockedCallLLM.mock.calls[0][1] as string;
+    expect(userMessage).toContain("- page-99:"); // a distant page is present
+    expect(indexLines(userMessage)).toHaveLength(100);
+  });
+
+  it("does not prefilter a small wiki (≤ candidate pool)", async () => {
+    const entries = makeEntries(10);
+
+    await findRelatedPages("new-page", "content", entries);
+
+    expect(mockedSearchByVector).not.toHaveBeenCalled();
+    const userMessage = mockedCallLLM.mock.calls[0][1] as string;
+    expect(indexLines(userMessage)).toHaveLength(10);
   });
 });

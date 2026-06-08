@@ -23,8 +23,8 @@ import { getVault } from "./vault";
 import { getStorage } from "./storage";
 import { getOwnerIndex } from "./owner-index";
 import { getBacklinkIndex, syncBacklinksForPage } from "./backlink-index";
-import { relatedByVector } from "./embeddings";
-import { RELATED_PAGES_LIMIT, RELATED_MIN_SCORE } from "./constants";
+import { relatedByVector, searchByVector } from "./embeddings";
+import { RELATED_PAGES_LIMIT, RELATED_MIN_SCORE, RELATED_CANDIDATE_POOL } from "./constants";
 
 // ---------------------------------------------------------------------------
 // Cross-referencing helpers
@@ -49,9 +49,35 @@ export async function findRelatedPages(
     return [];
   }
 
-  // Build a user message with the index and the new page's content
-  const indexList = existingEntries
-    .filter((e) => e.slug !== newSlug)
+  let candidates = existingEntries.filter((e) => e.slug !== newSlug);
+
+  // On a large wiki, narrow the candidate list to the nearest pages by vector
+  // similarity BEFORE asking the LLM, so the classify prompt stays bounded
+  // (~RELATED_CANDIDATE_POOL lines) instead of listing every page. Fail-soft:
+  // if the vector store is empty or errors, fall back to the full list (so small
+  // wikis and no-embedding setups behave exactly as before).
+  if (candidates.length > RELATED_CANDIDATE_POOL) {
+    try {
+      const allowed = new Set(candidates.map((e) => e.slug));
+      const hits = (await searchByVector(newContent, RELATED_CANDIDATE_POOL))
+        .filter((h) => allowed.has(h.slug));
+      if (hits.length > 0) {
+        const bySlug = new Map(candidates.map((e) => [e.slug, e]));
+        candidates = hits
+          .map((h) => bySlug.get(h.slug))
+          .filter((e): e is IndexEntry => e !== undefined);
+      }
+    } catch (err) {
+      logger.warn(
+        "wiki",
+        "findRelatedPages vector prefilter failed; using the full index:",
+        err,
+      );
+    }
+  }
+
+  // Build a user message with the (possibly narrowed) index and the new page.
+  const indexList = candidates
     .map((e) => `- ${e.slug}: ${e.title} — ${e.summary}`)
     .join("\n");
 

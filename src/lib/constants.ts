@@ -127,6 +127,15 @@ export const QUERY_MAX_OUTPUT_TOKENS = 8192;
 export const RELATED_PAGES_LIMIT = 6;
 
 /**
+ * Candidate pool size for the ingest-time cross-reference (`findRelatedPages`).
+ * On a wiki larger than this, the candidate list handed to the LLM is first
+ * narrowed to the nearest pages by vector similarity, so the classify prompt
+ * stays bounded (O(K)) instead of listing every page (O(all pages)). Comfortably
+ * larger than RELATED_PAGES_LIMIT so the LLM still has room to choose.
+ */
+export const RELATED_CANDIDATE_POOL = 30;
+
+/**
  * Minimum cosine similarity for a page to count as "related". Tuned for
  * bge-m3: distinct-but-related pages sit well above this, while unrelated
  * pages fall below — so weak matches don't pad the section.
