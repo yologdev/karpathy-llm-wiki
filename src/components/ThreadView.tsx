@@ -138,8 +138,8 @@ export function ThreadView({
         </div>
       )}
 
-      {/* Top-level comment form — only for authenticated users */}
-      {userHandle ? (
+      {/* Top-level comment form — only for authenticated users on open threads */}
+      {userHandle && thread.status === "open" ? (
         <form onSubmit={handleAddComment} className="space-y-2 border-t border-foreground/10 pt-3">
           <p className="text-xs font-medium text-foreground/50 uppercase tracking-wide">Add a comment</p>
           <p className="flex items-center gap-1.5 text-xs text-foreground/50">
@@ -150,6 +150,12 @@ export function ThreadView({
             {commenting ? "Posting…" : "Comment"}
           </button>
         </form>
+      ) : userHandle ? (
+        <div className="border-t border-foreground/10 pt-3">
+          <p className="text-sm text-foreground/50 italic">
+            This thread is {thread.status === "wontfix" ? "closed as won\u2019t fix" : "resolved"}. Reopen it to add comments.
+          </p>
+        </div>
       ) : (
         <div className="border-t border-foreground/10 pt-3">
           <p className="text-sm text-foreground/50">Sign in to join the discussion.</p>
