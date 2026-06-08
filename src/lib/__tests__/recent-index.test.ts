@@ -101,6 +101,22 @@ describe("recent-index", () => {
     expect(trail.map((e) => e.slug)).toEqual(["page-c", "page-b"]);
   });
 
+  it("getTrail resolves each event to the page's CURRENT title", async () => {
+    const { updateIndex } = await import("../wiki");
+    await seedEmpty();
+    // Two ingest events for one page captured two differently-cased titles.
+    await pushRecentEvent(ev({ ts: 1000, slug: "agentic-systems", title: "Agentic systems" }));
+    await pushRecentEvent(ev({ ts: 2000, slug: "agentic-systems", title: "agentic systems" }));
+    // The page's CURRENT title (from the wiki index) is the canonical one.
+    await updateIndex([
+      { title: "Agentic Systems", slug: "agentic-systems", summary: "x" },
+    ]);
+
+    const trail = await getTrail(10, null);
+    // Both events render the same current title — not the stale snapshots.
+    expect(trail.every((e) => e.title === "Agentic Systems")).toBe(true);
+  });
+
   it("getTrail falls back to the scan when the index is unseeded", async () => {
     // No index seeded → getTrail scans; an empty wiki yields no events (and
     // crucially does not throw).

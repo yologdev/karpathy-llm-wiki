@@ -45,9 +45,29 @@ export async function getTrail(
   if (!principal) {
     const { getRecentIndex } = await import("./recent-index");
     const idx = await getRecentIndex();
-    if (idx !== null) return idx.slice(0, limit);
+    // The index stores each event's title as a SNAPSHOT from ingest time, so a
+    // page re-ingested under a differently-cased concept ("Agentic systems" →
+    // "agentic systems") shows up twice under two names. Resolve to the page's
+    // CURRENT title so one page reads as one name. (scanTrail already uses the
+    // live page title, so it needs no fixup.)
+    if (idx !== null) return withCurrentTitles(idx.slice(0, limit), principal);
   }
   return scanTrail(limit, principal);
+}
+
+/** Overwrite each event's snapshot title with the page's current title. */
+async function withCurrentTitles(
+  events: TrailEvent[],
+  principal: Principal | null,
+): Promise<TrailEvent[]> {
+  if (events.length === 0) return events;
+  const titleBySlug = new Map(
+    (await listReadableWikiPages(principal)).map((p) => [p.slug, p.title]),
+  );
+  return events.map((e) => {
+    const current = titleBySlug.get(e.slug);
+    return current && current !== e.title ? { ...e, title: current } : e;
+  });
 }
 
 /**

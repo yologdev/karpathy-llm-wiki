@@ -25,6 +25,7 @@ import {
   withPageCache,
   _getPageCacheSize,
   updateRelatedPages,
+  enrichEntry,
 } from "../wiki";
 import { _resetStorage } from "../storage";
 import type { IndexEntry } from "../types";
@@ -171,6 +172,26 @@ describe("updateIndex + listWikiPages roundtrip", () => {
     expect(gamma.tags).toBeUndefined();
     expect(gamma.updated).toBeUndefined();
     expect(gamma.sourceCount).toBeUndefined();
+  });
+
+  it("enrichEntry: sourceCount counts DISTINCT sources (by URL), not the event counter", () => {
+    const base = { slug: "x", title: "X", summary: "" };
+    // Same URL recorded twice (pdf then url) — 1 distinct source, even though
+    // source_count (the ingest-event counter) says 3.
+    const fm = {
+      source_count: "3",
+      sources: JSON.stringify([
+        { type: "pdf", url: "https://arxiv.org/p.pdf", fetched: "2026-06-07", triggered_by: "system" },
+        { type: "url", url: "https://arxiv.org/p.pdf", fetched: "2026-06-08", triggered_by: "system" },
+      ]),
+    } as unknown as import("../frontmatter").Frontmatter;
+    expect(enrichEntry(base, fm).sourceCount).toBe(1);
+  });
+
+  it("enrichEntry: falls back to source_count for legacy pages without sources[]", () => {
+    const base = { slug: "y", title: "Y", summary: "" };
+    const fm = { source_count: "3" } as unknown as import("../frontmatter").Frontmatter;
+    expect(enrichEntry(base, fm).sourceCount).toBe(3);
   });
 
   it("falls back to the plain entry when a page is missing on disk", async () => {
