@@ -470,8 +470,8 @@ describe("ingest — Phase 1 frontmatter fields", () => {
     const page = await readWikiPageWithFrontmatter("phase1-new");
     expect(page).not.toBeNull();
 
-    // Heuristic: a single text source → 0.55 (no longer a constant 0.7).
-    expect(page!.frontmatter.confidence).toBe(0.55);
+    // Heuristic: a single text source → 0.50 (no longer a constant 0.7).
+    expect(page!.frontmatter.confidence).toBe(0.5);
     expect(page!.frontmatter.disputed).toBe(false);
     expect(page!.frontmatter.authors).toEqual(["system"]);
     expect(page!.frontmatter.contributors).toEqual([]);
@@ -578,8 +578,8 @@ describe("ingest — Phase 1 frontmatter fields", () => {
     const page = await readWikiPageWithFrontmatter("phase1-lowconf");
     expect(page).not.toBeNull();
 
-    // Recomputed from the single text source (0.55) — not the manual 0.5.
-    expect(page!.frontmatter.confidence).toBe(0.55);
+    // Recomputed from the single text source (0.50) — not the manual 0.5.
+    expect(page!.frontmatter.confidence).toBe(0.5);
   });
 });
 
@@ -771,8 +771,8 @@ describe("ingest — structured sources[] provenance", () => {
     expect(sources).toHaveLength(2);
     expect(sources[0].url).toBe("https://example.com/a");
     expect(sources[1].url).toBe("https://example.com/b");
-    // Corroboration: a 2nd distinct source URL raises confidence (0.7 → 0.75).
-    expect(page!.frontmatter.confidence).toBe(0.75);
+    // Corroboration: a 2nd distinct source URL raises confidence (0.6 → 0.65).
+    expect(page!.frontmatter.confidence).toBe(0.65);
   });
 
   it("preview confidence matches what the commit writes (corroborating re-ingest)", async () => {
@@ -791,7 +791,7 @@ describe("ingest — structured sources[] provenance", () => {
       sourceUrl: "https://example.com/b",
     });
     const page = await readWikiPageWithFrontmatter("preview-conf");
-    expect(preview.preview!.confidence).toBe(0.75);
+    expect(preview.preview!.confidence).toBe(0.65);
     expect(page!.frontmatter.confidence).toBe(preview.preview!.confidence);
   });
 
@@ -1863,19 +1863,19 @@ describe("computeConfidence", () => {
   });
 
   it("scores by the strongest source type present", () => {
-    expect(computeConfidence([src("text", "text-paste")], false)).toBe(0.55);
-    expect(computeConfidence([src("url", "https://a.com")], false)).toBe(0.7);
-    expect(computeConfidence([src("pdf", "https://a.com/p.pdf")], false)).toBe(0.75);
+    expect(computeConfidence([src("text", "text-paste")], false)).toBe(0.5);
+    expect(computeConfidence([src("url", "https://a.com")], false)).toBe(0.6);
+    expect(computeConfidence([src("pdf", "https://a.com/p.pdf")], false)).toBe(0.68);
     // strongest type wins (same URL → no corroboration bonus)
     expect(
       computeConfidence([src("text", "https://a.com"), src("pdf", "https://a.com")], false),
-    ).toBe(0.75);
+    ).toBe(0.68);
   });
 
   it("adds corroboration for additional distinct source URLs (capped)", () => {
     expect(
       computeConfidence([src("url", "https://a.com"), src("url", "https://b.com")], false),
-    ).toBe(0.75); // 0.7 + 0.05
+    ).toBe(0.65); // 0.6 + 0.05
     expect(
       computeConfidence(
         [
@@ -1887,12 +1887,12 @@ describe("computeConfidence", () => {
         ],
         false,
       ),
-    ).toBe(0.85); // 0.7 + capped 0.15
+    ).toBe(0.75); // 0.6 + capped 0.15
   });
 
-  it("caps a disputed page at 0.5 and falls back to 0.6 for no sources", () => {
+  it("caps a disputed page at 0.5 and falls back to 0.5 for no sources", () => {
     expect(computeConfidence([src("pdf", "https://a.com/p.pdf")], true)).toBe(0.5);
-    expect(computeConfidence([], false)).toBe(0.6);
+    expect(computeConfidence([], false)).toBe(0.5);
   });
 });
 

@@ -172,8 +172,8 @@ describe("X-mention integration", () => {
 
     // Authors defaults to ["system"] on new pages
     expect(page!.frontmatter.authors).toEqual(["system"]);
-    // Heuristic confidence for a single x-mention source → 0.55
-    expect(page!.frontmatter.confidence).toBe(0.55);
+    // Heuristic confidence for a single x-mention source → 0.50
+    expect(page!.frontmatter.confidence).toBe(0.5);
   });
 
   it("handles fetch failure (404) gracefully", async () => {

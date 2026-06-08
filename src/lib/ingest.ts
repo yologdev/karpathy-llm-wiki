@@ -60,30 +60,31 @@ function mergeSourceEntry(sources: SourceEntry[], entry: SourceEntry): SourceEnt
  * documents/articles, lower for social/unverified provenance.
  */
 const SOURCE_TYPE_WEIGHT: Record<SourceEntry["type"], number> = {
-  pdf: 0.75,
-  "wiki-ref": 0.72,
-  url: 0.7,
-  youtube: 0.62,
-  image: 0.55,
-  text: 0.55,
-  "x-mention": 0.55,
+  pdf: 0.68,
+  "wiki-ref": 0.65,
+  url: 0.6,
+  youtube: 0.55,
+  image: 0.5,
+  text: 0.5,
+  "x-mention": 0.5,
 };
 
 /**
  * Heuristic page confidence from real provenance signals — replaces the old
- * constant 0.7:
+ * constant 0.7. A lone source sits BELOW 0.7 so corroboration can earn its way
+ * up (a single URL reads ~0.60, not the old default):
  *  - authority of the STRONGEST source type present,
  *  - corroboration: +0.05 per additional DISTINCT source URL (cap +0.15),
  *  - a `disputed` page is capped at 0.5.
- * Clamped to [0.3, 0.95], rounded to 2 decimals. An empty source set → 0.6.
+ * Clamped to [0.3, 0.95], rounded to 2 decimals. An empty source set → 0.5.
  */
 export function computeConfidence(
   sources: SourceEntry[],
   disputed: boolean,
 ): number {
-  if (sources.length === 0) return 0.6;
+  if (sources.length === 0) return 0.5;
   const base = Math.max(
-    ...sources.map((s) => SOURCE_TYPE_WEIGHT[s.type] ?? 0.6),
+    ...sources.map((s) => SOURCE_TYPE_WEIGHT[s.type] ?? 0.5),
   );
   const distinctUrls = new Set(sources.map((s) => s.url)).size;
   const corroboration = Math.min(0.15, Math.max(0, distinctUrls - 1) * 0.05);
