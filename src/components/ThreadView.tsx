@@ -19,6 +19,8 @@ interface ThreadViewProps {
   inputClasses: string;
   /** The authenticated user's handle, shown as a read-only author badge. Null when not signed in. */
   userHandle: string | null;
+  /** The page owner's handle — used to gate resolve/reopen button visibility. */
+  pageOwner: string;
 }
 
 export function ThreadView({
@@ -33,10 +35,19 @@ export function ThreadView({
   onAskYoyo,
   inputClasses,
   userHandle,
+  pageOwner,
 }: ThreadViewProps) {
   const [commentBody, setCommentBody] = useState("");
   const [commenting, setCommenting] = useState(false);
   const [asking, setAsking] = useState(false);
+
+  // Only the thread author (first comment's author), page owner, or admin may
+  // change thread status. Hide the buttons entirely for everyone else so they
+  // don't get a confusing 403 on click.
+  const threadAuthor = thread.comments[0]?.author;
+  const canResolve =
+    !!userHandle &&
+    (userHandle === threadAuthor || userHandle === pageOwner);
 
   async function handleAskYoyo() {
     if (!onAskYoyo) return;
@@ -80,7 +91,7 @@ export function ThreadView({
       </div>
 
       {/* Resolve / Won't Fix / Ask-yoyo buttons for open threads */}
-      {thread.status === "open" && (
+      {thread.status === "open" && (onAskYoyo || canResolve) && (
         <div className="flex flex-wrap gap-2">
           {onAskYoyo && (
             <button
@@ -93,25 +104,29 @@ export function ThreadView({
               {asking ? "Queuing…" : "🛠 Ask yoyo to address this"}
             </button>
           )}
-          <button
-            type="button"
-            onClick={() => onResolve("resolved")}
-            className="rounded bg-green-600 px-3 py-1 text-xs text-white hover:bg-green-700"
-          >
-            Resolve
-          </button>
-          <button
-            type="button"
-            onClick={() => onResolve("wontfix")}
-            className="rounded bg-gray-500 px-3 py-1 text-xs text-white hover:bg-gray-600"
-          >
-            Won&apos;t Fix
-          </button>
+          {canResolve && (
+            <>
+              <button
+                type="button"
+                onClick={() => onResolve("resolved")}
+                className="rounded bg-green-600 px-3 py-1 text-xs text-white hover:bg-green-700"
+              >
+                Resolve
+              </button>
+              <button
+                type="button"
+                onClick={() => onResolve("wontfix")}
+                className="rounded bg-gray-500 px-3 py-1 text-xs text-white hover:bg-gray-600"
+              >
+                Won&apos;t Fix
+              </button>
+            </>
+          )}
         </div>
       )}
 
       {/* Reopen button for resolved/wontfix threads */}
-      {(thread.status === "resolved" || thread.status === "wontfix") && (
+      {canResolve && (thread.status === "resolved" || thread.status === "wontfix") && (
         <div className="flex gap-2">
           <button
             type="button"

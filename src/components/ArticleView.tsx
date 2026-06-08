@@ -454,7 +454,7 @@ export async function ArticleView({
             </section>
           )}
 
-          <DiscussionPanel slug={slug} />
+          <DiscussionPanel slug={slug} pageOwner={pageOwner} />
           <RevisionHistory slug={slug} />
 
           <ArticleActions

@@ -9,6 +9,8 @@ import { ThreadView } from "./ThreadView";
 
 interface DiscussionPanelProps {
   slug: string;
+  /** The page owner's handle — threaded to ThreadView for resolve/reopen gating. */
+  pageOwner: string;
 }
 
 const STATUS_COLORS: Record<TalkThread["status"], string> = {
@@ -52,7 +54,7 @@ function useViewerHandle(): string | null {
  * Follows the same pattern as RevisionHistory — fetches on demand when the
  * user expands the section, manages all state client-side.
  */
-export function DiscussionPanel({ slug }: DiscussionPanelProps) {
+export function DiscussionPanel({ slug, pageOwner }: DiscussionPanelProps) {
   const userHandle = useViewerHandle();
 
   const [open, setOpen] = useState(false);
@@ -341,6 +343,7 @@ export function DiscussionPanel({ slug }: DiscussionPanelProps) {
                       onAskYoyo={userHandle ? () => handleAskYoyo(idx) : undefined}
                       inputClasses={inputClasses}
                       userHandle={userHandle}
+                      pageOwner={pageOwner}
                     />
                   )}
 

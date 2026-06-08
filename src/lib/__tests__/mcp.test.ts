@@ -2522,21 +2522,32 @@ describe("reingest", () => {
   });
 
   it("re-ingests an X post via the syndication path, pinned to its slug", async () => {
-    await writeTestPage(
-      "a-tweet",
-      "---\nsource_url: https://x.com/u/status/123\n---\n# A Tweet\n\nold body.",
-    );
-    await writeIndex([{ title: "A Tweet", slug: "a-tweet", summary: "a tweet" }]);
-    mockedFetchXPostContent.mockClear();
-    mockedFetchUrlContent.mockClear();
+    // Unset LLM keys so ingest uses the fallback (no-LLM) path
+    const savedKey = process.env.ANTHROPIC_API_KEY;
+    delete process.env.ANTHROPIC_API_KEY;
+    _resetConfigCache();
+    try {
+      await writeTestPage(
+        "a-tweet",
+        "---\nsource_url: https://x.com/u/status/123\n---\n# A Tweet\n\nold body.",
+      );
+      await writeIndex([{ title: "A Tweet", slug: "a-tweet", summary: "a tweet" }]);
+      mockedFetchXPostContent.mockClear();
+      mockedFetchUrlContent.mockClear();
 
-    const result = await handleReingest({ slug: "a-tweet" });
+      const result = await handleReingest({ slug: "a-tweet" });
 
-    // Uses the X syndication fetch, NOT the plain HTML fetch (which would
-    // re-capture the "Something went wrong" shell), and stays on the same slug.
-    expect(mockedFetchXPostContent).toHaveBeenCalledWith("https://x.com/u/status/123");
-    expect(mockedFetchUrlContent).not.toHaveBeenCalled();
-    expect(result.primarySlug).toBe("a-tweet");
+      // Uses the X syndication fetch, NOT the plain HTML fetch (which would
+      // re-capture the "Something went wrong" shell), and stays on the same slug.
+      expect(mockedFetchXPostContent).toHaveBeenCalledWith("https://x.com/u/status/123");
+      expect(mockedFetchUrlContent).not.toHaveBeenCalled();
+      expect(result.primarySlug).toBe("a-tweet");
+    } finally {
+      if (savedKey !== undefined) {
+        process.env.ANTHROPIC_API_KEY = savedKey;
+      }
+      _resetConfigCache();
+    }
   });
 });
 
