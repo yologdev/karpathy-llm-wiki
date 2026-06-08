@@ -16,7 +16,7 @@ export interface TrailEvent {
   /** True when the actor is an autonomous agent (e.g. `yoyo`). */
   isAgent: boolean;
   /** What happened. */
-  action: "ingested" | "edited";
+  action: "ingested" | "re-ingested" | "edited";
   /** For ingests, the kind of source. */
   sourceType?: SourceEntry["type"];
   slug: string;

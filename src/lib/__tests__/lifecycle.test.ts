@@ -742,3 +742,29 @@ describe("per-tenant silo mirror", () => {
     ).toBe(false);
   });
 });
+
+// ===========================================================================
+// Recent-trail action labeling — ingested vs re-ingested
+// ===========================================================================
+describe("recent trail action labeling", () => {
+  it("labels a first ingest 'ingested' and a re-ingest 're-ingested'", async () => {
+    const { getRecentIndex } = await import("../recent-index");
+    // Seed an empty-but-present index so the incremental push isn't a no-op.
+    await getStorage().putIndex("recent", []);
+
+    await writeWikiPageWithSideEffects(
+      makeOpts({ author: "alice", content: "# Test Page\n\nv1." }),
+    );
+    await writeWikiPageWithSideEffects(
+      makeOpts({ author: "alice", content: "# Test Page\n\nv2, re-ingested." }),
+    );
+
+    const idx = (await getRecentIndex()) ?? [];
+    const actions = idx
+      .filter((e) => e.slug === "test-page")
+      .map((e) => e.action);
+    expect(actions).toHaveLength(2);
+    expect(actions).toContain("ingested"); // the first ingest
+    expect(actions).toContain("re-ingested"); // the second (page already existed)
+  });
+});

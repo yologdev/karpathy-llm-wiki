@@ -462,7 +462,14 @@ async function runPageLifecycleOp(
           when: new Date(now).toISOString(),
           actor: op.author,
           isAgent: isAgentHandle(op.author),
-          action: logOp === "ingest" ? "ingested" : "edited",
+          // An ingest onto a page that already existed is a re-ingest — label
+          // it distinctly (prevContent is undefined only for a brand-new page).
+          action:
+            logOp === "ingest"
+              ? prevContent
+                ? "re-ingested"
+                : "ingested"
+              : "edited",
           ...(sourceType ? { sourceType } : {}),
           slug,
           title: op.title,
