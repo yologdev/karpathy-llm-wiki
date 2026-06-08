@@ -629,7 +629,7 @@ describe("checkStalePages", () => {
 describe("checkLowConfidence", () => {
   it("flags a page with confidence below the threshold", async () => {
     await createPageWithIndex("shaky-page", "Shaky Page", {
-      confidence: 0.1,
+      confidence: 0.5,
       created: "2025-01-01",
     });
 
@@ -638,7 +638,7 @@ describe("checkLowConfidence", () => {
     expect(issues[0].type).toBe("low-confidence");
     expect(issues[0].slug).toBe("shaky-page");
     expect(issues[0].severity).toBe("info");
-    expect(issues[0].message).toContain("0.1");
+    expect(issues[0].message).toContain("0.5");
     expect(issues[0].message).toContain(String(LOW_CONFIDENCE_THRESHOLD));
     expect(issues[0].suggestion).toBeDefined();
     expect(issues[0].suggestion).toContain("Shaky Page");
@@ -646,7 +646,7 @@ describe("checkLowConfidence", () => {
 
   it("does NOT flag a page with confidence above the threshold", async () => {
     await createPageWithIndex("solid-page", "Solid Page", {
-      confidence: 0.5,
+      confidence: 0.65,
       created: "2025-01-01",
     });
 

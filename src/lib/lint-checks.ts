@@ -622,8 +622,16 @@ export async function checkStalePages(): Promise<LintIssue[]> {
 // Low-confidence check — flags pages whose `confidence` is below threshold.
 // ---------------------------------------------------------------------------
 
-/** Pages with confidence below this threshold are flagged for more sources. */
-export const LOW_CONFIDENCE_THRESHOLD = 0.3;
+/**
+ * Pages with confidence below this threshold are flagged for more sources.
+ *
+ * `computeConfidence()` clamps its output to [0.3, 0.95]. The lowest
+ * auto-computed scores come from single-source text / image / x-mention
+ * pages (0.50). A threshold of 0.55 catches those while passing
+ * multi-source pages and higher-authority single-source types (URL, PDF,
+ * wiki-ref).
+ */
+export const LOW_CONFIDENCE_THRESHOLD = 0.55;
 
 /**
  * Check for low-confidence pages — pages whose `confidence` frontmatter value
