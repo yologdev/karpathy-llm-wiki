@@ -26,6 +26,7 @@ import {
   buildContext,
 } from "../query-search";
 import { writeWikiPage, ensureDirectories } from "../wiki";
+import * as wikiModule from "../wiki";
 
 const mockedHasLLMKey = vi.mocked(hasLLMKey);
 const mockedSearchByVector = vi.mocked(searchByVector);
@@ -518,5 +519,54 @@ describe("searchIndex — pre-filtered entries", () => {
     expect(result.length).toBeGreaterThan(0);
     // "relevant" should rank first — it has both "neural" and "networks" in title+summary
     expect(result[0]).toBe("relevant");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// searchIndex — full-body BM25 size gate
+// ---------------------------------------------------------------------------
+describe("searchIndex — full-body size gate", () => {
+  it("reads page bodies for a small corpus (≤ BM25_FULLBODY_MAX_PAGES)", async () => {
+    await ensureDirectories();
+    await writeWikiPage("nn", "# Neural Networks\n\nDeep learning architectures.");
+    await writeWikiPage("pasta", "# Pasta\n\nHow to cook pasta.");
+    const entries: IndexEntry[] = [
+      { slug: "nn", title: "Neural Networks", summary: "intro" },
+      { slug: "pasta", title: "Pasta", summary: "food" },
+    ];
+    const readSpy = vi.spyOn(wikiModule, "readWikiPage");
+
+    // Default fullBody=true and 2 ≤ 200 ⇒ full-body path reads each page.
+    const result = await searchIndex("neural networks", entries);
+    expect(readSpy).toHaveBeenCalled();
+    expect(result[0]).toBe("nn");
+    readSpy.mockRestore();
+  });
+
+  it("issues ZERO body reads above the gate, still ranking by title+summary", async () => {
+    // 201 > 200 ⇒ index-level BM25, no disk reads. No page files written.
+    const entries: IndexEntry[] = Array.from({ length: 201 }, (_, i) => ({
+      slug: `page-${i}`,
+      title: i === 0 ? "Neural Networks" : `Topic ${i}`,
+      summary: i === 0 ? "deep neural networks for learning" : `unrelated content ${i}`,
+    }));
+    const readSpy = vi.spyOn(wikiModule, "readWikiPage");
+
+    const result = await searchIndex("neural networks", entries);
+    expect(readSpy).not.toHaveBeenCalled();
+    expect(result.length).toBeGreaterThan(0);
+    expect(result[0]).toBe("page-0");
+    readSpy.mockRestore();
+  });
+
+  it("honours an explicit fullBody=false even for a small corpus", async () => {
+    await ensureDirectories();
+    await writeWikiPage("a", "# A\n\nalpha body");
+    const entries: IndexEntry[] = [{ slug: "a", title: "A", summary: "alpha" }];
+    const readSpy = vi.spyOn(wikiModule, "readWikiPage");
+
+    await searchIndex("alpha", entries, false);
+    expect(readSpy).not.toHaveBeenCalled();
+    readSpy.mockRestore();
   });
 });

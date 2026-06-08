@@ -9,7 +9,7 @@ import { readWikiPage, readWikiPageWithFrontmatter } from "./wiki";
 import { tokenize, buildCorpusStats, bm25Score } from "./bm25";
 import { searchByVector } from "./embeddings";
 import { callLLM, hasLLMKey } from "./llm";
-import { MAX_CONTEXT_PAGES, RRF_K } from "./constants";
+import { MAX_CONTEXT_PAGES, RRF_K, BM25_FULLBODY_MAX_PAGES } from "./constants";
 import { logger } from "./logger";
 import type { IndexEntry } from "./types";
 
@@ -164,9 +164,14 @@ export async function searchIndex(
     return [];
   }
 
-  // Phase 1 — BM25 sparse scoring
+  // Phase 1 — BM25 sparse scoring.
+  // Full-body BM25 reads every page from disk, so above BM25_FULLBODY_MAX_PAGES
+  // we drop to index-level (title+summary) scoring — zero disk reads — and let
+  // the vector half of the fusion carry body-level recall. The gate only ever
+  // downgrades, so a small or scoped corpus keeps full-body recall.
   const questionTokens = tokenize(question);
-  const corpusStats = await buildCorpusStats(entries, { fullBody });
+  const useFullBody = fullBody && entries.length <= BM25_FULLBODY_MAX_PAGES;
+  const corpusStats = await buildCorpusStats(entries, { fullBody: useFullBody });
 
   const bm25Results = entries
     .map((entry) => ({

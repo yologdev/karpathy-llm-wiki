@@ -59,6 +59,17 @@ export const MAX_BATCH_URLS = 20;
 export const MAX_CONTEXT_PAGES = 10;
 
 /**
+ * Page-count ceiling for full-body BM25 at query time.
+ *
+ * At or below this many candidate pages, BM25 reads every page body from disk
+ * for maximum keyword recall. Above it, BM25 scores index-level title+summary
+ * only (zero disk reads) and the dense/vector half of the hybrid retrieval
+ * carries body-level recall — keeping per-query cost flat as the wiki grows.
+ * A scoped query (vault/owner) under this size still gets full-body recall.
+ */
+export const BM25_FULLBODY_MAX_PAGES = 200;
+
+/**
  * BM25 term-frequency saturation parameter.
  *
  * Controls how quickly term frequency saturates. Higher values give more
