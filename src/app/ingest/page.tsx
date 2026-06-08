@@ -1,7 +1,6 @@
 "use client";
 
 import { Alert } from "@/components/Alert";
-import { BatchIngestForm } from "@/components/BatchIngestForm";
 import { IngestSuccess } from "@/components/IngestSuccess";
 import { IngestReview } from "@/components/IngestReview";
 import { IngestStepper } from "@/components/IngestStepper";
@@ -15,7 +14,6 @@ const TABS: { mode: Mode; label: string }[] = [
   { mode: "xpost", label: "X post" },
   { mode: "text", label: "Paste text" },
   { mode: "image", label: "Image" },
-  { mode: "batch", label: "Batch URLs" },
 ];
 
 const FEATURES: [string, string][] = [
@@ -211,15 +209,15 @@ export default function IngestPage() {
             <form onSubmit={handleSourceSubmit} className="space-y-5">
               <div>
                 <label htmlFor="title" className="block text-sm font-medium mb-2">
-                  Title
+                  Title{" "}
+                  <span className="text-foreground/40">(optional)</span>
                 </label>
                 <input
                   id="title"
                   type="text"
                   value={title}
                   onChange={(e) => setTitle(e.target.value)}
-                  required
-                  placeholder="e.g. Transformer Architecture"
+                  placeholder="Leave blank to derive it from the content"
                   className="w-full rounded-lg border border-foreground/20 bg-transparent px-4 py-2.5 text-sm placeholder:text-foreground/40 focus:border-foreground/50 focus:outline-none transition-colors"
                 />
               </div>
@@ -361,9 +359,6 @@ export default function IngestPage() {
               </button>
             </form>
           )}
-
-          {/* Batch */}
-          {mode === "batch" && <BatchIngestForm />}
 
           {/* What ingestion guarantees */}
           <div

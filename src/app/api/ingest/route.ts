@@ -90,14 +90,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(result);
     }
 
-    // Text path: require title + content
-    if (!title || typeof title !== "string" || title.trim().length === 0) {
-      return NextResponse.json(
-        { error: "title is required and must be a non-empty string (or provide a url)" },
-        { status: 400 },
-      );
-    }
-
+    // Text path: content is required; title is OPTIONAL — when omitted, ingest()
+    // derives it from the content (or the synthesized concept).
     if (
       !content ||
       typeof content !== "string" ||
@@ -108,8 +102,18 @@ export async function POST(request: NextRequest) {
         { status: 400 },
       );
     }
+    if (title !== undefined && typeof title !== "string") {
+      return NextResponse.json(
+        { error: "title must be a string if provided" },
+        { status: 400 },
+      );
+    }
 
-    const result = await ingest(title.trim(), content.trim(), options);
+    const result = await ingest(
+      typeof title === "string" ? title.trim() : "",
+      content.trim(),
+      options,
+    );
 
     return NextResponse.json(result);
   } catch (error) {

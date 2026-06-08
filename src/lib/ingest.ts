@@ -241,6 +241,26 @@ export async function ingestUrl(
   return ingest(title, content, { ...options, sourceUrl: url });
 }
 
+/**
+ * Provisional title for a title-less pasted-text ingest: the first markdown H1,
+ * else the first non-empty line (leading heading/list markers stripped), capped.
+ * Returns `""` only when the content has no usable line. The synthesis CONCEPT
+ * (or, on commit-from-preview, the body H1) overrides this for the final title.
+ */
+export function deriveTitleFromContent(content: string): string {
+  const h1 = content.match(/^#\s+(.+?)\s*$/m)?.[1]?.trim();
+  if (h1) return h1.slice(0, 120).trim();
+  const firstLine = content
+    .split("\n")
+    .map((l) => l.replace(/^[#>\-*\d.\s)]+/, "").trim())
+    .find((l) => l.length > 0);
+  if (!firstLine) return "";
+  let t = firstLine;
+  const end = t.search(/[.!?。！？]/);
+  if (end >= 8 && end < 100) t = t.slice(0, end);
+  return t.slice(0, 120).trim();
+}
+
 /** Derive a concise page title from the vision description's first meaningful
  *  line (e.g. a transcribed headline). Returns undefined if nothing usable. */
 function deriveImageTitle(visionText?: string): string | undefined {
@@ -1281,26 +1301,29 @@ export async function ingest(
   options?: IngestOptions,
 ): Promise<IngestResult> {
   const startedAt = new Date().toISOString();
-  const rawSlug = slugify(title);
+  // Title is optional for pasted text — derive a provisional one from the
+  // content (the synthesis CONCEPT/H1 still drives the final slug + title below).
+  const effectiveTitle = title.trim() || deriveTitleFromContent(content);
+  const rawSlug = slugify(effectiveTitle);
 
   if (rawSlug === "") {
     throw new Error(
-      "Cannot ingest: title produces an empty slug",
+      "Cannot ingest: no title was given and none could be derived from the content",
     );
   }
 
   // --- Alias resolution: check if title matches an existing page's aliases ---
   // This prevents duplicate pages when the same concept appears under different
   // names (e.g. "React.js" vs a page with aliases: ["React.js"]).
-  const resolvedSlug = await resolveAlias(title);
+  const resolvedSlug = await resolveAlias(effectiveTitle);
   // Provisional slug from the title. On the direct ingest path this is later
   // replaced by a content-derived *concept* slug (see the CONCEPT marker below),
   // so the same concept under different headlines converges onto one page.
   // `pinSlug` (re-ingest) overrides everything: stay on the known page.
   let slug = options?.pinSlug ?? resolvedSlug ?? rawSlug;
   // The page title written to the index/log. Becomes the canonical concept name
-  // when one is derived; otherwise stays the source title.
-  let pageTitle = title;
+  // when one is derived; otherwise stays the (derived) source title.
+  let pageTitle = effectiveTitle;
 
   const isPreview = options?.preview === true;
   const preGeneratedContent = options?.generatedContent;
@@ -1764,12 +1787,12 @@ export async function ingest(
   // under any of those names resolves here (extends convergence beyond the
   // content hash to the title/synonym routes). Merges with any existing
   // aliases; deduped case-insensitively; never aliases the concept to itself.
-  if (pageTitle !== title) {
+  if (pageTitle !== effectiveTitle) {
     const aliasList = Array.isArray(frontmatter.aliases)
       ? [...frontmatter.aliases]
       : [];
     const seen = new Set(aliasList.map((a) => a.toLowerCase()));
-    for (const candidate of [title, ...conceptAliases]) {
+    for (const candidate of [effectiveTitle, ...conceptAliases]) {
       const trimmed = candidate.trim();
       const key = trimmed.toLowerCase();
       if (trimmed === "" || key === pageTitle.toLowerCase() || seen.has(key)) {

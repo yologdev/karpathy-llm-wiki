@@ -71,11 +71,12 @@ export function validateIngestInput(
       return "Please enter a valid URL (e.g. https://example.com)";
     }
   } else {
-    if (!title.trim()) {
-      return "Please enter a title";
-    }
     if (!content.trim()) {
       return "Please enter some content";
+    }
+    // Pasted text derives its title from the content; image/PDF still want one.
+    if (mode !== "text" && !title.trim()) {
+      return "Please enter a title";
     }
   }
   return null;
@@ -158,7 +159,9 @@ export function useIngest(): UseIngestReturn {
         slug: data.primarySlug,
         previewContent: data.previewContent ?? "",
         relatedPages: data.relatedUpdated ?? [],
-        title: usesUrl ? data.preview?.title ?? data.primarySlug : title,
+        // Prefer the synthesized title (the concept) so a title-less paste
+        // shows the derived name on the review card and commits with it.
+        title: data.preview?.title ?? (usesUrl ? data.primarySlug : title),
         content: usesUrl ? "" : content,
         url: usesUrl ? url.trim() : undefined,
         meta: data.preview,

@@ -79,6 +79,28 @@ const fakeResult: IngestResult = {
 // ===========================================================================
 // POST /api/ingest — error → HTTP status mapping
 // ===========================================================================
+describe("POST /api/ingest — text title optional", () => {
+  it("accepts a text ingest with no title (derived from content)", async () => {
+    mockedIngest.mockResolvedValue(fakeResult);
+    const res = await POST(
+      makeRequest("http://localhost/api/ingest", { content: "Some pasted content." }),
+    );
+    expect(res.status).toBe(200);
+    expect(mockedIngest).toHaveBeenCalledWith(
+      "",
+      "Some pasted content.",
+      expect.anything(),
+    );
+  });
+
+  it("still requires content", async () => {
+    const res = await POST(
+      makeRequest("http://localhost/api/ingest", { title: "Only a title" }),
+    );
+    expect(res.status).toBe(400);
+  });
+});
+
 describe("POST /api/ingest — error status mapping", () => {
   it("maps a ClientInputError (e.g. deleted/private X post) to 400 + the message", async () => {
     mockedIngestUrl.mockRejectedValue(
