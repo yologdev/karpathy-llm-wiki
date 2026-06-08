@@ -114,9 +114,14 @@ The division of labor that falls out of "commons-first":
   ingest synthesis, query answers, and lint — cheap and 1M-context.
 - **Embeddings:** **`@cf/baai/bge-m3`** via Workers AI — multilingual, strong **CJK**,
   decoupled from the generation provider.
-- **Search:** hybrid **BM25 + vector** with RRF fusion. The BM25 tokenizer is
-  CJK-aware (`Intl.Segmenter` word segmentation + character bigrams); slugs preserve
-  CJK characters.
+- **Search:** hybrid **BM25 + vector** with RRF fusion, engineered to stay **flat-cost
+  as the commons grows**. Vector search runs on **Cloudflare Vectorize** (managed ANN —
+  no per-query blob load/scan); BM25 reads full page bodies up to a few hundred pages,
+  then drops to index-level title+summary (zero disk reads) and leans on the vector half
+  for body recall. The query prompt lists only the retrieved candidates, not the whole
+  index, so per-query tokens stay bounded; on ingest, the cross-reference step likewise
+  narrows candidates by vector similarity before the LLM. The BM25 tokenizer is CJK-aware
+  (`Intl.Segmenter` word segmentation + character bigrams); slugs preserve CJK characters.
 
 ---
 
