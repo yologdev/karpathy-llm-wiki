@@ -1,10 +1,6 @@
-import { listReadableWikiPages } from "@/lib/wiki";
-import { listCommonsPages } from "@/lib/commons";
-import type { IndexEntry } from "@/lib/types";
-import { getVault } from "@/lib/vault";
 import { listVaults } from "@/lib/vault";
-import { getDiscussionStatsForSlugs } from "@/lib/talk";
 import { getPrincipal } from "@/lib/auth";
+import { searchCommons, BROWSE_PAGE_SIZE } from "@/lib/browse";
 import { BrowseClient } from "@/components/BrowseClient";
 
 export default async function WikiIndex({
@@ -23,40 +19,24 @@ export default async function WikiIndex({
   // filter over public content, not access control. A `vault:<id>` scope is a
   // curated reference lens (public vaults only resolve via scope).
   const effectiveScope = scopeParam ?? "all";
-  const vaultId = effectiveScope.startsWith("vault:")
-    ? effectiveScope.slice("vault:".length)
-    : null;
 
   // The signed-in user's own vaults drive the lens pills (and the per-row Remove
   // when viewing one of their own vaults).
   const myVaults = myHandle ? await listVaults(myHandle) : [];
 
-  let pages: IndexEntry[];
-  if (vaultId) {
-    // Vault lens: a public vault's referenced commons pages, intersected with
-    // what the viewer may read. Private vaults never resolve via scope.
-    const vault = await getVault(vaultId);
-    if (!vault || vault.visibility !== "public") {
-      pages = [];
-    } else {
-      const refs = new Set(vault.slugs);
-      pages = (await listReadableWikiPages(principal)).filter((p) =>
-        refs.has(p.slug),
-      );
-    }
-  } else {
-    // "Public" scope = the public commons (read from the commons index).
-    pages = await listCommonsPages();
-  }
-
-  const slugs = pages.map((p) => p.slug);
-  const statsMap = await getDiscussionStatsForSlugs(slugs);
-  const discussionStats: Record<string, { total: number; open: number }> = {};
-  for (const [slug, stats] of statsMap) discussionStats[slug] = stats;
+  // First page, server-rendered (no query) — the client takes over from here,
+  // re-fetching `/api/wiki/browse` on every search / sort / tag / page change.
+  const initial = await searchCommons(null, {
+    scope: effectiveScope,
+    tag: tagParam ?? null,
+    sort: "recent",
+    page: 1,
+    pageSize: BROWSE_PAGE_SIZE,
+    principal,
+  });
 
   return (
     <BrowseClient
-      pages={pages}
       myHandle={myHandle}
       activeScope={effectiveScope}
       myVaults={myVaults.map((v) => ({
@@ -64,7 +44,11 @@ export default async function WikiIndex({
         name: v.name,
         visibility: v.visibility,
       }))}
-      discussionStats={discussionStats}
+      initialResults={initial.results}
+      initialTotal={initial.total}
+      initialTags={initial.tags}
+      initialDiscussionStats={initial.discussionStats}
+      pageSize={BROWSE_PAGE_SIZE}
       initialTag={tagParam ?? null}
     />
   );

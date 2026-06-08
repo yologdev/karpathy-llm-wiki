@@ -1,0 +1,30 @@
+import { NextResponse } from "next/server";
+import { getPrincipal } from "@/lib/auth";
+import { searchCommons, BROWSE_PAGE_SIZE, type BrowseSort } from "@/lib/browse";
+
+/**
+ * GET /api/wiki/browse?q=&scope=all&tag=&sort=recent&page=1&pageSize=30
+ *
+ * Server-side hybrid (BM25 + vector) search + pagination for the Browse surface.
+ * Public-readable: returns the commons by default; `principal` is resolved only
+ * to expand a `vault:<id>` scope to the viewer's readable pages. Private and
+ * agent-scoped pages can never appear (the pool is pre-filtered in searchCommons).
+ */
+export async function GET(req: Request) {
+  const url = new URL(req.url);
+  const q = url.searchParams.get("q");
+  const scope = url.searchParams.get("scope") || "all";
+  const tag = url.searchParams.get("tag");
+  const sortParam = url.searchParams.get("sort");
+  const sort: BrowseSort =
+    sortParam === "confidence" || sortParam === "sources" ? sortParam : "recent";
+  const page = Math.max(1, Number.parseInt(url.searchParams.get("page") ?? "1", 10) || 1);
+  const pageSize = Math.min(
+    100,
+    Math.max(1, Number.parseInt(url.searchParams.get("pageSize") ?? "", 10) || BROWSE_PAGE_SIZE),
+  );
+
+  const principal = await getPrincipal();
+  const data = await searchCommons(q, { scope, tag, sort, page, pageSize, principal });
+  return NextResponse.json({ ...data, page, pageSize });
+}

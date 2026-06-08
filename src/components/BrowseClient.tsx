@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { IndexEntry } from "@/lib/types";
 import { formatRelativeTime } from "@/lib/format";
 import { commonsPath, pagePath, ownerToTenant } from "@/lib/links";
@@ -17,14 +17,22 @@ interface VaultLite {
   visibility: "public" | "private";
 }
 
+type DiscussionStats = Record<string, { total: number; open: number }>;
+
 interface BrowseClientProps {
-  pages: IndexEntry[];
   myHandle: string | null;
   /** The active lens scope: `"all"` (Public) or `"vault:<id>"`. */
   activeScope: string;
   /** The signed-in user's own vaults — one lens pill each. */
   myVaults: VaultLite[];
-  discussionStats?: Record<string, { total: number; open: number }>;
+  /** First page (server-rendered, no query) — the client re-fetches from here. */
+  initialResults: IndexEntry[];
+  /** Total matches for the initial (unsearched) scope — drives pagination. */
+  initialTotal: number;
+  /** Tag facets across the whole scope pool, by count desc (stable rail). */
+  initialTags: [string, number][];
+  initialDiscussionStats: DiscussionStats;
+  pageSize: number;
   /** Initial tag filter (from `?tag=` — e.g. a tag chip on an article). */
   initialTag?: string | null;
 }
@@ -44,9 +52,9 @@ function PageRow({
   const agentOwned = !!owner && owner.includes("--");
   const rel = page.updated ? formatRelativeTime(page.updated) : null;
   const openCount = discussion?.open ?? 0;
-  // The "Mine" lens can include the viewer's PRIVATE pages — those have no
-  // global URL (and `/wiki/<slug>` 404s them), so only PUBLIC commons pages link
-  // to the global `/wiki/<slug>`; private/agent pages stay owner-scoped.
+  // The vault lens can include the viewer's PRIVATE pages — those have no global
+  // URL (and `/wiki/<slug>` 404s them), so only PUBLIC commons pages link to the
+  // global `/wiki/<slug>`; private/agent pages stay owner-scoped.
   const isCommons =
     page.visibility !== "private" && !page.type?.startsWith("agent-");
   const href = isCommons
@@ -152,14 +160,16 @@ function FilterRow({
   options,
   value,
   onChange,
+  disabled,
 }: {
   label: string;
   options: { id: Sort; label: string }[];
   value: Sort;
   onChange: (v: Sort) => void;
+  disabled?: boolean;
 }) {
   return (
-    <div className="stack" style={{ gap: 9 }}>
+    <div className="stack" style={{ gap: 9, opacity: disabled ? 0.45 : 1 }}>
       <span className="fmark">{label}</span>
       <div className="row" style={{ gap: 6, flexWrap: "wrap" }}>
         {options.map((o) => {
@@ -167,6 +177,7 @@ function FilterRow({
           return (
             <button
               key={o.id}
+              disabled={disabled}
               onClick={() => onChange(o.id)}
               style={{
                 fontSize: 13,
@@ -174,6 +185,7 @@ function FilterRow({
                 borderRadius: 999,
                 transition: "all .15s",
                 whiteSpace: "nowrap",
+                cursor: disabled ? "not-allowed" : "pointer",
                 border: `1px solid ${active ? "var(--ink)" : "var(--rule)"}`,
                 background: active ? "var(--ink)" : "transparent",
                 color: active ? "var(--paper)" : "var(--ink-2)",
@@ -189,11 +201,14 @@ function FilterRow({
 }
 
 export function BrowseClient({
-  pages,
   myHandle,
   activeScope,
   myVaults,
-  discussionStats,
+  initialResults,
+  initialTotal,
+  initialTags,
+  initialDiscussionStats,
+  pageSize,
   initialTag,
 }: BrowseClientProps) {
   // The active vault id (if the lens is a vault scope) and whether it's one of
@@ -207,43 +222,85 @@ export function BrowseClient({
   const ownVaultLens = activeVault ?? null;
 
   const [q, setQ] = useState("");
+  const [debouncedQ, setDebouncedQ] = useState("");
   const [sort, setSort] = useState<Sort>("recent");
   const [tag, setTag] = useState<string | null>(initialTag ?? null);
+  const [page, setPage] = useState(1);
 
-  const allTags = useMemo(() => {
-    const f = new Map<string, number>();
-    for (const p of pages) for (const t of p.tags ?? []) f.set(t, (f.get(t) ?? 0) + 1);
-    return [...f.entries()].sort((a, b) => b[1] - a[1]);
-  }, [pages]);
+  const [results, setResults] = useState(initialResults);
+  const [total, setTotal] = useState(initialTotal);
+  const [discussionStats, setDiscussionStats] = useState(initialDiscussionStats);
+  const [loading, setLoading] = useState(false);
 
-  const filtered = useMemo(() => {
-    const needle = q.trim().toLowerCase();
-    const r = pages.filter((p) => {
-      if (
-        needle &&
-        !`${p.title} ${p.summary} ${(p.tags ?? []).join(" ")}`
-          .toLowerCase()
-          .includes(needle)
-      )
-        return false;
-      if (tag && !(p.tags ?? []).includes(tag)) return false;
-      return true;
-    });
-    r.sort((a, b) =>
-      sort === "confidence"
-        ? (b.confidence ?? 0) - (a.confidence ?? 0)
-        : sort === "sources"
-          ? (b.sourceCount ?? 0) - (a.sourceCount ?? 0)
-          : (b.updated ?? "").localeCompare(a.updated ?? ""),
-    );
-    return r;
-  }, [pages, q, sort, tag]);
+  const searching = debouncedQ.trim().length > 0;
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+
+  // Debounce the search box so we fetch on a settled query, not per keystroke.
+  useEffect(() => {
+    const id = setTimeout(() => setDebouncedQ(q), 300);
+    return () => clearTimeout(id);
+  }, [q]);
+
+  // Server-driven results: re-fetch whenever the query/sort/tag/page changes.
+  // Skip the very first run — the server already rendered page 1 (with any
+  // `?tag=`) into `initialResults`, so re-fetching it on mount would only flash.
+  const firstRun = useRef(true);
+  useEffect(() => {
+    if (firstRun.current) {
+      firstRun.current = false;
+      return;
+    }
+    let active = true;
+    setLoading(true);
+    const params = new URLSearchParams();
+    if (debouncedQ.trim()) params.set("q", debouncedQ.trim());
+    params.set("scope", activeScope);
+    if (tag) params.set("tag", tag);
+    params.set("sort", sort);
+    params.set("page", String(page));
+    params.set("pageSize", String(pageSize));
+    fetch(`/api/wiki/browse?${params.toString()}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (!active || !data) return;
+        setResults(data.results ?? []);
+        setTotal(data.total ?? 0);
+        setDiscussionStats(data.discussionStats ?? {});
+      })
+      .catch(() => {
+        /* transient fetch error — keep the last results rather than blanking */
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [debouncedQ, sort, tag, page, activeScope, pageSize]);
+
+  // A filter change always returns to page 1 — reset imperatively (alongside the
+  // change) so a fetch never fires with a stale page number.
+  const onSearchChange = (v: string) => {
+    setQ(v);
+    setPage(1);
+  };
+  const onSortChange = (v: Sort) => {
+    setSort(v);
+    setPage(1);
+  };
+  const onTagChange = (v: string | null) => {
+    setTag(v);
+    setPage(1);
+  };
 
   // Lens links switch the Public/vault scope only (a server navigation that
-  // re-fetches the page set). The active topic is local UI state, so it
+  // re-renders with a fresh page set). The active topic is local UI state, so it
   // intentionally resets when the scope changes.
   const lensHref = (scope: string) =>
     `/wiki?scope=${encodeURIComponent(scope)}`;
+
+  const from = total === 0 ? 0 : (page - 1) * pageSize + 1;
+  const to = Math.min(page * pageSize, total);
 
   return (
     <div className="fade">
@@ -278,10 +335,8 @@ export function BrowseClient({
               whiteSpace: "nowrap",
             }}
           >
-            <span style={{ color: "var(--ink)", fontSize: 15 }}>
-              {filtered.length}
-            </span>{" "}
-            of {pages.length} pages
+            <span style={{ color: "var(--ink)", fontSize: 15 }}>{total}</span>{" "}
+            {searching ? (total === 1 ? "result" : "results") : "pages"}
           </p>
         </div>
 
@@ -302,8 +357,8 @@ export function BrowseClient({
           </span>
           <input
             value={q}
-            onChange={(e) => setQ(e.target.value)}
-            placeholder="Search titles, summaries, topics…"
+            onChange={(e) => onSearchChange(e.target.value)}
+            placeholder="Search the commons — by meaning or keyword…"
             style={{
               flex: 1,
               border: 0,
@@ -313,9 +368,17 @@ export function BrowseClient({
               color: "var(--ink)",
             }}
           />
+          {loading && (
+            <span
+              className="receipt"
+              style={{ fontSize: 11.5, color: "var(--faint)", whiteSpace: "nowrap" }}
+            >
+              searching…
+            </span>
+          )}
           {q && (
             <button
-              onClick={() => setQ("")}
+              onClick={() => onSearchChange("")}
               className="receipt"
               style={{
                 background: "transparent",
@@ -378,27 +441,38 @@ export function BrowseClient({
             </div>
           )}
 
-          <FilterRow
-            label="sort by"
-            value={sort}
-            onChange={setSort}
-            options={[
-              { id: "recent", label: "Recent" },
-              { id: "confidence", label: "Confidence" },
-              { id: "sources", label: "Sources" },
-            ]}
-          />
+          <div className="stack" style={{ gap: 6 }}>
+            <FilterRow
+              label="sort by"
+              value={sort}
+              onChange={onSortChange}
+              disabled={searching}
+              options={[
+                { id: "recent", label: "Recent" },
+                { id: "confidence", label: "Confidence" },
+                { id: "sources", label: "Sources" },
+              ]}
+            />
+            {searching && (
+              <span
+                className="receipt"
+                style={{ fontSize: 11, color: "var(--faint)" }}
+              >
+                ranked by relevance
+              </span>
+            )}
+          </div>
 
-          {allTags.length > 0 && (
+          {initialTags.length > 0 && (
             <div className="stack" style={{ gap: 9 }}>
               <span className="fmark">topics</span>
               <div className="row" style={{ gap: 7, flexWrap: "wrap" }}>
-                {allTags.map(([t, n]) => {
+                {initialTags.map(([t, n]) => {
                   const active = tag === t;
                   return (
                     <button
                       key={t}
-                      onClick={() => setTag(active ? null : t)}
+                      onClick={() => onTagChange(active ? null : t)}
                       className="receipt"
                       style={{
                         fontSize: 11.5,
@@ -437,7 +511,7 @@ export function BrowseClient({
               </span>
               <button
                 type="button"
-                onClick={() => setTag(null)}
+                onClick={() => onTagChange(null)}
                 className="receipt"
                 style={{
                   fontSize: 12,
@@ -452,7 +526,7 @@ export function BrowseClient({
               </button>
             </div>
           )}
-          {filtered.length === 0 ? (
+          {results.length === 0 ? (
             <div style={{ padding: "60px 0", textAlign: "center" }}>
               <p style={{ fontSize: 22, color: "var(--ink-2)" }}>
                 Nothing in the commons matches.
@@ -473,23 +547,82 @@ export function BrowseClient({
               </p>
             </div>
           ) : (
-            <ul
-              style={{
-                listStyle: "none",
-                margin: 0,
-                padding: 0,
-                borderTop: "1px solid var(--rule)",
-              }}
-            >
-              {filtered.map((p) => (
-                <PageRow
-                  key={p.slug}
-                  page={p}
-                  discussion={discussionStats?.[p.slug]}
-                  removeVaultId={ownVaultLens ? ownVaultLens.id : undefined}
-                />
-              ))}
-            </ul>
+            <>
+              <ul
+                style={{
+                  listStyle: "none",
+                  margin: 0,
+                  padding: 0,
+                  borderTop: "1px solid var(--rule)",
+                  opacity: loading ? 0.55 : 1,
+                  transition: "opacity .15s",
+                }}
+              >
+                {results.map((p) => (
+                  <PageRow
+                    key={p.slug}
+                    page={p}
+                    discussion={discussionStats?.[p.slug]}
+                    removeVaultId={ownVaultLens ? ownVaultLens.id : undefined}
+                  />
+                ))}
+              </ul>
+
+              {totalPages > 1 && (
+                <div
+                  className="row"
+                  style={{
+                    gap: 16,
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    paddingTop: 26,
+                    marginTop: 8,
+                    borderTop: "1px solid var(--rule)",
+                  }}
+                >
+                  <button
+                    type="button"
+                    disabled={page <= 1 || loading}
+                    onClick={() => setPage((p) => Math.max(1, p - 1))}
+                    className="receipt"
+                    style={{
+                      fontSize: 13,
+                      padding: "6px 14px",
+                      borderRadius: 999,
+                      border: "1px solid var(--rule)",
+                      background: "transparent",
+                      color: page <= 1 ? "var(--faint)" : "var(--ink-2)",
+                      cursor: page <= 1 ? "default" : "pointer",
+                    }}
+                  >
+                    ← Prev
+                  </button>
+                  <span
+                    className="receipt"
+                    style={{ fontSize: 12.5, color: "var(--muted)" }}
+                  >
+                    {from}–{to} of {total} · page {page} of {totalPages}
+                  </span>
+                  <button
+                    type="button"
+                    disabled={page >= totalPages || loading}
+                    onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                    className="receipt"
+                    style={{
+                      fontSize: 13,
+                      padding: "6px 14px",
+                      borderRadius: 999,
+                      border: "1px solid var(--rule)",
+                      background: "transparent",
+                      color: page >= totalPages ? "var(--faint)" : "var(--ink-2)",
+                      cursor: page >= totalPages ? "default" : "pointer",
+                    }}
+                  >
+                    Next →
+                  </button>
+                </div>
+              )}
+            </>
           )}
         </div>
       </section>
