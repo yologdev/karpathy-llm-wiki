@@ -430,7 +430,15 @@ export async function ingestPdf(
  */
 export async function reingest(
   slug: string,
-  opts?: { author?: string; owner?: string; triggeredBy?: string },
+  opts?: {
+    author?: string;
+    owner?: string;
+    triggeredBy?: string;
+    /** Synthesize and return the draft WITHOUT writing (for a review step). */
+    preview?: boolean;
+    /** Commit a reviewed draft (skips the LLM, writes this body as-is). */
+    generatedContent?: string;
+  },
 ): Promise<IngestResult> {
   const page = await readWikiPageWithFrontmatter(slug);
   if (!page) {
@@ -1424,12 +1432,18 @@ export async function ingest(
   // deduped before synthesis).
   if (!isPreview && preGeneratedContent) {
     const h1 = wikiContent.match(/^#\s+(.+?)\s*$/m)?.[1]?.trim();
-    const conceptSlug = h1 ? slugify(h1) : "";
-    if (h1 && conceptSlug && conceptSlug !== slug) {
-      const taken = await readWikiPageWithFrontmatter(conceptSlug);
-      if (!taken) {
-        slug = conceptSlug;
-        pageTitle = h1;
+    if (options?.pinSlug) {
+      // Re-ingest (commit-from-preview): keep the page on its pinned slug — a
+      // user-edited H1 must never fork it — but let the TITLE follow the H1.
+      if (h1) pageTitle = h1;
+    } else {
+      const conceptSlug = h1 ? slugify(h1) : "";
+      if (h1 && conceptSlug && conceptSlug !== slug) {
+        const taken = await readWikiPageWithFrontmatter(conceptSlug);
+        if (!taken) {
+          slug = conceptSlug;
+          pageTitle = h1;
+        }
       }
     }
   }

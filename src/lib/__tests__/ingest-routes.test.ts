@@ -568,6 +568,67 @@ describe("POST /api/ingest/batch — service token auth", () => {
 });
 
 // ===========================================================================
+// POST /api/ingest/reingest — preview / commit passthrough
+// ===========================================================================
+describe("POST /api/ingest/reingest — preview/commit", () => {
+  const fakeResult: IngestResult = {
+    rawPath: "",
+    primarySlug: "p",
+    relatedUpdated: [],
+    wikiPages: ["p"],
+    indexUpdated: true,
+  };
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const publicPage: any = {
+    content: "# P",
+    frontmatter: { title: "P", source_url: "https://example.com/s" },
+  };
+
+  beforeEach(() => {
+    mockedGetPrincipal.mockResolvedValue({ id: "u", handle: "yuanhao" });
+    mockedReadWikiPage.mockResolvedValue(publicPage);
+    mockedReingest.mockResolvedValue(fakeResult);
+  });
+
+  it("forwards preview:true to reingest (review step, no write)", async () => {
+    const res = await POST_REINGEST(
+      makeRequest("http://localhost/api/ingest/reingest", { slug: "p", preview: true }),
+    );
+    expect(res.status).toBe(200);
+    expect(mockedReingest).toHaveBeenCalledWith(
+      "p",
+      expect.objectContaining({ preview: true }),
+    );
+  });
+
+  it("forwards generatedContent to reingest (commit the reviewed draft)", async () => {
+    const res = await POST_REINGEST(
+      makeRequest("http://localhost/api/ingest/reingest", {
+        slug: "p",
+        generatedContent: "# Edited\n\nApproved body.",
+      }),
+    );
+    expect(res.status).toBe(200);
+    expect(mockedReingest).toHaveBeenCalledWith(
+      "p",
+      expect.objectContaining({ generatedContent: "# Edited\n\nApproved body." }),
+    );
+  });
+
+  it("rejects a non-boolean preview and a non-string generatedContent", async () => {
+    const r1 = await POST_REINGEST(
+      makeRequest("http://localhost/api/ingest/reingest", { slug: "p", preview: "yes" }),
+    );
+    expect(r1.status).toBe(400);
+    const r2 = await POST_REINGEST(
+      makeRequest("http://localhost/api/ingest/reingest", { slug: "p", generatedContent: 5 }),
+    );
+    expect(r2.status).toBe(400);
+    expect(mockedReingest).not.toHaveBeenCalled();
+  });
+});
+
+// ===========================================================================
 // POST /api/ingest/reingest — service token auth
 // ===========================================================================
 describe("POST /api/ingest/reingest — service token auth", () => {
