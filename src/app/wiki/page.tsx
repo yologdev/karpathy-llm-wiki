@@ -10,9 +10,12 @@ import { BrowseClient } from "@/components/BrowseClient";
 export default async function WikiIndex({
   searchParams,
 }: {
-  searchParams: Promise<{ scope?: string; tag?: string }>;
+  searchParams: Promise<{ scope?: string; tag?: string | string[] }>;
 }) {
-  const { scope: scopeParam, tag: tagParam } = await searchParams;
+  const { scope: scopeParam, tag: tagRaw } = await searchParams;
+  // A repeated `?tag=a&tag=b` arrives as string[] at runtime despite the type —
+  // take the first so the filter never compares against an array.
+  const tagParam = Array.isArray(tagRaw) ? tagRaw[0] : tagRaw;
   const principal = await getPrincipal();
   const myHandle = principal?.handle ?? null;
 
