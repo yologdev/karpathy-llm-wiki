@@ -526,6 +526,35 @@ export async function searchByVector(
   return scored.slice(0, topK);
 }
 
+/**
+ * Find pages most similar to an EXISTING page, reusing its already-stored
+ * vector — no embedding call, so it's cheap enough to run on every page render.
+ *
+ * Returns top-K other pages by cosine similarity (descending). Returns an empty
+ * array if there's no store, the page has no stored vector, or the store was
+ * built with a different model (stale embeddings → meaningless scores). Does NOT
+ * enforce visibility — callers must filter to readable pages.
+ */
+export async function relatedByVector(
+  slug: string,
+  topK: number = 10,
+): Promise<Array<{ slug: string; score: number }>> {
+  const store = await loadVectorStore();
+  if (!store || store.entries.length === 0) return [];
+
+  const currentModel = getEmbeddingModelName();
+  if (currentModel && store.model !== currentModel) return [];
+
+  const self = store.entries.find((e) => e.slug === slug);
+  if (!self) return [];
+
+  return store.entries
+    .filter((e) => e.slug !== slug)
+    .map((e) => ({ slug: e.slug, score: cosineSimilarity(self.embedding, e.embedding) }))
+    .sort((a, b) => b.score - a.score)
+    .slice(0, topK);
+}
+
 // ---------------------------------------------------------------------------
 // Full vector store rebuild
 // ---------------------------------------------------------------------------

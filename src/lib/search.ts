@@ -22,7 +22,9 @@ import { getAgent, resolveAgentPages } from "./agents";
 import { getVault } from "./vault";
 import { getStorage } from "./storage";
 import { getOwnerIndex } from "./owner-index";
-import { getBacklinkIndex } from "./backlink-index";
+import { getBacklinkIndex, syncBacklinksForPage } from "./backlink-index";
+import { relatedByVector } from "./embeddings";
+import { RELATED_PAGES_LIMIT, RELATED_MIN_SCORE } from "./constants";
 
 // ---------------------------------------------------------------------------
 // Cross-referencing helpers
@@ -128,6 +130,10 @@ export async function updateRelatedPages(
       }
 
       await writeWikiPage(slug, updatedContent);
+      // Keep the backlink index consistent with the new outbound "See also"
+      // link — writeWikiPage doesn't, so without this the index goes stale and
+      // findBacklinks (which trusts the index) would never surface this edge.
+      await syncBacklinksForPage(slug, updatedContent, page.content);
       updatedSlugs.push(slug);
     }
 
@@ -185,6 +191,47 @@ export async function findBacklinks(
     }
 
     return backlinks;
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Related pages — semantic "see also"
+// ---------------------------------------------------------------------------
+
+/**
+ * Find pages semantically related to `slug` via vector similarity, for the
+ * "Related pages" section. Unlike backlinks (explicit links), this surfaces
+ * topically-similar pages even when nothing links to the page.
+ *
+ * Visibility is enforced on READ (a private page never leaks to a viewer who
+ * can't see it). Below-threshold matches are dropped so weakly-related pages
+ * don't appear. Returns `{ slug, title, score }`, highest score first.
+ */
+export async function findSimilarPages(
+  slug: string,
+  principal: Principal | null = null,
+  limit: number = RELATED_PAGES_LIMIT,
+  minScore: number = RELATED_MIN_SCORE,
+): Promise<Array<{ slug: string; title: string; score: number }>> {
+  return withPageCache(async () => {
+    // Over-fetch so visibility/threshold filtering still leaves up to `limit`.
+    const scored = await relatedByVector(slug, limit + 10);
+    if (scored.length === 0) return [];
+
+    const readable = new Map(
+      (await listReadableWikiPages(principal)).map((p) => [p.slug, p.title]),
+    );
+
+    const related: Array<{ slug: string; title: string; score: number }> = [];
+    for (const { slug: s, score } of scored) {
+      if (score < minScore) break; // sorted desc — nothing further qualifies
+      if (s === slug || s === "index" || s === "log") continue;
+      const title = readable.get(s);
+      if (title === undefined) continue; // not readable by this viewer
+      related.push({ slug: s, title, score });
+      if (related.length >= limit) break;
+    }
+    return related;
   });
 }
 

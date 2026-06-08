@@ -50,6 +50,7 @@ import {
   upsertEmbedding,
   removeEmbedding,
   searchByVector,
+  relatedByVector,
   embedText,
   embedTexts,
   rebuildVectorStore,
@@ -423,6 +424,69 @@ describe("vector store persistence", () => {
     // No leftover .tmp file after a successful write
     const files = await fs.readdir(tmpDir);
     expect(files).not.toContain(".vectors.json.tmp");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// relatedByVector — reuses a page's stored vector (no embedding call)
+// ---------------------------------------------------------------------------
+
+describe("relatedByVector", () => {
+  let tmpDir: string;
+
+  beforeEach(async () => {
+    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "embeddings-test-"));
+    process.env.WIKI_DIR = tmpDir;
+  });
+
+  afterEach(async () => {
+    await fs.rm(tmpDir, { recursive: true, force: true });
+  });
+
+  const store: VectorStore = {
+    model: "text-embedding-3-small",
+    entries: [
+      { slug: "anchor", embedding: [1, 0, 0], contentHash: "a" },
+      { slug: "near", embedding: [0.9, 0.1, 0], contentHash: "b" },
+      { slug: "mid", embedding: [0.6, 0.6, 0], contentHash: "c" },
+      { slug: "far", embedding: [0, 1, 0], contentHash: "d" },
+    ],
+  };
+
+  it("ranks other pages by similarity to the anchor and excludes the anchor itself", async () => {
+    await saveVectorStore(store);
+    process.env.EMBEDDING_MODEL = "text-embedding-3-small";
+    process.env.OPENAI_API_KEY = "sk-test";
+
+    const results = await relatedByVector("anchor", 10);
+    expect(results.map((r) => r.slug)).toEqual(["near", "mid", "far"]);
+    expect(results.some((r) => r.slug === "anchor")).toBe(false);
+    expect(results[0].score).toBeGreaterThan(results[1].score);
+  });
+
+  it("respects topK", async () => {
+    await saveVectorStore(store);
+    process.env.EMBEDDING_MODEL = "text-embedding-3-small";
+    process.env.OPENAI_API_KEY = "sk-test";
+
+    const results = await relatedByVector("anchor", 2);
+    expect(results).toHaveLength(2);
+  });
+
+  it("returns [] when the anchor has no stored vector", async () => {
+    await saveVectorStore(store);
+    process.env.EMBEDDING_MODEL = "text-embedding-3-small";
+    process.env.OPENAI_API_KEY = "sk-test";
+
+    expect(await relatedByVector("ghost", 10)).toEqual([]);
+  });
+
+  it("returns [] when the store was built with a different model (stale)", async () => {
+    await saveVectorStore(store); // built with text-embedding-3-small
+    process.env.EMBEDDING_MODEL = "text-embedding-3-large"; // current model differs
+    process.env.OPENAI_API_KEY = "sk-test";
+
+    expect(await relatedByVector("anchor", 10)).toEqual([]);
   });
 });
 

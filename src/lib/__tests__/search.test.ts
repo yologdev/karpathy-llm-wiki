@@ -10,6 +10,13 @@ vi.mock("../llm", () => ({
   callLLM: vi.fn(async () => "[]"),
 }));
 
+// Stub the vector primitive so findSimilarPages tests control the ranking
+// without a real embedding store; keep every other embeddings export real.
+vi.mock("../embeddings", async (orig) => {
+  const actual = await orig<typeof import("../embeddings")>();
+  return { ...actual, relatedByVector: vi.fn(async () => []) };
+});
+
 import {
   writeWikiPage,
   ensureDirectories,
@@ -19,6 +26,7 @@ import {
 import {
   searchWikiContent,
   findBacklinks,
+  findSimilarPages,
   updateRelatedPages,
   fuzzyMatch,
   levenshteinDistance,
@@ -35,6 +43,9 @@ import { serializeFrontmatter } from "../frontmatter";
 import { isAgentScopedType } from "../wiki";
 import type { AgentProfile } from "../types";
 import { _resetStorage } from "../storage";
+import { relatedByVector } from "../embeddings";
+
+const mockedRelatedByVector = vi.mocked(relatedByVector);
 
 let tmpDir: string;
 let originalWikiDir: string | undefined;
@@ -362,6 +373,68 @@ describe("findBacklinks", () => {
 });
 
 // ---------------------------------------------------------------------------
+// findSimilarPages — semantic "Related pages"
+// ---------------------------------------------------------------------------
+
+describe("findSimilarPages", () => {
+  async function seed(slugs: string[]) {
+    await ensureDirectories();
+    for (const s of slugs) await writeWikiPage(s, `# ${s}\n\nBody of ${s}.`);
+    await updateIndex(slugs.map((s) => ({ title: s.toUpperCase(), slug: s, summary: s })));
+  }
+
+  it("resolves titles and drops below-threshold matches", async () => {
+    await seed(["anchor", "a", "b", "c"]);
+    mockedRelatedByVector.mockResolvedValueOnce([
+      { slug: "a", score: 0.8 },
+      { slug: "b", score: 0.5 },
+      { slug: "c", score: 0.2 }, // below default 0.45 → dropped
+    ]);
+
+    const related = await findSimilarPages("anchor");
+    expect(related.map((r) => r.slug)).toEqual(["a", "b"]);
+    expect(related[0]).toMatchObject({ slug: "a", title: "A", score: 0.8 });
+  });
+
+  it("skips the page itself, index, and log", async () => {
+    await seed(["anchor", "real"]);
+    mockedRelatedByVector.mockResolvedValueOnce([
+      { slug: "anchor", score: 0.9 },
+      { slug: "index", score: 0.9 },
+      { slug: "log", score: 0.9 },
+      { slug: "real", score: 0.7 },
+    ]);
+
+    const related = await findSimilarPages("anchor");
+    expect(related.map((r) => r.slug)).toEqual(["real"]);
+  });
+
+  it("excludes pages not in the reader's readable set", async () => {
+    await seed(["anchor", "visible"]);
+    mockedRelatedByVector.mockResolvedValueOnce([
+      { slug: "ghost", score: 0.9 }, // not in the index → unreadable → excluded
+      { slug: "visible", score: 0.8 },
+    ]);
+
+    const related = await findSimilarPages("anchor");
+    expect(related.map((r) => r.slug)).toEqual(["visible"]);
+  });
+
+  it("respects the limit", async () => {
+    await seed(["anchor", "a", "b", "c", "d"]);
+    mockedRelatedByVector.mockResolvedValueOnce([
+      { slug: "a", score: 0.9 },
+      { slug: "b", score: 0.85 },
+      { slug: "c", score: 0.8 },
+      { slug: "d", score: 0.75 },
+    ]);
+
+    const related = await findSimilarPages("anchor", null, 2);
+    expect(related).toHaveLength(2);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // updateRelatedPages
 // ---------------------------------------------------------------------------
 
@@ -376,6 +449,21 @@ describe("updateRelatedPages", () => {
     const page = await readWikiPage("existing");
     expect(page).not.toBeNull();
     expect(page!.content).toContain("**See also:** [New Page](new-page.md)");
+  });
+
+  it("keeps the backlink index fresh for the appended See-also link", async () => {
+    await ensureDirectories();
+    await writeWikiPage("existing", "# Existing\n\nBody.");
+    await updateIndex([{ title: "Existing", slug: "existing", summary: "x" }]);
+    const { rebuildBacklinkIndex, getBacklinkIndex } = await import("../backlink-index");
+    await rebuildBacklinkIndex(); // a present (empty) index — sync no-ops without one
+
+    await updateRelatedPages("new-page", "New Page", ["existing"]);
+
+    // The appended `[New Page](new-page.md)` in `existing` must register as a
+    // backlink so findBacklinks (which trusts the index) surfaces it.
+    const idx = await getBacklinkIndex();
+    expect(idx?.["new-page"]).toContain("existing");
   });
 
   it("skips pages that already link to the new slug", async () => {

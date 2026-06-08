@@ -3,7 +3,7 @@ import type { ReactNode } from "react";
 import { slugify } from "@/lib/slugify";
 import type { Frontmatter } from "@/lib/frontmatter";
 import type { WikiPage } from "@/lib/types";
-import { findBacklinks, buildSlugTenantMap } from "@/lib/wiki";
+import { findBacklinks, findSimilarPages, buildSlugTenantMap } from "@/lib/wiki";
 import { resolveSlugPath } from "@/lib/links";
 import { getCommonsSlugSet, belongsInCommons } from "@/lib/commons";
 import type { Principal } from "@/lib/auth";
@@ -140,6 +140,12 @@ export async function ArticleView({
   const commonsSlugs = await getCommonsSlugSet();
 
   const backlinks = await findBacklinks(slug, principal);
+  // Semantic "Related pages" — exclude any page already listed under "what
+  // links here" so the two sections don't repeat the same page.
+  const backlinkSlugs = new Set(backlinks.map((b) => b.slug));
+  const related = (await findSimilarPages(slug, principal)).filter(
+    (r) => !backlinkSlugs.has(r.slug),
+  );
   const hasSourceUrl =
     typeof page.frontmatter.source_url === "string" &&
     page.frontmatter.source_url.trim().length > 0;
@@ -411,6 +417,32 @@ export async function ArticleView({
                       style={{ color: "var(--accent)" }}
                     >
                       {bl.title}
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
+
+          {related.length > 0 && (
+            <section className="mt-10 border-t border-rule pt-6">
+              <h2 className="fmark" style={{ color: "var(--faint)" }}>
+                related pages
+              </h2>
+              <ul className="mt-3 space-y-1">
+                {related.map((r) => (
+                  <li key={r.slug}>
+                    <Link
+                      href={resolveSlugPath(
+                        r.slug,
+                        slugTenants,
+                        pageTenant,
+                        commonsSlugs,
+                      )}
+                      className="text-sm"
+                      style={{ color: "var(--accent)" }}
+                    >
+                      {r.title}
                     </Link>
                   </li>
                 ))}

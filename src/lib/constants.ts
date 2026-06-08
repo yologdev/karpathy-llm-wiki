@@ -112,6 +112,18 @@ export const INGEST_MAX_OUTPUT_TOKENS = 8192;
  */
 export const QUERY_MAX_OUTPUT_TOKENS = 8192;
 
+// ---- Related pages --------------------------------------------------------
+
+/** Max pages shown in an article's "Related pages" (semantic see-also) section. */
+export const RELATED_PAGES_LIMIT = 6;
+
+/**
+ * Minimum cosine similarity for a page to count as "related". Tuned for
+ * bge-m3: distinct-but-related pages sit well above this, while unrelated
+ * pages fall below — so weak matches don't pad the section.
+ */
+export const RELATED_MIN_SCORE = 0.45;
+
 // ---- Graph ----------------------------------------------------------------
 
 /** Default canvas height (px) for the wiki graph visualisation. */

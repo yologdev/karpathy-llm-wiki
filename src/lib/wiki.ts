@@ -576,6 +576,7 @@ export type { LogOperation } from "./wiki-log";
 
 export {
   findRelatedPages,
+  findSimilarPages,
   updateRelatedPages,
   findBacklinks,
   searchWikiContent,
