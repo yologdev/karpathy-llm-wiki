@@ -385,13 +385,7 @@ export function enrichEntry(
   // counter (re-ingesting one URL bumps it), so it overcounts — only fall back
   // to it for legacy pages that have no structured `sources[]`.
   const distinctSources = dedupeSourcesForDisplay(
-    parseSources(
-      typeof fm.sources === "string"
-        ? fm.sources
-        : Array.isArray(fm.sources)
-          ? fm.sources
-          : undefined,
-    ),
+    parseSources(fm.sources as string | string[] | undefined),
   ).length;
   const sourceCountRaw = fm.source_count;
   const sourceCountNum =

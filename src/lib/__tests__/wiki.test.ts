@@ -188,6 +188,18 @@ describe("updateIndex + listWikiPages roundtrip", () => {
     expect(enrichEntry(base, fm).sourceCount).toBe(1);
   });
 
+  it("enrichEntry: counts two distinct source URLs as sourceCount 2", () => {
+    const base = { slug: "z", title: "Z", summary: "" };
+    const fm = {
+      source_count: "2",
+      sources: JSON.stringify([
+        { type: "url", url: "https://a.com", fetched: "2026-06-07", triggered_by: "system" },
+        { type: "pdf", url: "https://b.com/p.pdf", fetched: "2026-06-08", triggered_by: "system" },
+      ]),
+    } as unknown as import("../frontmatter").Frontmatter;
+    expect(enrichEntry(base, fm).sourceCount).toBe(2);
+  });
+
   it("enrichEntry: falls back to source_count for legacy pages without sources[]", () => {
     const base = { slug: "y", title: "Y", summary: "" };
     const fm = { source_count: "3" } as unknown as import("../frontmatter").Frontmatter;

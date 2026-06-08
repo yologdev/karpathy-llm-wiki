@@ -101,20 +101,38 @@ describe("recent-index", () => {
     expect(trail.map((e) => e.slug)).toEqual(["page-c", "page-b"]);
   });
 
-  it("getTrail resolves each event to the page's CURRENT title", async () => {
+  it("getTrail resolves every event to the page's CURRENT title", async () => {
     const { updateIndex } = await import("../wiki");
     await seedEmpty();
-    // Two ingest events for one page captured two differently-cased titles.
-    await pushRecentEvent(ev({ ts: 1000, slug: "agentic-systems", title: "Agentic systems" }));
-    await pushRecentEvent(ev({ ts: 2000, slug: "agentic-systems", title: "agentic systems" }));
+    // Two ingest events for one page, > the 120s dedup window apart so BOTH
+    // survive, captured with two differently-cased snapshot titles.
+    await pushRecentEvent(
+      ev({ ts: 1000, slug: "agentic-systems", title: "Agentic systems", action: "ingested" }),
+    );
+    await pushRecentEvent(
+      ev({ ts: 500_000, slug: "agentic-systems", title: "agentic systems", action: "ingested" }),
+    );
     // The page's CURRENT title (from the wiki index) is the canonical one.
     await updateIndex([
       { title: "Agentic Systems", slug: "agentic-systems", summary: "x" },
     ]);
 
     const trail = await getTrail(10, null);
-    // Both events render the same current title — not the stale snapshots.
-    expect(trail.every((e) => e.title === "Agentic Systems")).toBe(true);
+    // Both events survive, in newest-first order, both rewritten to the current
+    // title (not the stale snapshots).
+    expect(trail.map((e) => e.ts)).toEqual([500_000, 1000]);
+    expect(trail.map((e) => e.title)).toEqual(["Agentic Systems", "Agentic Systems"]);
+  });
+
+  it("getTrail keeps the snapshot title when the slug isn't in the readable set", async () => {
+    await seedEmpty();
+    // No wiki-index entry for "ghost" → listReadableWikiPages returns [] → the
+    // event keeps its original snapshot title rather than being dropped.
+    await pushRecentEvent(ev({ ts: 1000, slug: "ghost", title: "Snapshot Name" }));
+
+    const trail = await getTrail(10, null);
+    expect(trail).toHaveLength(1);
+    expect(trail[0].title).toBe("Snapshot Name");
   });
 
   it("getTrail falls back to the scan when the index is unseeded", async () => {
