@@ -230,3 +230,76 @@ describe("max history cap", () => {
     expect(entries[entries.length - 1].question).toBe("Q5");
   });
 });
+
+describe("hardening — isolation, idempotency, no-clobber", () => {
+  const wikiDir = () => path.join(tmpDir, "wiki");
+  const legacyPath = () => path.join(wikiDir(), "query-history.json");
+  const ownerFile = (key: string) =>
+    path.join(wikiDir(), "query-history", `${key}.json`);
+
+  it("never clobbers history when a read fails (corrupt file → throws, file untouched)", async () => {
+    await fs.mkdir(path.join(wikiDir(), "query-history"), { recursive: true });
+    await fs.writeFile(ownerFile("tester"), "not json!", "utf-8");
+
+    await expect(
+      appendQuery({ question: "q", answer: "a", sources: [], timestamp: "2025-01-01T00:00:00Z", owner: "tester" }),
+    ).rejects.toThrow();
+
+    // The unreadable file is left intact — NOT overwritten with [newEntry].
+    expect(await fs.readFile(ownerFile("tester"), "utf-8")).toBe("not json!");
+  });
+
+  it("ownerKey is injective: handles differing only by stripped chars don't collide", async () => {
+    await appendQuery({ question: "dotted", answer: "a", sources: [], timestamp: "2025-01-01T00:00:00Z", owner: "al.ice" });
+    await appendQuery({ question: "plain", answer: "b", sources: [], timestamp: "2025-01-02T00:00:00Z", owner: "alice" });
+
+    expect((await listQueries(undefined, "al.ice")).map((e) => e.question)).toEqual(["dotted"]);
+    expect((await listQueries(undefined, "alice")).map((e) => e.question)).toEqual(["plain"]);
+  });
+
+  it("all-symbol handles don't collapse into a shared/empty file", async () => {
+    await appendQuery({ question: "bang", answer: "a", sources: [], timestamp: "2025-01-01T00:00:00Z", owner: "!!!" });
+    await appendQuery({ question: "hash", answer: "b", sources: [], timestamp: "2025-01-02T00:00:00Z", owner: "###" });
+
+    expect((await listQueries(undefined, "!!!")).map((e) => e.question)).toEqual(["bang"]);
+    expect((await listQueries(undefined, "###")).map((e) => e.question)).toEqual(["hash"]);
+    // No shared `.json` catch-all (the old empty-key bug).
+    await expect(fs.access(ownerFile(""))).rejects.toThrow();
+  });
+
+  it("the cap is per-owner: one owner at 200 doesn't trim another", async () => {
+    for (let i = 0; i < 205; i++) {
+      await appendQuery({ question: `a${i}`, answer: "x", sources: [], timestamp: new Date(2025, 0, 1, 0, 0, i).toISOString(), owner: "alice" });
+    }
+    for (let i = 0; i < 3; i++) {
+      await appendQuery({ question: `b${i}`, answer: "x", sources: [], timestamp: new Date(2025, 0, 1, 0, 0, i).toISOString(), owner: "bob" });
+    }
+    expect(await listQueries(undefined, "alice")).toHaveLength(200);
+    expect(await listQueries(undefined, "bob")).toHaveLength(3);
+  });
+
+  it("migration is idempotent if the legacy file reappears (dedupe by id)", async () => {
+    await fs.mkdir(wikiDir(), { recursive: true });
+    const legacy = [{ id: "x1", question: "q", answer: "a", sources: [], timestamp: "2025-01-01T00:00:00Z", owner: "alice" }];
+    await fs.writeFile(legacyPath(), JSON.stringify(legacy), "utf-8");
+
+    expect(await listQueries(undefined, "alice")).toHaveLength(1);
+    await expect(fs.access(legacyPath())).rejects.toThrow();
+
+    // Legacy reappears with the SAME id (e.g. a failed delete that later resolves).
+    await fs.writeFile(legacyPath(), JSON.stringify(legacy), "utf-8");
+    expect(await listQueries(undefined, "alice")).toHaveLength(1); // no duplicate
+  });
+
+  it("merges legacy entries BELOW pre-existing per-owner entries (most-recent-first)", async () => {
+    await fs.mkdir(path.join(wikiDir(), "query-history"), { recursive: true });
+    await fs.writeFile(ownerFile("alice"), JSON.stringify([
+      { id: "new", question: "newer q", answer: "a", sources: [], timestamp: "2025-01-05T00:00:00Z", owner: "alice" },
+    ]), "utf-8");
+    await fs.writeFile(legacyPath(), JSON.stringify([
+      { id: "old", question: "older q", answer: "a", sources: [], timestamp: "2025-01-01T00:00:00Z", owner: "alice" },
+    ]), "utf-8");
+
+    expect((await listQueries(undefined, "alice")).map((e) => e.question)).toEqual(["newer q", "older q"]);
+  });
+});

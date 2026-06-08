@@ -9,18 +9,21 @@ import { logger } from "./logger";
 // ---------------------------------------------------------------------------
 //
 // Privacy is **physical**: each asker's history lives in its own file
-// (`query-history/<owner>.json`), so there is no shared store to accidentally
-// over-read. A reader can only ever touch the file for the owner it was given —
-// there is no "read all" surface. (A query answer may quote the asker's own
-// private pages, so history must never be served cross-user.) The legacy single
-// `query-history.json` is migrated into per-owner files on first access, then
-// deleted; entries with no owner are dropped (they were already unreadable).
+// (`query-history/<ownerKey>.json`), so there is no shared store to accidentally
+// over-read — a reader can only ever touch the file for the owner it was given,
+// and `ownerKey` is an INJECTIVE, path-safe encoding (distinct owners never
+// collide and never produce an empty/shared key). (A query answer may quote the
+// asker's own private pages, so history must never be served cross-user.) The
+// legacy single `query-history.json` is migrated into per-owner files on first
+// access, then deleted; entries with no owner are dropped (already unreadable).
 
 /** Maximum number of history entries to keep PER OWNER. Oldest trimmed on append. */
 const MAX_HISTORY_ENTRIES = 200;
 
 /** Legacy single-file store, migrated to per-owner files then removed. */
 const LEGACY_FILENAME = "query-history.json";
+/** Where an unparseable legacy file is quarantined (so migration stops retrying). */
+const LEGACY_CORRUPT_FILENAME = "query-history.json.corrupt";
 /** Lock serializing the one-time legacy → per-owner migration. */
 const LEGACY_LOCK = "query-history-legacy";
 
@@ -45,9 +48,19 @@ export interface QueryHistoryEntry {
 // Helpers
 // ---------------------------------------------------------------------------
 
-/** Normalize an owner handle to a safe, lowercased file-path segment. */
+/**
+ * Encode an owner handle into a path-safe file segment.
+ *
+ * Lowercased to match the app's canonical identity (same normalization as
+ * `tenantForOwner`), then any character outside `[a-z0-9_-]` — and the `~`
+ * marker itself — is escaped as `~<hex>`. This is **injective**: distinct
+ * owners map to distinct keys (no `al.ice`/`alice` collision), it can never be
+ * empty for a non-empty owner, and path-traversal bytes (`/`, `.`) are escaped.
+ */
 function ownerKey(owner: string): string {
-  return owner.toLowerCase().replace(/[^a-z0-9_-]/g, "");
+  return owner
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]|~/g, (c) => `~${c.charCodeAt(0).toString(16)}`);
 }
 
 /** Per-owner history file path. */
@@ -67,22 +80,24 @@ function generateId(): string {
   return `${ts}-${rand}`;
 }
 
-/** Read a history JSON file, returning [] when absent or malformed. */
-async function readHistoryFile(relPath: string): Promise<QueryHistoryEntry[]> {
+/**
+ * Read an owner's history file. A genuinely absent file (ENOENT) → `[]`. A REAL
+ * failure (transient storage error, or a corrupt/unparseable file) is RETHROWN —
+ * a read-modify-write caller must never overwrite real history with an empty list
+ * because a read transiently failed. {@link listQueries} (a pure read) downgrades
+ * a throw to `[]` for that one request.
+ */
+async function readOwnerHistory(owner: string): Promise<QueryHistoryEntry[]> {
+  const relPath = historyRelPathFor(owner);
   try {
     const raw = await getStorage().readFile(relPath);
     const parsed = JSON.parse(raw);
     return Array.isArray(parsed) ? (parsed as QueryHistoryEntry[]) : [];
   } catch (err: unknown) {
-    if (!isEnoent(err)) {
-      logger.warn("query-history", `load ${relPath} failed:`, err);
-    }
-    return [];
+    if (isEnoent(err)) return [];
+    logger.error("query-history", `read ${relPath} failed:`, err);
+    throw err;
   }
-}
-
-async function readOwnerHistory(owner: string): Promise<QueryHistoryEntry[]> {
-  return readHistoryFile(historyRelPathFor(owner));
 }
 
 async function writeOwnerHistory(
@@ -106,34 +121,50 @@ function trimToCap(entries: QueryHistoryEntry[]): QueryHistoryEntry[] {
  * One-time, lossless migration from the shared `query-history.json` to per-owner
  * files. Idempotent and cheap once done — the legacy file is deleted, so the
  * existence probe short-circuits without taking the lock. Owner-less entries are
- * dropped (they were never returned to anyone).
+ * dropped (they were never returned to anyone). Resilient by design: it never
+ * throws (callers shouldn't break on a migration hiccup), it only deletes the
+ * legacy file once EVERY owner migrated (a per-owner failure → retry next time,
+ * the dedupe-by-id keeps that idempotent), and an unparseable legacy file is
+ * quarantined so the probe stops firing forever.
  */
 async function migrateLegacyHistory(): Promise<void> {
   const storage = getStorage();
   const legacyPath = wikiRelPath(LEGACY_FILENAME);
 
-  // Cheap probe: once migrated the file is gone → ENOENT → return un-locked.
+  // Cheap probe: once migrated the file is gone → ENOENT → return un-locked. A
+  // transient probe failure just skips this round (the next request retries).
   try {
     await storage.readFile(legacyPath);
   } catch (err) {
-    if (!isEnoent(err)) {
-      logger.warn("query-history", "legacy probe failed:", err);
-    }
+    if (!isEnoent(err)) logger.warn("query-history", "legacy probe failed:", err);
     return;
   }
 
   await withFileLock(LEGACY_LOCK, async () => {
     // Re-read under the lock — another request may have just migrated + deleted.
+    let raw: string;
+    try {
+      raw = await storage.readFile(legacyPath);
+    } catch (err) {
+      if (!isEnoent(err)) logger.warn("query-history", "legacy reread failed:", err);
+      return; // gone (already migrated) or transient → retry next request
+    }
+
     let entries: QueryHistoryEntry[];
     try {
-      const raw = await storage.readFile(legacyPath);
       const parsed = JSON.parse(raw);
       entries = Array.isArray(parsed) ? (parsed as QueryHistoryEntry[]) : [];
     } catch (err) {
-      if (!isEnoent(err)) {
-        logger.warn("query-history", "legacy migrate read failed:", err);
+      // Unparseable legacy file: quarantine it (so the probe stops re-firing
+      // every request) and surface loudly — a human may want to recover it.
+      logger.error("query-history", "legacy file unparseable; quarantining:", err);
+      try {
+        await storage.writeFile(wikiRelPath(LEGACY_CORRUPT_FILENAME), raw);
+        await storage.deleteFile(legacyPath);
+      } catch (qerr) {
+        logger.error("query-history", "legacy quarantine failed:", qerr);
       }
-      return; // gone, or unparseable → leave it; reads fall back to per-owner ([])
+      return;
     }
 
     // Group by owner; owner-less entries are intentionally dropped.
@@ -146,25 +177,33 @@ async function migrateLegacyHistory(): Promise<void> {
     }
 
     // Merge each owner's legacy entries into their file (legacy first = older).
+    // The dedupe-by-id keeps this idempotent if migration re-runs (e.g. after a
+    // failed delete) — preserved legacy ids are already present and skipped.
+    let allMigrated = true;
     for (const [owner, legacyEntries] of byOwner) {
-      await withFileLock(lockFor(owner), async () => {
-        const existing = await readOwnerHistory(owner);
-        const seen = new Set(existing.map((e) => e.id));
-        const merged = [
-          ...legacyEntries.filter((e) => !seen.has(e.id)),
-          ...existing,
-        ];
-        await writeOwnerHistory(owner, trimToCap(merged));
-      });
+      try {
+        await withFileLock(lockFor(owner), async () => {
+          const existing = await readOwnerHistory(owner); // strict: throws on real failure
+          const seen = new Set(existing.map((e) => e.id));
+          const merged = [
+            ...legacyEntries.filter((e) => !seen.has(e.id)),
+            ...existing,
+          ];
+          await writeOwnerHistory(owner, trimToCap(merged));
+        });
+      } catch (err) {
+        allMigrated = false;
+        logger.error("query-history", `migrate owner "${owner}" failed; will retry:`, err);
+      }
     }
 
-    // Drop the shared file — no cross-user surface remains.
+    // Only drop the shared file once every owner migrated — otherwise leave it
+    // for a retry (re-merge is idempotent via the id dedupe above).
+    if (!allMigrated) return;
     try {
       await storage.deleteFile(legacyPath);
     } catch (err) {
-      if (!isEnoent(err)) {
-        logger.warn("query-history", "legacy delete failed:", err);
-      }
+      if (!isEnoent(err)) logger.error("query-history", "legacy delete failed:", err);
     }
   });
 }
@@ -178,6 +217,9 @@ async function migrateLegacyHistory(): Promise<void> {
  * TOCTOU races and trims to {@link MAX_HISTORY_ENTRIES}. An owner-less entry is
  * returned (for the client's optimistic UI) but NOT persisted — anonymous
  * history is unreadable anyway, and there is no shared file to write it to.
+ *
+ * A real read failure propagates rather than overwriting existing history with a
+ * single-entry file (see {@link readOwnerHistory}).
  */
 export async function appendQuery(
   entry: Omit<QueryHistoryEntry, "id">,
@@ -197,8 +239,9 @@ export async function appendQuery(
 
 /**
  * List the asker's past queries, most recent first. Reads ONLY the owner's file;
- * an anonymous caller (no owner) gets nothing — privacy is enforced by which
- * file is read, not by a post-read filter.
+ * an anonymous caller (no owner) gets nothing — privacy is enforced by which file
+ * is read, not by a post-read filter. A read failure degrades to `[]` for this
+ * one request (a pure read can't lose data).
  */
 export async function listQueries(
   limit?: number,
@@ -206,7 +249,14 @@ export async function listQueries(
 ): Promise<QueryHistoryEntry[]> {
   if (!owner) return [];
   await migrateLegacyHistory();
-  const reversed = (await readOwnerHistory(owner)).slice().reverse();
+  let entries: QueryHistoryEntry[];
+  try {
+    entries = await readOwnerHistory(owner);
+  } catch (err) {
+    logger.warn("query-history", "listQueries read failed; returning empty:", err);
+    return [];
+  }
+  const reversed = entries.slice().reverse();
   return limit !== undefined && limit > 0 ? reversed.slice(0, limit) : reversed;
 }
 
