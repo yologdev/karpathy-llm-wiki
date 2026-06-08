@@ -157,10 +157,15 @@ export async function findBacklinks(
   return withPageCache(async () => {
     // Readable pages only — a private page must not surface as a backlink to
     // viewers who can't see it. Visibility is ALWAYS enforced here on READ; the
-    // backlink index never encodes it. Agent-scoped pages are also excluded so
-    // agent content never appears under a wiki page's "what links here".
-    const pages = (await listReadableWikiPages(principal)).filter(
-      (p) => !isAgentScopedType(p.type),
+    // backlink index never encodes it. Scope-match too: agent <-> wiki content
+    // never cross-relate, so a wiki page never shows an agent page (and vice
+    // versa) under "what links here".
+    const allReadable = await listReadableWikiPages(principal);
+    const anchorIsAgent = isAgentScopedType(
+      allReadable.find((p) => p.slug === targetSlug)?.type,
+    );
+    const pages = allReadable.filter(
+      (p) => isAgentScopedType(p.type) === anchorIsAgent,
     );
 
     // Fast path: the precomputed reverse-link index gives the source slugs that
@@ -221,11 +226,15 @@ export async function findSimilarPages(
     const scored = await relatedByVector(slug, limit + 10);
     if (scored.length === 0) return [];
 
-    // Commons-only: never surface agent-scoped pages (agent-knowledge/identity)
-    // as related to a wiki page — agent content stays in its own scope.
+    // Scope-match: relate only within the same scope — a wiki page never shows
+    // agent-scoped pages as related, and an agent page never shows wiki pages.
+    const pages = await listReadableWikiPages(principal);
+    const anchorIsAgent = isAgentScopedType(
+      pages.find((p) => p.slug === slug)?.type,
+    );
     const readable = new Map(
-      (await listReadableWikiPages(principal))
-        .filter((p) => !isAgentScopedType(p.type))
+      pages
+        .filter((p) => isAgentScopedType(p.type) === anchorIsAgent)
         .map((p) => [p.slug, p.title]),
     );
 
