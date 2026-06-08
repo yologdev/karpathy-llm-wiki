@@ -1435,7 +1435,17 @@ export async function ingest(
     if (options?.pinSlug) {
       // Re-ingest (commit-from-preview): keep the page on its pinned slug — a
       // user-edited H1 must never fork it — but let the TITLE follow the H1.
-      if (h1) pageTitle = h1;
+      if (h1) {
+        pageTitle = h1;
+      } else {
+        // No H1 in the reviewed draft — preserve the EXISTING page's title
+        // rather than overwriting it with the re-fetched source <title>.
+        const existingPage = await readWikiPageWithFrontmatter(slug);
+        const existingTitle = existingPage?.body
+          ?.match(/^#\s+(.+?)\s*$/m)?.[1]
+          ?.trim();
+        if (existingTitle) pageTitle = existingTitle;
+      }
     } else {
       const conceptSlug = h1 ? slugify(h1) : "";
       if (h1 && conceptSlug && conceptSlug !== slug) {
