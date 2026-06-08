@@ -26,6 +26,25 @@ export interface PageReadMeta {
 type Reader = { handle: string } | null;
 
 /**
+ * Admins — the comma-separated handles in `ADMIN_HANDLES` (case-insensitive) —
+ * may READ, WRITE, and DELETE every page, including other users' private pages.
+ * Unset/empty → no admins; a null or handleless principal is never an admin.
+ *
+ * Set it as a Worker var: `ADMIN_HANDLES=yuanhao` (or `a,b,c`).
+ */
+export function isAdmin(principal: { handle?: string } | null | undefined): boolean {
+  const handle = principal?.handle?.trim().toLowerCase();
+  if (!handle) return false;
+  const raw = process.env.ADMIN_HANDLES;
+  if (!raw) return false;
+  return raw
+    .split(",")
+    .map((h) => h.trim().toLowerCase())
+    .filter(Boolean)
+    .includes(handle);
+}
+
+/**
  * True iff `principal` may read a page with the given metadata. Fail-closed:
  * only an explicit `visibility: "private"` ever denies; anything else is public.
  */
@@ -35,6 +54,8 @@ export function canReadPage(meta: PageReadMeta, principal: Reader): boolean {
 
   // Private — requires an authenticated owner.
   if (!principal) return false;
+  // Admins read every page, including others' private pages.
+  if (isAdmin(principal)) return true;
   const owner = meta.owner;
   if (!owner) return false; // private but unowned — fail closed
 
@@ -121,6 +142,8 @@ export function canWritePage(
 ): boolean {
   // Deployment-trusted automated caller — writes for owners (agents, cron).
   if (principal?.id.startsWith("service:")) return true;
+  // Admins may write/delete/manage every page (incl. others' private pages).
+  if (isAdmin(principal)) return true;
   // Public / collective commons — editable by any caller the write-gate admits.
   if (meta.visibility !== "private") return true;
   // Private — exactly the owner-equivalence class that may READ it (requires an
