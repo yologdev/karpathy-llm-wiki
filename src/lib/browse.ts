@@ -9,8 +9,12 @@
  * query is present, or a plain facet sort when it isn't — then paginated.
  *
  * The vector store is global; every path intersects it against the already
- * visibility-/agent-filtered candidate pool, so a search can never surface a
- * private or agent-scoped page (same guard as the /query retrieval).
+ * visibility-scoped candidate pool, so a search never WIDENS visibility beyond
+ * what the scope's pool already allows (same guard as the /query retrieval). For
+ * `scope=all` that pool is public + non-agent by construction; for a `vault:<id>`
+ * scope it's the viewer's readable vault refs with agent-scoped pages excluded —
+ * so a viewer's OWN private page in their public vault stays visible to them (and
+ * only them), but no search can surface another user's private page.
  */
 
 import type { IndexEntry } from "./types";
@@ -26,6 +30,12 @@ import { RRF_K } from "./constants";
 import { logger } from "./logger";
 
 export type BrowseSort = "recent" | "confidence" | "sources";
+
+/** Discussion counts for a slug — `{ total, open }` (open ≤ total). */
+export type DiscussionStats = Record<string, { total: number; open: number }>;
+
+/** A topic facet: `[tag, count]`. */
+export type TagFacet = [string, number];
 
 export interface BrowseOptions {
   /** Lens scope: `"all"` (the public commons) or `"vault:<id>"`. */
@@ -46,12 +56,18 @@ export interface BrowseResponse {
   results: IndexEntry[];
   /** Total matches across all pages (drives the pagination controls). */
   total: number;
-  discussionStats: Record<string, { total: number; open: number }>;
+  discussionStats: DiscussionStats;
   /**
    * Tag facets for the rail — counts across the full SCOPE pool (before the tag
    * filter or query), so the topic list stays stable while you search/filter.
    */
-  tags: [string, number][];
+  tags: TagFacet[];
+}
+
+/** The `/api/wiki/browse` JSON shape: a {@link BrowseResponse} plus the echoed page cursor. */
+export interface BrowsePayload extends BrowseResponse {
+  page: number;
+  pageSize: number;
 }
 
 export const BROWSE_PAGE_SIZE = 30;
@@ -163,7 +179,7 @@ export async function searchCommons(
   const slice = ranked.slice(start, start + pageSize);
 
   const statsMap = await getDiscussionStatsForSlugs(slice.map((p) => p.slug));
-  const discussionStats: Record<string, { total: number; open: number }> = {};
+  const discussionStats: DiscussionStats = {};
   for (const [slug, stats] of statsMap) discussionStats[slug] = stats;
 
   return { results: slice, total, discussionStats, tags };

@@ -150,6 +150,18 @@ describe("searchCommons — pagination", () => {
     const p2 = await searchCommons(null, { sort: "recent", page: 2, pageSize: 2 });
     expect(p2.results.map((p) => p.slug)).toEqual(["backpropagation"]);
   });
+
+  it("returns an empty slice but the true total for a page beyond the end", async () => {
+    const r = await searchCommons(null, { page: 99, pageSize: 2 });
+    expect(r.results).toEqual([]);
+    expect(r.total).toBe(3);
+  });
+
+  it("handles an empty pool without throwing", async () => {
+    mockedCommons.mockResolvedValue([]);
+    const r = await searchCommons("anything", {});
+    expect(r).toMatchObject({ results: [], total: 0, tags: [] });
+  });
 });
 
 describe("searchCommons — vault scope", () => {

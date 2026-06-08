@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import type { IndexEntry } from "@/lib/types";
+import type { BrowsePayload, DiscussionStats, TagFacet } from "@/lib/browse";
 import { formatRelativeTime } from "@/lib/format";
 import { commonsPath, pagePath, ownerToTenant } from "@/lib/links";
 import { Icon } from "@/components/folio/icons";
@@ -17,8 +18,6 @@ interface VaultLite {
   visibility: "public" | "private";
 }
 
-type DiscussionStats = Record<string, { total: number; open: number }>;
-
 interface BrowseClientProps {
   myHandle: string | null;
   /** The active lens scope: `"all"` (Public) or `"vault:<id>"`. */
@@ -30,7 +29,7 @@ interface BrowseClientProps {
   /** Total matches for the initial (unsearched) scope — drives pagination. */
   initialTotal: number;
   /** Tag facets across the whole scope pool, by count desc (stable rail). */
-  initialTags: [string, number][];
+  initialTags: TagFacet[];
   initialDiscussionStats: DiscussionStats;
   pageSize: number;
   /** Initial tag filter (from `?tag=` — e.g. a tag chip on an article). */
@@ -264,7 +263,11 @@ export function BrowseClient({
     params.set("page", String(page));
     params.set("pageSize", String(pageSize));
     fetch(`/api/wiki/browse?${params.toString()}`)
-      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
+      .then((r) =>
+        r.ok
+          ? (r.json() as Promise<BrowsePayload>)
+          : Promise.reject(new Error(`HTTP ${r.status}`)),
+      )
       .then((data) => {
         if (!active) return;
         setResults(data.results ?? []);

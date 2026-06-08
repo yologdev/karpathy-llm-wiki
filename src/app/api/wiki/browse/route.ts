@@ -1,6 +1,11 @@
 import { NextResponse } from "next/server";
 import { getPrincipal } from "@/lib/auth";
-import { searchCommons, BROWSE_PAGE_SIZE, type BrowseSort } from "@/lib/browse";
+import {
+  searchCommons,
+  BROWSE_PAGE_SIZE,
+  type BrowseSort,
+  type BrowsePayload,
+} from "@/lib/browse";
 import { logger } from "@/lib/logger";
 
 /**
@@ -8,8 +13,10 @@ import { logger } from "@/lib/logger";
  *
  * Server-side hybrid (BM25 + vector) search + pagination for the Browse surface.
  * Public-readable: returns the commons by default; `principal` is resolved only
- * to expand a `vault:<id>` scope to the viewer's readable pages. Private and
- * agent-scoped pages can never appear (the pool is pre-filtered in searchCommons).
+ * to expand a `vault:<id>` scope to the viewer's readable pages. The pool is
+ * pre-filtered in searchCommons, so a search never surfaces another user's
+ * private page or any agent-scoped page (a `vault:<id>` scope may include the
+ * viewer's OWN private pages — visible only to them).
  */
 export async function GET(req: Request) {
   const url = new URL(req.url);
@@ -28,7 +35,8 @@ export async function GET(req: Request) {
   try {
     const principal = await getPrincipal();
     const data = await searchCommons(q, { scope, tag, sort, page, pageSize, principal });
-    return NextResponse.json({ ...data, page, pageSize });
+    const payload: BrowsePayload = { ...data, page, pageSize };
+    return NextResponse.json(payload);
   } catch (err) {
     // A failure here (KV read, auth context, vector store) must be traceable
     // with the request context — otherwise it surfaces as an opaque 500 that the
