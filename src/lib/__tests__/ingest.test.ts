@@ -771,6 +771,28 @@ describe("ingest — structured sources[] provenance", () => {
     expect(sources).toHaveLength(2);
     expect(sources[0].url).toBe("https://example.com/a");
     expect(sources[1].url).toBe("https://example.com/b");
+    // Corroboration: a 2nd distinct source URL raises confidence (0.7 → 0.75).
+    expect(page!.frontmatter.confidence).toBe(0.75);
+  });
+
+  it("preview confidence matches what the commit writes (corroborating re-ingest)", async () => {
+    // Existing page with one URL source.
+    await ingest("Preview Conf", "First content. Details.", {
+      sourceUrl: "https://example.com/a",
+    });
+
+    // Preview a re-ingest that adds a 2nd distinct URL.
+    const preview = await ingest("Preview Conf", "Second content. More.", {
+      sourceUrl: "https://example.com/b",
+      preview: true,
+    });
+    // Commit the same re-ingest (no preview) and assert the page matches the card.
+    await ingest("Preview Conf", "Second content. More.", {
+      sourceUrl: "https://example.com/b",
+    });
+    const page = await readWikiPageWithFrontmatter("preview-conf");
+    expect(preview.preview!.confidence).toBe(0.75);
+    expect(page!.frontmatter.confidence).toBe(preview.preview!.confidence);
   });
 
   it("re-ingest with same URL updates fetched date instead of duplicating", async () => {
@@ -2201,6 +2223,9 @@ describe("ingest — reconcile on merge", () => {
 
     const page = await readWikiPageWithFrontmatter("topic");
     expect(page!.frontmatter.disputed).toBe(true);
+    // A reconcile-escalated dispute caps confidence at 0.5 (computed after the
+    // reconcile sets the flag).
+    expect(page!.frontmatter.confidence).toBe(0.5);
     expect(page!.content).toContain("Existing says X; the new source says Y.");
     // The DISPUTED marker is stripped from the stored body.
     expect(page!.content).not.toContain("DISPUTED:");

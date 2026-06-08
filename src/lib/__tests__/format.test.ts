@@ -61,6 +61,8 @@ describe("formatRelativeTime", () => {
     expect(formatRelativeTime("2026-06-07")).toBe("yesterday");
     expect(formatRelativeTime("2026-06-05")).toBe("3d ago");
     expect(formatRelativeTime("2026-05-25")).toBe("2w ago");
+    expect(formatRelativeTime("2026-03-01")).toBe("3mo ago"); // 99 days
+    expect(formatRelativeTime("2025-01-01")).toBe("1y ago"); // 523 days
   });
 
   it("returns YYYY-MM-DD slice for unparseable input", () => {

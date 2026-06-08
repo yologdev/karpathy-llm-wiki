@@ -1476,10 +1476,13 @@ export async function ingest(
       ? existingEntries.find((e) => e.slug === dupSlug)
       : undefined;
 
-    // Mirror exactly what the commit path below would write so the review card
-    // never promises a value publish won't honor. Review-by always resets to
-    // now + 90 days (a re-ingest refreshes the page). Confidence is computed
-    // from the prospective source set with the same heuristic as the commit.
+    // Mirror the commit path's metadata as far as is knowable pre-synthesis, so
+    // the review card matches publish for the common case. Review-by always
+    // resets to now + 90 days. Confidence uses the SAME heuristic over the
+    // prospective source set and the EXISTING disputed flag — it can still
+    // diverge only if the reconcile step newly escalates the page to `disputed`
+    // (which caps the committed value at 0.5); the preview can't anticipate that
+    // LLM outcome.
     const reviewExpiry = new Date();
     reviewExpiry.setDate(reviewExpiry.getDate() + 90);
     const reviewBy = reviewExpiry.toISOString().slice(0, 10);
@@ -1492,22 +1495,24 @@ export async function ingest(
     );
     let previewSources: SourceEntry[] = [previewEntry];
     let previewDisputed = false;
-    if (existingEntry) {
-      const ex = await readWikiPageWithFrontmatter(existingEntry.slug);
-      if (ex) {
-        const exSources = ex.frontmatter.sources;
-        previewSources = mergeSourceEntry(
-          parseSources(
-            typeof exSources === "string"
+    // Read the existing page by the RESOLVED slug — the same way the commit path
+    // finds what it merges into. (The dedup `existingEntry` only resolves on a
+    // URL/content/concept hit, so a same-slug re-ingest with a new URL would
+    // otherwise miss the existing sources and under-report confidence.)
+    const ex = await readWikiPageWithFrontmatter(slug);
+    if (ex) {
+      const exSources = ex.frontmatter.sources;
+      previewSources = mergeSourceEntry(
+        parseSources(
+          typeof exSources === "string"
+            ? exSources
+            : Array.isArray(exSources)
               ? exSources
-              : Array.isArray(exSources)
-                ? exSources
-                : undefined,
-          ),
-          previewEntry,
-        );
-        previewDisputed = ex.frontmatter.disputed === true;
-      }
+              : undefined,
+        ),
+        previewEntry,
+      );
+      previewDisputed = ex.frontmatter.disputed === true;
     }
     const confidence = computeConfidence(previewSources, previewDisputed);
 
@@ -1754,12 +1759,23 @@ export async function ingest(
 
   // Confidence from provenance signals — computed last, when sources[] and the
   // disputed flag are final (after the re-ingest merge and reconcile).
-  frontmatter.confidence = computeConfidence(
-    parseSources(
-      typeof frontmatter.sources === "string" ? frontmatter.sources : undefined,
-    ),
-    frontmatter.disputed === true,
+  const finalSources = parseSources(
+    typeof frontmatter.sources === "string" ? frontmatter.sources : undefined,
   );
+  // Defensive: sources[] was just serialized from ≥1 entry, so an empty parse
+  // means a serialize/parse round-trip lost it — confidence would silently fall
+  // to the 0.6 default. Surface it rather than flatlining invisibly.
+  if (
+    finalSources.length === 0 &&
+    typeof frontmatter.sources === "string" &&
+    frontmatter.sources !== "[]"
+  ) {
+    logger.warn(
+      "ingest",
+      `sources[] failed to round-trip for "${slug}"; confidence falls back to the default`,
+    );
+  }
+  frontmatter.confidence = computeConfidence(finalSources, frontmatter.disputed === true);
 
   const contentWithFm = serializeFrontmatter(frontmatter, wikiContent);
 
