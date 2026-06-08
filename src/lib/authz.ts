@@ -22,26 +22,47 @@ export interface PageReadMeta {
   type?: string;
 }
 
-/** A reader identity (only the handle matters for authorization). */
-type Reader = { handle: string } | null;
+/** A reader identity (id is used for the spoof-proof admin match). */
+type Reader = { id?: string; handle: string } | null;
 
 /**
- * Admins — the comma-separated handles in `ADMIN_HANDLES` (case-insensitive) —
- * may READ, WRITE, and DELETE every page, including other users' private pages.
- * Unset/empty → no admins; a null or handleless principal is never an admin.
+ * Admins — listed in the comma-separated `ADMIN_HANDLES` Worker var — may READ,
+ * WRITE, and DELETE every **page**, including other users' private pages. Unset/
+ * empty → no admins; a null/handleless principal is never an admin.
  *
- * Set it as a Worker var: `ADMIN_HANDLES=yuanhao` (or `a,b,c`).
+ * Each entry matches EITHER:
+ *  - a **Clerk user id** (`user_…`), compared exactly — spoof-proof, use this if
+ *    your Clerk instance lets users edit their username; or
+ *  - a **handle** (Twitter/X username), compared case-insensitively — convenient,
+ *    but only as trustworthy as the handle: it assumes a non-admin cannot set
+ *    their Clerk username to an admin's handle (true when usernames come from
+ *    Twitter SSO and aren't user-editable).
+ *
+ * Scope is pages only — it does NOT grant managing others' agents, vaults, or
+ * discussion moderation (those keep their own owner checks).
+ *
+ * Examples: `ADMIN_HANDLES=yuanhao` or `ADMIN_HANDLES=user_2abc...,alice`.
  */
-export function isAdmin(principal: { handle?: string } | null | undefined): boolean {
-  const handle = principal?.handle?.trim().toLowerCase();
-  if (!handle) return false;
+export function isAdmin(
+  principal: { id?: string; handle?: string } | null | undefined,
+): boolean {
   const raw = process.env.ADMIN_HANDLES;
   if (!raw) return false;
-  return raw
+  const admins = raw
     .split(",")
-    .map((h) => h.trim().toLowerCase())
-    .filter(Boolean)
-    .includes(handle);
+    .map((h) => h.trim())
+    .filter(Boolean);
+  if (admins.length === 0) return false;
+
+  // `user_…` entries are Clerk ids — matched ONLY against principal.id (exact),
+  // never as a handle, so setting a handle to the id string can't grant admin.
+  const ids = admins.filter((a) => a.startsWith("user_"));
+  if (principal?.id && ids.includes(principal.id)) return true;
+
+  // Everything else is a handle — case-insensitive match.
+  const handle = principal?.handle?.trim().toLowerCase();
+  if (!handle) return false;
+  return admins.some((a) => !a.startsWith("user_") && a.toLowerCase() === handle);
 }
 
 /**

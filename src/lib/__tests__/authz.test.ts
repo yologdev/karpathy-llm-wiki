@@ -157,6 +157,16 @@ describe("admin role (ADMIN_HANDLES)", () => {
     expect(isAdmin(bob)).toBe(false);
     expect(isAdmin(null)).toBe(false);
     expect(isAdmin({ handle: "" })).toBe(false);
+    process.env.ADMIN_HANDLES = "   ";
+    expect(isAdmin({ handle: "alice" })).toBe(false); // whitespace-only → no admins
+  });
+
+  it("isAdmin matches a Clerk user id exactly (spoof-proof) regardless of handle", () => {
+    process.env.ADMIN_HANDLES = "user_2abc";
+    expect(isAdmin({ id: "user_2abc", handle: "anything" })).toBe(true);
+    // A different user who set their handle to the id string is NOT admin
+    // (id is matched exactly against principal.id, not the handle).
+    expect(isAdmin({ id: "user_evil", handle: "user_2abc" })).toBe(false);
   });
 
   it("an admin reads and writes any page, including others' private pages", () => {
