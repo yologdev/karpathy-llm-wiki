@@ -2795,6 +2795,48 @@ describe("reingest", () => {
     }
   });
 
+  it("re-ingesting a plain URL stays on the page's slug even when the concept differs (no fork)", async () => {
+    mockedHasLLMKey.mockReturnValue(true);
+    const originalFetch = global.fetch;
+    try {
+      // First ingest → concept "Original Concept" → slug "original-concept".
+      mockedCallLLM.mockResolvedValue(
+        "CONCEPT: Original Concept\n\n# Original Concept\n\n## Summary\n\nv1.",
+      );
+      const first = await ingest("Seed Title", "seed content about the topic", {
+        sourceUrl: "https://example.com/doc",
+      });
+      expect(first.primarySlug).toBe("original-concept");
+
+      // Re-fetch returns fresh content; synthesis now names a DIFFERENT concept.
+      global.fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        headers: new Map([["content-type", "text/html"]]) as unknown as Headers,
+        body: null,
+        text: () =>
+          Promise.resolve(
+            "<html><head><title>Doc</title></head><body><p>completely updated body here</p></body></html>",
+          ),
+      });
+      mockedCallLLM.mockResolvedValue(
+        "CONCEPT: A Completely Different Concept\n\n# Different\n\n## Summary\n\nv2.",
+      );
+
+      const result = await reingest("original-concept");
+
+      // Pinned: updated in place, no fork to the new concept slug.
+      expect(result.primarySlug).toBe("original-concept");
+      expect(
+        await readWikiPageWithFrontmatter("a-completely-different-concept"),
+      ).toBeNull();
+    } finally {
+      global.fetch = originalFetch;
+      mockedHasLLMKey.mockReturnValue(false);
+      mockedCallLLM.mockReset();
+    }
+  });
+
   it("dedups a re-ingested source by URL even when the type differs", async () => {
     // A PDF page re-fetched as a plain "url" must not create a second source
     // entry for the same URL (the bug behind the duplicated arxiv sources).
