@@ -75,7 +75,7 @@ export interface FileEntry {
 }
 
 // ---------------------------------------------------------------------------
-// Embedding types (mirror src/lib/embeddings.ts VectorEntry)
+// Embedding types — the storage-layer vector representation
 // ---------------------------------------------------------------------------
 
 /** Metadata stored alongside each embedding vector. */

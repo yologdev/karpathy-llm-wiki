@@ -366,9 +366,11 @@ export async function clearEmbeddings(): Promise<void> {
 /**
  * Embed content for a wiki page and upsert it into the vector store.
  *
- * - Skips re-embedding if the contentHash hasn't changed.
- * - If the stored model name differs from the current model, all existing
- *   entries are cleared (model migration).
+ * Skips re-embedding when the stored vector already has the same contentHash AND
+ * was produced by the current embedding model; otherwise re-embeds and upserts
+ * (with `{ model, contentHash }` metadata). A model change is handled per-entry:
+ * stale-model vectors are simply re-embedded as pages are touched, and dropped
+ * from reads in the meantime (see {@link searchByVector}/{@link relatedByVector}).
  */
 export async function upsertEmbedding(
   slug: string,
@@ -460,10 +462,18 @@ export async function searchByVector(
   if (!queryEmbedding) return [];
 
   const currentModel = getEmbeddingModelName();
-  const matches = await getStorage().queryEmbeddings(queryEmbedding, topK);
-  return matches
-    .filter((m) => modelMatches(m.metadata, currentModel))
-    .map((m) => ({ slug: m.id, score: m.score }));
+  // A query can throw on a dimension mismatch (e.g. mid model-migration, when
+  // the store still holds vectors of the previous dimension). Degrade to "no
+  // vector results" rather than propagating — callers fuse/fall back on [].
+  try {
+    const matches = await getStorage().queryEmbeddings(queryEmbedding, topK);
+    return matches
+      .filter((m) => modelMatches(m.metadata, currentModel))
+      .map((m) => ({ slug: m.id, score: m.score }));
+  } catch (err) {
+    logger.warn("embeddings", "searchByVector query failed:", err);
+    return [];
+  }
 }
 
 /**
@@ -485,12 +495,20 @@ export async function relatedByVector(
   const currentModel = getEmbeddingModelName();
   if (!modelMatches(self.metadata, currentModel)) return [];
 
-  // Over-fetch by one to absorb the page's own vector, then drop it.
-  const matches = await getStorage().queryEmbeddings(self.vector, topK + 1);
-  return matches
-    .filter((m) => m.id !== slug && modelMatches(m.metadata, currentModel))
-    .slice(0, topK)
-    .map((m) => ({ slug: m.id, score: m.score }));
+  // Over-fetch by one to absorb the page's own vector, then drop it. A query can
+  // throw on a dimension mismatch (mixed-dimension store mid model-migration);
+  // this runs unguarded on the article render path (findSimilarPages), so
+  // degrade to "no related pages" rather than failing the page.
+  try {
+    const matches = await getStorage().queryEmbeddings(self.vector, topK + 1);
+    return matches
+      .filter((m) => m.id !== slug && modelMatches(m.metadata, currentModel))
+      .slice(0, topK)
+      .map((m) => ({ slug: m.id, score: m.score }));
+  } catch (err) {
+    logger.warn("embeddings", "relatedByVector query failed:", err);
+    return [];
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -505,10 +523,12 @@ export interface RebuildResult {
 }
 
 /**
- * Rebuild the entire vector store from scratch.
+ * Re-embed every wiki page and upsert it into the vector store. Used to backfill
+ * after provisioning the index or switching embedding models.
  *
- * Lists all wiki pages, embeds each page's content, and saves a completely
- * new vector store — replacing whatever was on disk before.
+ * Upserts in place; it does NOT delete first, so embeddings for pages that no
+ * longer exist are left behind — harmless, since every read intersects results
+ * with the caller's readable/scoped slug set, so an orphan can't surface.
  *
  * Throws if no embedding provider is configured.
  *

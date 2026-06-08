@@ -457,6 +457,18 @@ describe("relatedByVector", () => {
 
     expect(await relatedByVector("anchor", 10)).toEqual([]);
   });
+
+  it("returns [] (never throws) on a mixed-dimension store", async () => {
+    // Mid model-migration the store can hold vectors of different dimensions and
+    // the cosine scan throws on the mismatch. relatedByVector runs unguarded on
+    // the article render path, so it must degrade, not crash.
+    await seedVector("anchor", [1, 0, 0], DEFAULT_TEST_MODEL, "a");
+    await seedVector("other", [1, 0], DEFAULT_TEST_MODEL, "b"); // 2-dim, mismatched
+    process.env.EMBEDDING_MODEL = "text-embedding-3-small";
+    process.env.OPENAI_API_KEY = "sk-test";
+
+    await expect(relatedByVector("anchor", 10)).resolves.toEqual([]);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -679,6 +691,15 @@ describe("searchByVector", () => {
 
     // All matches filtered out — stale model.
     expect(results).toEqual([]);
+  });
+
+  it("returns [] (never throws) when the scan hits a dimension mismatch", async () => {
+    await seedVector("a", [1, 0, 0], DEFAULT_TEST_MODEL, "a");
+    await seedVector("b", [1, 0], DEFAULT_TEST_MODEL, "b"); // mismatched dimension
+    process.env.OPENAI_API_KEY = "sk-test";
+    mockEmbed.mockResolvedValue({ embedding: [1, 0, 0] });
+
+    await expect(searchByVector("q", 10)).resolves.toEqual([]);
   });
 });
 
