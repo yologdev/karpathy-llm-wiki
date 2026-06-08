@@ -48,6 +48,9 @@ const IN_ROUTE_AUTH_PATHS = new Set([
   // Admin content reset (destructive wipe): service-token only, in-route, with
   // an explicit confirm body. Called with no Clerk session.
   "/api/admin/reset",
+  // Admin embedding rebuild: service-token only, in-route. Backfills Vectorize
+  // (the settings-page rebuild is disabled on the read-only Workers runtime).
+  "/api/admin/rebuild-embeddings",
   // Wiki page creation: authenticated in-route via Clerk session OR the
   // service token (agents create pages via REST).
   "/api/wiki",

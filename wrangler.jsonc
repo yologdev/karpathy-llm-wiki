@@ -1,81 +1,80 @@
 {
-  // yopedia — Cloudflare Pages deployment via @opennextjs/cloudflare
-  //
-  // Binding names match src/lib/storage/cloudflare-types.ts CloudflareEnv:
-  //   YOPEDIA_BUCKET   → R2Bucket
-  //   YOPEDIA_CONFIG   → KVNamespace
-  //   YOPEDIA_VECTORIZE → VectorizeIndex (optional)
-  //
-  // After provisioning resources, update bucket_name / id / index_name
-  // to match your Cloudflare account. Run:
-  //   npx wrangler r2 bucket list
-  //   npx wrangler kv namespace list
-  //   npx wrangler vectorize list
-
-  "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "yopedia",
-  "main": ".open-next/worker.js",
-  "compatibility_date": "2025-01-01",
-  "compatibility_flags": ["nodejs_compat"],
-  "assets": {
-    "directory": ".open-next/assets",
-    "binding": "ASSETS"
-  },
-
-  // --- R2: Primary storage (wiki pages, raw sources, assets) ---
-  "r2_buckets": [
-    {
-      "binding": "YOPEDIA_BUCKET",
-      "bucket_name": "yopedia-raw"
-    }
-  ],
-
-  // --- KV: Config and derived indexes ---
-  "kv_namespaces": [
-    {
-      "binding": "YOPEDIA_CONFIG",
-      "id": "31e48c3fc033443788f1d3fe130e6266"
-    }
-  ],
-
-  // --- Vectorize: Semantic search embeddings (optional) ---
-  "vectorize": [
-    {
-      "binding": "YOPEDIA_VECTORIZE",
-      "index_name": "yopedia-embeddings"
-    }
-  ],
-
-  // --- Workers AI: serverless embeddings (e.g. @cf/baai/bge-m3 for CJK) ---
-  "ai": {
-    "binding": "AI"
-  },
-
-  // --- Queues: producer for the agent task queue (async maintenance + ingest).
-  // The consumer is a separate worker (workers/task-consumer/). enqueueTask()
-  // (src/lib/tasks.ts) sends here; it no-ops gracefully when this binding is
-  // absent (local dev / next start / tests). One-time provisioning:
-  //   npx wrangler queues create yopedia-tasks
-  //   npx wrangler queues create yopedia-tasks-dlq
-  "queues": {
-    "producers": [
-      {
-        "binding": "TASK_QUEUE",
-        "queue": "yopedia-tasks"
-      }
-    ]
-  },
-
-  // Public site-owner handle for runtime server gates (owner-only Lint). The
-  // authoritative copy for the client is the build-time inline (deploy
-  // workflow); this is runtime parity for server reads. Public, not a secret.
-  //
-  // AUTONOMOUS_MAINTENANCE="on" enables the daily maintenance cron to actually
-  // enqueue maintain tasks (reconcile disputes, refresh stale pages, and the
-  // deterministic janitorial fixes). Anything other than "on" = dry-run.
-  // See workers/task-consumer/README.md.
-  "vars": {
-    "NEXT_PUBLIC_OWNER_HANDLE": "yuanhao",
-    "AUTONOMOUS_MAINTENANCE": "on"
-  }
+	// yopedia — Cloudflare Pages deployment via @opennextjs/cloudflare
+	//
+	// Binding names match src/lib/storage/cloudflare-types.ts CloudflareEnv:
+	//   YOPEDIA_BUCKET   → R2Bucket
+	//   YOPEDIA_CONFIG   → KVNamespace
+	//   YOPEDIA_VECTORIZE → VectorizeIndex (optional)
+	//
+	// After provisioning resources, update bucket_name / id / index_name
+	// to match your Cloudflare account. Run:
+	//   npx wrangler r2 bucket list
+	//   npx wrangler kv namespace list
+	//   npx wrangler vectorize list
+	"$schema": "node_modules/wrangler/config-schema.json",
+	"name": "yopedia",
+	"main": ".open-next/worker.js",
+	"compatibility_date": "2025-01-01",
+	"compatibility_flags": [
+		"nodejs_compat"
+	],
+	"assets": {
+		"directory": ".open-next/assets",
+		"binding": "ASSETS"
+	},
+	// --- R2: Primary storage (wiki pages, raw sources, assets) ---
+	"r2_buckets": [
+		{
+			"binding": "YOPEDIA_BUCKET",
+			"bucket_name": "yopedia-raw"
+		}
+	],
+	// --- KV: Config and derived indexes ---
+	"kv_namespaces": [
+		{
+			"binding": "YOPEDIA_CONFIG",
+			"id": "31e48c3fc033443788f1d3fe130e6266"
+		}
+	],
+	// --- Vectorize: Semantic search embeddings (optional) ---
+	"vectorize": [
+		{
+			"binding": "YOPEDIA_VECTORIZE",
+			"index_name": "yopedia-embeddings"
+		},
+		{
+			"binding": "VECTORIZE",
+			"index_name": "yopedia-embeddings"
+		}
+	],
+	// --- Workers AI: serverless embeddings (e.g. @cf/baai/bge-m3 for CJK) ---
+	"ai": {
+		"binding": "AI"
+	},
+	// --- Queues: producer for the agent task queue (async maintenance + ingest).
+	// The consumer is a separate worker (workers/task-consumer/). enqueueTask()
+	// (src/lib/tasks.ts) sends here; it no-ops gracefully when this binding is
+	// absent (local dev / next start / tests). One-time provisioning:
+	//   npx wrangler queues create yopedia-tasks
+	//   npx wrangler queues create yopedia-tasks-dlq
+	"queues": {
+		"producers": [
+			{
+				"binding": "TASK_QUEUE",
+				"queue": "yopedia-tasks"
+			}
+		]
+	},
+	// Public site-owner handle for runtime server gates (owner-only Lint). The
+	// authoritative copy for the client is the build-time inline (deploy
+	// workflow); this is runtime parity for server reads. Public, not a secret.
+	//
+	// AUTONOMOUS_MAINTENANCE="on" enables the daily maintenance cron to actually
+	// enqueue maintain tasks (reconcile disputes, refresh stale pages, and the
+	// deterministic janitorial fixes). Anything other than "on" = dry-run.
+	// See workers/task-consumer/README.md.
+	"vars": {
+		"NEXT_PUBLIC_OWNER_HANDLE": "yuanhao",
+		"AUTONOMOUS_MAINTENANCE": "on"
+	}
 }
