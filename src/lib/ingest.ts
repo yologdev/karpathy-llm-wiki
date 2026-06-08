@@ -1400,7 +1400,8 @@ export async function ingest(
     // Restore the kept [[IMG:n]] tokens to real refs (omitted ones are dropped).
     wikiContent = restoreImageTokens(wikiContent, imageRefs);
   } else {
-    wikiContent = generateFallbackPage(title, content);
+    // Use the derived title so a title-less paste doesn't emit an empty `# ` H1.
+    wikiContent = generateFallbackPage(effectiveTitle, content);
   }
 
   // Pull the leading `CONCEPT:` / `ALIASES:` header lines the synthesis prompt

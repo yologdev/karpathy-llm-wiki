@@ -136,6 +136,10 @@ describe("ingest — title derivation", () => {
     const result = await ingest("", "Distributed Systems\n\nSome content about consensus.");
     // First non-empty line becomes the provisional title (no LLM in this test).
     expect(result.primarySlug).toBe("distributed-systems");
+    // The written body must use the derived title, not an empty `# ` heading.
+    const page = await readWikiPageWithFrontmatter("distributed-systems");
+    expect(page!.content).toContain("# Distributed Systems");
+    expect(page!.content).not.toMatch(/^#\s*$/m);
   });
 
   it("derives from a markdown H1 when the title is empty", async () => {
