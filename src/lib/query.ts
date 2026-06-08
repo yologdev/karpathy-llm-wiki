@@ -1,5 +1,5 @@
 import { callLLM, hasLLMKey } from "./llm";
-import { QUERY_MAX_OUTPUT_TOKENS } from "./constants";
+import { QUERY_MAX_OUTPUT_TOKENS, LISTED_OTHER_PAGES } from "./constants";
 import {
   listReadableWikiPages,
   writeWikiPageWithSideEffects,
@@ -116,15 +116,25 @@ export async function buildQuerySystemPrompt(
   selectedSlugs: string[],
   format: QueryFormat = "prose",
 ): Promise<string> {
-  // Build the full index listing so the LLM knows what else exists
-  const indexListing = entries
-    .map((e) => `- [${e.title}](${e.slug}.md) — ${e.summary}`)
-    .join("\n");
-
-  const indexSection =
-    entries.length > selectedSlugs.length
-      ? `\nThe wiki also contains these other pages (not loaded in full):\n${indexListing}\n`
-      : "";
+  // List the OTHER pages (those not loaded in full) so the LLM knows what else
+  // exists. On a large wiki this would be O(pages) of prompt tokens every query,
+  // so cap it at LISTED_OTHER_PAGES and summarise the remainder as a count. The
+  // loaded pages live in `context`; the answer is grounded there and citations
+  // are validated against the full slug set by the caller, so capping the
+  // "what else exists" hint costs awareness, not correctness.
+  const selectedSet = new Set(selectedSlugs);
+  const others = entries.filter((e) => !selectedSet.has(e.slug));
+  let indexSection = "";
+  if (others.length > 0) {
+    const listed = others.slice(0, LISTED_OTHER_PAGES);
+    const indexListing = listed
+      .map((e) => `- [${e.title}](${e.slug}.md) — ${e.summary}`)
+      .join("\n");
+    const remainder = others.length - listed.length;
+    const moreLine =
+      remainder > 0 ? `\n…and ${remainder} more pages not listed here.\n` : "\n";
+    indexSection = `\nThe wiki also contains these other pages (not loaded in full):\n${indexListing}\n${moreLine}`;
+  }
 
   let systemPrompt = SYSTEM_PROMPT_TEMPLATE
     .replace("{context}", context)

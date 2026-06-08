@@ -70,6 +70,15 @@ export const MAX_CONTEXT_PAGES = 10;
 export const BM25_FULLBODY_MAX_PAGES = 200;
 
 /**
+ * Cap on the "other pages (not loaded in full)" listing in the query system
+ * prompt. The full wiki index is helpful context on a small wiki, but listing
+ * every title+summary makes the prompt grow O(pages) — and cost with it — on a
+ * large one. At or below this many *other* pages the listing is exhaustive;
+ * above it, only the first N are named (plus a "…and M more" count).
+ */
+export const LISTED_OTHER_PAGES = 30;
+
+/**
  * BM25 term-frequency saturation parameter.
  *
  * Controls how quickly term frequency saturates. Higher values give more

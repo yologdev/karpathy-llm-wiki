@@ -768,6 +768,33 @@ describe("query", () => {
     const systemPrompt = mockedCallLLM.mock.calls[1][0];
     expect(systemPrompt).toContain("other pages");
   });
+
+  it("caps the other-pages listing on a large wiki (does not list all)", async () => {
+    const entries: IndexEntry[] = Array.from({ length: 45 }, (_, i) => ({
+      slug: `page-${i}`,
+      title: `Page ${i}`,
+      summary: `Summary ${i}`,
+    }));
+    // Select page-0; the other 44 exceed the LISTED_OTHER_PAGES (30) cap.
+    const prompt = await buildQuerySystemPrompt("ctx", entries, ["page-0"]);
+
+    // A late page is omitted, the cap is acknowledged, and the loaded page
+    // isn't re-listed as an "other" page.
+    expect(prompt).not.toContain("Page 44");
+    expect(prompt).toMatch(/and \d+ more pages not listed/);
+    expect(prompt).not.toContain("[Page 0](page-0.md)");
+  });
+
+  it("lists every other page when under the cap", async () => {
+    const entries: IndexEntry[] = Array.from({ length: 6 }, (_, i) => ({
+      slug: `p${i}`,
+      title: `P ${i}`,
+      summary: `s${i}`,
+    }));
+    const prompt = await buildQuerySystemPrompt("ctx", entries, ["p0"]);
+    expect(prompt).toContain("[P 5](p5.md)");
+    expect(prompt).not.toMatch(/more pages not listed/);
+  });
 });
 
 // ---------------------------------------------------------------------------
