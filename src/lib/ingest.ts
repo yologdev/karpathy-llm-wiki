@@ -1418,12 +1418,9 @@ export async function ingest(
     // Synthesized tags + any existing/caller tags. The reviewer sees these in
     // the card and (via the commit-from-preview path) they're sent back as
     // options.tags on approve, so the published page keeps them.
-    const tags = Array.from(
-      new Set([
-        ...(existingEntry?.tags ?? []),
-        ...(options?.tags ?? []),
-        ...conceptTags,
-      ]),
+    const tags = normalizeTags(
+      [...(existingEntry?.tags ?? []), ...(options?.tags ?? []), ...conceptTags],
+      Infinity, // canonicalize + dedupe; the per-synthesis cap was applied above
     );
 
     const previewMeta: IngestPreviewMeta = {
@@ -1509,8 +1506,9 @@ export async function ingest(
   frontmatter.sources = serializeSources([sourceEntry]);
 
   // Tags: synthesized (conceptTags, empty on commit-from-preview/fallback) plus
-  // any caller-supplied tags. Merged with existing tags below for re-ingests.
-  const newTags = [...new Set([...(options?.tags ?? []), ...conceptTags])];
+  // any caller-supplied tags — normalized to the canonical form so caller tags
+  // dedupe against synthesized ones. Merged with existing tags below for re-ingests.
+  const newTags = normalizeTags([...(options?.tags ?? []), ...conceptTags], Infinity);
   if (newTags.length > 0) {
     frontmatter.tags = newTags;
   }
@@ -1536,7 +1534,7 @@ export async function ingest(
       const existingTags = existing.frontmatter.tags.filter(
         (t): t is string => typeof t === "string",
       );
-      const merged = [...new Set([...existingTags, ...newTags])];
+      const merged = normalizeTags([...existingTags, ...newTags], Infinity);
       frontmatter.tags = merged;
     }
     // Preserve existing source_url if the new ingest doesn't provide one.

@@ -318,6 +318,34 @@ describe("ingest — auto tags", () => {
   });
   afterEach(() => {
     mockedHasLLMKey.mockReturnValue(false);
+    mockedCallLLM.mockReset();
+  });
+
+  it("keeps caller tags on the commit-from-preview path (generatedContent skips the LLM)", async () => {
+    // The web flow: handleApprove forwards the preview's tags as options.tags
+    // and sends generatedContent, which short-circuits the LLM — so the only
+    // way tags survive is the options.tags merge (conceptTags is empty here).
+    const result = await ingest("Reviewed Page", "original source text", {
+      generatedContent: "# Reviewed Page\n\n## Summary\n\nApproved body.",
+      tags: ["ml", "nlp"],
+    });
+    const page = await readWikiPageWithFrontmatter(result.primarySlug);
+    expect((page!.frontmatter.tags as string[]).sort()).toEqual(["ml", "nlp"]);
+  });
+
+  it("merges freshly synthesized tags with an existing page's on-disk tags on re-ingest", async () => {
+    mockedCallLLM.mockResolvedValue(
+      "CONCEPT: Topic Alpha\nTAGS: keep-me\n\n# Topic Alpha\n\nFirst version.",
+    );
+    await ingest("Topic Alpha", "first source about the topic");
+
+    mockedCallLLM.mockResolvedValue(
+      "CONCEPT: Topic Alpha\nTAGS: keep-me, new-one\n\n# Topic Alpha\n\nSecond version, changed.",
+    );
+    const result = await ingest("Topic Alpha", "second source, changed content");
+
+    const page = await readWikiPageWithFrontmatter(result.primarySlug);
+    expect((page!.frontmatter.tags as string[]).sort()).toEqual(["keep-me", "new-one"]);
   });
 
   it("persists LLM-synthesized TAGS to the page frontmatter", async () => {
