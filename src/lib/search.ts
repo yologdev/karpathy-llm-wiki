@@ -157,8 +157,11 @@ export async function findBacklinks(
   return withPageCache(async () => {
     // Readable pages only — a private page must not surface as a backlink to
     // viewers who can't see it. Visibility is ALWAYS enforced here on READ; the
-    // backlink index never encodes it.
-    const pages = await listReadableWikiPages(principal);
+    // backlink index never encodes it. Agent-scoped pages are also excluded so
+    // agent content never appears under a wiki page's "what links here".
+    const pages = (await listReadableWikiPages(principal)).filter(
+      (p) => !isAgentScopedType(p.type),
+    );
 
     // Fast path: the precomputed reverse-link index gives the source slugs that
     // link TO targetSlug in O(1). We then intersect with the readable set (the
@@ -218,8 +221,12 @@ export async function findSimilarPages(
     const scored = await relatedByVector(slug, limit + 10);
     if (scored.length === 0) return [];
 
+    // Commons-only: never surface agent-scoped pages (agent-knowledge/identity)
+    // as related to a wiki page — agent content stays in its own scope.
     const readable = new Map(
-      (await listReadableWikiPages(principal)).map((p) => [p.slug, p.title]),
+      (await listReadableWikiPages(principal))
+        .filter((p) => !isAgentScopedType(p.type))
+        .map((p) => [p.slug, p.title]),
     );
 
     const related: Array<{ slug: string; title: string; score: number }> = [];

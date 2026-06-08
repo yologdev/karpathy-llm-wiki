@@ -370,6 +370,24 @@ describe("findBacklinks", () => {
     const slugs = backlinks.map((b) => b.slug).sort();
     expect(slugs).toEqual(["page-a", "page-b", "page-c"]);
   });
+
+  it("excludes agent-scoped pages from a wiki page's backlinks", async () => {
+    await ensureDirectories();
+    await writeWikiPage("target", "# Target\n\nContent.");
+    await writeWikiPage("real-linker", "# Real\n\nSee [Target](target.md).");
+    await writeWikiPage(
+      "agent-linker",
+      "---\ntype: agent-knowledge\n---\n\n# Agent Linker\n\nSee [Target](target.md).",
+    );
+    await updateIndex([
+      { title: "Target", slug: "target", summary: "Content." },
+      { title: "Real", slug: "real-linker", summary: "Links." },
+      { title: "Agent Linker", slug: "agent-linker", summary: "Agent." },
+    ]);
+
+    const backlinks = await findBacklinks("target");
+    expect(backlinks.map((b) => b.slug)).toEqual(["real-linker"]); // agent excluded
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -403,6 +421,28 @@ describe("findSimilarPages", () => {
       { slug: "index", score: 0.9 },
       { slug: "log", score: 0.9 },
       { slug: "real", score: 0.7 },
+    ]);
+
+    const related = await findSimilarPages("anchor");
+    expect(related.map((r) => r.slug)).toEqual(["real"]);
+  });
+
+  it("excludes agent-scoped pages from a wiki page's related list", async () => {
+    await ensureDirectories();
+    await writeWikiPage("anchor", "# anchor\n\nBody.");
+    await writeWikiPage("real", "# real\n\nBody.");
+    await writeWikiPage(
+      "agent-pg",
+      "---\ntype: agent-knowledge\n---\n\n# Agent Page\n\nAgent body.",
+    );
+    await updateIndex([
+      { title: "Anchor", slug: "anchor", summary: "a" },
+      { title: "Real", slug: "real", summary: "r" },
+      { title: "Agent Page", slug: "agent-pg", summary: "ag" },
+    ]);
+    mockedRelatedByVector.mockResolvedValueOnce([
+      { slug: "agent-pg", score: 0.9 }, // agent content — must be excluded
+      { slug: "real", score: 0.8 },
     ]);
 
     const related = await findSimilarPages("anchor");
