@@ -2431,7 +2431,7 @@ describe("add_comment", () => {
     expect(reply.body).toBe("Nested reply");
   });
 
-  it("defaults author to anonymous when omitted", async () => {
+  it("throws when author is missing", async () => {
     await writeTestPage(
       "anon-comment",
       "---\ntags: [test]\n---\n# Anon Comment\n\nContent.",
@@ -2444,13 +2444,14 @@ describe("add_comment", () => {
       author: "yoyo",
     });
 
-    const comment = await handleAddComment({
-      pageSlug: "anon-comment",
-      threadIndex: 0,
-      content: "Anonymous contribution",
-    });
-
-    expect(comment.author).toBe("anonymous");
+    await expect(
+      handleAddComment({
+        pageSlug: "anon-comment",
+        threadIndex: 0,
+        content: "Anonymous contribution",
+        author: "",
+      }),
+    ).rejects.toThrow("author must be a non-empty string");
   });
 
   it("throws for missing pageSlug", async () => {
@@ -2459,6 +2460,7 @@ describe("add_comment", () => {
         pageSlug: "",
         threadIndex: 0,
         content: "test",
+        author: "yoyo",
       }),
     ).rejects.toThrow("pageSlug is required");
   });
@@ -2469,6 +2471,7 @@ describe("add_comment", () => {
         pageSlug: "some-page",
         threadIndex: 0,
         content: "",
+        author: "yoyo",
       }),
     ).rejects.toThrow("content must be a non-empty string");
   });

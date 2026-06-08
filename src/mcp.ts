@@ -1014,7 +1014,7 @@ export async function handleAddComment(args: {
   pageSlug: string;
   threadIndex: number;
   content: string;
-  author?: string | undefined;
+  author: string;
   parentId?: string | undefined;
 }): Promise<TalkComment> {
   if (!args.pageSlug) {
@@ -1026,8 +1026,10 @@ export async function handleAddComment(args: {
   if (!args.content || !args.content.trim()) {
     throw new Error("content must be a non-empty string");
   }
-  const author = args.author && args.author.trim() ? args.author.trim() : "anonymous";
-  return addComment(args.pageSlug, args.threadIndex, author, args.content.trim(), args.parentId);
+  if (!args.author || !args.author.trim()) {
+    throw new Error("author must be a non-empty string");
+  }
+  return addComment(args.pageSlug, args.threadIndex, args.author.trim(), args.content.trim(), args.parentId);
 }
 
 // ---------------------------------------------------------------------------
@@ -2264,8 +2266,7 @@ export function createMcpServer(): McpServer {
         .describe("Comment body (markdown supported)"),
       author: z
         .string()
-        .optional()
-        .describe('Author handle (agent ID or user handle, defaults to "anonymous")'),
+        .describe("Author handle (agent ID or user handle) — required for governance attribution"),
       parentId: z
         .string()
         .optional()
