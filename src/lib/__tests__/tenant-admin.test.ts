@@ -84,6 +84,19 @@ describe("deleteTenant", () => {
     );
   });
 
+  it("removes the tenant's query history (it lives in the silo)", async () => {
+    const { appendQuery } = await import("../query-history");
+    await appendQuery({ question: "q", answer: "a", sources: [], timestamp: "2025-01-01T00:00:00Z", owner: "alice" });
+    await appendQuery({ question: "q", answer: "a", sources: [], timestamp: "2025-01-01T00:00:00Z", owner: "bob" });
+    expect(await getStorage().fileExists("tenants/alice/query-history.json")).toBe(true);
+
+    await deleteTenant("alice");
+
+    // alice's private query log is gone with her silo; bob's is untouched.
+    expect(await getStorage().fileExists("tenants/alice/query-history.json")).toBe(false);
+    expect(await getStorage().fileExists("tenants/bob/query-history.json")).toBe(true);
+  });
+
   it("never deletes a page the handle only CONTRIBUTED to (owned by another)", async () => {
     // Owned by bob, but alice is a contributor — deleting tenant alice must
     // leave it intact (it belongs to bob's silo).

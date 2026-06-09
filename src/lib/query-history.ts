@@ -1,31 +1,43 @@
-import { wikiRelPath, ensureDirectories } from "./wiki";
+import {
+  wikiRelPath,
+  ensureDirectories,
+  tenantForOwner,
+  validateTenant,
+} from "./wiki";
 import { getStorage } from "./storage";
 import { withFileLock } from "./lock";
 import { isEnoent } from "./errors";
 import { logger } from "./logger";
 
 // ---------------------------------------------------------------------------
-// Query history — per-asker, persisted as one JSON file PER OWNER.
+// Query history — per-asker, persisted INSIDE the asker's tenant silo.
 // ---------------------------------------------------------------------------
 //
-// Privacy is **physical**: each asker's history lives in its own file
-// (`query-history/<ownerKey>.json`), so there is no shared store to accidentally
-// over-read — a reader can only ever touch the file for the owner it was given,
-// and `ownerKey` is an INJECTIVE, path-safe encoding (distinct owners never
-// collide and never produce an empty/shared key). (A query answer may quote the
-// asker's own private pages, so history must never be served cross-user.) The
-// legacy single `query-history.json` is migrated into per-owner files on first
-// access, then deleted; entries with no owner are dropped (already unreadable).
+// Each asker's history lives at `tenants/<tenant>/query-history.json`, keyed by
+// the same canonical identity (`tenantForOwner`) as their pages/raw/discuss.
+// Two consequences:
+//   * Privacy is **physical** — a reader only ever touches one tenant's file;
+//     there is no shared store to over-read, and the route only ever passes the
+//     session-derived handle (no client-supplied owner).
+//   * It lives in the user's folder, so **account deletion removes it for free**
+//     (`deleteTenant` wipes the whole `tenants/<tenant>/` prefix) — a query
+//     answer can quote the asker's private pages, so it must not orphan.
+//
+// It is NOT a vault (no page references, not browseable) and NOT part of the
+// page-based export.
+//
+// Migration: legacy locations (the original shared `wiki/query-history.json` and
+// the interim per-owner `wiki/query-history/<key>.json` files) are consolidated
+// into the silo on first access, then removed. Owner-less entries are dropped
+// (they were already unreadable).
 
 /** Maximum number of history entries to keep PER OWNER. Oldest trimmed on append. */
 const MAX_HISTORY_ENTRIES = 200;
 
-/** Legacy single-file store, migrated to per-owner files then removed. */
-const LEGACY_FILENAME = "query-history.json";
-/** Where an unparseable legacy file is quarantined (so migration stops retrying). */
-const LEGACY_CORRUPT_FILENAME = "query-history.json.corrupt";
-/** Lock serializing the one-time legacy → per-owner migration. */
-const LEGACY_LOCK = "query-history-legacy";
+/** Legacy shared single-file store (pre per-owner). Migrated then removed. */
+const LEGACY_SHARED_FILENAME = "query-history.json";
+/** Lock serializing edits to the legacy shared file during migration. */
+const LEGACY_SHARED_LOCK = "query-history-legacy";
 
 export interface QueryHistoryEntry {
   /** Unique id (timestamp-based). */
@@ -40,7 +52,7 @@ export interface QueryHistoryEntry {
   timestamp: string;
   /** Slug of the wiki page if the answer was saved. */
   savedAs?: string;
-  /** Owner handle — the asker. Determines which per-owner file the entry lives in. */
+  /** Owner handle — the asker. Resolved to a tenant for storage placement. */
   owner?: string;
 }
 
@@ -48,29 +60,23 @@ export interface QueryHistoryEntry {
 // Helpers
 // ---------------------------------------------------------------------------
 
-/**
- * Encode an owner handle into a path-safe file segment.
- *
- * Lowercased to match the app's canonical identity (same normalization as
- * `tenantForOwner`), then any character outside `[a-z0-9_-]` — and the `~`
- * marker itself — is escaped as `~<hex>`. This is **injective**: distinct
- * owners map to distinct keys (no `al.ice`/`alice` collision), it can never be
- * empty for a non-empty owner, and path-traversal bytes (`/`, `.`) are escaped.
- */
-function ownerKey(owner: string): string {
+/** Storage-relative path to an owner's history file inside their tenant silo. */
+function historyRelPathFor(owner: string): string {
+  const tenant = tenantForOwner(owner);
+  validateTenant(tenant);
+  return `tenants/${tenant}/query-history.json`;
+}
+
+/** Per-owner (per-tenant) lock key. */
+function lockFor(owner: string): string {
+  return `query-history:${tenantForOwner(owner)}`;
+}
+
+/** Interim per-owner file key (PR #493) — only used to locate files for migration. */
+function legacyOwnerKey(owner: string): string {
   return owner
     .toLowerCase()
     .replace(/[^a-z0-9_-]|~/g, (c) => `~${c.charCodeAt(0).toString(16)}`);
-}
-
-/** Per-owner history file path. */
-function historyRelPathFor(owner: string): string {
-  return wikiRelPath(`query-history/${ownerKey(owner)}.json`);
-}
-
-/** Per-owner lock key. */
-function lockFor(owner: string): string {
-  return `query-history:${ownerKey(owner)}`;
 }
 
 function generateId(): string {
@@ -80,12 +86,26 @@ function generateId(): string {
   return `${ts}-${rand}`;
 }
 
+/** Read a history file, returning [] on absence OR any error (for legacy reads). */
+async function readHistoryLenient(relPath: string): Promise<QueryHistoryEntry[]> {
+  try {
+    const raw = await getStorage().readFile(relPath);
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? (parsed as QueryHistoryEntry[]) : [];
+  } catch (err: unknown) {
+    if (!isEnoent(err)) {
+      logger.warn("query-history", `lenient read ${relPath} failed:`, err);
+    }
+    return [];
+  }
+}
+
 /**
- * Read an owner's history file. A genuinely absent file (ENOENT) → `[]`. A REAL
- * failure (transient storage error, or a corrupt/unparseable file) is RETHROWN —
- * a read-modify-write caller must never overwrite real history with an empty list
- * because a read transiently failed. {@link listQueries} (a pure read) downgrades
- * a throw to `[]` for that one request.
+ * Read an owner's silo history file. A genuinely absent file (ENOENT) → `[]`. A
+ * REAL failure (transient storage error, or a corrupt/unparseable file) is
+ * RETHROWN — a read-modify-write caller must never overwrite real history with an
+ * empty list because a read transiently failed. {@link listQueries} (a pure read)
+ * downgrades a throw to `[]` for that one request.
  */
 async function readOwnerHistory(owner: string): Promise<QueryHistoryEntry[]> {
   const relPath = historyRelPathFor(owner);
@@ -111,6 +131,16 @@ async function writeOwnerHistory(
   );
 }
 
+async function deleteSafe(relPath: string): Promise<void> {
+  try {
+    await getStorage().deleteFile(relPath);
+  } catch (err) {
+    if (!isEnoent(err)) {
+      logger.warn("query-history", `delete ${relPath} failed:`, err);
+    }
+  }
+}
+
 function trimToCap(entries: QueryHistoryEntry[]): QueryHistoryEntry[] {
   return entries.length > MAX_HISTORY_ENTRIES
     ? entries.slice(entries.length - MAX_HISTORY_ENTRIES)
@@ -118,94 +148,53 @@ function trimToCap(entries: QueryHistoryEntry[]): QueryHistoryEntry[] {
 }
 
 /**
- * One-time, lossless migration from the shared `query-history.json` to per-owner
- * files. Idempotent and cheap once done — the legacy file is deleted, so the
- * existence probe short-circuits without taking the lock. Owner-less entries are
- * dropped (they were never returned to anyone). Resilient by design: it never
- * throws (callers shouldn't break on a migration hiccup), it only deletes the
- * legacy file once EVERY owner migrated (a per-owner failure → retry next time,
- * the dedupe-by-id keeps that idempotent), and an unparseable legacy file is
- * quarantined so the probe stops firing forever.
+ * Consolidate an owner's history from the legacy locations into their tenant
+ * silo, then remove the legacy copies. Idempotent (dedupe by id) and loss-safe
+ * (silo is written BEFORE legacy is cleared). Cheap once done — both legacy
+ * probes miss. Never throws for the listQueries path beyond what readOwnerHistory
+ * would; a transient failure just defers migration to the next access.
  */
-async function migrateLegacyHistory(): Promise<void> {
+async function migrateLegacyHistory(owner: string): Promise<void> {
   const storage = getStorage();
-  const legacyPath = wikiRelPath(LEGACY_FILENAME);
+  const sharedPath = wikiRelPath(LEGACY_SHARED_FILENAME);
+  const perOwnerPath = wikiRelPath(`query-history/${legacyOwnerKey(owner)}.json`);
 
-  // Cheap probe: once migrated the file is gone → ENOENT → return un-locked. A
-  // transient probe failure just skips this round (the next request retries).
-  try {
-    await storage.readFile(legacyPath);
-  } catch (err) {
-    if (!isEnoent(err)) logger.warn("query-history", "legacy probe failed:", err);
-    return;
-  }
+  const [sharedExists, perOwnerExists] = await Promise.all([
+    storage.fileExists(sharedPath),
+    storage.fileExists(perOwnerPath),
+  ]);
+  if (!sharedExists && !perOwnerExists) return;
 
-  await withFileLock(LEGACY_LOCK, async () => {
-    // Re-read under the lock — another request may have just migrated + deleted.
-    let raw: string;
-    try {
-      raw = await storage.readFile(legacyPath);
-    } catch (err) {
-      if (!isEnoent(err)) logger.warn("query-history", "legacy reread failed:", err);
-      return; // gone (already migrated) or transient → retry next request
+  // Gather legacy entries for THIS owner (shared older than the interim files).
+  const sharedOwner = sharedExists
+    ? (await readHistoryLenient(sharedPath)).filter((e) => e.owner === owner)
+    : [];
+  const perOwner = perOwnerExists ? await readHistoryLenient(perOwnerPath) : [];
+
+  // 1. Merge into the silo first (so nothing is lost if cleanup later fails).
+  await withFileLock(lockFor(owner), async () => {
+    const silo = await readOwnerHistory(owner);
+    const seen = new Set(silo.map((e) => e.id));
+    const incoming = [...sharedOwner, ...perOwner].filter((e) => !seen.has(e.id));
+    if (incoming.length > 0) {
+      await writeOwnerHistory(owner, trimToCap([...incoming, ...silo]));
     }
-
-    let entries: QueryHistoryEntry[];
-    try {
-      const parsed = JSON.parse(raw);
-      entries = Array.isArray(parsed) ? (parsed as QueryHistoryEntry[]) : [];
-    } catch (err) {
-      // Unparseable legacy file: quarantine it (so the probe stops re-firing
-      // every request) and surface loudly — a human may want to recover it.
-      logger.error("query-history", "legacy file unparseable; quarantining:", err);
-      try {
-        await storage.writeFile(wikiRelPath(LEGACY_CORRUPT_FILENAME), raw);
-        await storage.deleteFile(legacyPath);
-      } catch (qerr) {
-        logger.error("query-history", "legacy quarantine failed:", qerr);
-      }
-      return;
-    }
-
-    // Group by owner; owner-less entries are intentionally dropped.
-    const byOwner = new Map<string, QueryHistoryEntry[]>();
-    for (const e of entries) {
-      if (!e.owner) continue;
-      const arr = byOwner.get(e.owner) ?? [];
-      arr.push(e);
-      byOwner.set(e.owner, arr);
-    }
-
-    // Merge each owner's legacy entries into their file (legacy first = older).
-    // The dedupe-by-id keeps this idempotent if migration re-runs (e.g. after a
-    // failed delete) — preserved legacy ids are already present and skipped.
-    let allMigrated = true;
-    for (const [owner, legacyEntries] of byOwner) {
-      try {
-        await withFileLock(lockFor(owner), async () => {
-          const existing = await readOwnerHistory(owner); // strict: throws on real failure
-          const seen = new Set(existing.map((e) => e.id));
-          const merged = [
-            ...legacyEntries.filter((e) => !seen.has(e.id)),
-            ...existing,
-          ];
-          await writeOwnerHistory(owner, trimToCap(merged));
-        });
-      } catch (err) {
-        allMigrated = false;
-        logger.error("query-history", `migrate owner "${owner}" failed; will retry:`, err);
-      }
-    }
-
-    // Only drop the shared file once every owner migrated — otherwise leave it
-    // for a retry (re-merge is idempotent via the id dedupe above).
-    if (!allMigrated) return;
-    try {
-      await storage.deleteFile(legacyPath);
-    } catch (err) {
-      if (!isEnoent(err)) logger.error("query-history", "legacy delete failed:", err);
-    }
+    if (perOwnerExists) await deleteSafe(perOwnerPath);
   });
+
+  // 2. Prune the shared file (after the silo write): drop this owner's entries
+  //    AND any owner-less ones (already unreadable), so it eventually empties and
+  //    is deleted. Done in a SEPARATE lock (not nested) to avoid cross-lock
+  //    ordering. The `rest.length === all.length` guard skips a needless rewrite.
+  if (sharedExists) {
+    await withFileLock(LEGACY_SHARED_LOCK, async () => {
+      const all = await readHistoryLenient(sharedPath);
+      const rest = all.filter((e) => e.owner && e.owner !== owner);
+      if (rest.length === all.length) return;
+      if (rest.length === 0) await deleteSafe(sharedPath);
+      else await storage.writeFile(sharedPath, JSON.stringify(rest, null, 2));
+    });
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -216,10 +205,8 @@ async function migrateLegacyHistory(): Promise<void> {
  * Append a query to the asker's history file. Uses a per-owner lock to prevent
  * TOCTOU races and trims to {@link MAX_HISTORY_ENTRIES}. An owner-less entry is
  * returned (for the client's optimistic UI) but NOT persisted — anonymous
- * history is unreadable anyway, and there is no shared file to write it to.
- *
- * A real read failure propagates rather than overwriting existing history with a
- * single-entry file (see {@link readOwnerHistory}).
+ * history is unreadable anyway. A real read failure propagates rather than
+ * overwriting existing history (see {@link readOwnerHistory}).
  */
 export async function appendQuery(
   entry: Omit<QueryHistoryEntry, "id">,
@@ -228,7 +215,7 @@ export async function appendQuery(
   if (!entry.owner) return newEntry;
   const owner = entry.owner;
 
-  await migrateLegacyHistory();
+  await migrateLegacyHistory(owner);
   await withFileLock(lockFor(owner), async () => {
     const entries = await readOwnerHistory(owner);
     entries.push(newEntry);
@@ -238,17 +225,17 @@ export async function appendQuery(
 }
 
 /**
- * List the asker's past queries, most recent first. Reads ONLY the owner's file;
- * an anonymous caller (no owner) gets nothing — privacy is enforced by which file
- * is read, not by a post-read filter. A read failure degrades to `[]` for this
- * one request (a pure read can't lose data).
+ * List the asker's past queries, most recent first. Reads ONLY the owner's silo
+ * file; an anonymous caller (no owner) gets nothing — privacy is enforced by
+ * which file is read, not by a post-read filter. A read failure degrades to `[]`
+ * for this one request (a pure read can't lose data).
  */
 export async function listQueries(
   limit?: number,
   owner?: string | null,
 ): Promise<QueryHistoryEntry[]> {
   if (!owner) return [];
-  await migrateLegacyHistory();
+  await migrateLegacyHistory(owner);
   let entries: QueryHistoryEntry[];
   try {
     entries = await readOwnerHistory(owner);
@@ -271,7 +258,7 @@ export async function markSaved(
   owner?: string | null,
 ): Promise<void> {
   if (!owner) return;
-  await migrateLegacyHistory();
+  await migrateLegacyHistory(owner);
   await withFileLock(lockFor(owner), async () => {
     const entries = await readOwnerHistory(owner);
     const entry = entries.find((e) => e.id === id);

@@ -3,303 +3,201 @@ import fs from "fs/promises";
 import os from "os";
 import path from "path";
 import { appendQuery, listQueries, markSaved } from "../query-history";
+import { tenantForOwner } from "../wiki";
 import { _resetLocks } from "../lock";
+import { _resetStorage } from "../storage";
 
-// History is per-asker now; tests append/list under a fixed owner.
+// History is per-asker, stored in the asker's tenant silo.
 const OWNER = "tester";
 
 let tmpDir: string;
 let originalWikiDir: string | undefined;
+let originalDataDir: string | undefined;
 
 beforeEach(async () => {
   _resetLocks();
   tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "qhist-test-"));
   originalWikiDir = process.env.WIKI_DIR;
+  originalDataDir = process.env.DATA_DIR;
   process.env.WIKI_DIR = path.join(tmpDir, "wiki");
+  process.env.DATA_DIR = tmpDir; // silo paths (tenants/<t>/…) resolve against this
+  _resetStorage();
 });
 
 afterEach(async () => {
-  if (originalWikiDir === undefined) {
-    delete process.env.WIKI_DIR;
-  } else {
-    process.env.WIKI_DIR = originalWikiDir;
-  }
+  if (originalWikiDir === undefined) delete process.env.WIKI_DIR;
+  else process.env.WIKI_DIR = originalWikiDir;
+  if (originalDataDir === undefined) delete process.env.DATA_DIR;
+  else process.env.DATA_DIR = originalDataDir;
+  _resetStorage();
   await fs.rm(tmpDir, { recursive: true, force: true });
 });
 
+/** The silo history file for an owner. */
+const siloFile = (owner: string) =>
+  path.join(tmpDir, "tenants", tenantForOwner(owner), "query-history.json");
+/** The legacy shared single-file store. */
+const legacySharedPath = () => path.join(tmpDir, "wiki", "query-history.json");
+/** A legacy interim per-owner file (PR #493). */
+const legacyPerOwnerPath = (key: string) =>
+  path.join(tmpDir, "wiki", "query-history", `${key}.json`);
+
+const entry = (owner: string, over: Partial<Record<string, unknown>> = {}) => ({
+  question: "q", answer: "a", sources: [], timestamp: "2025-01-01T00:00:00Z", owner, ...over,
+});
+
 describe("appendQuery", () => {
-  it("creates history file and appends entry", async () => {
-    const entry = await appendQuery({
-      question: "What is machine learning?",
-      answer: "Machine learning is...",
-      sources: ["machine-learning"],
-      timestamp: new Date().toISOString(),
-      owner: OWNER,
-    });
+  it("creates the silo history file and appends an entry", async () => {
+    const e = await appendQuery(entry(OWNER, { question: "What is machine learning?", answer: "ML is..." }));
+    expect(e.id).toBeTruthy();
+    expect(e.question).toBe("What is machine learning?");
 
-    expect(entry.id).toBeTruthy();
-    expect(entry.question).toBe("What is machine learning?");
-    expect(entry.answer).toBe("Machine learning is...");
-    expect(entry.sources).toEqual(["machine-learning"]);
-
-    // The per-owner file should exist (physical isolation, not a shared file).
-    const filePath = path.join(tmpDir, "wiki", "query-history", "tester.json");
-    const raw = await fs.readFile(filePath, "utf-8");
-    const data = JSON.parse(raw);
+    const data = JSON.parse(await fs.readFile(siloFile(OWNER), "utf-8"));
     expect(data).toHaveLength(1);
-    expect(data[0].id).toBe(entry.id);
+    expect(data[0].id).toBe(e.id);
   });
 
   it("appends multiple entries in order", async () => {
-    await appendQuery({ question: "Q1", answer: "A1", sources: [], timestamp: "2025-01-01T00:00:00Z", owner: OWNER });
-    await appendQuery({ question: "Q2", answer: "A2", sources: ["page-a"], timestamp: "2025-01-02T00:00:00Z", owner: OWNER });
-    await appendQuery({ question: "Q3", answer: "A3", sources: [], timestamp: "2025-01-03T00:00:00Z", owner: OWNER });
+    await appendQuery(entry(OWNER, { question: "Q1", timestamp: "2025-01-01T00:00:00Z" }));
+    await appendQuery(entry(OWNER, { question: "Q2", timestamp: "2025-01-02T00:00:00Z" }));
+    await appendQuery(entry(OWNER, { question: "Q3", timestamp: "2025-01-03T00:00:00Z" }));
 
-    const filePath = path.join(tmpDir, "wiki", "query-history", "tester.json");
-    const raw = await fs.readFile(filePath, "utf-8");
-    const data = JSON.parse(raw);
-    expect(data).toHaveLength(3);
-    expect(data[0].question).toBe("Q1");
-    expect(data[1].question).toBe("Q2");
-    expect(data[2].question).toBe("Q3");
-  });
-});
-
-describe("per-owner physical isolation + legacy migration", () => {
-  const legacyPath = () => path.join(tmpDir, "wiki", "query-history.json");
-  const ownerFile = (owner: string) =>
-    path.join(tmpDir, "wiki", "query-history", `${owner}.json`);
-
-  it("writes each asker to a separate file and never a shared one", async () => {
-    await appendQuery({ question: "alice q", answer: "a", sources: [], timestamp: "2025-01-01T00:00:00Z", owner: "alice" });
-    await appendQuery({ question: "bob q", answer: "b", sources: [], timestamp: "2025-01-02T00:00:00Z", owner: "bob" });
-
-    expect(JSON.parse(await fs.readFile(ownerFile("alice"), "utf-8"))).toHaveLength(1);
-    expect(JSON.parse(await fs.readFile(ownerFile("bob"), "utf-8"))).toHaveLength(1);
-    // No shared query-history.json — there's no cross-user file to over-read.
-    await expect(fs.access(legacyPath())).rejects.toThrow();
+    const data = JSON.parse(await fs.readFile(siloFile(OWNER), "utf-8"));
+    expect(data.map((d: { question: string }) => d.question)).toEqual(["Q1", "Q2", "Q3"]);
   });
 
-  it("migrates a legacy shared file into per-owner files, then deletes it", async () => {
-    await fs.mkdir(path.join(tmpDir, "wiki"), { recursive: true });
-    await fs.writeFile(
-      legacyPath(),
-      JSON.stringify([
-        { id: "1", question: "alice q", answer: "a", sources: [], timestamp: "2025-01-01T00:00:00Z", owner: "alice" },
-        { id: "2", question: "bob q", answer: "b", sources: [], timestamp: "2025-01-02T00:00:00Z", owner: "bob" },
-        { id: "3", question: "orphan q", answer: "o", sources: [], timestamp: "2025-01-03T00:00:00Z" }, // no owner → dropped
-      ]),
-      "utf-8",
-    );
-
-    // First read for alice triggers the migration.
-    expect((await listQueries(undefined, "alice")).map((e) => e.question)).toEqual(["alice q"]);
-    // Bob's entry was preserved (lossless), the orphan dropped, legacy removed.
-    expect((await listQueries(undefined, "bob")).map((e) => e.question)).toEqual(["bob q"]);
-    await expect(fs.access(legacyPath())).rejects.toThrow();
-    expect(JSON.parse(await fs.readFile(ownerFile("alice"), "utf-8"))).toHaveLength(1);
-  });
-
-  it("a new entry survives the migration (appended after legacy entries)", async () => {
-    await fs.mkdir(path.join(tmpDir, "wiki"), { recursive: true });
-    await fs.writeFile(
-      legacyPath(),
-      JSON.stringify([
-        { id: "old", question: "old q", answer: "a", sources: [], timestamp: "2025-01-01T00:00:00Z", owner: "alice" },
-      ]),
-      "utf-8",
-    );
-
-    await appendQuery({ question: "new q", answer: "b", sources: [], timestamp: "2025-01-02T00:00:00Z", owner: "alice" });
-
-    // Most-recent-first: the new entry, then the migrated legacy one.
-    expect((await listQueries(undefined, "alice")).map((e) => e.question)).toEqual(["new q", "old q"]);
-    await expect(fs.access(legacyPath())).rejects.toThrow();
+  it("does not persist an owner-less entry (returns it for optimistic UI)", async () => {
+    const e = await appendQuery({ question: "anon", answer: "a", sources: [], timestamp: "2025-01-01T00:00:00Z" });
+    expect(e.id).toBeTruthy();
+    expect(await listQueries(undefined, null)).toEqual([]);
   });
 });
 
 describe("listQueries", () => {
   it("returns entries most recent first", async () => {
-    await appendQuery({ question: "First", answer: "A1", sources: [], timestamp: "2025-01-01T00:00:00Z", owner: OWNER });
-    await appendQuery({ question: "Second", answer: "A2", sources: [], timestamp: "2025-01-02T00:00:00Z", owner: OWNER });
-
-    const entries = await listQueries(undefined, OWNER);
-    expect(entries).toHaveLength(2);
-    expect(entries[0].question).toBe("Second");
-    expect(entries[1].question).toBe("First");
+    await appendQuery(entry(OWNER, { question: "First", timestamp: "2025-01-01T00:00:00Z" }));
+    await appendQuery(entry(OWNER, { question: "Second", timestamp: "2025-01-02T00:00:00Z" }));
+    expect((await listQueries(undefined, OWNER)).map((e) => e.question)).toEqual(["Second", "First"]);
   });
 
-  it("respects limit parameter", async () => {
+  it("respects the limit", async () => {
     for (let i = 0; i < 10; i++) {
-      await appendQuery({ question: `Q${i}`, answer: `A${i}`, sources: [], timestamp: new Date(2025, 0, i + 1).toISOString(), owner: OWNER });
+      await appendQuery(entry(OWNER, { question: `Q${i}`, timestamp: new Date(2025, 0, i + 1).toISOString() }));
     }
-
-    const entries = await listQueries(3, OWNER);
-    expect(entries).toHaveLength(3);
-    expect(entries[0].question).toBe("Q9");
-    expect(entries[1].question).toBe("Q8");
-    expect(entries[2].question).toBe("Q7");
+    expect((await listQueries(3, OWNER)).map((e) => e.question)).toEqual(["Q9", "Q8", "Q7"]);
   });
 
-  it("is per-asker: returns only the owner's entries, none for anonymous", async () => {
-    await appendQuery({ question: "alice q", answer: "a", sources: [], timestamp: "2025-01-01T00:00:00Z", owner: "alice" });
-    await appendQuery({ question: "bob q", answer: "b", sources: [], timestamp: "2025-01-02T00:00:00Z", owner: "bob" });
-
+  it("is per-asker: only the owner's entries, none for anonymous", async () => {
+    await appendQuery(entry("alice", { question: "alice q" }));
+    await appendQuery(entry("bob", { question: "bob q", timestamp: "2025-01-02T00:00:00Z" }));
     expect((await listQueries(undefined, "alice")).map((e) => e.question)).toEqual(["alice q"]);
     expect((await listQueries(undefined, "bob")).map((e) => e.question)).toEqual(["bob q"]);
-    // Anonymous (no owner) sees nothing.
     expect(await listQueries()).toEqual([]);
     expect(await listQueries(undefined, null)).toEqual([]);
   });
 
-  it("returns empty array when no history file exists", async () => {
-    await fs.mkdir(path.join(tmpDir, "wiki"), { recursive: true });
-    const entries = await listQueries(undefined, OWNER);
-    expect(entries).toEqual([]);
-  });
-
-  it("returns empty array when wiki dir does not exist", async () => {
-    process.env.WIKI_DIR = path.join(tmpDir, "nonexistent");
-    const entries = await listQueries(undefined, OWNER);
-    expect(entries).toEqual([]);
-  });
-
-  it("handles malformed JSON file gracefully", async () => {
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
-    const wikiDir = path.join(tmpDir, "wiki");
-    await fs.mkdir(wikiDir, { recursive: true });
-    await fs.writeFile(path.join(wikiDir, "query-history.json"), "not json!", "utf-8");
-
-    const entries = await listQueries(undefined, OWNER);
-    expect(entries).toEqual([]);
-    warnSpy.mockRestore();
+  it("returns [] when no history exists", async () => {
+    expect(await listQueries(undefined, OWNER)).toEqual([]);
   });
 });
 
 describe("markSaved", () => {
-  it("updates savedAs field on the matching entry", async () => {
-    const e1 = await appendQuery({ question: "Q1", answer: "A1", sources: [], timestamp: "2025-01-01T00:00:00Z", owner: OWNER });
-    const e2 = await appendQuery({ question: "Q2", answer: "A2", sources: [], timestamp: "2025-01-02T00:00:00Z", owner: OWNER });
-
+  it("updates savedAs on the matching entry only", async () => {
+    const e1 = await appendQuery(entry(OWNER, { question: "Q1" }));
+    const e2 = await appendQuery(entry(OWNER, { question: "Q2", timestamp: "2025-01-02T00:00:00Z" }));
     await markSaved(e1.id, "answer-q1", OWNER);
 
     const entries = await listQueries(undefined, OWNER);
-    const updated1 = entries.find((e) => e.id === e1.id);
-    const updated2 = entries.find((e) => e.id === e2.id);
-
-    expect(updated1?.savedAs).toBe("answer-q1");
-    expect(updated2?.savedAs).toBeUndefined();
+    expect(entries.find((e) => e.id === e1.id)?.savedAs).toBe("answer-q1");
+    expect(entries.find((e) => e.id === e2.id)?.savedAs).toBeUndefined();
   });
 
-  it("does nothing for non-existent id", async () => {
-    await appendQuery({ question: "Q1", answer: "A1", sources: [], timestamp: "2025-01-01T00:00:00Z", owner: OWNER });
-
-    await markSaved("nonexistent-id", "some-slug", OWNER);
-
-    const entries = await listQueries(undefined, OWNER);
-    expect(entries).toHaveLength(1);
-    expect(entries[0].savedAs).toBeUndefined();
-  });
-
-  it("does not let a non-owner mark someone else's entry", async () => {
-    const e = await appendQuery({ question: "Q", answer: "A", sources: [], timestamp: "2025-01-01T00:00:00Z", owner: "alice" });
+  it("cannot mark another owner's entry (different silo file)", async () => {
+    const e = await appendQuery(entry("alice", { question: "Q" }));
     await markSaved(e.id, "sneaky", "bob");
-    const entries = await listQueries(undefined, "alice");
-    expect(entries[0].savedAs).toBeUndefined();
+    expect((await listQueries(undefined, "alice"))[0].savedAs).toBeUndefined();
   });
 });
 
-describe("max history cap", () => {
-  it("trims oldest entries when exceeding 200", async () => {
-    const wikiDir = path.join(tmpDir, "wiki");
-    await fs.mkdir(wikiDir, { recursive: true });
+describe("storage placement + isolation", () => {
+  it("stores history inside the tenant silo, not the shared wiki root", async () => {
+    await appendQuery(entry("alice", { question: "alice q" }));
+    await appendQuery(entry("bob", { question: "bob q", timestamp: "2025-01-02T00:00:00Z" }));
 
-    const seed: Array<{ id: string; question: string; answer: string; sources: string[]; timestamp: string; owner: string }> = [];
-    for (let i = 0; i < 200; i++) {
-      seed.push({ id: `seed-${i}`, question: `Q${i}`, answer: `A${i}`, sources: [], timestamp: new Date(2025, 0, 1, 0, 0, i).toISOString(), owner: OWNER });
-    }
-    await fs.writeFile(path.join(wikiDir, "query-history.json"), JSON.stringify(seed, null, 2), "utf-8");
-
-    for (let i = 200; i < 205; i++) {
-      await appendQuery({ question: `Q${i}`, answer: `A${i}`, sources: [], timestamp: new Date(2025, 0, 1, 0, 0, i).toISOString(), owner: OWNER });
-    }
-
-    const entries = await listQueries(undefined, OWNER);
-    expect(entries).toHaveLength(200);
-    expect(entries[0].question).toBe("Q204");
-    expect(entries[entries.length - 1].question).toBe("Q5");
-  });
-});
-
-describe("hardening — isolation, idempotency, no-clobber", () => {
-  const wikiDir = () => path.join(tmpDir, "wiki");
-  const legacyPath = () => path.join(wikiDir(), "query-history.json");
-  const ownerFile = (key: string) =>
-    path.join(wikiDir(), "query-history", `${key}.json`);
-
-  it("never clobbers history when a read fails (corrupt file → throws, file untouched)", async () => {
-    await fs.mkdir(path.join(wikiDir(), "query-history"), { recursive: true });
-    await fs.writeFile(ownerFile("tester"), "not json!", "utf-8");
-
-    await expect(
-      appendQuery({ question: "q", answer: "a", sources: [], timestamp: "2025-01-01T00:00:00Z", owner: "tester" }),
-    ).rejects.toThrow();
-
-    // The unreadable file is left intact — NOT overwritten with [newEntry].
-    expect(await fs.readFile(ownerFile("tester"), "utf-8")).toBe("not json!");
-  });
-
-  it("ownerKey is injective: handles differing only by stripped chars don't collide", async () => {
-    await appendQuery({ question: "dotted", answer: "a", sources: [], timestamp: "2025-01-01T00:00:00Z", owner: "al.ice" });
-    await appendQuery({ question: "plain", answer: "b", sources: [], timestamp: "2025-01-02T00:00:00Z", owner: "alice" });
-
-    expect((await listQueries(undefined, "al.ice")).map((e) => e.question)).toEqual(["dotted"]);
-    expect((await listQueries(undefined, "alice")).map((e) => e.question)).toEqual(["plain"]);
-  });
-
-  it("all-symbol handles don't collapse into a shared/empty file", async () => {
-    await appendQuery({ question: "bang", answer: "a", sources: [], timestamp: "2025-01-01T00:00:00Z", owner: "!!!" });
-    await appendQuery({ question: "hash", answer: "b", sources: [], timestamp: "2025-01-02T00:00:00Z", owner: "###" });
-
-    expect((await listQueries(undefined, "!!!")).map((e) => e.question)).toEqual(["bang"]);
-    expect((await listQueries(undefined, "###")).map((e) => e.question)).toEqual(["hash"]);
-    // No shared `.json` catch-all (the old empty-key bug).
-    await expect(fs.access(ownerFile(""))).rejects.toThrow();
+    expect(JSON.parse(await fs.readFile(siloFile("alice"), "utf-8"))).toHaveLength(1);
+    expect(JSON.parse(await fs.readFile(siloFile("bob"), "utf-8"))).toHaveLength(1);
+    // No shared file at the wiki root.
+    await expect(fs.access(legacySharedPath())).rejects.toThrow();
+    // The path is under tenants/<tenant>/.
+    expect(siloFile("alice")).toContain(path.join("tenants", "alice"));
   });
 
   it("the cap is per-owner: one owner at 200 doesn't trim another", async () => {
     for (let i = 0; i < 205; i++) {
-      await appendQuery({ question: `a${i}`, answer: "x", sources: [], timestamp: new Date(2025, 0, 1, 0, 0, i).toISOString(), owner: "alice" });
+      await appendQuery(entry("alice", { question: `a${i}`, timestamp: new Date(2025, 0, 1, 0, 0, i).toISOString() }));
     }
     for (let i = 0; i < 3; i++) {
-      await appendQuery({ question: `b${i}`, answer: "x", sources: [], timestamp: new Date(2025, 0, 1, 0, 0, i).toISOString(), owner: "bob" });
+      await appendQuery(entry("bob", { question: `b${i}`, timestamp: new Date(2025, 0, 1, 0, 0, i).toISOString() }));
     }
     expect(await listQueries(undefined, "alice")).toHaveLength(200);
     expect(await listQueries(undefined, "bob")).toHaveLength(3);
   });
 
-  it("migration is idempotent if the legacy file reappears (dedupe by id)", async () => {
-    await fs.mkdir(wikiDir(), { recursive: true });
-    const legacy = [{ id: "x1", question: "q", answer: "a", sources: [], timestamp: "2025-01-01T00:00:00Z", owner: "alice" }];
-    await fs.writeFile(legacyPath(), JSON.stringify(legacy), "utf-8");
+  it("never clobbers history when a read fails (corrupt file → throws, untouched)", async () => {
+    await fs.mkdir(path.dirname(siloFile(OWNER)), { recursive: true });
+    await fs.writeFile(siloFile(OWNER), "not json!", "utf-8");
+    await expect(appendQuery(entry(OWNER))).rejects.toThrow();
+    expect(await fs.readFile(siloFile(OWNER), "utf-8")).toBe("not json!");
+  });
+});
 
-    expect(await listQueries(undefined, "alice")).toHaveLength(1);
-    await expect(fs.access(legacyPath())).rejects.toThrow();
+describe("legacy migration → tenant silo", () => {
+  it("migrates the shared file into per-tenant silo files, dropping owner-less + deleting it", async () => {
+    await fs.mkdir(path.join(tmpDir, "wiki"), { recursive: true });
+    await fs.writeFile(legacySharedPath(), JSON.stringify([
+      { id: "1", ...entry("alice", { question: "alice q" }) },
+      { id: "2", ...entry("bob", { question: "bob q", timestamp: "2025-01-02T00:00:00Z" }) },
+      { id: "3", question: "orphan", answer: "o", sources: [], timestamp: "2025-01-03T00:00:00Z" }, // no owner
+    ]), "utf-8");
 
-    // Legacy reappears with the SAME id (e.g. a failed delete that later resolves).
-    await fs.writeFile(legacyPath(), JSON.stringify(legacy), "utf-8");
-    expect(await listQueries(undefined, "alice")).toHaveLength(1); // no duplicate
+    expect((await listQueries(undefined, "alice")).map((e) => e.question)).toEqual(["alice q"]);
+    expect((await listQueries(undefined, "bob")).map((e) => e.question)).toEqual(["bob q"]);
+    // Lossless for owned entries; orphan dropped; shared file removed once empty.
+    await expect(fs.access(legacySharedPath())).rejects.toThrow();
+    expect(JSON.parse(await fs.readFile(siloFile("alice"), "utf-8"))).toHaveLength(1);
   });
 
-  it("merges legacy entries BELOW pre-existing per-owner entries (most-recent-first)", async () => {
-    await fs.mkdir(path.join(wikiDir(), "query-history"), { recursive: true });
-    await fs.writeFile(ownerFile("alice"), JSON.stringify([
-      { id: "new", question: "newer q", answer: "a", sources: [], timestamp: "2025-01-05T00:00:00Z", owner: "alice" },
-    ]), "utf-8");
-    await fs.writeFile(legacyPath(), JSON.stringify([
-      { id: "old", question: "older q", answer: "a", sources: [], timestamp: "2025-01-01T00:00:00Z", owner: "alice" },
+  it("migrates an interim per-owner file (PR #493) into the silo, then removes it", async () => {
+    const key = "alice"; // legacyOwnerKey("alice") === "alice"
+    await fs.mkdir(path.join(tmpDir, "wiki", "query-history"), { recursive: true });
+    await fs.writeFile(legacyPerOwnerPath(key), JSON.stringify([
+      { id: "p1", ...entry("alice", { question: "interim q" }) },
     ]), "utf-8");
 
-    expect((await listQueries(undefined, "alice")).map((e) => e.question)).toEqual(["newer q", "older q"]);
+    expect((await listQueries(undefined, "alice")).map((e) => e.question)).toEqual(["interim q"]);
+    await expect(fs.access(legacyPerOwnerPath(key))).rejects.toThrow();
+    expect(JSON.parse(await fs.readFile(siloFile("alice"), "utf-8"))).toHaveLength(1);
+  });
+
+  it("a new entry survives migration (appended above the migrated legacy ones)", async () => {
+    await fs.mkdir(path.join(tmpDir, "wiki"), { recursive: true });
+    await fs.writeFile(legacySharedPath(), JSON.stringify([
+      { id: "old", ...entry("alice", { question: "old q" }) },
+    ]), "utf-8");
+
+    await appendQuery(entry("alice", { question: "new q", timestamp: "2025-01-02T00:00:00Z" }));
+    expect((await listQueries(undefined, "alice")).map((e) => e.question)).toEqual(["new q", "old q"]);
+  });
+
+  it("is idempotent if a legacy file reappears (dedupe by id, no duplication)", async () => {
+    await fs.mkdir(path.join(tmpDir, "wiki", "query-history"), { recursive: true });
+    const legacy = JSON.stringify([{ id: "x1", ...entry("alice", { question: "q" }) }]);
+    await fs.writeFile(legacyPerOwnerPath("alice"), legacy, "utf-8");
+
+    expect(await listQueries(undefined, "alice")).toHaveLength(1);
+    // Reappears with the same id (e.g. a failed delete that later resolves).
+    await fs.mkdir(path.join(tmpDir, "wiki", "query-history"), { recursive: true });
+    await fs.writeFile(legacyPerOwnerPath("alice"), legacy, "utf-8");
+    expect(await listQueries(undefined, "alice")).toHaveLength(1); // no duplicate
   });
 });
