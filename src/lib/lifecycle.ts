@@ -264,11 +264,20 @@ async function runPageLifecycleOp(
   if (op.kind === "write") {
     // Skip embedding rendered artifacts (e.g. saved `html` outputs): they're
     // excluded from the search/query corpus, and their raw markup would pollute
-    // the vector store.
-    const fmType = parseFrontmatter(op.content).data.type;
-    const isArtifact = isArtifactType(
-      typeof fmType === "string" ? fmType : undefined,
-    );
+    // the vector store. Fail-open: a frontmatter parse error must NOT break the
+    // (already-committed) write — fall back to attempting the embedding, which
+    // is itself guarded below.
+    let isArtifact = false;
+    try {
+      const fmType = parseFrontmatter(op.content).data.type;
+      isArtifact = isArtifactType(typeof fmType === "string" ? fmType : undefined);
+    } catch (err) {
+      logger.warn(
+        "wiki",
+        `embedding-skip frontmatter parse failed for "${slug}":`,
+        getErrorMessage(err, String(err)),
+      );
+    }
     if (!isArtifact) {
       try {
         await upsertEmbedding(slug, op.content);

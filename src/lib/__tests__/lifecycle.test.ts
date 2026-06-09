@@ -1,4 +1,5 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import * as embeddings from "../embeddings";
 import fs from "fs/promises";
 import os from "os";
 import path from "path";
@@ -126,6 +127,28 @@ describe("writeWikiPageWithSideEffects", () => {
     // Should have the updated summary
     expect(index).toContain("Updated summary");
     expect(index).not.toContain("A test page");
+  });
+
+  // Embedding: skipped for saved html artifacts, run for normal pages.
+  it("embeds a normal page but SKIPS embedding for an html artifact", async () => {
+    const spy = vi.spyOn(embeddings, "upsertEmbedding").mockResolvedValue();
+
+    await writeWikiPageWithSideEffects(makeOpts({ slug: "normal-page" }));
+    expect(spy).toHaveBeenCalledWith("normal-page", expect.any(String));
+
+    spy.mockClear();
+    await writeWikiPageWithSideEffects(
+      makeOpts({
+        slug: "html-artifact",
+        content: serializeFrontmatter(
+          { type: "html" },
+          "<!doctype html><html><body>chart</body></html>",
+        ),
+      }),
+    );
+    expect(spy).not.toHaveBeenCalled();
+
+    spy.mockRestore();
   });
 
   // 4. Appends to log

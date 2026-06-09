@@ -44,6 +44,34 @@ describe("composeSrcDoc", () => {
     expect(out).toContain("<p>just a fragment</p>");
   });
 
+  it("injects our restrictive CSP BEFORE a model-supplied relaxing one", () => {
+    // A model that emits its own relaxing <meta CSP> can't replace ours: ours is
+    // injected first, and per the CSP spec multiple policies combine to the most
+    // restrictive (intersection), so `default-src 'none'` still wins.
+    const out = composeSrcDoc(
+      '<html><head><meta http-equiv="Content-Security-Policy" content="default-src *"></head><body>x</body></html>',
+    );
+    expect(out.indexOf("default-src 'none'")).toBeLessThan(
+      out.indexOf("default-src *"),
+    );
+    // Our <base target="_blank"> is also injected ahead of any model <base>.
+    expect(out).toContain('<base target="_blank">');
+  });
+
+  it("handles empty / whitespace input (wraps into a valid CSP'd document)", () => {
+    for (const input of ["", "   ", "\n"]) {
+      const out = composeSrcDoc(input);
+      expect(out.toLowerCase()).toContain("<!doctype html>");
+      expect(out).toContain("default-src 'none'");
+    }
+  });
+
+  it("inserts after a <head> with attributes", () => {
+    const out = composeSrcDoc("<html><head lang=\"en\"><title>T</title></head><body>b</body></html>");
+    expect(out).toContain('<head lang="en">');
+    expect(out.indexOf("Content-Security-Policy")).toBeLessThan(out.indexOf("<title>"));
+  });
+
   it("the sandbox never grants same-origin (isolation invariant)", () => {
     // The escape footgun is allow-scripts + allow-same-origin together.
     expect(HTML_SANDBOX).toContain("allow-scripts");

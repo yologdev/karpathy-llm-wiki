@@ -31,7 +31,9 @@ export function HtmlPreview({ html }: { html: string }) {
         HTML_HEIGHT_MESSAGE_KEY
       ];
       if (typeof reported === "number" && reported > 0) {
-        setHeight(Math.min(Math.ceil(reported), HTML_MAX_HEIGHT));
+        // Clamp: cap a runaway/hostile grow, and floor a degenerate (e.g. 1px)
+        // report so the artifact can't collapse to an invisible sliver.
+        setHeight(Math.max(140, Math.min(Math.ceil(reported), HTML_MAX_HEIGHT)));
       }
     }
     window.addEventListener("message", onMessage);

@@ -94,4 +94,27 @@ describe("POST /api/query/stream — agent-scope filtering (#413)", () => {
     expect(passedEntries.map((e) => e.type)).toContain("agent-identity");
     expect(passedEntries.map((e) => e.type)).toContain("agent-knowledge");
   });
+
+  it("excludes saved html artifacts from an unscoped query (and accepts format:html)", async () => {
+    mockedList.mockResolvedValue([
+      { slug: "concept-a", title: "A", summary: "", type: undefined },
+      { slug: "saved-chart", title: "Chart", summary: "", type: "html" },
+    ] as unknown as Awaited<ReturnType<typeof listReadableWikiPages>>);
+
+    await POST(makeRequest({ question: "?", format: "html" }));
+
+    expect(mockedSelect).toHaveBeenCalledTimes(1);
+    const passedEntries = mockedSelect.mock.calls[0][1] as Array<{ type?: string }>;
+    // The artifact's markup must never enter the LLM context.
+    expect(passedEntries.map((e) => e.type)).not.toContain("html");
+    expect(passedEntries.map((e) => (e as { slug: string }).slug)).toEqual([
+      "concept-a",
+    ]);
+  });
+
+  it("rejects an invalid format with 400", async () => {
+    const res = await POST(makeRequest({ question: "?", format: "bogus" }));
+    expect(res.status).toBe(400);
+    expect(mockedSelect).not.toHaveBeenCalled();
+  });
 });

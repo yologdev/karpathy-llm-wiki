@@ -17,9 +17,11 @@ vi.mock("@/lib/auth", () => ({
 }));
 
 import { saveAnswerToWiki } from "@/lib/query";
+import { getPrincipal } from "@/lib/auth";
 import { POST } from "@/app/api/query/save/route";
 
 const mockedSaveAnswer = vi.mocked(saveAnswerToWiki);
+const mockedGetPrincipal = vi.mocked(getPrincipal);
 
 function makeRequest(body: unknown): NextRequest {
   return new NextRequest("http://localhost/api/query/save", {
@@ -32,6 +34,7 @@ function makeRequest(body: unknown): NextRequest {
 beforeEach(() => {
   mockedSaveAnswer.mockReset();
   mockedSaveAnswer.mockResolvedValue({ slug: "test-page" } as ReturnType<typeof saveAnswerToWiki> extends Promise<infer T> ? T : never);
+  mockedGetPrincipal.mockResolvedValue({ id: "test-user", handle: "test-user" });
 });
 
 describe("POST /api/query/save", () => {
@@ -93,6 +96,20 @@ describe("POST /api/query/save", () => {
       "html",
       "test-user", // owner from the session principal
     );
+  });
+
+  it("rejects an HTML save with 401 when the principal can't be resolved", async () => {
+    mockedGetPrincipal.mockResolvedValueOnce(null);
+    const req = makeRequest({
+      title: "Chart",
+      content: "<!doctype html><html><body>x</body></html>",
+      format: "html",
+    });
+
+    const res = await POST(req);
+    expect(res.status).toBe(401);
+    // No mis-attributed system-owned artifact is written.
+    expect(mockedSaveAnswer).not.toHaveBeenCalled();
   });
 
   it("rejects non-array sources with 400", async () => {
