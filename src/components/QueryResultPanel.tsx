@@ -62,23 +62,25 @@ export function QueryResultPanel({
     // HTML copies the fully self-contained document (CSP + baseline styles +
     // inlined Chart.js) so a pasted/hosted copy renders standalone offline — the
     // shareable artifact. Other formats copy a markdown wrapper with a heading.
-    let text: string;
-    if (isHtml) {
-      // Inline Chart.js into the shared copy too (when used), so the standalone
-      // file renders offline — lazy-loaded to keep it off the default bundle.
-      const chartLib = usesChartLib(result.answer)
-        ? (await import("@/lib/vendor/chartjs.generated")).CHARTJS_SOURCE
-        : undefined;
-      text = composeSrcDoc(result.answer, chartLib);
-    } else {
-      const lines = [`# ${question.trim()}`, "", result.answer];
-      if (result.sources.length > 0) {
-        lines.push("", "## Sources", "");
-        for (const slug of result.sources) lines.push(`- [[${slug}]]`);
-      }
-      text = lines.join("\n");
-    }
     try {
+      let text: string;
+      if (isHtml) {
+        // Inline Chart.js into the shared copy too (when used), so the standalone
+        // file renders offline — lazy-loaded to keep it off the default bundle.
+        // The import() is inside the try so a chunk-load failure surfaces as the
+        // "Copy failed" state rather than an unhandled rejection.
+        const chartLib = usesChartLib(result.answer)
+          ? (await import("@/lib/vendor/chartjs.generated")).CHARTJS_SOURCE
+          : undefined;
+        text = composeSrcDoc(result.answer, chartLib);
+      } else {
+        const lines = [`# ${question.trim()}`, "", result.answer];
+        if (result.sources.length > 0) {
+          lines.push("", "## Sources", "");
+          for (const slug of result.sources) lines.push(`- [[${slug}]]`);
+        }
+        text = lines.join("\n");
+      }
       await navigator.clipboard.writeText(text);
       setCopyState("copied");
     } catch (err) {
