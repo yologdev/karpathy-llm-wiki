@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import {
   composeSrcDoc,
+  usesChartLib,
   HTML_SANDBOX,
   HTML_MAX_HEIGHT,
   HTML_HEIGHT_MESSAGE_KEY,
@@ -22,6 +23,23 @@ import {
 export function HtmlPreview({ html }: { html: string }) {
   const ref = useRef<HTMLIFrameElement>(null);
   const [height, setHeight] = useState(360);
+
+  // Lazy-load the (~200KB) Chart.js source ONLY for documents that actually use
+  // it, so prose/table answers don't pay for it. The chartless render happens
+  // immediately; a chart document re-renders once the library resolves.
+  const [chartLib, setChartLib] = useState<string | undefined>(undefined);
+  const needsChart = usesChartLib(html);
+  useEffect(() => {
+    let cancelled = false;
+    if (needsChart && chartLib === undefined) {
+      import("@/lib/vendor/chartjs.generated").then((m) => {
+        if (!cancelled) setChartLib(m.CHARTJS_SOURCE);
+      });
+    }
+    return () => {
+      cancelled = true;
+    };
+  }, [needsChart, chartLib]);
 
   useEffect(() => {
     function onMessage(e: MessageEvent) {
@@ -43,7 +61,7 @@ export function HtmlPreview({ html }: { html: string }) {
   return (
     <iframe
       ref={ref}
-      srcDoc={composeSrcDoc(html)}
+      srcDoc={composeSrcDoc(html, chartLib)}
       sandbox={HTML_SANDBOX}
       title="HTML output"
       style={{

@@ -88,13 +88,38 @@ marp: true
  * Extra system-prompt instruction appended when the caller requests an HTML
  * answer — a single self-contained document rendered in a sandboxed iframe.
  */
-export const HTML_FORMAT_INSTRUCTION = `Format your answer as a SINGLE, SELF-CONTAINED HTML document — richer and more readable than markdown.
-- Output ONLY HTML: start your reply with \`<!doctype html>\` and a full \`<html>\`/\`<head>\`/\`<body>\`. Do NOT wrap it in a markdown code fence (no \`\`\`html). No prose before or after.
-- Style with an inline \`<style>\` block. Use clean, readable typography and a light layout (headings, sections, callouts, tables where useful).
-- For charts/diagrams, draw them as INLINE \`<svg>\` (bar/line/pie/flow). Do NOT use any charting library.
-- It MUST be fully self-contained: NO external resources — no \`<link>\`, no \`<script src>\`, no CDN URLs, no web fonts, no network requests. Images only as inline \`data:\` URIs or inline SVG.
-- You MAY include a small inline \`<script>\` for light interactivity (toggles, tabs, hover detail), but it runs in a locked-down sandbox with no network and no access to anything outside the document.
-- Cite sources as plain links \`<a href="slug.md">Page Title</a>\` and also include them in a final "Sources" section, so citations are traceable.`;
+export const HTML_FORMAT_INSTRUCTION = `Format your answer as a SINGLE, SELF-CONTAINED HTML document that reads like a polished, visual blog post — far richer and more skimmable than markdown. Aim for something a reader would want to SHARE.
+
+OUTPUT
+- Output ONLY HTML: start your reply with \`<!doctype html>\` and a full \`<html>\`/\`<head>\`/\`<body>\`. No markdown code fence (no \`\`\`html), no prose before or after.
+- A polished baseline stylesheet AND the Chart.js library are ALREADY INJECTED for you. Do NOT add any \`<link>\`, \`<script src>\`, CDN URL, or web font — the document must stay fully self-contained (it renders offline and is shareable). You MAY add your own inline \`<style>\` to extend/override the baseline.
+
+STRUCTURE — make it a real article
+- Open with an \`<h1>\` title and a \`<p class="lead">\` one-sentence summary. Use \`<h2>\`/\`<h3>\` sections, short paragraphs, and **bold** keywords so it skims well.
+- Use the PREBUILT components for visual density (all already styled — just use the class names):
+  - \`<p class="lead">…</p>\` — standfirst intro.
+  - \`<div class="callout">…</div>\` — a highlighted insight/aside.
+  - \`<div class="grid"> <div class="card">…</div> … </div>\` — responsive card grid.
+  - \`<div class="stat"><span class="num">87%</span><span class="label">caption</span></div>\` — big-number stats (put several in a \`.grid\`).
+  - \`<span class="badge">tag</span>\`, \`<blockquote>\` pull quotes, and real \`<table>\`s for comparisons.
+  - \`<details><summary>Heading</summary>…</details>\` — collapsible accordion (native, no JS needed).
+  - Tabs (JS already wired — just use this exact markup):
+    \`<div class="tabs"><div class="tablist"><button data-tab="a" class="active">First</button><button data-tab="b">Second</button></div><div class="tabpanel active" data-tab="a">…</div><div class="tabpanel" data-tab="b">…</div></div>\`
+
+CHARTS — use Chart.js, never hand-drawn SVG
+- Whenever data can be visualized (comparisons, trends, breakdowns, distributions), include a chart. \`Chart\` is a global; do NOT import it.
+- Use this pattern (one canvas per chart, inside a sized \`.chart\` box):
+  \`<figure><div class="chart"><canvas id="c1"></canvas></div><figcaption>What this shows</figcaption></figure>\`
+  then in an inline \`<script>\`:
+  \`new Chart(document.getElementById('c1'),{type:'bar',data:{labels:['A','B','C'],datasets:[{label:'Score',data:[12,19,7],backgroundColor:'#4d6bfe'}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}}}});\`
+- ALWAYS set \`options.responsive:true\` and \`options.maintainAspectRatio:false\` (the \`.chart\` box controls height). Use \`type\` of bar/line/pie/doughnut/radar/scatter as fits the data.
+- Use this on-brand palette for series: \`#4d6bfe\`, \`#11a36b\`, \`#e8893a\`, \`#9b59d0\`, \`#d24d6b\`, \`#3aa6c4\`. Keep charts clean (concise labels, light gridlines).
+
+INTERACTIVITY (optional, encouraged where it adds insight)
+- You MAY add small inline \`<script>\` for sliders/toggles that recompute and update a chart (mutate \`chart.data\` then call \`chart.update()\`). It runs in a locked-down sandbox: no network, no access outside the document.
+
+SOURCES
+- Cite inline as \`<a href="slug.md">Page Title</a>\`, and end with a \`<section class="sources"><h2>Sources</h2>…</section>\` listing them, so citations stay traceable.`;
 
 /** Answer format hint supported by `query()` / `buildQuerySystemPrompt()`. */
 export type { QueryFormat };

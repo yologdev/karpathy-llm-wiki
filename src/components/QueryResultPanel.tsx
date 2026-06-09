@@ -5,7 +5,7 @@ import Link from "next/link";
 import { MarkdownRenderer } from "@/components/MarkdownRenderer";
 import { SlidePreview } from "@/components/SlidePreview";
 import { HtmlPreview } from "@/components/HtmlPreview";
-import { stripHtmlFence } from "@/lib/html";
+import { stripHtmlFence, composeSrcDoc, usesChartLib } from "@/lib/html";
 import { Alert } from "@/components/Alert";
 import { useSlugTenants } from "@/hooks/useSlugTenants";
 import { logger } from "@/lib/logger";
@@ -59,11 +59,17 @@ export function QueryResultPanel({
 
   const isHtml = format === "html";
   const handleCopy = useCallback(async () => {
-    // HTML copies the document verbatim (it's the shareable artifact); other
-    // formats copy a markdown wrapper with a heading + sources.
+    // HTML copies the fully self-contained document (CSP + baseline styles +
+    // inlined Chart.js) so a pasted/hosted copy renders standalone offline — the
+    // shareable artifact. Other formats copy a markdown wrapper with a heading.
     let text: string;
     if (isHtml) {
-      text = stripHtmlFence(result.answer);
+      // Inline Chart.js into the shared copy too (when used), so the standalone
+      // file renders offline — lazy-loaded to keep it off the default bundle.
+      const chartLib = usesChartLib(result.answer)
+        ? (await import("@/lib/vendor/chartjs.generated")).CHARTJS_SOURCE
+        : undefined;
+      text = composeSrcDoc(result.answer, chartLib);
     } else {
       const lines = [`# ${question.trim()}`, "", result.answer];
       if (result.sources.length > 0) {
