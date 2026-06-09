@@ -54,6 +54,12 @@ export interface QueryHistoryEntry {
   savedAs?: string;
   /** Owner handle — the asker. Resolved to a tenant for storage placement. */
   owner?: string;
+  /**
+   * Answer format the entry was generated in. Persisted so a restored "html"
+   * answer re-renders in the sandboxed iframe rather than as escaped markdown.
+   * Absent on legacy entries — treat as "prose".
+   */
+  format?: "prose" | "table" | "slides" | "html";
 }
 
 // ---------------------------------------------------------------------------

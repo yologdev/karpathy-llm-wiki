@@ -27,12 +27,17 @@ export default function QueryPage() {
 
   /** Save a completed query to history and refresh the list. */
   const saveToHistory = useCallback(
-    async (q: string, answer: string, sources: string[]) => {
+    async (
+      q: string,
+      answer: string,
+      sources: string[],
+      fmt: "prose" | "table" | "slides" | "html",
+    ) => {
       try {
         const res = await fetch("/api/query/history", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ question: q, answer, sources }),
+          body: JSON.stringify({ question: q, answer, sources, format: fmt }),
         });
         if (res.ok) {
           const data = await res.json();
@@ -186,6 +191,10 @@ export default function QueryPage() {
   function loadHistoryEntry(entry: HistoryEntry) {
     setQuestion(entry.question);
     setResult({ answer: entry.answer, sources: entry.sources });
+    // Restore the answer's format so an HTML answer re-renders in the sandboxed
+    // iframe (not as escaped markdown). Legacy entries lack it → default "prose";
+    // QueryResultPanel's content sniff still catches recognizable raw HTML.
+    setFormat(entry.format ?? "prose");
     setError(null);
     setLoading(false);
     setStreaming(false);

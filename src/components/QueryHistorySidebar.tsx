@@ -9,6 +9,8 @@ export interface HistoryEntry {
   sources: string[];
   timestamp: string;
   savedAs?: string;
+  /** Format the answer was generated in — drives HTML re-render on restore. */
+  format?: "prose" | "table" | "slides" | "html";
 }
 
 interface Props {

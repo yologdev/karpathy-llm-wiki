@@ -144,10 +144,12 @@ export function QueryResultPanel({
   // This is handled via the useEffect reset above + parent re-rendering with new props.
 
   // HTML answers render in a sandboxed iframe (HtmlPreview). Drive off the chosen
-  // format, with a content sniff as a fallback for answers reloaded without it.
+  // format, with a content sniff as a fallback for legacy history entries reloaded
+  // without one. Strip a wrapping ```html fence before sniffing so a fenced answer
+  // is still recognized as HTML.
   const isHtmlAnswer =
     format === "html" ||
-    /^\s*(<!doctype html|<html)/i.test(result.answer);
+    /^\s*(<!doctype html|<html)/i.test(stripHtmlFence(result.answer));
   const isMarp = result.answer.trimStart().startsWith("---\nmarp: true");
 
   return (

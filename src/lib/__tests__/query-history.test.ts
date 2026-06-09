@@ -71,6 +71,12 @@ describe("appendQuery", () => {
     expect(e.id).toBeTruthy();
     expect(await listQueries(undefined, null)).toEqual([]);
   });
+
+  it("round-trips the answer format so a restored HTML entry re-renders sandboxed", async () => {
+    await appendQuery(entry(OWNER, { question: "chart it", answer: "<!doctype html>…", format: "html" }));
+    const [restored] = await listQueries(undefined, OWNER);
+    expect(restored.format).toBe("html");
+  });
 });
 
 describe("listQueries", () => {

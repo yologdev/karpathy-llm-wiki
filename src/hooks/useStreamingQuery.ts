@@ -36,7 +36,12 @@ export interface UseStreamingQueryReturn {
 }
 
 interface UseStreamingQueryOptions {
-  onComplete?: (question: string, answer: string, sources: string[]) => void;
+  onComplete?: (
+    question: string,
+    answer: string,
+    sources: string[],
+    format: "prose" | "table" | "slides" | "html",
+  ) => void;
   onSubmitStart?: () => void;
   /** Initial query scope (e.g. "mine" when signed in, or a deep-linked owner:<h>). */
   initialScope?: string;
@@ -122,6 +127,7 @@ export function useStreamingQuery(
             trimmed,
             fallbackData.answer,
             fallbackData.sources,
+            format,
           );
           return;
         }
@@ -171,7 +177,7 @@ export function useStreamingQuery(
         setStreaming(false);
 
         // Notify caller that query completed
-        onCompleteRef.current?.(trimmed, answer, finalSources);
+        onCompleteRef.current?.(trimmed, answer, finalSources, format);
       } catch (err) {
         // Don't report abort errors as failures
         if (err instanceof DOMException && err.name === "AbortError") {

@@ -40,7 +40,7 @@ export async function GET(request: NextRequest) {
  * Append a new query to history, or mark an existing entry as saved.
  *
  * Body for appending:
- *   { question: string, answer: string, sources: string[] }
+ *   { question: string, answer: string, sources: string[], format?: "prose" | "table" | "slides" | "html" }
  *
  * Body for marking saved:
  *   { action: "markSaved", id: string, slug: string }
@@ -69,7 +69,13 @@ export async function POST(request: NextRequest) {
     }
 
     // Default: append a new query entry
-    const { question, answer, sources } = body;
+    const { question, answer, sources, format } = body;
+    // Only persist a recognized format; anything else falls back to "prose" on
+    // restore via the optional field being absent.
+    const validFormat =
+      format === "table" || format === "slides" || format === "html"
+        ? format
+        : undefined;
 
     if (!question || typeof question !== "string" || !question.trim()) {
       return NextResponse.json(
@@ -90,6 +96,7 @@ export async function POST(request: NextRequest) {
       sources: Array.isArray(sources) ? sources : [],
       timestamp: new Date().toISOString(),
       owner: (await getPrincipal())?.handle,
+      format: validFormat,
     });
 
     return NextResponse.json({ entry, success: true });
