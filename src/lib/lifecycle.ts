@@ -14,6 +14,7 @@ import {
   appendToLog,
   wikiRelPath,
   tenantForOwner,
+  isArtifactType,
   enrichEntry,
 } from "./wiki";
 import { syncPageIndexForPage, removePageIndexForSlug } from "./page-index";
@@ -261,14 +262,23 @@ async function runPageLifecycleOp(
   //        independent ops (embedding, revisions, discussions) run CONCURRENTLY
   //        instead of one-after-another to cut latency.
   if (op.kind === "write") {
-    try {
-      await upsertEmbedding(slug, op.content);
-    } catch (err) {
-      logger.warn(
-        "wiki",
-        `embedding upsert failed for "${slug}":`,
-        getErrorMessage(err, String(err)),
-      );
+    // Skip embedding rendered artifacts (e.g. saved `html` outputs): they're
+    // excluded from the search/query corpus, and their raw markup would pollute
+    // the vector store.
+    const fmType = parseFrontmatter(op.content).data.type;
+    const isArtifact = isArtifactType(
+      typeof fmType === "string" ? fmType : undefined,
+    );
+    if (!isArtifact) {
+      try {
+        await upsertEmbedding(slug, op.content);
+      } catch (err) {
+        logger.warn(
+          "wiki",
+          `embedding upsert failed for "${slug}":`,
+          getErrorMessage(err, String(err)),
+        );
+      }
     }
   } else {
     const cleanups: { label: string; run: Promise<unknown> }[] = [

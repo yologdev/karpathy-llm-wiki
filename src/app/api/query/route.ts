@@ -7,6 +7,7 @@ import { logger } from "@/lib/logger";
 function parseFormat(value: unknown): QueryFormat {
   if (value === "table") return "table";
   if (value === "slides") return "slides";
+  if (value === "html") return "html";
   return "prose";
 }
 
@@ -32,10 +33,11 @@ export async function POST(request: NextRequest) {
       format !== undefined &&
       format !== "prose" &&
       format !== "table" &&
-      format !== "slides"
+      format !== "slides" &&
+      format !== "html"
     ) {
       return NextResponse.json(
-        { error: "format must be 'prose', 'table', or 'slides'" },
+        { error: "format must be 'prose', 'table', 'slides', or 'html'" },
         { status: 400 },
       );
     }

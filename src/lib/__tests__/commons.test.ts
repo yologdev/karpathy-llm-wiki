@@ -44,6 +44,10 @@ describe("belongsInCommons", () => {
     expect(belongsInCommons({ type: "agent-identity" })).toBe(false);
     expect(belongsInCommons({ type: "wiki" })).toBe(true);
   });
+
+  it("excludes saved HTML artifacts (personal rendered outputs)", () => {
+    expect(belongsInCommons({ type: "html" })).toBe(false);
+  });
 });
 
 describe("syncCommonsForPage", () => {

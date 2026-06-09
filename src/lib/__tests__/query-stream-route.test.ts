@@ -22,9 +22,11 @@ vi.mock("@/lib/search", () => ({
 
 vi.mock("@/lib/wiki", () => ({
   listReadableWikiPages: vi.fn(),
-  // Real-ish predicate: agent-scoped types are the `agent-*` family.
+  // Real-ish predicates: agent-scoped types are the `agent-*` family; saved
+  // artifacts are `html`.
   isAgentScopedType: (t: unknown) =>
     typeof t === "string" && t.startsWith("agent-"),
+  isArtifactType: (t: unknown) => t === "html",
 }));
 
 vi.mock("@/lib/llm", () => ({

@@ -13,6 +13,7 @@ import {
   withPageCache,
   wikiRelPath,
   isAgentScopedType,
+  isArtifactType,
   tenantForOwner,
 } from "./wiki";
 import { canReadFrontmatter } from "./authz";
@@ -442,13 +443,16 @@ export function fuzzyMatch(
  * are searched.
  */
 /**
- * Slugs whose page is agent-scoped (`agent-*` type) — excluded from general
- * (unscoped) search so agent knowledge surfaces only via an `agent:` scope.
+ * Slugs excluded from general (unscoped) search: agent-scoped pages (`agent-*`,
+ * surface only via an `agent:` scope) and saved artifacts (e.g. `html` query
+ * outputs — personal rendered outputs whose markup shouldn't surface as hits).
  */
-async function agentScopedSlugSet(): Promise<Set<string>> {
+async function searchExcludedSlugSet(): Promise<Set<string>> {
   const pages = await listWikiPages();
   return new Set(
-    pages.filter((p) => isAgentScopedType(p.type)).map((p) => p.slug),
+    pages
+      .filter((p) => isAgentScopedType(p.type) || isArtifactType(p.type))
+      .map((p) => p.slug),
   );
 }
 
@@ -478,7 +482,7 @@ export async function searchWikiContent(
   const scopeSlugs = scope ? new Set(scope.slugs) : null;
   // Without a scope, exclude agent-scoped pages from general search — they
   // surface only via an `agent:` scope.
-  const excludedSlugs = scope ? null : await agentScopedSlugSet();
+  const excludedSlugs = scope ? null : await searchExcludedSlugSet();
 
   const scored: Array<{
     slug: string;
@@ -612,7 +616,7 @@ export async function fuzzySearchWikiContent(
   const SKIP = new Set(["index.md", "log.md"]);
   const exactSlugs = new Set(exactResults.map((r) => r.slug));
   const scopeSlugs = scope ? new Set(scope.slugs) : null;
-  const excludedSlugs = scope ? null : await agentScopedSlugSet();
+  const excludedSlugs = scope ? null : await searchExcludedSlugSet();
 
   const fuzzyResults: ContentSearchResult[] = [];
 

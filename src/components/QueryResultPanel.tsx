@@ -4,9 +4,13 @@ import { useState, useCallback, useEffect } from "react";
 import Link from "next/link";
 import { MarkdownRenderer } from "@/components/MarkdownRenderer";
 import { SlidePreview } from "@/components/SlidePreview";
+import { HtmlPreview } from "@/components/HtmlPreview";
 import { Alert } from "@/components/Alert";
 import { useSlugTenants } from "@/hooks/useSlugTenants";
 import { logger } from "@/lib/logger";
+
+/** Answer format hint (mirrors QueryFormat in lib/query) — the panel renders accordingly. */
+type AnswerFormat = "prose" | "table" | "slides" | "html";
 
 interface SaveState {
   status: "idle" | "editing" | "saving" | "saved" | "error";
@@ -22,6 +26,8 @@ export interface QueryResultPanelProps {
   onHistorySaved?: (id: string, slug: string) => void;
   /** Hide the "Save to Wiki" action (e.g. the signed-out homepage demo). */
   readOnly?: boolean;
+  /** The format the answer was generated in — drives rendering + save. */
+  format?: AnswerFormat;
 }
 
 export function QueryResultPanel({
@@ -31,6 +37,7 @@ export function QueryResultPanel({
   currentHistoryId,
   onHistorySaved,
   readOnly = false,
+  format = "prose",
 }: QueryResultPanelProps) {
   const { hrefForSlug } = useSlugTenants();
   const [saveState, setSaveState] = useState<SaveState>({ status: "idle" });
@@ -51,20 +58,29 @@ export function QueryResultPanel({
     return () => clearTimeout(timer);
   }, [copyState]);
 
-  const handleCopyMarkdown = useCallback(async () => {
-    const lines = [`# ${question.trim()}`, "", result.answer];
-    if (result.sources.length > 0) {
-      lines.push("", "## Sources", "");
-      for (const slug of result.sources) lines.push(`- [[${slug}]]`);
+  const isHtml = format === "html";
+  const handleCopy = useCallback(async () => {
+    // HTML copies the document verbatim (it's the shareable artifact); other
+    // formats copy a markdown wrapper with a heading + sources.
+    let text: string;
+    if (isHtml) {
+      text = result.answer;
+    } else {
+      const lines = [`# ${question.trim()}`, "", result.answer];
+      if (result.sources.length > 0) {
+        lines.push("", "## Sources", "");
+        for (const slug of result.sources) lines.push(`- [[${slug}]]`);
+      }
+      text = lines.join("\n");
     }
     try {
-      await navigator.clipboard.writeText(lines.join("\n"));
+      await navigator.clipboard.writeText(text);
       setCopyState("copied");
     } catch (err) {
       logger.error("query", "copy failed", err);
       setCopyState("error");
     }
-  }, [result, question]);
+  }, [result, question, isHtml]);
 
   function handleSaveClick() {
     setSaveTitle(question.trim());
@@ -85,6 +101,7 @@ export function QueryResultPanel({
           title: saveTitle.trim(),
           content: result.answer,
           sources: result.sources,
+          format,
         }),
       });
 
@@ -125,16 +142,30 @@ export function QueryResultPanel({
   /** Allow external callers to set save state (e.g. loading from history). */
   // This is handled via the useEffect reset above + parent re-rendering with new props.
 
+  // HTML answers render in a sandboxed iframe (HtmlPreview). Drive off the chosen
+  // format, with a content sniff as a fallback for answers reloaded without it.
+  const isHtmlAnswer =
+    format === "html" ||
+    /^\s*(<!doctype html|<html)/i.test(result.answer);
+  const isMarp = result.answer.trimStart().startsWith("---\nmarp: true");
+
   return (
     <div className="mt-8 space-y-6">
       <div className="rounded-lg border border-foreground/10 p-6">
-        {!streaming &&
-        result.answer.trimStart().startsWith("---\nmarp: true") ? (
+        {isHtmlAnswer && streaming ? (
+          // Mid-stream HTML is malformed — show the raw source (escaped) as it
+          // builds; the sandboxed render mounts once streaming completes.
+          <pre className="overflow-auto whitespace-pre-wrap break-words text-xs text-foreground/60 max-h-72">
+            {result.answer || "Rendering HTML…"}
+          </pre>
+        ) : isHtmlAnswer ? (
+          <HtmlPreview html={result.answer} />
+        ) : !streaming && isMarp ? (
           <SlidePreview content={result.answer} />
         ) : (
           <MarkdownRenderer content={result.answer} />
         )}
-        {streaming && (
+        {streaming && !isHtmlAnswer && (
           <span className="inline-block w-2 h-4 bg-foreground/60 animate-pulse ml-0.5 align-text-bottom" />
         )}
       </div>
@@ -164,14 +195,16 @@ export function QueryResultPanel({
         <div className="border-t border-foreground/10 pt-4 space-y-3">
           <div className="flex flex-wrap gap-2">
             <button
-              onClick={handleCopyMarkdown}
+              onClick={handleCopy}
               className="rounded-lg border border-foreground/20 px-4 py-2 text-sm font-medium hover:bg-foreground/5 transition-colors"
             >
               {copyState === "copied"
                 ? "Copied!"
                 : copyState === "error"
                   ? "Copy failed"
-                  : "Copy as Markdown"}
+                  : isHtml
+                    ? "Copy HTML"
+                    : "Copy as Markdown"}
             </button>
             {!readOnly && saveState.status === "idle" && (
               <button

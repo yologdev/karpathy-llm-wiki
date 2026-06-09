@@ -395,7 +395,7 @@ export default function QueryPage() {
               <span className="fmark" style={{ marginRight: 4 }}>
                 format
               </span>
-              {(["prose", "table", "slides"] as const).map((f) => {
+              {(["prose", "table", "slides", "html"] as const).map((f) => {
                 const active = format === f;
                 return (
                   <button
@@ -435,6 +435,7 @@ export default function QueryPage() {
               question={question}
               currentHistoryId={currentHistoryId}
               onHistorySaved={handleHistorySaved}
+              format={format}
             />
           )}
         </div>

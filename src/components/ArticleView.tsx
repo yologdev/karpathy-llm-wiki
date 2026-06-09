@@ -3,7 +3,7 @@ import type { ReactNode } from "react";
 import { slugify } from "@/lib/slugify";
 import type { Frontmatter } from "@/lib/frontmatter";
 import type { WikiPage } from "@/lib/types";
-import { findBacklinks, findSimilarPages, buildSlugTenantMap } from "@/lib/wiki";
+import { findBacklinks, findSimilarPages, buildSlugTenantMap, isArtifactType } from "@/lib/wiki";
 import { resolveSlugPath } from "@/lib/links";
 import { getCommonsSlugSet, belongsInCommons } from "@/lib/commons";
 import type { Principal } from "@/lib/auth";
@@ -13,6 +13,7 @@ import { formatRelativeTime } from "@/lib/format";
 import { Icon } from "@/components/folio/icons";
 import { Avatar, Mark, Confidence, Freshness } from "@/components/folio/primitives";
 import { MarkdownRenderer } from "@/components/MarkdownRenderer";
+import { HtmlPreview } from "@/components/HtmlPreview";
 import { ArticleActions } from "@/components/ArticleActions";
 import { RevisionHistory } from "@/components/RevisionHistory";
 import { DiscussionPanel } from "@/components/DiscussionPanel";
@@ -392,14 +393,20 @@ export async function ArticleView({
       >
         <div className="min-w-0">
           <article>
-            <MarkdownRenderer
-              content={articleBody}
-              className="prose-article"
-              headingIds={toc.map((t) => t.id)}
-              tenant={pageTenant}
-              slugTenants={slugTenants}
-              commonsSlugs={commonsSlugs}
-            />
+            {isArtifactType(typeof fm.type === "string" ? fm.type : undefined) ? (
+              // A saved HTML output is rendered verbatim in a sandboxed iframe
+              // (isolated; no app cookie/DOM/network access) — never markdown.
+              <HtmlPreview html={page.body} />
+            ) : (
+              <MarkdownRenderer
+                content={articleBody}
+                className="prose-article"
+                headingIds={toc.map((t) => t.id)}
+                tenant={pageTenant}
+                slugTenants={slugTenants}
+                commonsSlugs={commonsSlugs}
+              />
+            )}
           </article>
 
           {backlinks.length > 0 && (

@@ -46,7 +46,7 @@ import type { IndexEntry } from "../types";
 import { registerAgent, ensureAgentsDir } from "../agents";
 import { createVault, addToVault, vaultIdFor } from "../vault";
 import { serializeFrontmatter } from "../frontmatter";
-import { isAgentScopedType } from "../wiki";
+import { isAgentScopedType, isArtifactType } from "../wiki";
 import type { AgentProfile } from "../types";
 import { _resetStorage } from "../storage";
 import { relatedByVector, searchByVector } from "../embeddings";
@@ -106,6 +106,16 @@ describe("isAgentScopedType", () => {
     expect(isAgentScopedType("prose")).toBe(false);
     // "agent" must be a prefix, not just contained.
     expect(isAgentScopedType("my-agent-notes")).toBe(false);
+  });
+});
+
+describe("isArtifactType", () => {
+  it("is true only for saved-artifact types (html)", () => {
+    expect(isArtifactType("html")).toBe(true);
+    expect(isArtifactType("wiki")).toBe(false);
+    expect(isArtifactType("agent-knowledge")).toBe(false);
+    expect(isArtifactType(undefined)).toBe(false);
+    expect(isArtifactType("")).toBe(false);
   });
 });
 

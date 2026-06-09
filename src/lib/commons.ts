@@ -11,7 +11,7 @@
 
 import { getStorage } from "./storage";
 import { withFileLock } from "./lock";
-import { listWikiPages, isAgentScopedType, tenantForOwner } from "./wiki";
+import { listWikiPages, isAgentScopedType, isArtifactType, tenantForOwner } from "./wiki";
 import { logger } from "./logger";
 import type { IndexEntry } from "./types";
 
@@ -36,12 +36,20 @@ export interface CommonsEntry {
   type?: string;
 }
 
-/** A page belongs in the commons iff it's public and not agent-scoped. */
+/**
+ * A page belongs in the commons iff it's public, not agent-scoped, and not a
+ * rendered artifact (e.g. a saved `html` query output — a personal artifact, not
+ * collective knowledge; see {@link isArtifactType}).
+ */
 export function belongsInCommons(meta: {
   visibility?: string;
   type?: string;
 }): boolean {
-  return meta.visibility !== "private" && !isAgentScopedType(meta.type);
+  return (
+    meta.visibility !== "private" &&
+    !isAgentScopedType(meta.type) &&
+    !isArtifactType(meta.type)
+  );
 }
 
 /**

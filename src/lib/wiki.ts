@@ -52,6 +52,16 @@ export function isAgentScopedType(type: string | undefined): boolean {
 }
 
 /**
+ * True when a page `type` marks it as a saved RENDERED ARTIFACT (e.g. an `html`
+ * query output), not synthesized knowledge. Artifacts are reachable by URL and
+ * the owner's lens, but excluded from the commons, general search, and the query
+ * corpus — their raw markup isn't canonical content and would pollute ranking.
+ */
+export function isArtifactType(type: string | undefined): boolean {
+  return type === "html";
+}
+
+/**
  * Compute a storage-relative path for a raw source file.
  *
  * Same logic as {@link wikiRelPath} but for the `raw/` directory. Used by

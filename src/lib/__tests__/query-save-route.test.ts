@@ -51,6 +51,8 @@ describe("POST /api/query/save", () => {
       "Some answer content",
       undefined,
       sources,
+      "markdown",
+      undefined,
     );
   });
 
@@ -68,6 +70,28 @@ describe("POST /api/query/save", () => {
       "Answer without sources",
       undefined,
       undefined,
+      "markdown",
+      undefined,
+    );
+  });
+
+  it("saves an HTML answer as an artifact owned by the asker", async () => {
+    const req = makeRequest({
+      title: "Chart",
+      content: "<!doctype html><html><body>x</body></html>",
+      format: "html",
+    });
+
+    const res = await POST(req);
+    expect(res.status).toBe(200);
+
+    expect(mockedSaveAnswer).toHaveBeenCalledWith(
+      "Chart",
+      "<!doctype html><html><body>x</body></html>",
+      undefined,
+      undefined,
+      "html",
+      "test-user", // owner from the session principal
     );
   });
 

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { hasLLMKey, callLLMStream } from "@/lib/llm";
 import { QUERY_MAX_OUTPUT_TOKENS } from "@/lib/constants";
-import { listReadableWikiPages, isAgentScopedType } from "@/lib/wiki";
+import { listReadableWikiPages, isAgentScopedType, isArtifactType } from "@/lib/wiki";
 import { getPrincipal } from "@/lib/auth";
 import {
   selectPagesForQuery,
@@ -34,14 +34,22 @@ export async function POST(request: NextRequest) {
       format !== undefined &&
       format !== "prose" &&
       format !== "table" &&
-      format !== "slides"
+      format !== "slides" &&
+      format !== "html"
     ) {
       return NextResponse.json(
-        { error: "format must be 'prose', 'table', or 'slides'" },
+        { error: "format must be 'prose', 'table', 'slides', or 'html'" },
         { status: 400 },
       );
     }
-    const queryFormat: QueryFormat = format === "table" ? "table" : format === "slides" ? "slides" : "prose";
+    const queryFormat: QueryFormat =
+      format === "table"
+        ? "table"
+        : format === "slides"
+          ? "slides"
+          : format === "html"
+            ? "html"
+            : "prose";
 
     // Validate `scope` if present — must be a string.
     if (scope !== undefined && typeof scope !== "string") {
@@ -70,7 +78,9 @@ export async function POST(request: NextRequest) {
     // pages (identity / knowledge / social), which surface solely via an explicit
     // `agent:` scope. Mirrors the non-streaming query() path (query.ts).
     if (!scopeSlugs) {
-      entries = entries.filter((e) => !isAgentScopedType(e.type));
+      entries = entries.filter(
+        (e) => !isAgentScopedType(e.type) && !isArtifactType(e.type),
+      );
     }
 
     // Empty wiki — nothing to query

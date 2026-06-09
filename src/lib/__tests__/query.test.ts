@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import fs from "fs/promises";
 import os from "os";
 import path from "path";
-import { searchIndex, buildContext, query, saveAnswerToWiki, buildCorpusStats, bm25Score, extractCitedSlugs, reciprocalRankFusion, buildQuerySystemPrompt, TABLE_FORMAT_INSTRUCTION, extractBestSnippet, selectPagesForQuery } from "../query";
+import { searchIndex, buildContext, query, saveAnswerToWiki, buildCorpusStats, bm25Score, extractCitedSlugs, reciprocalRankFusion, buildQuerySystemPrompt, TABLE_FORMAT_INSTRUCTION, HTML_FORMAT_INSTRUCTION, extractBestSnippet, selectPagesForQuery } from "../query";
 import { writeWikiPage, updateIndex, ensureDirectories, readWikiPage, readWikiPageWithFrontmatter, listWikiPages } from "../wiki";
 import { registerAgent } from "../agents";
 import { _resetStorage } from "../storage";
@@ -825,6 +825,36 @@ describe("saveAnswerToWiki", () => {
     expect(entry!.summary).toContain("Neural networks are computational models");
   });
 
+  it("saves an HTML answer verbatim as a typed, owner-attributed artifact", async () => {
+    await ensureDirectories();
+    const html =
+      "<!doctype html><html><head><style>b{font-weight:700}</style></head><body><h1>Chart</h1><svg></svg><script>1+1</script></body></html>";
+
+    const { slug } = await saveAnswerToWiki(
+      "My Chart",
+      html,
+      undefined,
+      undefined,
+      "html",
+      "alice",
+    );
+
+    const page = await readWikiPageWithFrontmatter(slug);
+    expect(page).not.toBeNull();
+    // Body stored verbatim — no injected markdown `# ` heading.
+    expect(page!.body).toContain("<svg></svg>");
+    expect(page!.body).toContain("<script>1+1</script>");
+    expect(page!.body.trimStart()).not.toMatch(/^# /);
+    // Typed as an artifact and attributed to the asker.
+    expect(page!.frontmatter.type).toBe("html");
+    expect(page!.frontmatter.owner).toBe("alice");
+
+    // The index summary is tag-stripped plain text (no markup leaks into ranking).
+    const entry = (await listWikiPages()).find((e) => e.slug === slug);
+    expect(entry!.summary).not.toMatch(/[<>]/);
+    expect(entry!.type).toBe("html");
+  });
+
   it("wraps saved answer in YAML frontmatter with source and tags", async () => {
     await ensureDirectories();
 
@@ -1335,6 +1365,17 @@ describe("buildQuerySystemPrompt — format option", () => {
     // Default behavior must match explicit "prose" — guards against the
     // default ever drifting away from existing callers' expectations.
     expect(proseDefault).toBe(proseExplicit);
+  });
+
+  it("appends the HTML instruction only when format is 'html'", async () => {
+    const html = await buildQuerySystemPrompt("ctx", entries, ["alpha"], "html");
+    expect(html).toContain(HTML_FORMAT_INSTRUCTION);
+    expect(html).toMatch(/self-contained html/i);
+    // Other formats never include it.
+    const prose = await buildQuerySystemPrompt("ctx", entries, ["alpha"], "prose");
+    const table = await buildQuerySystemPrompt("ctx", entries, ["alpha"], "table");
+    expect(prose).not.toContain(HTML_FORMAT_INSTRUCTION);
+    expect(table).not.toContain(HTML_FORMAT_INSTRUCTION);
   });
 });
 

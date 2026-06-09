@@ -5,8 +5,10 @@ import {
   writeWikiPageWithSideEffects,
   withPageCache,
   isAgentScopedType,
+  isArtifactType,
 } from "./wiki";
 import { slugify } from "./slugify";
+import { htmlToPlainText } from "./html";
 import { extractSummary } from "./ingest";
 import { loadPageConventions } from "./schema";
 import { serializeFrontmatter } from "./frontmatter";
@@ -81,8 +83,20 @@ Start the response with the Marp front matter:
 marp: true
 ---`;
 
+/**
+ * Extra system-prompt instruction appended when the caller requests an HTML
+ * answer — a single self-contained document rendered in a sandboxed iframe.
+ */
+export const HTML_FORMAT_INSTRUCTION = `Format your answer as a SINGLE, SELF-CONTAINED HTML document — richer and more readable than markdown.
+- Output ONLY HTML: start with \`<!doctype html>\` and a full \`<html>\`/\`<head>\`/\`<body>\`. No markdown, no code fences around it.
+- Style with an inline \`<style>\` block. Use clean, readable typography and a light layout (headings, sections, callouts, tables where useful).
+- For charts/diagrams, draw them as INLINE \`<svg>\` (bar/line/pie/flow). Do NOT use any charting library.
+- It MUST be fully self-contained: NO external resources — no \`<link>\`, no \`<script src>\`, no CDN URLs, no web fonts, no network requests. Images only as inline \`data:\` URIs or inline SVG.
+- You MAY include a small inline \`<script>\` for light interactivity (toggles, tabs, hover detail), but it runs in a locked-down sandbox with no network and no access to anything outside the document.
+- Cite sources as plain links \`<a href="slug.md">Page Title</a>\` and also include them in a final "Sources" section, so citations are traceable.`;
+
 /** Answer format hint supported by `query()` / `buildQuerySystemPrompt()`. */
-export type QueryFormat = "prose" | "table" | "slides";
+export type QueryFormat = "prose" | "table" | "slides" | "html";
 
 // ---------------------------------------------------------------------------
 // BM25 sparse index search
@@ -153,6 +167,8 @@ export async function buildQuerySystemPrompt(
     systemPrompt += `\n\n${TABLE_FORMAT_INSTRUCTION}`;
   } else if (format === "slides") {
     systemPrompt += `\n\n${SLIDES_FORMAT_INSTRUCTION}`;
+  } else if (format === "html") {
+    systemPrompt += `\n\n${HTML_FORMAT_INSTRUCTION}`;
   }
 
   return systemPrompt;
@@ -198,10 +214,13 @@ export async function query(
       return { answer: scopeError, sources: [] };
     }
 
-    // General (unscoped) query excludes agent-scoped pages — agent knowledge
-    // surfaces only via an `agent:` scope.
+    // General (unscoped) query excludes agent-scoped pages (agent knowledge
+    // surfaces only via an `agent:` scope) and saved HTML artifacts (rendered
+    // outputs, not knowledge — their markup must never enter the LLM context).
     if (!scopeSlugs) {
-      entries = entries.filter((e) => !isAgentScopedType(e.type));
+      entries = entries.filter(
+        (e) => !isAgentScopedType(e.type) && !isArtifactType(e.type),
+      );
     }
 
     // Empty wiki — nothing to query
@@ -271,6 +290,8 @@ export async function saveAnswerToWiki(
   content: string,
   explicitSlug?: string,
   sources?: string[],
+  contentType: "markdown" | "html" = "markdown",
+  owner?: string,
 ): Promise<{ slug: string }> {
   const slug = explicitSlug || slugify(title);
 
@@ -278,13 +299,21 @@ export async function saveAnswerToWiki(
     throw new Error("Title must produce a valid slug");
   }
 
-  // Prepend a heading if the content doesn't already start with one
-  const pageContent = content.trimStart().startsWith("# ")
-    ? content
-    : `# ${title}\n\n${content}`;
+  const isHtml = contentType === "html";
 
-  // Extract a short summary from the content (first sentence or first 200 chars)
-  const plainContent = content.replace(/^#.*$/gm, "").trim();
+  // HTML is stored VERBATIM — prepending a markdown `# title` would corrupt the
+  // document (the title still shows via ArticleView's <h1>, outside the iframe).
+  // Markdown gets the usual H1 if it lacks one.
+  const pageContent = isHtml
+    ? content
+    : content.trimStart().startsWith("# ")
+      ? content
+      : `# ${title}\n\n${content}`;
+
+  // Summary comes from plain text: tag-stripped for HTML, heading-stripped for md.
+  const plainContent = isHtml
+    ? htmlToPlainText(content)
+    : content.replace(/^#.*$/gm, "").trim();
   const summary = extractSummary(plainContent) || title;
 
   // Wrap in YAML frontmatter so saved answers have the same metadata as
@@ -308,6 +337,19 @@ export async function saveAnswerToWiki(
     authors: ["system"],
   };
 
+  // An HTML output is a personal artifact: mark its type (so the page renders in
+  // the sandboxed iframe and is excluded from the commons/search/query corpus)
+  // and attribute it to the asker so it lives in THEIR silo + Mine/vault lens and
+  // is reachable at /u/<handle>/<slug>. Markdown saves keep the legacy
+  // system-owned commons behavior.
+  if (isHtml) {
+    frontmatterData.type = "html";
+    if (owner) {
+      frontmatterData.owner = owner;
+      frontmatterData.authors = [owner];
+    }
+  }
+
   if (sources && sources.length > 0) {
     const sourceEntries = sources.map((slug) =>
       buildSourceEntry(slug, "wiki-ref", "system"),
@@ -320,16 +362,17 @@ export async function saveAnswerToWiki(
     pageContent,
   );
 
-  // Hand off to the unified write pipeline. We pass the original answer
-  // `content` (rather than `pageContent`) as the cross-ref source so the
-  // related-pages prompt sees the same text the user actually saw.
+  // Hand off to the unified write pipeline. For markdown we pass the original
+  // answer `content` as the cross-ref source so the related-pages prompt sees
+  // what the user saw. HTML artifacts are personal outputs — skip cross-ref
+  // (no `null` source) so commons pages don't backlink to them.
   const { slug: writtenSlug } = await writeWikiPageWithSideEffects({
     slug,
     title,
     content: contentWithFm,
     summary,
     logOp: "save",
-    crossRefSource: content,
+    crossRefSource: isHtml ? null : content,
     author: "system",
     logDetails: ({ updatedSlugs }) =>
       `query answer saved as ${slug} · linked ${updatedSlugs.length} related page(s)`,
