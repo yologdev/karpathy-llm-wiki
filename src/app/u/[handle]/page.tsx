@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { listReadableWikiPages } from "@/lib/wiki";
 import { slugsForOwner } from "@/lib/search";
-import { listAgentsForOwner, agentShortName } from "@/lib/agents";
+import { listAgentsForOwner } from "@/lib/agents";
 import { getDiscussionStatsForSlugs } from "@/lib/talk";
 import { getPrincipal } from "@/lib/auth";
 import { listVaults } from "@/lib/vault";
@@ -38,20 +38,6 @@ function StatCell({ label, value }: { label: string; value: string | number }) {
     </div>
   );
 }
-
-// Shared Folio pill style for the owner-scoped action links.
-const pill = {
-  display: "inline-flex",
-  alignItems: "center",
-  gap: 7,
-  fontSize: 13,
-  padding: "7px 13px",
-  borderRadius: 999,
-  border: "1px solid var(--rule)",
-  color: "var(--ink-2)",
-  textDecoration: "none",
-  whiteSpace: "nowrap" as const,
-};
 
 // Public profile: pages a given handle owns or has contributed to. Visible to
 // anyone (guests included) — yopedia is a public observer surface.
@@ -116,22 +102,6 @@ export default async function UserPage({
           Public pages owned or contributed by {handle}.
         </p>
 
-        {/* Silo actions — query/graph/export scoped to this handle's pages. */}
-        {pages.length > 0 && (
-          <div className="row" style={{ gap: 8, flexWrap: "wrap", marginTop: 16 }}>
-            <Link href={`/query?scope=owner:${encodeURIComponent(handle)}`} style={pill}>
-              💬 Ask these pages
-            </Link>
-            <Link href={`/wiki/graph?scope=owner:${encodeURIComponent(handle)}`} style={pill}>
-              🕸 Graph this silo
-            </Link>
-            {/* Plain anchor — this is a file download, not a route. */}
-            <a href={`/api/wiki/export?scope=owner:${encodeURIComponent(handle)}`} style={pill}>
-              ⬇ Download vault
-            </a>
-          </div>
-        )}
-
         {/* Contribution stats — only when the handle has activity. */}
         {hasActivity && (
           <div style={{ marginTop: 18 }}>
@@ -178,28 +148,21 @@ export default async function UserPage({
           <p className="fmark" style={{ marginBottom: 12 }}>
             Agents
           </p>
-          <div className="stack" style={{ gap: 8 }}>
+          <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
             {agents.map((agent) => (
-              <Link
+              <span
                 key={agent.id}
-                href={`/u/${handle}/a/${agentShortName(agent)}`}
-                className="stack"
                 style={{
-                  gap: 3,
-                  textDecoration: "none",
+                  fontWeight: 600,
+                  color: "var(--ink)",
                   border: "1px solid var(--rule)",
-                  borderRadius: 12,
+                  borderRadius: 999,
                   background: "var(--paper-2)",
-                  padding: "13px 16px",
+                  padding: "5px 13px",
                 }}
               >
-                <span style={{ fontWeight: 600, color: "var(--ink)" }}>
-                  {agent.name}
-                </span>
-                <span style={{ fontSize: 13.5, color: "var(--muted)" }}>
-                  {agent.description}
-                </span>
-              </Link>
+                {agent.name}
+              </span>
             ))}
           </div>
         </section>
