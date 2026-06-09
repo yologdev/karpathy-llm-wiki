@@ -55,16 +55,20 @@ const SANDBOX_HEAD =
 /**
  * Strip a wrapping markdown code fence (```` ```html ... ``` ````) that the model
  * sometimes adds despite being told to emit raw HTML — otherwise the fence
- * markers leak into the rendered document as literal text. Handles a complete
- * fence and an unterminated leading fence (mid-stream).
+ * markers leak into the rendered document as literal text.
+ *
+ * Only acts when the content STARTS with a fence line (the model wrapping its
+ * whole answer): we then drop the opening fence and, if present, a matching
+ * closing fence — tolerating its absence so a still-streaming answer is handled.
+ * A trailing ```` ``` ```` is NEVER stripped on its own, so real HTML that happens
+ * to end with a fence-like line is left intact.
  */
 export function stripHtmlFence(html: string): string {
-  let out = (html ?? "").trim();
-  const fenced = out.match(/^```[a-z0-9]*\s*\n([\s\S]*?)\n?```$/i);
-  if (fenced) return fenced[1].trim();
-  // Leading/trailing fence without a clean pair (e.g. still streaming).
-  out = out.replace(/^```[a-z0-9]*[ \t]*\n/i, "").replace(/\n```[ \t]*$/i, "");
-  return out.trim();
+  const out = (html ?? "").trim();
+  const lead = out.match(/^```[a-z0-9]*[ \t]*\r?\n/i);
+  if (!lead) return out;
+  const body = out.slice(lead[0].length).replace(/\r?\n```[ \t]*$/i, "");
+  return body.trim();
 }
 
 /**

@@ -9,9 +9,7 @@ import { stripHtmlFence } from "@/lib/html";
 import { Alert } from "@/components/Alert";
 import { useSlugTenants } from "@/hooks/useSlugTenants";
 import { logger } from "@/lib/logger";
-
-/** Answer format hint (mirrors QueryFormat in lib/query) — the panel renders accordingly. */
-type AnswerFormat = "prose" | "table" | "slides" | "html";
+import type { QueryFormat } from "@/lib/query-format";
 
 interface SaveState {
   status: "idle" | "editing" | "saving" | "saved" | "error";
@@ -28,7 +26,7 @@ export interface QueryResultPanelProps {
   /** Hide the "Save to Wiki" action (e.g. the signed-out homepage demo). */
   readOnly?: boolean;
   /** The format the answer was generated in — drives rendering + save. */
-  format?: AnswerFormat;
+  format?: QueryFormat;
 }
 
 export function QueryResultPanel({

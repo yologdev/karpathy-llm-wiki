@@ -8,6 +8,7 @@ import { getStorage } from "./storage";
 import { withFileLock } from "./lock";
 import { isEnoent } from "./errors";
 import { logger } from "./logger";
+import type { QueryFormat } from "./query-format";
 
 // ---------------------------------------------------------------------------
 // Query history — per-asker, persisted INSIDE the asker's tenant silo.
@@ -59,7 +60,7 @@ export interface QueryHistoryEntry {
    * answer re-renders in the sandboxed iframe rather than as escaped markdown.
    * Absent on legacy entries — treat as "prose".
    */
-  format?: "prose" | "table" | "slides" | "html";
+  format?: QueryFormat;
 }
 
 // ---------------------------------------------------------------------------

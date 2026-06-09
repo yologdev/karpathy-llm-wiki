@@ -10,6 +10,7 @@ import {
 } from "@/components/QueryHistorySidebar";
 import { QueryResultPanel } from "@/components/QueryResultPanel";
 import { useStreamingQuery } from "@/hooks/useStreamingQuery";
+import type { QueryFormat } from "@/lib/query-format";
 import { Icon } from "@/components/folio/icons";
 import { logger } from "@/lib/logger";
 
@@ -31,7 +32,7 @@ export default function QueryPage() {
       q: string,
       answer: string,
       sources: string[],
-      fmt: "prose" | "table" | "slides" | "html",
+      fmt: QueryFormat,
     ) => {
       try {
         const res = await fetch("/api/query/history", {

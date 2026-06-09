@@ -20,6 +20,7 @@ import {
 } from "./bm25";
 import { extractCitedSlugs } from "./citations";
 import type { QueryResult } from "./types";
+import type { QueryFormat } from "./query-format";
 
 import {
   selectPagesForQuery,
@@ -96,7 +97,7 @@ export const HTML_FORMAT_INSTRUCTION = `Format your answer as a SINGLE, SELF-CON
 - Cite sources as plain links \`<a href="slug.md">Page Title</a>\` and also include them in a final "Sources" section, so citations are traceable.`;
 
 /** Answer format hint supported by `query()` / `buildQuerySystemPrompt()`. */
-export type QueryFormat = "prose" | "table" | "slides" | "html";
+export type { QueryFormat };
 
 // ---------------------------------------------------------------------------
 // BM25 sparse index search
@@ -302,8 +303,9 @@ export async function saveAnswerToWiki(
   const isHtml = contentType === "html";
 
   // Strip any markdown code fence the model wrapped the document in, so the saved
-  // page is clean HTML (it's stored verbatim, no H1 prepend — the title shows via
-  // ArticleView's <h1> outside the iframe). Markdown gets the usual H1 if missing.
+  // page is clean HTML (stored as-is apart from that, with no H1 prepend — the
+  // title shows via ArticleView's <h1> outside the iframe). Markdown gets the
+  // usual H1 if missing.
   const html = isHtml ? stripHtmlFence(content) : content;
   const pageContent = isHtml
     ? html

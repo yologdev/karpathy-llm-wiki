@@ -30,6 +30,21 @@ describe("stripHtmlFence", () => {
     );
   });
 
+  it("does NOT strip a trailing ``` when there is no leading fence", () => {
+    // Real HTML that happens to end in a fence-like line must survive intact —
+    // the trailing strip only fires when the answer is actually fence-wrapped.
+    expect(stripHtmlFence("<p>x</p>\n```")).toBe("<p>x</p>\n```");
+  });
+
+  it("strips a CRLF-delimited wrapping fence", () => {
+    expect(stripHtmlFence("```html\r\n<p>x</p>\r\n```")).toBe("<p>x</p>");
+  });
+
+  it("returns empty string for null/empty input", () => {
+    expect(stripHtmlFence("")).toBe("");
+    expect(stripHtmlFence(null as unknown as string)).toBe("");
+  });
+
   it("composeSrcDoc renders fenced HTML without the fence markers", () => {
     const out = composeSrcDoc("```html\n<html><head></head><body>hi</body></html>\n```");
     expect(out).not.toContain("```");

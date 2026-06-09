@@ -855,6 +855,32 @@ describe("saveAnswerToWiki", () => {
     expect(entry!.type).toBe("html");
   });
 
+  it("strips a wrapping markdown fence from a saved HTML answer", async () => {
+    await ensureDirectories();
+    // The model sometimes wraps its HTML in a ```html fence despite the prompt;
+    // the save path must strip it so the page (and its summary) are clean.
+    const fenced =
+      "```html\n<!doctype html><html><body><p>Fenced body text</p></body></html>\n```";
+
+    const { slug } = await saveAnswerToWiki(
+      "Fenced Chart",
+      fenced,
+      undefined,
+      undefined,
+      "html",
+      "alice",
+    );
+
+    const page = await readWikiPageWithFrontmatter(slug);
+    expect(page).not.toBeNull();
+    // No fence markers leak into the stored document or its derived summary.
+    expect(page!.body).not.toContain("```");
+    expect(page!.body).toContain("<p>Fenced body text</p>");
+    const entry = (await listWikiPages()).find((e) => e.slug === slug);
+    expect(entry!.summary).not.toContain("`");
+    expect(entry!.summary).toContain("Fenced body text");
+  });
+
   it("wraps saved answer in YAML frontmatter with source and tags", async () => {
     await ensureDirectories();
 

@@ -3,6 +3,7 @@ import { appendQuery, listQueries, markSaved } from "@/lib/query-history";
 import { getPrincipal } from "@/lib/auth";
 import { getErrorMessage } from "@/lib/errors";
 import { logger } from "@/lib/logger";
+import { isQueryFormat } from "@/lib/query-format";
 
 /**
  * GET /api/query/history?limit=20
@@ -70,12 +71,11 @@ export async function POST(request: NextRequest) {
 
     // Default: append a new query entry
     const { question, answer, sources, format } = body;
-    // Only persist a recognized format; anything else falls back to "prose" on
-    // restore via the optional field being absent.
+    // Persist only a format that changes how a restored answer renders. "prose"
+    // is the default, so it (and anything unrecognized) is stored as absent and
+    // defaults back to "prose" on restore.
     const validFormat =
-      format === "table" || format === "slides" || format === "html"
-        ? format
-        : undefined;
+      isQueryFormat(format) && format !== "prose" ? format : undefined;
 
     if (!question || typeof question !== "string" || !question.trim()) {
       return NextResponse.json(

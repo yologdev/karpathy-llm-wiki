@@ -1,6 +1,7 @@
 "use client";
 
 import { formatRelativeTime } from "@/lib/format";
+import type { QueryFormat } from "@/lib/query-format";
 
 export interface HistoryEntry {
   id: string;
@@ -10,7 +11,7 @@ export interface HistoryEntry {
   timestamp: string;
   savedAs?: string;
   /** Format the answer was generated in — drives HTML re-render on restore. */
-  format?: "prose" | "table" | "slides" | "html";
+  format?: QueryFormat;
 }
 
 interface Props {
