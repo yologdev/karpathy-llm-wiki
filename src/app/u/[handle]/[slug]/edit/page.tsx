@@ -3,7 +3,7 @@ import { permanentRedirect } from "next/navigation";
 import { decodeSlug } from "@/lib/slugify";
 import { readWikiPageWithFrontmatter, tenantForOwner } from "@/lib/wiki";
 import { pagePath, editPath } from "@/lib/links";
-import { canReadFrontmatter } from "@/lib/authz";
+import { canReadFrontmatter, canWriteFrontmatter } from "@/lib/authz";
 import { getPrincipal } from "@/lib/auth";
 import { WikiEditor } from "@/components/WikiEditor";
 
@@ -15,9 +15,10 @@ export default async function EditWikiPage({ params }: EditPageProps) {
   const { handle: encodedHandle, slug: encodedSlug } = await params;
   const slug = decodeSlug(encodedSlug);
   const page = await readWikiPageWithFrontmatter(slug);
+  const principal = await getPrincipal();
 
   // A private page the viewer can't read is indistinguishable from missing.
-  if (!page || !canReadFrontmatter(page.frontmatter, await getPrincipal())) {
+  if (!page || !canReadFrontmatter(page.frontmatter, principal)) {
     return (
       <main className="mx-auto max-w-3xl px-6 py-12">
         <Link
@@ -29,6 +30,28 @@ export default async function EditWikiPage({ params }: EditPageProps) {
         <h1 className="mt-6 text-3xl font-bold">Page not found</h1>
         <p className="mt-4 text-foreground/60">
           No wiki page exists for &ldquo;{slug}&rdquo; — nothing to edit.
+        </p>
+      </main>
+    );
+  }
+
+  // Readable but not writable — show a clear message instead of the editor.
+  if (!canWriteFrontmatter(page.frontmatter, principal)) {
+    return (
+      <main className="mx-auto max-w-3xl px-6 py-12">
+        <Link
+          href={pagePath(tenantForOwner(
+            typeof page.frontmatter.owner === "string"
+              ? page.frontmatter.owner
+              : undefined,
+          ), slug)}
+          className="text-sm text-foreground/60 hover:text-foreground transition-colors"
+        >
+          ← Back to page
+        </Link>
+        <h1 className="mt-6 text-3xl font-bold">Cannot edit</h1>
+        <p className="mt-4 text-foreground/60">
+          This page cannot be edited directly. You do not have write access.
         </p>
       </main>
     );
