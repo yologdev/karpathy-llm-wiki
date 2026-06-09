@@ -176,8 +176,11 @@ export default async function UserPage({
         </section>
       )}
 
-      {pages.length === 0 && vaults.length === 0 && (
-        <p style={{ color: "var(--muted)" }}>No pages yet.</p>
+      {/* Key the empty state off the RENDERED surfaces — a profile whose only
+          content is non-public (private/agent pages, not shown here) should still
+          read "No pages yet" rather than a blank gap. */}
+      {trail.length === 0 && artifacts.length === 0 && vaults.length === 0 && (
+        <p style={{ color: "var(--muted)" }}>No public pages yet.</p>
       )}
 
       {/* Commons pages → a user-scoped activity trail (ingests + edits). */}

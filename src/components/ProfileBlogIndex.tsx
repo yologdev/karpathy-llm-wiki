@@ -43,21 +43,23 @@ function ProfileCard({
         transition: "border-color .15s",
       }}
     >
-      <span
-        className="receipt"
-        style={{
-          alignSelf: "flex-start",
-          fontSize: 9.5,
-          letterSpacing: ".12em",
-          color: "var(--accent)",
-          background: "var(--accent-soft)",
-          border: "1px solid var(--rule)",
-          borderRadius: 4,
-          padding: "2px 7px",
-        }}
-      >
-        HTML
-      </span>
+      {isArtifactType(page.type) && (
+        <span
+          className="receipt"
+          style={{
+            alignSelf: "flex-start",
+            fontSize: 9.5,
+            letterSpacing: ".12em",
+            color: "var(--accent)",
+            background: "var(--accent-soft)",
+            border: "1px solid var(--rule)",
+            borderRadius: 4,
+            padding: "2px 7px",
+          }}
+        >
+          HTML
+        </span>
+      )}
       <h3
         style={{
           margin: 0,
