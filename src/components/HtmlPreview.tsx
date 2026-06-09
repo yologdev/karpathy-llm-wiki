@@ -21,7 +21,15 @@ import { logger } from "@/lib/logger";
  * `dangerouslySetInnerHTML`. Frame height is reported by the document via
  * postMessage (clamped to a max to bound a runaway/hostile grow).
  */
-export function HtmlPreview({ html }: { html: string }) {
+export function HtmlPreview({
+  html,
+  bare = false,
+}: {
+  html: string;
+  /** Full-bleed share view: no border/radius, fills the viewport below the
+   *  share header. The auto-height still drives growth; this only restyles. */
+  bare?: boolean;
+}) {
   const ref = useRef<HTMLIFrameElement>(null);
   const [height, setHeight] = useState(360);
 
@@ -77,13 +85,18 @@ export function HtmlPreview({ html }: { html: string }) {
       srcDoc={composeSrcDoc(html, chartLib)}
       sandbox={HTML_SANDBOX}
       title="HTML output"
+      // The frame auto-sizes to its content, so it never needs its own
+      // scrollbar — the page scrolls. `scrolling="no"` guarantees the inner
+      // scrollbar never appears (e.g. during a brief pre-resize layout).
+      scrolling="no"
       style={{
         width: "100%",
         height,
-        border: "1px solid var(--rule)",
-        borderRadius: 10,
+        border: bare ? "none" : "1px solid var(--rule)",
+        borderRadius: bare ? 0 : 10,
         background: "var(--paper)",
         display: "block",
+        ...(bare ? { minHeight: "calc(100dvh - 56px)" } : {}),
       }}
     />
   );

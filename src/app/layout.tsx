@@ -3,6 +3,7 @@ import { Inter, Source_Serif_4, JetBrains_Mono } from "next/font/google";
 import { ClerkProvider } from "@clerk/nextjs";
 import { NavHeader } from "@/components/NavHeader";
 import { Footer } from "@/components/Footer";
+import { SiteChrome } from "@/components/SiteChrome";
 import { ClientProviders } from "@/components/ClientProviders";
 import { EnsureYoyo } from "@/components/EnsureYoyo";
 import "./globals.css";
@@ -81,14 +82,9 @@ export default function RootLayout({
         <ClerkProvider>
           <ClientProviders>
             <EnsureYoyo />
-            <a href="#main-content" className="skip-nav">
-              Skip to main content
-            </a>
-            <NavHeader />
-            <main id="main-content" className="flex-1">
+            <SiteChrome nav={<NavHeader />} footer={<Footer />}>
               {children}
-            </main>
-            <Footer />
+            </SiteChrome>
           </ClientProviders>
         </ClerkProvider>
       </body>

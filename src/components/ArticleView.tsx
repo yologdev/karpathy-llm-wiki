@@ -400,7 +400,25 @@ export async function ArticleView({
             {isArtifactType(typeof fm.type === "string" ? fm.type : undefined) ? (
               // A saved HTML output is rendered verbatim in a sandboxed iframe
               // (isolated; no app cookie/DOM/network access) — never markdown.
-              <HtmlPreview html={page.body} />
+              <>
+                <div
+                  className="row"
+                  style={{ justifyContent: "flex-end", marginBottom: 10 }}
+                >
+                  <Link
+                    href={`/share/${pageTenant}/${slug}`}
+                    className="receipt"
+                    style={{
+                      fontSize: 12,
+                      color: "var(--muted)",
+                      textDecoration: "none",
+                    }}
+                  >
+                    Open full screen ↗
+                  </Link>
+                </div>
+                <HtmlPreview html={page.body} />
+              </>
             ) : (
               <MarkdownRenderer
                 content={articleBody}
