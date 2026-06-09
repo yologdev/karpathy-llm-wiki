@@ -6,7 +6,21 @@ import { getDiscussionStatsForSlugs } from "@/lib/talk";
 import { getPrincipal } from "@/lib/auth";
 import { listVaults } from "@/lib/vault";
 import { decodeSlug } from "@/lib/slugify";
-import { WikiIndexClient } from "@/components/WikiIndexClient";
+import { ProfileBlogIndex } from "@/components/ProfileBlogIndex";
+
+// Shared Folio pill style for the owner-scoped action links.
+const pill = {
+  display: "inline-flex",
+  alignItems: "center",
+  gap: 7,
+  fontSize: 13,
+  padding: "7px 13px",
+  borderRadius: 999,
+  border: "1px solid var(--rule)",
+  color: "var(--ink-2)",
+  textDecoration: "none",
+  whiteSpace: "nowrap" as const,
+};
 
 // Public profile: pages a given handle owns or has contributed to. Visible to
 // anyone (guests included) — yopedia is a public observer surface.
@@ -20,7 +34,10 @@ export default async function UserPage({
 
   const mine = new Set(await slugsForOwner(handle));
   const readable = await listReadableWikiPages(await getPrincipal());
-  const pages = readable.filter((p) => mine.has(p.slug));
+  // Newest-first, so the profile reads like a blog index.
+  const pages = readable
+    .filter((p) => mine.has(p.slug))
+    .sort((a, b) => (b.updated ?? "").localeCompare(a.updated ?? ""));
   const agents = await listAgentsForOwner(handle);
 
   // Public vaults this handle owns — their curated reference lenses over the
@@ -34,100 +51,124 @@ export default async function UserPage({
   for (const [slug, stats] of statsMap) discussionStats[slug] = stats;
 
   return (
-    <main className="mx-auto max-w-3xl px-6 py-12">
-      <div className="mb-6">
-        <Link href="/wiki?scope=all" className="text-sm text-foreground/50 hover:text-foreground">
+    <main
+      style={{
+        maxWidth: 940,
+        margin: "0 auto",
+        padding: "56px 24px 88px",
+      }}
+    >
+      <header style={{ marginBottom: 28 }}>
+        <Link
+          href="/wiki?scope=all"
+          className="receipt"
+          style={{ fontSize: 12, color: "var(--faint)", textDecoration: "none" }}
+        >
           ← All content
         </Link>
-        <h1 className="mt-2 text-3xl font-bold tracking-tight">@{handle}</h1>
-        <p className="mt-1 text-foreground/60">
+        <h1
+          className="display"
+          style={{ margin: "12px 0 4px", fontSize: 40 }}
+        >
+          @{handle}
+        </h1>
+        <p style={{ margin: 0, color: "var(--muted)" }}>
           Public pages owned or contributed by {handle}.
         </p>
 
-        {/* Silo actions — query/graph scoped to this handle's pages. */}
+        {/* Silo actions — query/graph/export scoped to this handle's pages. */}
         {pages.length > 0 && (
-          <div className="mt-3 flex flex-wrap gap-2">
-            <Link
-              href={`/query?scope=owner:${encodeURIComponent(handle)}`}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-foreground/10 px-3 py-1.5 text-sm text-foreground/70 hover:border-foreground/30 hover:text-foreground transition-colors"
-            >
+          <div className="row" style={{ gap: 8, flexWrap: "wrap", marginTop: 16 }}>
+            <Link href={`/query?scope=owner:${encodeURIComponent(handle)}`} style={pill}>
               💬 Ask these pages
             </Link>
-            <Link
-              href={`/wiki/graph?scope=owner:${encodeURIComponent(handle)}`}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-foreground/10 px-3 py-1.5 text-sm text-foreground/70 hover:border-foreground/30 hover:text-foreground transition-colors"
-            >
+            <Link href={`/wiki/graph?scope=owner:${encodeURIComponent(handle)}`} style={pill}>
               🕸 Graph this silo
             </Link>
             {/* Plain anchor — this is a file download, not a route. */}
-            <a
-              href={`/api/wiki/export?scope=owner:${encodeURIComponent(handle)}`}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-foreground/10 px-3 py-1.5 text-sm text-foreground/70 hover:border-foreground/30 hover:text-foreground transition-colors"
-            >
+            <a href={`/api/wiki/export?scope=owner:${encodeURIComponent(handle)}`} style={pill}>
               ⬇ Download vault
             </a>
           </div>
         )}
-      </div>
+      </header>
 
       {agents.length > 0 && (
-        <section className="mb-8">
-          <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-foreground/50">
+        <section style={{ marginBottom: 34 }}>
+          <p className="fmark" style={{ marginBottom: 12 }}>
             Agents
-          </h2>
-          <ul className="space-y-2">
+          </p>
+          <div className="stack" style={{ gap: 8 }}>
             {agents.map((agent) => (
-              <li key={agent.id}>
-                <Link
-                  href={`/u/${handle}/a/${agentShortName(agent)}`}
-                  className="group block rounded-lg border border-foreground/10 p-3 hover:border-foreground/30"
-                >
-                  <span className="font-medium group-hover:underline">
-                    {agent.name}
-                  </span>
-                  <span className="mt-0.5 block text-sm text-foreground/60">
-                    {agent.description}
-                  </span>
-                </Link>
-              </li>
+              <Link
+                key={agent.id}
+                href={`/u/${handle}/a/${agentShortName(agent)}`}
+                className="stack"
+                style={{
+                  gap: 3,
+                  textDecoration: "none",
+                  border: "1px solid var(--rule)",
+                  borderRadius: 12,
+                  background: "var(--paper-2)",
+                  padding: "13px 16px",
+                }}
+              >
+                <span style={{ fontWeight: 600, color: "var(--ink)" }}>
+                  {agent.name}
+                </span>
+                <span style={{ fontSize: 13.5, color: "var(--muted)" }}>
+                  {agent.description}
+                </span>
+              </Link>
             ))}
-          </ul>
+          </div>
         </section>
       )}
 
       {pages.length === 0 && vaults.length === 0 ? (
-        <p className="text-foreground/60">No pages yet.</p>
+        <p style={{ color: "var(--muted)" }}>No pages yet.</p>
       ) : (
         pages.length > 0 && (
-          <WikiIndexClient pages={pages} discussionStats={discussionStats} />
+          <section>
+            <p className="fmark" style={{ marginBottom: 14 }}>
+              {pages.length} {pages.length === 1 ? "page" : "pages"}
+            </p>
+            <ProfileBlogIndex pages={pages} discussionStats={discussionStats} />
+          </section>
         )
       )}
 
       {vaults.length > 0 && (
-        <section className="mt-10">
-          <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-foreground/50">
+        <section style={{ marginTop: 40 }}>
+          <p className="fmark" style={{ marginBottom: 8 }}>
             Vaults
-          </h2>
-          <p className="mb-3 text-sm text-foreground/50">
+          </p>
+          <p style={{ margin: "0 0 14px", fontSize: 13.5, color: "var(--muted)" }}>
             Curated reference lenses over the commons — live references, not copies.
           </p>
-          <ul className="space-y-2">
+          <div className="stack" style={{ gap: 8 }}>
             {vaults.map((vault) => (
-              <li key={vault.id}>
-                <Link
-                  href={`/wiki?scope=vault:${vault.id}`}
-                  className="group flex items-center justify-between rounded-lg border border-foreground/10 p-3 hover:border-foreground/30"
-                >
-                  <span className="font-medium group-hover:underline">
-                    {vault.name}
-                  </span>
-                  <span className="text-sm text-foreground/60">
-                    {vault.slugs.length} {vault.slugs.length === 1 ? "page" : "pages"}
-                  </span>
-                </Link>
-              </li>
+              <Link
+                key={vault.id}
+                href={`/wiki?scope=vault:${vault.id}`}
+                className="spread"
+                style={{
+                  alignItems: "center",
+                  textDecoration: "none",
+                  border: "1px solid var(--rule)",
+                  borderRadius: 12,
+                  padding: "13px 16px",
+                }}
+              >
+                <span style={{ fontWeight: 600, color: "var(--ink)" }}>
+                  {vault.name}
+                </span>
+                <span className="receipt" style={{ fontSize: 12, color: "var(--muted)" }}>
+                  {vault.slugs.length} {vault.slugs.length === 1 ? "page" : "pages"}
+                </span>
+              </Link>
             ))}
-          </ul>
+          </div>
         </section>
       )}
     </main>

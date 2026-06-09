@@ -1,3 +1,4 @@
+import Link from "next/link";
 import type { SourceEntry } from "@/lib/types";
 
 /**
@@ -79,10 +80,20 @@ export function Freshness({ expiry }: { expiry: string }) {
 }
 
 /** A contributor chip. Human = filled accent dot + `@handle`; agent = ringed
- *  graphite dot + the agent's short name (after `--`), in agent color. */
-export function Mark({ id, agent }: { id: string; agent?: boolean }) {
+ *  graphite dot + the agent's short name (after `--`), in agent color. When
+ *  `href` is set (humans only — agents aren't `/u/<handle>` profiles), the chip
+ *  links there while keeping the `.mark` styling. */
+export function Mark({
+  id,
+  agent,
+  href,
+}: {
+  id: string;
+  agent?: boolean;
+  href?: string;
+}) {
   const name = agent && id.includes("--") ? id.split("--").pop() : id;
-  return (
+  const inner = (
     <span
       className={`mark ${agent ? "agent" : "human"}`}
       title={agent ? "agent" : "human contributor"}
@@ -91,6 +102,7 @@ export function Mark({ id, agent }: { id: string; agent?: boolean }) {
       {agent ? name : "@" + name}
     </span>
   );
+  return href ? <Link href={href}>{inner}</Link> : inner;
 }
 
 /** 1-letter monogram. Human = circle (accent-soft); agent = squircle (graphite). */

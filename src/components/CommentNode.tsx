@@ -3,6 +3,7 @@
 import { useState } from "react";
 import type { TalkComment } from "@/lib/types";
 import { formatRelativeTime } from "@/lib/format";
+import { UserLink } from "@/components/UserLink";
 
 // ---------------------------------------------------------------------------
 // Comment tree builder
@@ -88,7 +89,10 @@ export function CommentNode({
     <div className={indentClasses}>
       <div className="rounded bg-foreground/5 p-2">
         <div className="flex items-center gap-2 text-xs text-foreground/50">
-          <span className="font-medium text-foreground/70">{node.comment.author}</span>
+          <UserLink
+            handle={node.comment.author}
+            className="font-medium text-foreground/70 hover:underline"
+          />
           <span>·</span>
           <span>{formatRelativeTime(node.comment.created)}</span>
         </div>

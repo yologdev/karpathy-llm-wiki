@@ -10,6 +10,7 @@ import {
   editPath,
   rawPath,
   resolveSlugPath,
+  profileHref,
 } from "../links";
 
 describe("escapeRegex", () => {
@@ -151,6 +152,14 @@ describe("canonical URL builders", () => {
     expect(commonsPath("retrieval-augmented-generation")).toBe(
       "/wiki/retrieval-augmented-generation",
     );
+  });
+
+  it("builds the profile URL /u/<handle>, percent-encoding unsafe handles", () => {
+    expect(profileHref("yuanhao")).toBe("/u/yuanhao");
+    expect(profileHref("alice--yoyo")).toBe("/u/alice--yoyo");
+    // Spaces / slashes are encoded so the URL stays routable.
+    expect(profileHref("Jean Luc")).toBe("/u/Jean%20Luc");
+    expect(profileHref("a/b")).toBe("/u/a%2Fb");
   });
 });
 

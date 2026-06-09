@@ -7,6 +7,7 @@ import { listCommonsPages } from "@/lib/commons";
 import { listContributors } from "@/lib/contributors";
 import { getContributorIndex } from "@/lib/contributor-index";
 import { getTrail } from "@/lib/trail";
+import { profileHref } from "@/lib/links";
 
 const HOW_IT_WORKS: [string, string][] = [
   ["Ingest", "A source — URL, PDF, tweet — is synthesized into a cited page."],
@@ -234,7 +235,7 @@ export default async function Home() {
                     return (
                       <li key={c.handle} className="spread">
                         <Link
-                          href={`/wiki/contributors/${c.handle}`}
+                          href={profileHref(c.handle)}
                           className="row"
                           style={{ gap: 10 }}
                         >

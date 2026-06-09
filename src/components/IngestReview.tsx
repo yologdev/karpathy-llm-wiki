@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from "react";
 import { MarkdownRenderer } from "@/components/MarkdownRenderer";
 import { Alert } from "@/components/Alert";
 import { Icon } from "@/components/folio/icons";
+import { UserLink } from "@/components/UserLink";
 import type { IngestPreviewMeta } from "@/lib/types";
 
 export interface PreviewData {
@@ -170,7 +171,11 @@ export function IngestReview({ preview, loading, onApprove, onCancel, error }: P
                     background: "var(--accent)",
                   }}
                 />
-                @{meta.owner || "you"}
+                {meta.owner ? (
+                  <UserLink handle={meta.owner} className="hover:underline" />
+                ) : (
+                  "@you"
+                )}
               </span>
             </MetaCell>
             <MetaCell label="via">

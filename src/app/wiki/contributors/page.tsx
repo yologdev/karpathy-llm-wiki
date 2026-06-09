@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { listContributors } from "@/lib/contributors";
 import { getPrincipal } from "@/lib/auth";
+import { profileHref } from "@/lib/links";
 
 /** Map trust score to a colored dot. */
 function trustDot(score: number): { color: string; label: string } {
@@ -62,7 +63,7 @@ export default async function ContributorsPage() {
                   >
                     <td className="py-2 pr-4">
                       <Link
-                        href={`/wiki/contributors/${encodeURIComponent(c.handle)}`}
+                        href={profileHref(c.handle)}
                         className="inline-flex items-center gap-1.5 text-foreground hover:underline"
                       >
                         <span

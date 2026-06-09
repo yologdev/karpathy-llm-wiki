@@ -14,6 +14,7 @@
 
 import { useEffect, useState } from "react";
 import type { ContributorProfile } from "@/lib/types";
+import { profileHref } from "@/lib/links";
 
 export interface ContributorBadgeProps {
   handle: string;
@@ -90,10 +91,7 @@ export function ContributorBadge({
         }}
         aria-hidden="true"
       />
-      <a
-        href={`/wiki/contributors/${encodeURIComponent(handle)}`}
-        className="hover:underline"
-      >
+      <a href={profileHref(handle)} className="hover:underline">
         {handle}
       </a>
     </span>

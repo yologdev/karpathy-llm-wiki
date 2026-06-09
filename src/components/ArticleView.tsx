@@ -4,7 +4,7 @@ import { slugify } from "@/lib/slugify";
 import type { Frontmatter } from "@/lib/frontmatter";
 import type { WikiPage } from "@/lib/types";
 import { findBacklinks, findSimilarPages, buildSlugTenantMap, isArtifactType } from "@/lib/wiki";
-import { resolveSlugPath } from "@/lib/links";
+import { resolveSlugPath, profileHref } from "@/lib/links";
 import { getCommonsSlugSet, belongsInCommons } from "@/lib/commons";
 import type { Principal } from "@/lib/auth";
 import { parseSources, dedupeSourcesForDisplay } from "@/lib/sources";
@@ -223,7 +223,11 @@ export async function ArticleView({
             return (
               <span key={id} className="row" style={{ gap: 6 }}>
                 <Avatar id={id} agent={agent} size={22} />
-                <Mark id={id} agent={agent} />
+                <Mark
+                  id={id}
+                  agent={agent}
+                  href={agent ? undefined : profileHref(id)}
+                />
               </span>
             );
           })}

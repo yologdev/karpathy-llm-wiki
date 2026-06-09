@@ -114,6 +114,16 @@ export function rawPath(tenant: string, slug: string): string {
 }
 
 /**
+ * Canonical public profile URL for a human handle: `/u/<handle>`. The single
+ * place a username links to its profile (used by {@link Mark}, `UserLink`, and
+ * the contributor lists). The handle is percent-encoded so non-ASCII / spaced
+ * handles stay routable; the `/u/[handle]` route decodes it.
+ */
+export function profileHref(handle: string): string {
+  return `/u/${encodeURIComponent(handle)}`;
+}
+
+/**
  * A precomputed slug→tenant map for resolving links where only the target slug
  * is known (in-content wikilinks, backlinks). Pre-P5 slugs are globally unique,
  * so one slug maps to exactly one tenant.

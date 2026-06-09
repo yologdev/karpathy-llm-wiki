@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { formatRelativeTime } from "@/lib/format";
-import { commonsPath } from "@/lib/links";
+import { commonsPath, profileHref } from "@/lib/links";
 import { Mark, SrcChip } from "./folio/primitives";
 import type { TrailEvent } from "@/lib/trail";
 
@@ -37,7 +37,11 @@ export function Trail({ events }: { events: TrailEvent[] }) {
             className="row"
             style={{ gap: 8, flexWrap: "wrap", fontSize: 14, lineHeight: 1.5 }}
           >
-            <Mark id={e.actor} agent={e.isAgent} />
+            <Mark
+              id={e.actor}
+              agent={e.isAgent}
+              href={e.isAgent ? undefined : profileHref(e.actor)}
+            />
             <span style={{ color: "var(--muted)" }}>{e.action}</span>
             {e.sourceType && <SrcChip type={e.sourceType} />}
             <Link

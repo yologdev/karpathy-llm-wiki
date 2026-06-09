@@ -1,6 +1,7 @@
 "use client";
 
 import { formatRelativeTime } from "@/lib/format";
+import { UserLink } from "@/components/UserLink";
 
 export interface Revision {
   timestamp: number;
@@ -40,7 +41,13 @@ export function RevisionItem({
     <li>
       <div className="flex items-center gap-3 flex-wrap">
         <span className="text-sm text-foreground/70">
-          {rev.author ? `by ${rev.author} · ` : ""}{formatRelativeTime(rev.date)}
+          {rev.author ? (
+            <>
+              by{" "}
+              <UserLink handle={rev.author} className="hover:underline" /> ·{" "}
+            </>
+          ) : null}
+          {formatRelativeTime(rev.date)}
         </span>
         <span className="text-xs text-foreground/40">
           {formatBytes(rev.sizeBytes)}
