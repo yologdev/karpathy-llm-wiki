@@ -53,11 +53,26 @@ const SANDBOX_HEAD =
   `window.addEventListener('load',r);setTimeout(r,60);})();</script>`;
 
 /**
+ * Strip a wrapping markdown code fence (```` ```html ... ``` ````) that the model
+ * sometimes adds despite being told to emit raw HTML — otherwise the fence
+ * markers leak into the rendered document as literal text. Handles a complete
+ * fence and an unterminated leading fence (mid-stream).
+ */
+export function stripHtmlFence(html: string): string {
+  let out = (html ?? "").trim();
+  const fenced = out.match(/^```[a-z0-9]*\s*\n([\s\S]*?)\n?```$/i);
+  if (fenced) return fenced[1].trim();
+  // Leading/trailing fence without a clean pair (e.g. still streaming).
+  out = out.replace(/^```[a-z0-9]*[ \t]*\n/i, "").replace(/\n```[ \t]*$/i, "");
+  return out.trim();
+}
+
+/**
  * Compose a srcdoc string from model HTML, injecting the sandbox `<head>` bits.
  * Robust to a full document, an `<html>` without a `<head>`, or a bare fragment.
  */
 export function composeSrcDoc(html: string): string {
-  const src = (html ?? "").trim();
+  const src = stripHtmlFence(html);
 
   const headOpen = src.match(/<head[^>]*>/i);
   if (headOpen?.index !== undefined) {

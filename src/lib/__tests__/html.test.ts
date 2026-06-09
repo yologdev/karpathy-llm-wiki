@@ -2,9 +2,41 @@ import { describe, it, expect } from "vitest";
 import {
   composeSrcDoc,
   htmlToPlainText,
+  stripHtmlFence,
   HTML_SANDBOX,
   HTML_MAX_HEIGHT,
 } from "../html";
+
+describe("stripHtmlFence", () => {
+  it("strips a wrapping ```html fence", () => {
+    expect(stripHtmlFence("```html\n<!doctype html><body>x</body>\n```")).toBe(
+      "<!doctype html><body>x</body>",
+    );
+  });
+
+  it("strips a bare ``` fence", () => {
+    expect(stripHtmlFence("```\n<p>x</p>\n```")).toBe("<p>x</p>");
+  });
+
+  it("strips an unterminated leading fence (mid-stream)", () => {
+    expect(stripHtmlFence("```html\n<!doctype html><body>partial")).toBe(
+      "<!doctype html><body>partial",
+    );
+  });
+
+  it("leaves un-fenced HTML untouched", () => {
+    expect(stripHtmlFence("<!doctype html><body>x</body>")).toBe(
+      "<!doctype html><body>x</body>",
+    );
+  });
+
+  it("composeSrcDoc renders fenced HTML without the fence markers", () => {
+    const out = composeSrcDoc("```html\n<html><head></head><body>hi</body></html>\n```");
+    expect(out).not.toContain("```");
+    expect(out).toContain("hi");
+    expect(out).toContain("default-src 'none'");
+  });
+});
 
 describe("composeSrcDoc", () => {
   it("injects a locked-down CSP (default-src 'none', no connect-src)", () => {

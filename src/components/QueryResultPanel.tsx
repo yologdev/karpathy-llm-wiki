@@ -5,6 +5,7 @@ import Link from "next/link";
 import { MarkdownRenderer } from "@/components/MarkdownRenderer";
 import { SlidePreview } from "@/components/SlidePreview";
 import { HtmlPreview } from "@/components/HtmlPreview";
+import { stripHtmlFence } from "@/lib/html";
 import { Alert } from "@/components/Alert";
 import { useSlugTenants } from "@/hooks/useSlugTenants";
 import { logger } from "@/lib/logger";
@@ -64,7 +65,7 @@ export function QueryResultPanel({
     // formats copy a markdown wrapper with a heading + sources.
     let text: string;
     if (isHtml) {
-      text = result.answer;
+      text = stripHtmlFence(result.answer);
     } else {
       const lines = [`# ${question.trim()}`, "", result.answer];
       if (result.sources.length > 0) {
@@ -257,12 +258,12 @@ export function QueryResultPanel({
 
           {saveState.status === "saved" && saveState.slug && (
             <Alert variant="success">
-              Saved to the wiki and your vault.{" "}
+              {isHtml ? "Saved to your pages." : "Saved to the wiki."}{" "}
               <Link
                 href={hrefForSlug(saveState.slug)}
                 className="underline font-medium hover:opacity-80"
               >
-                View wiki page →
+                View →
               </Link>
             </Alert>
           )}

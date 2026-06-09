@@ -8,7 +8,7 @@ import {
   isArtifactType,
 } from "./wiki";
 import { slugify } from "./slugify";
-import { htmlToPlainText } from "./html";
+import { htmlToPlainText, stripHtmlFence } from "./html";
 import { extractSummary } from "./ingest";
 import { loadPageConventions } from "./schema";
 import { serializeFrontmatter } from "./frontmatter";
@@ -88,7 +88,7 @@ marp: true
  * answer — a single self-contained document rendered in a sandboxed iframe.
  */
 export const HTML_FORMAT_INSTRUCTION = `Format your answer as a SINGLE, SELF-CONTAINED HTML document — richer and more readable than markdown.
-- Output ONLY HTML: start with \`<!doctype html>\` and a full \`<html>\`/\`<head>\`/\`<body>\`. No markdown, no code fences around it.
+- Output ONLY HTML: start your reply with \`<!doctype html>\` and a full \`<html>\`/\`<head>\`/\`<body>\`. Do NOT wrap it in a markdown code fence (no \`\`\`html). No prose before or after.
 - Style with an inline \`<style>\` block. Use clean, readable typography and a light layout (headings, sections, callouts, tables where useful).
 - For charts/diagrams, draw them as INLINE \`<svg>\` (bar/line/pie/flow). Do NOT use any charting library.
 - It MUST be fully self-contained: NO external resources — no \`<link>\`, no \`<script src>\`, no CDN URLs, no web fonts, no network requests. Images only as inline \`data:\` URIs or inline SVG.
@@ -301,18 +301,19 @@ export async function saveAnswerToWiki(
 
   const isHtml = contentType === "html";
 
-  // HTML is stored VERBATIM — prepending a markdown `# title` would corrupt the
-  // document (the title still shows via ArticleView's <h1>, outside the iframe).
-  // Markdown gets the usual H1 if it lacks one.
+  // Strip any markdown code fence the model wrapped the document in, so the saved
+  // page is clean HTML (it's stored verbatim, no H1 prepend — the title shows via
+  // ArticleView's <h1> outside the iframe). Markdown gets the usual H1 if missing.
+  const html = isHtml ? stripHtmlFence(content) : content;
   const pageContent = isHtml
-    ? content
+    ? html
     : content.trimStart().startsWith("# ")
       ? content
       : `# ${title}\n\n${content}`;
 
   // Summary comes from plain text: tag-stripped for HTML, heading-stripped for md.
   const plainContent = isHtml
-    ? htmlToPlainText(content)
+    ? htmlToPlainText(html)
     : content.replace(/^#.*$/gm, "").trim();
   const summary = extractSummary(plainContent) || title;
 
