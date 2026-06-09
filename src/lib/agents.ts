@@ -86,8 +86,10 @@ function validateProfile(profile: AgentProfile): void {
 // This keeps a flat agents/<id>.json registry (and the existing id-based API
 // and `agent:<id>` search scope) working unchanged — the id is just composite.
 
-/** The default agent name every user gets. */
-export const DEFAULT_AGENT_NAME = "yoyo";
+// The default agent name + agent-handle test live in a client-safe leaf module;
+// re-export them so existing server importers keep using `@/lib/agents`.
+export { DEFAULT_AGENT_NAME, isAgentHandle } from "./agent-handle";
+import { DEFAULT_AGENT_NAME } from "./agent-handle";
 
 /** The owner handle of the canonical root agent (the synced base). */
 export const BASE_AGENT_OWNER = "yopedia";
@@ -110,22 +112,6 @@ export function agentIdFor(owner: string, name: string = DEFAULT_AGENT_NAME): st
 /** The id of the canonical root agent every per-user yoyo is forked from. */
 export function baseAgentId(): string {
   return agentIdFor(BASE_AGENT_OWNER, DEFAULT_AGENT_NAME);
-}
-
-/**
- * True when an author/actor handle denotes an agent rather than a human.
- * Agents appear as the composite id `<owner>--<name>` (e.g. `yuanhao--yoyo`)
- * or, in some legacy attributions, as the bare agent name (`yoyo`). Used to
- * mark agent contributions distinctly across the UI — never to fold agents
- * into the human contributor list.
- */
-export function isAgentHandle(handle: string | null | undefined): boolean {
-  if (!handle) return false;
-  return (
-    handle.includes("--") ||
-    handle === DEFAULT_AGENT_NAME ||
-    handle.endsWith(`--${DEFAULT_AGENT_NAME}`)
-  );
 }
 
 /**
