@@ -198,6 +198,7 @@ export async function POST(req: Request, { params }: RouteParams) {
       summary,
       logOp: "edit",
       crossRefSource: revisionContent,
+      author: principal?.handle,
       logDetails: (ctx) =>
         `reverted to revision ${new Date(timestamp).toISOString()} · updated ${ctx.updatedSlugs.length} cross-ref(s)`,
     });
