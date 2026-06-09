@@ -5479,3 +5479,32 @@ Assessed project state: build green (2807 tests), pipeline has 1 in-progress (#4
 - Private tier / billing — roadmap item #3, depends on human action (Clerk Billing setup).
 
 **Pipeline state:** 2 in triage (#495, #496), 1 in-progress (#459), 3 PRs awaiting review, 0 blocked. Office Hour should triage both — #495 is higher value (enables agent self-organization) while #496 is defensive (pre-positions the edit page for the realm-aware write model).
+
+## 2026-06-10 (pm)
+
+Assessed project state: build green (2811 tests), pipeline has 1 in-progress (#459 source dedup), 3 open PRs awaiting review (#464, #481, #494), 0 ready, 0 blocked. Only other open issue is #139 (community discussion, no labels).
+
+**Growth scan — deep audit of realm-aware write model, agent→commons pipeline, and MCP surface:**
+
+Dispatched sub-agents to audit the top two roadmap items: (1) realm-aware write model (roadmap #1), (2) agents as commons contributors (roadmap #2), and (3) MCP tool completeness.
+
+**Key findings:**
+
+*Realm-aware write model:* The gap is clearly mapped. All commons pages are writable by any signed-in user via PUT/PATCH/DELETE/revert. The UI has already moved in the right direction — `ArticleActions.tsx` intentionally hides the edit button from commons pages — but the API and edit route remain wide open. MCP `handleUpdatePage` and `handleDeletePage` have zero realm ACL (unlike `handleUpdateMetadata` which goes through `patchMetadata`). This is the #1 roadmap item and needs architecture before build tickets.
+
+*Agent→commons pipeline:* Agent pages are hard-walled from the commons via `isAgentScopedType()`. The `asOwner` delegation exists but erases all agent provenance — `author`, `owner`, and `triggeredBy` are all set to the human's handle. There is no promotion/graduation flow from agent-knowledge to commons. No page type for agent-contributed-but-public content. This is roadmap #2 and also needs architecture.
+
+*MCP surface:* 38 tools, comprehensive coverage. Vault management tools (#495) just landed. Remaining gap: vault CRUD (create/rename/delete) — but `vault_curate` auto-creates, so only rename/delete are truly missing. Low priority.
+
+*One concrete bug found:* The revert route (`POST /api/wiki/[slug]/revisions`) resolves the principal for ACL checks but never passes `author` to `writeWikiPageWithSideEffects`. Reverts are invisible in the contributor index, revision sidecar, and activity trail. The PUT handler in the same file does this correctly.
+
+**Filed:**
+- **#500 (bug)** — Revert route does not pass author. Reverts unattributed in revision sidecar, contributor index, and activity trail. Small, 1 file.
+
+**Deferred (architectural — need needs-architecture tag, not build tickets):**
+- Realm-aware write model — the full gap is mapped; needs Architect to decompose into atomic steps. The "smallest useful step" is either a per-page `commons_locked` flag or threading a `writeKind` (prose vs metadata) through `canWritePage`.
+- Agent→commons publish path — needs a new ingest option (`publishScope: "commons"`), a page type for agent-contributed-but-public content, agent provenance tracking, and a review/approval gate.
+- MCP realm ACL on `handleUpdatePage` / `handleDeletePage` — will be subsumed by the realm-aware write model. No point filing per-tool bugs ahead of the architectural change.
+- `asOwner` agent provenance erasure — design decision, not a bug. Needs architecture.
+
+**Pipeline state:** 1 in triage (#500), 1 in-progress (#459), 3 PRs awaiting review, 0 blocked. The review bottleneck (3 PRs with 0 reviews) is the current throughput constraint. Office Hour should triage #500 — it's a simple attribution bug with a 1-line fix.
