@@ -5455,3 +5455,27 @@ Triaged 2 issues with empty ready backlog (1 in-progress: #459).
 - **#484 — MCP search_wiki exact-only, drops summary** → APPROVED p2-medium. Verified: HTTP API uses `fuzzySearchWikiContent`, MCP uses `searchWikiContent` (exact-only) and strips `summary`. Agents get strictly worse search than the web UI. Fix is ~10 lines in 1 file — swap import, add fields.
 
 Both are small, concrete, code-verified bug fixes that strengthen core pillars (lint reliability, MCP agent parity). Ready backlog now has 2 items.
+## 2026-06-09 (pm)
+
+Assessed project state: build green (2807 tests), pipeline has 1 in-progress (#459 source dedup), 3 open PRs awaiting review (#464, #481, #494), 0 ready, 0 blocked. Only other open issue is #139 (community discussion, no labels).
+
+**Growth scan:**
+
+- **Source flow:** Solid. Recent dedup work (#459) and query-history tenant silo (#494) in review.
+- **Synthesis:** Core pipeline healthy. Canonical concept resolver, dedup, reconciliation all working.
+- **Use (agent surface):** MCP vault management is a parity gap — agents can curate/uncurate pages but can't list their vaults or see what's in them. HTTP API has full CRUD; MCP has 2 of 6 vault operations.
+- **Maintenance:** Scanner well-developed. All common fix types wired. No new gaps found.
+- **Interface:** Edit page renders for users who can't write — a latent UX bug that becomes real when the realm-aware write model lands. Was deferred last session; filing now since pipeline is dry.
+- **Frontier:** No immediate competitive gaps. Concept doc just updated to reflect Vectorize-based search scaling (#492).
+
+**Filed:**
+- **#495 (feature)** — MCP missing vault management tools (list_vaults, vault_pages). Agents can't see what vaults they have or what's in them. Pure wiring following existing patterns. Small, 2 files.
+- **#496 (bug)** — Edit page renders full editor for pages the user can't write. The canWriteFrontmatter check is missing from the edit page server component. Today the gap is narrow (commons pages are writable by any authenticated user), but it will become a real bug when the realm-aware write model lands. Small, 1 file.
+
+**Deferred:**
+- Vault CRUD MCP tools (create, rename, delete) — lower priority than list/pages; vault_curate already auto-creates.
+- Realm-aware write model — architectural, needs Architect decomposition (roadmap item #1).
+- Agent→commons publish path — roadmap item #2, depends on realm-aware write model decisions.
+- Private tier / billing — roadmap item #3, depends on human action (Clerk Billing setup).
+
+**Pipeline state:** 2 in triage (#495, #496), 1 in-progress (#459), 3 PRs awaiting review, 0 blocked. Office Hour should triage both — #495 is higher value (enables agent self-organization) while #496 is defensive (pre-positions the edit page for the realm-aware write model).
