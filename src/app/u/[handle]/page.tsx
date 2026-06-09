@@ -6,7 +6,38 @@ import { getDiscussionStatsForSlugs } from "@/lib/talk";
 import { getPrincipal } from "@/lib/auth";
 import { listVaults } from "@/lib/vault";
 import { decodeSlug } from "@/lib/slugify";
+import { buildContributorProfile } from "@/lib/contributors";
 import { ProfileBlogIndex } from "@/components/ProfileBlogIndex";
+
+/** Trust score → a short label (mirrors the retired contributor detail page). */
+function trustLabel(score: number): string {
+  if (score >= 0.7) return "Established";
+  if (score >= 0.3) return "Growing";
+  return "New";
+}
+
+function StatCell({ label, value }: { label: string; value: string | number }) {
+  return (
+    <div
+      className="stack"
+      style={{
+        gap: 2,
+        border: "1px solid var(--rule)",
+        borderRadius: 10,
+        background: "var(--paper-2)",
+        padding: "10px 13px",
+      }}
+    >
+      <span
+        className="receipt"
+        style={{ fontSize: 18, fontWeight: 600, color: "var(--ink)" }}
+      >
+        {value}
+      </span>
+      <span style={{ fontSize: 11, color: "var(--muted)" }}>{label}</span>
+    </div>
+  );
+}
 
 // Shared Folio pill style for the owner-scoped action links.
 const pill = {
@@ -32,13 +63,22 @@ export default async function UserPage({
   const { handle: encoded } = await params;
   const handle = decodeSlug(encoded);
 
+  const principal = await getPrincipal();
   const mine = new Set(await slugsForOwner(handle));
-  const readable = await listReadableWikiPages(await getPrincipal());
+  const readable = await listReadableWikiPages(principal);
   // Newest-first, so the profile reads like a blog index.
   const pages = readable
     .filter((p) => mine.has(p.slug))
     .sort((a, b) => (b.updated ?? "").localeCompare(a.updated ?? ""));
   const agents = await listAgentsForOwner(handle);
+
+  // Contribution stats (edits/comments/trust) — moved here from the retired
+  // /wiki/contributors/<handle> page. Shown only when the handle has activity.
+  const contrib = await buildContributorProfile(handle, undefined, principal);
+  const hasActivity =
+    contrib.editCount > 0 ||
+    contrib.commentCount > 0 ||
+    contrib.threadsCreated > 0;
 
   // Public vaults this handle owns — their curated reference lenses over the
   // commons. Private vaults are hidden on the public profile.
@@ -89,6 +129,46 @@ export default async function UserPage({
             <a href={`/api/wiki/export?scope=owner:${encodeURIComponent(handle)}`} style={pill}>
               ⬇ Download vault
             </a>
+          </div>
+        )}
+
+        {/* Contribution stats — only when the handle has activity. */}
+        {hasActivity && (
+          <div style={{ marginTop: 18 }}>
+            <span
+              className="receipt"
+              style={{
+                display: "inline-block",
+                fontSize: 11,
+                padding: "3px 10px",
+                borderRadius: 999,
+                background: "var(--accent-soft)",
+                color: "var(--accent)",
+                border: "1px solid var(--rule)",
+              }}
+            >
+              {trustLabel(contrib.trustScore)} · trust{" "}
+              {contrib.trustScore.toFixed(2)}
+            </span>
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns:
+                  "repeat(auto-fit, minmax(min(120px, 100%), 1fr))",
+                gap: 10,
+                marginTop: 12,
+              }}
+            >
+              <StatCell label="Edits" value={contrib.editCount} />
+              <StatCell label="Pages edited" value={contrib.pagesEdited} />
+              <StatCell label="Comments" value={contrib.commentCount} />
+              <StatCell label="Threads" value={contrib.threadsCreated} />
+              {contrib.revertCount > 0 && (
+                <StatCell label="Reverts" value={contrib.revertCount} />
+              )}
+              <StatCell label="First seen" value={contrib.firstSeen.slice(0, 10)} />
+              <StatCell label="Last seen" value={contrib.lastSeen.slice(0, 10)} />
+            </div>
           </div>
         )}
       </header>
