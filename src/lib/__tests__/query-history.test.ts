@@ -200,4 +200,60 @@ describe("legacy migration → tenant silo", () => {
     await fs.writeFile(legacyPerOwnerPath("alice"), legacy, "utf-8");
     expect(await listQueries(undefined, "alice")).toHaveLength(1); // no duplicate
   });
+
+  it("consolidates BOTH legacy sources for one owner, deduping a shared id (no dup)", async () => {
+    await fs.mkdir(path.join(tmpDir, "wiki", "query-history"), { recursive: true });
+    await fs.writeFile(legacySharedPath(), JSON.stringify([
+      { id: "s1", ...entry("alice", { question: "shared q" }) },
+      { id: "dup", ...entry("alice", { question: "from shared" }) },
+    ]), "utf-8");
+    await fs.writeFile(legacyPerOwnerPath("alice"), JSON.stringify([
+      { id: "p1", ...entry("alice", { question: "interim q" }) },
+      { id: "dup", ...entry("alice", { question: "from interim" }) }, // same id in both
+    ]), "utf-8");
+
+    const ids = (await listQueries(undefined, "alice")).map((e) => e.id).sort();
+    expect(ids).toEqual(["dup", "p1", "s1"]); // dup exactly once
+    await expect(fs.access(legacySharedPath())).rejects.toThrow();
+    await expect(fs.access(legacyPerOwnerPath("alice"))).rejects.toThrow();
+  });
+
+  it("prunes the shared file per-owner: keeps bob until bob migrates", async () => {
+    await fs.mkdir(path.join(tmpDir, "wiki"), { recursive: true });
+    await fs.writeFile(legacySharedPath(), JSON.stringify([
+      { id: "a", ...entry("alice", { question: "alice q" }) },
+      { id: "b", ...entry("bob", { question: "bob q" }) },
+    ]), "utf-8");
+
+    await listQueries(undefined, "alice");
+    // Shared file still exists and now holds ONLY bob's entry.
+    const afterAlice = JSON.parse(await fs.readFile(legacySharedPath(), "utf-8"));
+    expect(afterAlice.map((e: { owner: string }) => e.owner)).toEqual(["bob"]);
+
+    await listQueries(undefined, "bob");
+    await expect(fs.access(legacySharedPath())).rejects.toThrow(); // now empty → deleted
+    expect((await listQueries(undefined, "bob")).map((e) => e.question)).toEqual(["bob q"]);
+  });
+
+  it("quarantines an unparseable legacy file instead of probing it forever", async () => {
+    await fs.mkdir(path.join(tmpDir, "wiki"), { recursive: true });
+    await fs.writeFile(legacySharedPath(), "not json!", "utf-8");
+
+    expect(await listQueries(undefined, "alice")).toEqual([]);
+    // Original removed; quarantined copy kept for recovery.
+    await expect(fs.access(legacySharedPath())).rejects.toThrow();
+    expect(await fs.readFile(`${legacySharedPath()}.corrupt`, "utf-8")).toBe("not json!");
+  });
+});
+
+describe("tenant keying contract", () => {
+  it("owners that normalize to the same tenant share one silo file (consistent identity)", async () => {
+    // ownerToTenant maps "al.ice" and "al-ice" to the same tenant — the same
+    // identity the app uses for pages/raw/discuss, so they intentionally share.
+    expect(tenantForOwner("al.ice")).toBe(tenantForOwner("al-ice"));
+    await appendQuery(entry("al.ice", { question: "dotted" }));
+    await appendQuery(entry("al-ice", { question: "dashed", timestamp: "2025-01-02T00:00:00Z" }));
+    expect((await listQueries(undefined, "al.ice")).map((e) => e.question)).toEqual(["dashed", "dotted"]);
+    expect((await listQueries(undefined, "al-ice")).map((e) => e.question)).toEqual(["dashed", "dotted"]);
+  });
 });

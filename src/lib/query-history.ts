@@ -86,15 +86,35 @@ function generateId(): string {
   return `${ts}-${rand}`;
 }
 
-/** Read a history file, returning [] on absence OR any error (for legacy reads). */
-async function readHistoryLenient(relPath: string): Promise<QueryHistoryEntry[]> {
+/**
+ * Read a LEGACY history file for migration. Absent → []. A transient read error
+ * → [] + warn (defer migration to the next access). An UNPARSEABLE file is
+ * quarantined to `<path>.corrupt` and removed (so the per-request migration probe
+ * stops re-firing forever) and surfaced at `error` — a human may want to recover
+ * it. Returns [] in every non-happy case so a corrupt/missing legacy file never
+ * blocks the silo write.
+ */
+async function readLegacyHistory(relPath: string): Promise<QueryHistoryEntry[]> {
+  const storage = getStorage();
+  let raw: string;
   try {
-    const raw = await getStorage().readFile(relPath);
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? (parsed as QueryHistoryEntry[]) : [];
+    raw = await storage.readFile(relPath);
   } catch (err: unknown) {
     if (!isEnoent(err)) {
-      logger.warn("query-history", `lenient read ${relPath} failed:`, err);
+      logger.warn("query-history", `legacy read ${relPath} failed:`, err);
+    }
+    return [];
+  }
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? (parsed as QueryHistoryEntry[]) : [];
+  } catch (err) {
+    logger.error("query-history", `legacy ${relPath} unparseable; quarantining:`, err);
+    try {
+      await storage.writeFile(`${relPath}.corrupt`, raw);
+      await storage.deleteFile(relPath);
+    } catch (qerr) {
+      logger.error("query-history", `quarantine ${relPath} failed:`, qerr);
     }
     return [];
   }
@@ -150,9 +170,10 @@ function trimToCap(entries: QueryHistoryEntry[]): QueryHistoryEntry[] {
 /**
  * Consolidate an owner's history from the legacy locations into their tenant
  * silo, then remove the legacy copies. Idempotent (dedupe by id) and loss-safe
- * (silo is written BEFORE legacy is cleared). Cheap once done — both legacy
- * probes miss. Never throws for the listQueries path beyond what readOwnerHistory
- * would; a transient failure just defers migration to the next access.
+ * (silo is written BEFORE legacy is cleared, so a cleanup failure just re-merges
+ * next time). Cheap once done — both legacy probes miss. A silo/legacy WRITE
+ * failure propagates (it gates the cleanup, keeping migration loss-safe); a
+ * transient legacy READ just defers migration to the next access.
  */
 async function migrateLegacyHistory(owner: string): Promise<void> {
   const storage = getStorage();
@@ -167,15 +188,22 @@ async function migrateLegacyHistory(owner: string): Promise<void> {
 
   // Gather legacy entries for THIS owner (shared older than the interim files).
   const sharedOwner = sharedExists
-    ? (await readHistoryLenient(sharedPath)).filter((e) => e.owner === owner)
+    ? (await readLegacyHistory(sharedPath)).filter((e) => e.owner === owner)
     : [];
-  const perOwner = perOwnerExists ? await readHistoryLenient(perOwnerPath) : [];
+  const perOwner = perOwnerExists ? await readLegacyHistory(perOwnerPath) : [];
 
   // 1. Merge into the silo first (so nothing is lost if cleanup later fails).
   await withFileLock(lockFor(owner), async () => {
     const silo = await readOwnerHistory(owner);
+    // Dedupe by id against the silo AND across the two sources (the same id can
+    // appear in both if a #493 split left the shared file in place).
     const seen = new Set(silo.map((e) => e.id));
-    const incoming = [...sharedOwner, ...perOwner].filter((e) => !seen.has(e.id));
+    const incoming: QueryHistoryEntry[] = [];
+    for (const e of [...sharedOwner, ...perOwner]) {
+      if (seen.has(e.id)) continue;
+      seen.add(e.id);
+      incoming.push(e);
+    }
     if (incoming.length > 0) {
       await writeOwnerHistory(owner, trimToCap([...incoming, ...silo]));
     }
@@ -188,7 +216,7 @@ async function migrateLegacyHistory(owner: string): Promise<void> {
   //    ordering. The `rest.length === all.length` guard skips a needless rewrite.
   if (sharedExists) {
     await withFileLock(LEGACY_SHARED_LOCK, async () => {
-      const all = await readHistoryLenient(sharedPath);
+      const all = await readLegacyHistory(sharedPath);
       const rest = all.filter((e) => e.owner && e.owner !== owner);
       if (rest.length === all.length) return;
       if (rest.length === 0) await deleteSafe(sharedPath);
