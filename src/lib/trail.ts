@@ -87,11 +87,23 @@ export async function scanTrail(
     .filter((p) => !isAgentScopedType(p.type))
     .sort((a, b) => (b.updated ?? "").localeCompare(a.updated ?? ""))
     .slice(0, MAX_PAGES_SCANNED);
+  return trailEventsForPages(pages, limit);
+}
 
+/**
+ * Build a time-sorted activity feed (ingests + edits) for a SPECIFIC set of
+ * pages — the per-page scan shared by {@link scanTrail} (recent public pages)
+ * and the user profile (a handle's own commons pages). Caps the page reads so a
+ * large set can't blow up I/O; pass already-sorted/sliced pages for control.
+ */
+export async function trailEventsForPages(
+  pages: { slug: string; title: string; owner?: string }[],
+  limit = 12,
+): Promise<TrailEvent[]> {
   // Gather each page's events concurrently — the per-page work is independent,
   // so this avoids serializing the (bounded) page-read + revision-list I/O.
   const perPage = await Promise.all(
-    pages.map(async (page): Promise<TrailEvent[]> => {
+    pages.slice(0, MAX_PAGES_SCANNED).map(async (page): Promise<TrailEvent[]> => {
       const evs: TrailEvent[] = [];
 
       // Ingests — structured provenance entries.

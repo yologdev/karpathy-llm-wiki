@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { listReadableWikiPages } from "@/lib/wiki";
+import { listReadableWikiPages, isArtifactType } from "@/lib/wiki";
 import { slugsForOwner } from "@/lib/search";
 import { listAgentsForOwner } from "@/lib/agents";
 import { getDiscussionStatsForSlugs } from "@/lib/talk";
@@ -7,6 +7,9 @@ import { getPrincipal } from "@/lib/auth";
 import { listVaults } from "@/lib/vault";
 import { decodeSlug } from "@/lib/slugify";
 import { buildContributorProfile } from "@/lib/contributors";
+import { belongsInCommons } from "@/lib/commons";
+import { trailEventsForPages } from "@/lib/trail";
+import { Trail } from "@/components/Trail";
 import { ProfileBlogIndex } from "@/components/ProfileBlogIndex";
 
 /** Trust score → a short label (mirrors the retired contributor detail page). */
@@ -56,6 +59,11 @@ export default async function UserPage({
   const pages = readable
     .filter((p) => mine.has(p.slug))
     .sort((a, b) => (b.updated ?? "").localeCompare(a.updated ?? ""));
+  // Two public surfaces: commons pages render as a user-scoped activity trail
+  // (ingests + edits on those pages); saved HTML artifacts render as cards.
+  const commonsPages = pages.filter((p) => belongsInCommons(p));
+  const artifacts = pages.filter((p) => isArtifactType(p.type));
+  const trail = await trailEventsForPages(commonsPages, 60);
   const agents = await listAgentsForOwner(handle);
 
   // Contribution stats (edits/comments/trust) — moved here from the retired
@@ -72,7 +80,7 @@ export default async function UserPage({
     (v) => v.visibility === "public",
   );
 
-  const statsMap = await getDiscussionStatsForSlugs(pages.map((p) => p.slug));
+  const statsMap = await getDiscussionStatsForSlugs(artifacts.map((p) => p.slug));
   const discussionStats: Record<string, { total: number; open: number }> = {};
   for (const [slug, stats] of statsMap) discussionStats[slug] = stats;
 
@@ -168,17 +176,28 @@ export default async function UserPage({
         </section>
       )}
 
-      {pages.length === 0 && vaults.length === 0 ? (
+      {pages.length === 0 && vaults.length === 0 && (
         <p style={{ color: "var(--muted)" }}>No pages yet.</p>
-      ) : (
-        pages.length > 0 && (
-          <section>
-            <p className="fmark" style={{ marginBottom: 14 }}>
-              {pages.length} {pages.length === 1 ? "page" : "pages"}
-            </p>
-            <ProfileBlogIndex pages={pages} discussionStats={discussionStats} />
-          </section>
-        )
+      )}
+
+      {/* Commons pages → a user-scoped activity trail (ingests + edits). */}
+      {trail.length > 0 && (
+        <section style={{ marginBottom: 40 }}>
+          <p className="fmark" style={{ marginBottom: 14 }}>
+            Activity
+          </p>
+          <Trail events={trail} />
+        </section>
+      )}
+
+      {/* Saved HTML artifacts → cards. */}
+      {artifacts.length > 0 && (
+        <section>
+          <p className="fmark" style={{ marginBottom: 14 }}>
+            {artifacts.length} {artifacts.length === 1 ? "artifact" : "artifacts"}
+          </p>
+          <ProfileBlogIndex pages={artifacts} discussionStats={discussionStats} />
+        </section>
       )}
 
       {vaults.length > 0 && (

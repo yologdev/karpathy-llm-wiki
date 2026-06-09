@@ -2,6 +2,7 @@ import Link from "next/link";
 import type { IndexEntry } from "@/lib/types";
 import { formatRelativeTime } from "@/lib/format";
 import { commonsPath, pagePath, ownerToTenant } from "@/lib/links";
+import { isArtifactType } from "@/lib/page-types";
 
 interface WikiPageCardProps {
   page: IndexEntry;
@@ -14,11 +15,13 @@ export function WikiPageCard({ page, discussionCount }: WikiPageCardProps) {
   const hasOpenDiscussions = (discussionCount?.open ?? 0) > 0;
   // Show real owners; hide the legacy/system placeholder.
   const owner = page.owner && page.owner !== "system" ? page.owner : null;
-  // PUBLIC commons pages link to the global `/wiki/<slug>`; a profile's own
-  // private/agent pages have no global URL, so they stay owner-scoped (a private
-  // page links to `/u/<tenant>/<slug>`, never `/wiki/<slug>` which would 404).
+  // PUBLIC commons pages link to the global `/wiki/<slug>`; pages with no global
+  // URL — private, agent-scoped, OR html artifacts (excluded from the commons) —
+  // stay owner-scoped at `/u/<tenant>/<slug>` (which `/wiki/<slug>` would 404).
   const href =
-    page.visibility !== "private" && !page.type?.startsWith("agent-")
+    page.visibility !== "private" &&
+    !page.type?.startsWith("agent-") &&
+    !isArtifactType(page.type)
       ? commonsPath(page.slug)
       : pagePath(ownerToTenant(page.owner), page.slug);
   const hasMeta =

@@ -6,6 +6,7 @@ import type { IndexEntry } from "@/lib/types";
 import type { BrowsePayload, DiscussionStats, TagFacet } from "@/lib/browse";
 import { formatRelativeTime } from "@/lib/format";
 import { commonsPath, pagePath, ownerToTenant } from "@/lib/links";
+import { isArtifactType } from "@/lib/page-types";
 import { Icon } from "@/components/folio/icons";
 import { Confidence, Mark } from "@/components/folio/primitives";
 import { RemoveFromVaultButton } from "@/components/RemoveFromVaultButton";
@@ -55,7 +56,9 @@ function PageRow({
   // URL (and `/wiki/<slug>` 404s them), so only PUBLIC commons pages link to the
   // global `/wiki/<slug>`; private/agent pages stay owner-scoped.
   const isCommons =
-    page.visibility !== "private" && !page.type?.startsWith("agent-");
+    page.visibility !== "private" &&
+    !page.type?.startsWith("agent-") &&
+    !isArtifactType(page.type);
   const href = isCommons
     ? commonsPath(page.slug)
     : pagePath(ownerToTenant(page.owner), page.slug);
