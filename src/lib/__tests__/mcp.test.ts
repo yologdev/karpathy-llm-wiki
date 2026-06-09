@@ -36,6 +36,8 @@ import {
   handleReadRevision,
   handleVaultCurate,
   handleVaultUncurate,
+  handleListVaults,
+  handleVaultPages,
   createMcpServer,
 } from "../../mcp";
 import { vaultIdFor, listVaults, getVault } from "../vault";
@@ -3435,6 +3437,87 @@ describe("vault_uncurate", () => {
       owner: "alice",
       vault: "AI Reading",
     });
+  });
+});
+
+describe("list_vaults", () => {
+  it("returns empty array when the owner has no vaults", async () => {
+    const result = await handleListVaults({ owner: "nobody" });
+    expect(result).toEqual({ vaults: [] });
+  });
+
+  it("returns vaults after curating creates them", async () => {
+    await writeTestPage(
+      "vault-list-page",
+      "---\ntitle: Vault List Page\n---\n# Vault List Page\n\nContent.",
+    );
+
+    await handleVaultCurate({
+      slug: "vault-list-page",
+      owner: "lister",
+      vault: "Research",
+    });
+    await handleVaultCurate({
+      slug: "vault-list-page",
+      owner: "lister",
+      vault: "Favorites",
+    });
+
+    const result = await handleListVaults({ owner: "lister" });
+    expect(result.vaults).toHaveLength(2);
+    const names = result.vaults.map((v) => v.name);
+    expect(names).toContain("Research");
+    expect(names).toContain("Favorites");
+    // Each vault should include the curated slug
+    for (const v of result.vaults) {
+      expect(v.slugs).toContain("vault-list-page");
+      expect(v.owner).toBe("lister");
+      expect(v.visibility).toBe("public");
+    }
+  });
+});
+
+describe("vault_pages", () => {
+  it("returns empty slugs for a nonexistent vault", async () => {
+    const result = await handleVaultPages({
+      owner: "nobody",
+      vault: "nonexistent",
+    });
+    expect(result).toEqual({
+      owner: "nobody",
+      vault: "nonexistent",
+      slugs: [],
+    });
+  });
+
+  it("returns the curated slugs in a named vault", async () => {
+    await writeTestPage(
+      "vault-pages-a",
+      "---\ntitle: Page A\n---\n# Page A\n\nContent A.",
+    );
+    await writeTestPage(
+      "vault-pages-b",
+      "---\ntitle: Page B\n---\n# Page B\n\nContent B.",
+    );
+
+    await handleVaultCurate({
+      slug: "vault-pages-a",
+      owner: "viewer",
+      vault: "My Vault",
+    });
+    await handleVaultCurate({
+      slug: "vault-pages-b",
+      owner: "viewer",
+      vault: "My Vault",
+    });
+
+    const result = await handleVaultPages({
+      owner: "viewer",
+      vault: "My Vault",
+    });
+    expect(result.owner).toBe("viewer");
+    expect(result.vault).toBe("My Vault");
+    expect(result.slugs).toEqual(["vault-pages-a", "vault-pages-b"]);
   });
 });
 

@@ -38,6 +38,8 @@
  *   get_contributor    — Get a specific contributor's trust profile
  *   vault_curate       — Curate a commons page into one of a user's named vaults
  *   vault_uncurate     — Remove a curated page from one of a user's named vaults
+ *   list_vaults        — List all named vaults for a user
+ *   vault_pages        — List page slugs curated into a named vault
  *
  * Usage:
  *   pnpm mcp          # starts the stdio server
@@ -76,7 +78,8 @@ import { fixLintIssue, type FixResult } from "./lib/lint-fix";
 import { listThreads, createThread, resolveThread, addComment } from "./lib/talk";
 import { queryByFrontmatter, validateQuery, type DataviewFilter, type DataviewQuery, type DataviewResult } from "./lib/dataview";
 import { listRevisions, readRevision, readRevisionMeta, type Revision } from "./lib/revisions";
-import { vaultIdFor, getVault, createVault, addToVault, removeFromVault } from "./lib/vault";
+import { vaultIdFor, getVault, createVault, addToVault, removeFromVault, listVaults, vaultSlugs } from "./lib/vault";
+import type { Vault } from "./lib/vault";
 import { belongsInCommons } from "./lib/commons";
 import type { TalkThread, TalkComment } from "./lib/types";
 
@@ -891,6 +894,22 @@ export async function handleVaultUncurate(args: {
 }): Promise<{ curated: false; slug: string; owner: string; vault: string }> {
   await removeFromVault(vaultIdFor(args.owner, args.vault), args.slug);
   return { curated: false, slug: args.slug, owner: args.owner, vault: args.vault };
+}
+
+export async function handleListVaults(args: {
+  owner: string;
+}): Promise<{ vaults: Vault[] }> {
+  const vaults = await listVaults(args.owner);
+  return { vaults };
+}
+
+export async function handleVaultPages(args: {
+  owner: string;
+  vault: string;
+}): Promise<{ owner: string; vault: string; slugs: string[] }> {
+  const id = vaultIdFor(args.owner, args.vault);
+  const slugs = await vaultSlugs(id);
+  return { owner: args.owner, vault: args.vault, slugs };
 }
 
 // ---------------------------------------------------------------------------
@@ -2672,6 +2691,90 @@ export function createMcpServer(): McpServer {
   }, async (args) => {
     try {
       const result = await handleVaultUncurate(args);
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: JSON.stringify(result, null, 2),
+          },
+        ],
+      };
+    } catch (err) {
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: (err as Error).message,
+          },
+        ],
+        isError: true,
+      };
+    }
+  });
+
+  // list_vaults — List a user's named vaults
+  server.registerTool("list_vaults", {
+    description:
+      "List all named vaults owned by a user. Each vault is a personal reference lens over the " +
+      "commons — a curated set of page references. Returns the full vault objects (id, name, " +
+      "visibility, member slugs, created timestamp).",
+    inputSchema: {
+      owner: z
+        .string()
+        .describe("Handle of the vault owner (must match the MCP caller's identity)"),
+    },
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+  }, async (args) => {
+    try {
+      const result = await handleListVaults(args);
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: JSON.stringify(result, null, 2),
+          },
+        ],
+      };
+    } catch (err) {
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: (err as Error).message,
+          },
+        ],
+        isError: true,
+      };
+    }
+  });
+
+  // vault_pages — List page slugs in a named vault
+  server.registerTool("vault_pages", {
+    description:
+      "List the page slugs curated into one of a user's named vaults. Returns the ordered slug " +
+      "array (insertion order, most-recent last). Returns an empty array if the vault does not exist.",
+    inputSchema: {
+      owner: z
+        .string()
+        .describe("Handle of the vault owner (must match the MCP caller's identity)"),
+      vault: z
+        .string()
+        .describe("Name of the vault to inspect"),
+    },
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+  }, async (args) => {
+    try {
+      const result = await handleVaultPages(args);
       return {
         content: [
           {

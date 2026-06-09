@@ -40,6 +40,8 @@
     "list_revisions",
     "read_revision",
     "vault_curate",
-    "vault_uncurate"
+    "vault_uncurate",
+    "list_vaults",
+    "vault_pages"
   ]
 }
