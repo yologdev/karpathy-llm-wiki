@@ -28,8 +28,12 @@
  */
 export const HTML_SANDBOX = "allow-scripts";
 
-/** Hard cap (px) on a sandboxed frame's reported height — bounds a runaway/hostile grow. */
-export const HTML_MAX_HEIGHT = 4000;
+/**
+ * Hard cap (px) on a sandboxed frame's reported height — bounds a runaway/hostile
+ * grow while staying generous enough for a long, self-contained artifact (a full
+ * blog-post-length document) to render without an inner scrollbar.
+ */
+export const HTML_MAX_HEIGHT = 24000;
 
 /** Message shape posted by the sandboxed frame to report its height. */
 export const HTML_HEIGHT_MESSAGE_KEY = "__wikiHtmlHeight";
@@ -104,16 +108,24 @@ button.btn{font:inherit;font-weight:600;background:var(--accent);color:#fff;bord
 /**
  * Tiny inline runtime injected into every HTML answer:
  *  - reports document height to the parent so the iframe auto-sizes (postMessage
- *    is permitted from a sandboxed frame even without same-origin access);
+ *    is permitted from a sandboxed frame even without same-origin access). Height
+ *    is the max of documentElement/body scrollHeight, and we observe `body` (not
+ *    just documentElement, whose box is pinned to the iframe height) so late
+ *    reflow — wrapping grids, fonts/images loading — grows the frame instead of
+ *    leaving a stale-short height with an inner scrollbar;
  *  - a delegated controller for the `.tabs` component so answers get working
  *    tabs without each one re-implementing the wiring.
  */
 const BASE_SCRIPT =
   `<script>(function(){` +
-  `function r(){try{parent.postMessage({${HTML_HEIGHT_MESSAGE_KEY}:` +
-  `Math.ceil(document.documentElement.scrollHeight)},'*')}catch(e){}}` +
-  `if(typeof ResizeObserver!=='undefined'){new ResizeObserver(r).observe(document.documentElement);}` +
-  `window.addEventListener('load',r);setTimeout(r,60);` +
+  `function r(){try{var e=document.documentElement,b=document.body;` +
+  `var h=Math.max(e?e.scrollHeight:0,b?b.scrollHeight:0,b?b.offsetHeight:0);` +
+  `parent.postMessage({${HTML_HEIGHT_MESSAGE_KEY}:Math.ceil(h)},'*')}catch(e){}}` +
+  `function s(){if(typeof ResizeObserver!=='undefined'){var o=new ResizeObserver(r);` +
+  `o.observe(document.documentElement);if(document.body)o.observe(document.body);}r();}` +
+  `if(document.readyState!=='loading')s();else document.addEventListener('DOMContentLoaded',s);` +
+  `window.addEventListener('load',r);window.addEventListener('resize',r);` +
+  `[60,200,500,1000].forEach(function(t){setTimeout(r,t)});` +
   `document.addEventListener('click',function(e){var b=e.target.closest&&e.target.closest('.tabs .tablist button[data-tab]');` +
   `if(!b)return;var root=b.closest('.tabs');var id=b.getAttribute('data-tab');` +
   `root.querySelectorAll('.tablist button').forEach(function(x){x.classList.toggle('active',x===b)});` +
