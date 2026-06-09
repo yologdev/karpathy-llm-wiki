@@ -6,8 +6,8 @@ import { useRouter } from "next/navigation";
 import { useGraphSimulation } from "@/hooks/useGraphSimulation";
 
 /**
- * Ambient knowledge-graph visual for the homepage — "a second brain you can
- * see." Reuses the full graph simulation (the content is small enough that the
+ * Ambient knowledge-graph visual for the homepage — "a shared second brain you
+ * can see." Reuses the full graph simulation (the content is small enough that the
  * whole graph is the preview); clicking a node opens its page. Silently absent
  * when there's nothing to show, so it never breaks the page.
  */

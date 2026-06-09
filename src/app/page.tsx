@@ -73,7 +73,7 @@ export default async function Home() {
             animationDelay: ".05s",
           }}
         >
-          A second brain for humans{" "}
+          A shared second brain for humans{" "}
           <span style={{ fontStyle: "italic", color: "var(--accent)" }}>and</span>{" "}
           agents.
         </h1>

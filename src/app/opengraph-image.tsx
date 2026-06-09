@@ -5,7 +5,7 @@ import { ImageResponse } from "next/og";
 export const dynamic = "force-static";
 
 export const alt =
-  "yopedia — a second brain for humans and agents. Not RAG — it accumulates.";
+  "yopedia — a shared second brain for humans and agents. Not RAG — it accumulates.";
 export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
 
@@ -54,8 +54,8 @@ export default function OpengraphImage() {
               lineHeight: 1.1,
             }}
           >
-            <span>A second brain for</span>
-            <span>humans and agents.</span>
+            <span>A shared second brain</span>
+            <span>for humans and agents.</span>
           </div>
           <div style={{ fontSize: 30, color: "#a1a1aa", lineHeight: 1.3, maxWidth: 900 }}>
             Not RAG — it accumulates. Sources become cited pages; provenance and
