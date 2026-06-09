@@ -8,6 +8,7 @@ import {
   HTML_MAX_HEIGHT,
   HTML_HEIGHT_MESSAGE_KEY,
 } from "@/lib/html";
+import { logger } from "@/lib/logger";
 
 /**
  * Render model-authored HTML SAFELY in a sandboxed iframe.
@@ -32,9 +33,21 @@ export function HtmlPreview({ html }: { html: string }) {
   useEffect(() => {
     let cancelled = false;
     if (needsChart && chartLib === undefined) {
-      import("@/lib/vendor/chartjs.generated").then((m) => {
-        if (!cancelled) setChartLib(m.CHARTJS_SOURCE);
-      });
+      import("@/lib/vendor/chartjs.generated")
+        .then((m) => {
+          if (!cancelled) setChartLib(m.CHARTJS_SOURCE);
+        })
+        .catch((err) => {
+          // Graceful degradation: the document still renders (just without the
+          // chart). Log so intermittent post-deploy chunk-load failures are
+          // debuggable rather than an invisible "chart sometimes missing".
+          if (!cancelled)
+            logger.warn(
+              "html",
+              "chart library failed to load; rendering without chart",
+              err,
+            );
+        });
     }
     return () => {
       cancelled = true;
