@@ -640,6 +640,37 @@ describe("updateRelatedPages", () => {
     expect(page!.content).toContain("**See also:** [New Page](new-page.md)");
   });
 
+  it("PRESERVES the page's frontmatter when appending a See-also", async () => {
+    await ensureDirectories();
+    await writeWikiPage(
+      "owned",
+      '---\nowner: alice\nvisibility: private\ntags: ["x"]\n---\n\n# Owned\n\nBody.',
+    );
+
+    await updateRelatedPages("new-page", "New Page", ["owned"]);
+
+    const page = await readWikiPage("owned");
+    // The frontmatter block must survive the write-back (regression: building
+    // the update from the frontmatter-stripped body silently dropped it).
+    expect(page!.content).toContain("owner: alice");
+    expect(page!.content).toContain("visibility: private");
+    expect(page!.content).toContain("**See also:** [New Page](new-page.md)");
+  });
+
+  it("never appends a See-also to an HTML artifact", async () => {
+    await ensureDirectories();
+    await writeWikiPage(
+      "artifact",
+      "---\ntype: html\n---\n\n<!doctype html><html><body>x</body></html>",
+    );
+
+    const modified = await updateRelatedPages("new-page", "New Page", ["artifact"]);
+    expect(modified).toEqual([]);
+
+    const page = await readWikiPage("artifact");
+    expect(page!.content).not.toContain("See also");
+  });
+
   it("keeps the backlink index fresh for the appended See-also link", async () => {
     await ensureDirectories();
     await writeWikiPage("existing", "# Existing\n\nBody.");

@@ -166,6 +166,15 @@ describe("Chart.js injection", () => {
     expect(out).toContain("<h1>Art</h1>");
   });
 
+  it("truncates at the LAST </html> so a doc quoting </html> as text survives", () => {
+    const doc =
+      "<!doctype html><html><body><pre>close with &lt;/html&gt; then</pre><p>tail content</p></body></html>\n\n## Related\n\n- [x](x.md)";
+    const out = composeSrcDoc(doc);
+    expect(out).not.toContain("## Related");
+    // The real document (including the part after a text-mentioned tag) is kept.
+    expect(out).toContain("tail content");
+  });
+
   it("usesChartLib detects a new Chart(...) call", () => {
     expect(usesChartLib("<canvas></canvas><script>new Chart(el,{})</script>")).toBe(true);
     expect(usesChartLib("<script>const x = new  Chart( a )</script>")).toBe(true);

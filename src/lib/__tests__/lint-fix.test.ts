@@ -309,6 +309,28 @@ describe("fixMissingCrossRef", () => {
     expect(mockedWriteWikiPageWithSideEffects).not.toHaveBeenCalled();
   });
 
+  it("skips an HTML artifact source (never appends markdown to its body)", async () => {
+    mockedReadWikiPage.mockResolvedValueOnce({
+      slug: "art",
+      title: "Art",
+      content: "<!doctype html><html><body>x</body></html>",
+      path: "/wiki/art.md",
+    });
+    mockedReadWikiPageWithFrontmatter.mockResolvedValueOnce({
+      slug: "art",
+      title: "Art",
+      frontmatter: { type: "html" },
+      body: "<!doctype html><html><body>x</body></html>",
+      path: "/wiki/art.md",
+    } as unknown as Awaited<ReturnType<typeof readWikiPageWithFrontmatter>>);
+
+    const result = await fixMissingCrossRef("art", "target");
+
+    expect(result.success).toBe(true);
+    expect(result.message).toContain("HTML artifacts");
+    expect(mockedWriteWikiPageWithSideEffects).not.toHaveBeenCalled();
+  });
+
   it("inserts link into existing Related section", async () => {
     mockedReadWikiPage
       .mockResolvedValueOnce({

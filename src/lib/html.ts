@@ -225,10 +225,13 @@ export function composeSrcDoc(
   // Drop anything after the document's closing </html> — a self-contained
   // artifact ends there, so trailing content is leaked cross-reference markdown
   // (a "## Related"/"See also" block the wiki appends to linked pages), which
-  // would otherwise render as literal text below the artifact.
-  const closeHtml = src.match(/<\/html\s*>/i);
-  if (closeHtml?.index !== undefined) {
-    src = src.slice(0, closeHtml.index + closeHtml[0].length);
+  // would otherwise render as literal text below the artifact. Match the LAST
+  // </html> so a doc that legitimately quotes "</html>" as text (e.g. an HTML
+  // tutorial) keeps its real terminator and isn't truncated mid-document.
+  const closes = [...src.matchAll(/<\/html\s*>/gi)];
+  const lastClose = closes[closes.length - 1];
+  if (lastClose?.index !== undefined) {
+    src = src.slice(0, lastClose.index + lastClose[0].length);
   }
   const head = sandboxHead(src, chartLibSource, hideScrollbar);
 
