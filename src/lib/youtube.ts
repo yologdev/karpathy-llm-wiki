@@ -149,7 +149,9 @@ async function fetchTranscriptViaApi(
   try {
     const res = await fetch(
       `https://api.supadata.ai/v1/youtube/transcript?videoId=${videoId}&text=true`,
-      { headers: { Authorization: `Bearer ${apiKey}` } },
+      // Supadata authenticates with an `x-api-key` header (NOT Authorization:
+      // Bearer) — the wrong header 401s and silently yields a metadata-only page.
+      { headers: { "x-api-key": apiKey } },
     );
 
     if (!res.ok) {

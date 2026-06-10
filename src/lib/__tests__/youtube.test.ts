@@ -228,6 +228,12 @@ describe("fetchYouTubeTranscript", () => {
       segments: [{ text: "API transcript", offset: 0, duration: 4000 }],
       language: "en",
     });
+    // Supadata authenticates via `x-api-key`, NOT Authorization: Bearer —
+    // the wrong header 401s and silently degrades to a metadata-only page.
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      expect.stringContaining("api.supadata.ai"),
+      expect.objectContaining({ headers: { "x-api-key": "test-key" } }),
+    );
   });
 
   it("returns null when both library and API fail", async () => {
