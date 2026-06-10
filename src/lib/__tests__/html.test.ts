@@ -70,6 +70,9 @@ describe("composeSrcDoc", () => {
     expect(out).toContain('<base target="_blank">');
     expect(out).toContain("__wikiHtmlHeight");
     expect(out).toContain("postMessage");
+    // The reporter must observe document.body (not just documentElement, whose
+    // box is pinned to the iframe height) so late reflow grows the frame.
+    expect(out).toContain("document.body");
   });
 
   it("inserts into an existing <head> (full document)", () => {

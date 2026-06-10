@@ -30,8 +30,9 @@ export const HTML_SANDBOX = "allow-scripts";
 
 /**
  * Hard cap (px) on a sandboxed frame's reported height — bounds a runaway/hostile
- * grow while staying generous enough for a long, self-contained artifact (a full
- * blog-post-length document) to render without an inner scrollbar.
+ * grow while staying generous enough (~30 screen-heights at 800px) for a long,
+ * self-contained artifact to render without an inner scrollbar. Past the cap,
+ * HtmlPreview re-enables the iframe's own scrollbar so content isn't clipped.
  */
 export const HTML_MAX_HEIGHT = 24000;
 
@@ -109,10 +110,11 @@ button.btn{font:inherit;font-weight:600;background:var(--accent);color:#fff;bord
  * Tiny inline runtime injected into every HTML answer:
  *  - reports document height to the parent so the iframe auto-sizes (postMessage
  *    is permitted from a sandboxed frame even without same-origin access). Height
- *    is the max of documentElement/body scrollHeight, and we observe `body` (not
- *    just documentElement, whose box is pinned to the iframe height) so late
- *    reflow — wrapping grids, fonts/images loading — grows the frame instead of
- *    leaving a stale-short height with an inner scrollbar;
+ *    is the max of documentElement.scrollHeight and body's scrollHeight/
+ *    offsetHeight, and we observe `body` (not just documentElement, whose box is
+ *    pinned to the iframe height) so late reflow — wrapping grids, fonts/images
+ *    loading — grows the frame instead of leaving a stale-short height with an
+ *    inner scrollbar;
  *  - a delegated controller for the `.tabs` component so answers get working
  *    tabs without each one re-implementing the wiring.
  */
@@ -120,7 +122,7 @@ const BASE_SCRIPT =
   `<script>(function(){` +
   `function r(){try{var e=document.documentElement,b=document.body;` +
   `var h=Math.max(e?e.scrollHeight:0,b?b.scrollHeight:0,b?b.offsetHeight:0);` +
-  `parent.postMessage({${HTML_HEIGHT_MESSAGE_KEY}:Math.ceil(h)},'*')}catch(e){}}` +
+  `parent.postMessage({${HTML_HEIGHT_MESSAGE_KEY}:Math.ceil(h)},'*')}catch(_){}}` +
   `function s(){if(typeof ResizeObserver!=='undefined'){var o=new ResizeObserver(r);` +
   `o.observe(document.documentElement);if(document.body)o.observe(document.body);}r();}` +
   `if(document.readyState!=='loading')s();else document.addEventListener('DOMContentLoaded',s);` +

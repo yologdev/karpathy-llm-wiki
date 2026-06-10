@@ -2,35 +2,16 @@ import Link from "next/link";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { decodeSlug } from "@/lib/slugify";
-import {
-  readWikiPageWithFrontmatter,
-  tenantForOwner,
-  isArtifactType,
-} from "@/lib/wiki";
-import { pagePath, commonsPath } from "@/lib/links";
+import { readWikiPageWithFrontmatter, isArtifactType } from "@/lib/wiki";
 import { getPrincipal } from "@/lib/auth";
 import { canReadFrontmatter } from "@/lib/authz";
-import { belongsInCommons } from "@/lib/commons";
+import { wikiUrlFor, str } from "@/lib/share-url";
 import { Colophon } from "@/components/folio/primitives";
 import { HtmlPreview } from "@/components/HtmlPreview";
 import { MarkdownRenderer } from "@/components/MarkdownRenderer";
 
 interface ShareProps {
   params: Promise<{ handle: string; slug: string }>;
-}
-
-const str = (v: unknown): string | undefined =>
-  typeof v === "string" ? v : undefined;
-
-/** The page's canonical wiki URL — public commons at /wiki/<slug>, otherwise the
- *  owner-scoped /u/<tenant>/<slug>. */
-function wikiUrlFor(
-  slug: string,
-  fm: { owner?: unknown; visibility?: unknown; type?: unknown },
-): string {
-  return belongsInCommons({ visibility: str(fm.visibility), type: str(fm.type) })
-    ? commonsPath(slug)
-    : pagePath(tenantForOwner(str(fm.owner)), slug);
 }
 
 export async function generateMetadata({
