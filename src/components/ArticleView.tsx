@@ -14,6 +14,7 @@ import { Icon } from "@/components/folio/icons";
 import { Avatar, Mark, Confidence, Freshness } from "@/components/folio/primitives";
 import { MarkdownRenderer } from "@/components/MarkdownRenderer";
 import { HtmlPreview } from "@/components/HtmlPreview";
+import { SharePageButton } from "@/components/SharePageButton";
 import { ArticleActions } from "@/components/ArticleActions";
 import { RevisionHistory } from "@/components/RevisionHistory";
 import { DiscussionPanel } from "@/components/DiscussionPanel";
@@ -409,25 +410,7 @@ export async function ArticleView({
             {isArtifactType(typeof fm.type === "string" ? fm.type : undefined) ? (
               // A saved HTML output is rendered verbatim in a sandboxed iframe
               // (isolated; no app cookie/DOM/network access) — never markdown.
-              <>
-                <div
-                  className="row"
-                  style={{ justifyContent: "flex-end", marginBottom: 10 }}
-                >
-                  <Link
-                    href={`/share/${pageTenant}/${slug}`}
-                    className="receipt"
-                    style={{
-                      fontSize: 12,
-                      color: "var(--muted)",
-                      textDecoration: "none",
-                    }}
-                  >
-                    Open full screen ↗
-                  </Link>
-                </div>
-                <HtmlPreview html={page.body} />
-              </>
+              <HtmlPreview html={page.body} />
             ) : (
               <MarkdownRenderer
                 content={articleBody}
@@ -597,6 +580,7 @@ export async function ArticleView({
           >
             <Icon.spark width="15" height="15" /> Ask about this page
           </Link>
+          <SharePageButton path={`/share/${pageTenant}/${slug}`} />
 
           <div className="rule" style={{ margin: "24px 0" }} />
           <TableOfContents items={toc} />
