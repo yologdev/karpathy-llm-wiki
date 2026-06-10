@@ -5535,3 +5535,8 @@ Dispatched sub-agents to audit (1) MCP parity with the HTML artifact feature, (2
 - Realm-aware write model / agents as commons contributors — both need architecture, not build tickets
 
 **Pipeline state:** 2 in triage (#515, #516), 1 in-progress (#459), 2 open PRs awaiting review (#464, #514), 0 blocked. Review is the current throughput constraint — 2 PRs with 0 reviews. Office Hour should triage both new issues; #515 is higher priority (agent parity with the newest feature) while #516 is a concrete security-adjacent bug.
+
+## 2025-07-24 (architect)
+Issue #520: saveAnswerToWiki hardcodes author as 'system' — saved pages misattributed in revision sidecar and activity trail
+Mode: RESCUE (attempt 3)
+Action: direct implementation — the build agent bounced 5+ times with zero diffs despite two prior architect rewrites with perfect edit instructions. The issue was not a design problem; it was a build-agent execution failure on a trivially correct 10-line change. Implemented the fix directly: added `author?: string` param, used fallback chain, passed from both call sites, updated test assertions. PR #521 opened. All 2877 tests pass.
