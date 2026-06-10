@@ -29,18 +29,13 @@ export function SharePageButton({ path }: { path: string }) {
       type="button"
       onClick={onClick}
       title="Copy a shareable full-screen link to this page"
-      className="row"
+      // Match the sibling "Ask about this page" button exactly (.btn pill).
+      className="btn"
       style={{
         width: "100%",
         justifyContent: "center",
-        gap: 7,
         fontSize: 13,
-        padding: "9px 14px",
         marginTop: 10,
-        borderRadius: 10,
-        border: "1px solid var(--rule)",
-        background: "transparent",
-        color: "var(--ink-2)",
         cursor: "pointer",
       }}
     >
