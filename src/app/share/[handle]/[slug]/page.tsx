@@ -2,7 +2,7 @@ import Link from "next/link";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { decodeSlug } from "@/lib/slugify";
-import { readWikiPageWithFrontmatter, isArtifactType } from "@/lib/wiki";
+import { readWikiPageWithFrontmatter, isArtifactType, tenantForOwner } from "@/lib/wiki";
 import { getPrincipal } from "@/lib/auth";
 import { canReadFrontmatter } from "@/lib/authz";
 import { wikiUrlFor, str } from "@/lib/share-url";
@@ -67,10 +67,15 @@ function SourcesFooter({ sources }: { sources: SourceEntry[] }) {
 export async function generateMetadata({
   params,
 }: ShareProps): Promise<Metadata> {
-  const { slug: encodedSlug } = await params;
+  const { handle, slug: encodedSlug } = await params;
   const slug = decodeSlug(encodedSlug);
   const page = await readWikiPageWithFrontmatter(slug);
   if (!page || !canReadFrontmatter(page.frontmatter, await getPrincipal())) {
+    return { title: "Shared page" };
+  }
+  // Validate handle matches the page's actual owner tenant to prevent misattribution
+  const expectedTenant = tenantForOwner(str(page.frontmatter.owner));
+  if (handle.toLowerCase() !== expectedTenant) {
     return { title: "Shared page" };
   }
   const title = page.title || slug;
@@ -91,13 +96,17 @@ export async function generateMetadata({
  * markdown. Read-gated identically to the owner-scoped page.
  */
 export default async function SharePage({ params }: ShareProps) {
-  const { slug: encodedSlug } = await params;
+  const { handle, slug: encodedSlug } = await params;
   const slug = decodeSlug(encodedSlug);
   const page = await readWikiPageWithFrontmatter(slug);
   const principal = await getPrincipal();
 
   // Unreadable/missing → 404 (never reveal a private page exists).
   if (!page || !canReadFrontmatter(page.frontmatter, principal)) notFound();
+
+  // Validate handle matches the page's actual owner tenant to prevent misattribution.
+  const expectedTenant = tenantForOwner(str(page.frontmatter.owner));
+  if (handle.toLowerCase() !== expectedTenant) notFound();
 
   const isHtml = isArtifactType(str(page.frontmatter.type));
   const wikiUrl = wikiUrlFor(slug, page.frontmatter);
