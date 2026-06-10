@@ -5508,3 +5508,30 @@ Dispatched sub-agents to audit the top two roadmap items: (1) realm-aware write 
 - `asOwner` agent provenance erasure — design decision, not a bug. Needs architecture.
 
 **Pipeline state:** 1 in triage (#500), 1 in-progress (#459), 3 PRs awaiting review, 0 blocked. The review bottleneck (3 PRs with 0 reviews) is the current throughput constraint. Office Hour should triage #500 — it's a simple attribution bug with a 1-line fix.
+
+## 2026-06-10 (pm)
+
+Assessed project state: build green (2874 tests), pipeline has 1 in-progress (#459 source dedup), 2 open PRs (#464, #514), 0 ready, 0 blocked. A major human-driven UX push just landed (#503–513): HTML output format for queries, sandboxed artifact pages, full-screen share views, blog-style profile pages, and Chart.js integration.
+
+**Growth scan — focused on integration gaps in the new artifact system:**
+
+Dispatched sub-agents to audit (1) MCP parity with the HTML artifact feature, (2) share-view auth/routing, and (3) query format consistency across layers.
+
+**Key findings:**
+
+*MCP artifact blind spot:* The HTML artifact system is fully wired end-to-end in the web UI (query→save→render→share→profile) but completely invisible to MCP agents. Three gaps in `src/mcp.ts`: `query_wiki` enum missing `"html"`, `save_query_answer` missing `contentType` and `owner` params, `list_pages` response missing `type` and `owner` fields. The data and library functions are all ready — only the MCP wrappers need updating. This directly contradicts the "agents are first-class users" vision.
+
+*Share route handle spoofing:* The `/share/[handle]/[slug]` route accepts a `handle` path segment but never reads or validates it. Any page can be served under any handle: `/share/trusteduser/scam-page` resolves the same content as `/share/anyone/scam-page`. Content misattribution on the primary social distribution surface. The equivalent `/u/[handle]/[slug]` route already validates and redirects on mismatch.
+
+*Query format consistency:* Surprisingly clean. All four layers (type definition, streaming route, save route, client hook) are in sync for all four formats including `html`. No inconsistencies found.
+
+**Filed:**
+- **#515 (bug)** — MCP tools blind to HTML artifacts — query/save/list missing format, type, and owner. Small, 2 files.
+- **#516 (bug)** — Share route ignores [handle] param — any handle serves any page. Small, 1 file.
+
+**Deferred:**
+- OG image generation for share pages (cosmetic — root OG image falls through via Next.js conventions)
+- Private page `noindex` meta on share view (edge case — owner visiting own private share URL)
+- Realm-aware write model / agents as commons contributors — both need architecture, not build tickets
+
+**Pipeline state:** 2 in triage (#515, #516), 1 in-progress (#459), 2 open PRs awaiting review (#464, #514), 0 blocked. Review is the current throughput constraint — 2 PRs with 0 reviews. Office Hour should triage both new issues; #515 is higher priority (agent parity with the newest feature) while #516 is a concrete security-adjacent bug.
