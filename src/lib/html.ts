@@ -152,15 +152,26 @@ export function usesChartLib(html: string): boolean {
  * runtime. The model's own markup is injected after this string, so its
  * `<style>` overrides the baseline.
  */
-function sandboxHead(html: string, chartLibSource?: string): string {
+function sandboxHead(
+  html: string,
+  chartLibSource?: string,
+  hideScrollbar?: boolean,
+): string {
   const chartLib =
     chartLibSource && usesChartLib(html)
       ? `<script>${chartLibSource}</script>`
       : "";
+  // Full-screen share view: the frame is fixed to the viewport and the artifact
+  // scrolls inside it — hide that inner scrollbar so the page reads clean.
+  const hideBar = hideScrollbar
+    ? `<style>html{scrollbar-width:none;-ms-overflow-style:none}` +
+      `html::-webkit-scrollbar,body::-webkit-scrollbar{width:0;height:0;display:none}</style>`
+    : "";
   return (
     `<meta http-equiv="Content-Security-Policy" content="${SANDBOX_CSP}">` +
     `<base target="_blank">` +
     BASE_STYLE +
+    hideBar +
     chartLib +
     BASE_SCRIPT
   );
@@ -191,11 +202,17 @@ export function stripHtmlFence(html: string): string {
  *
  * `chartLibSource` (the Chart.js UMD source) is injected only when the document
  * actually uses charts; pass it from a lazy `import()` of `vendor/chartjs.generated`
- * so the heavy library stays out of the default client bundle.
+ * so the heavy library stays out of the default client bundle. `hideScrollbar`
+ * suppresses the document's own scrollbar (the full-screen share view, where the
+ * frame is fixed to the viewport and scrolls internally).
  */
-export function composeSrcDoc(html: string, chartLibSource?: string): string {
+export function composeSrcDoc(
+  html: string,
+  chartLibSource?: string,
+  hideScrollbar?: boolean,
+): string {
   const src = stripHtmlFence(html);
-  const head = sandboxHead(src, chartLibSource);
+  const head = sandboxHead(src, chartLibSource, hideScrollbar);
 
   const headOpen = src.match(/<head[^>]*>/i);
   if (headOpen?.index !== undefined) {

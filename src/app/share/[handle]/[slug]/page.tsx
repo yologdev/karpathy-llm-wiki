@@ -137,14 +137,10 @@ export default async function SharePage({ params }: ShareProps) {
       </header>
 
       {isHtml ? (
-        <>
-          <HtmlPreview html={page.body} bare />
-          {sources.length > 0 && (
-            <div style={{ maxWidth: 760, margin: "0 auto", padding: "0 24px 60px", width: "100%" }}>
-              <SourcesFooter sources={sources} />
-            </div>
-          )}
-        </>
+        // A self-contained artifact fills the viewport exactly (header + frame =
+        // 100dvh) so there's no page scrollbar; its sources stay one click away
+        // via "Open in wiki" rather than forcing a scroll past the full frame.
+        <HtmlPreview html={page.body} bare />
       ) : (
         <main
           style={{ maxWidth: 760, margin: "0 auto", padding: "40px 24px 80px" }}

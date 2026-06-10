@@ -82,22 +82,21 @@ export function HtmlPreview({
   return (
     <iframe
       ref={ref}
-      srcDoc={composeSrcDoc(html, chartLib)}
+      // Inline (article) view: auto-size to content so the page scrolls and a
+      // normal artifact shows no inner scrollbar. Full-screen share (`bare`):
+      // fix the frame to the viewport so a self-contained artifact's `100vh`
+      // layout resolves correctly (no auto-grow feedback loop) and it scrolls
+      // INSIDE the frame, with that inner scrollbar hidden — a clean full page.
+      srcDoc={composeSrcDoc(html, chartLib, bare)}
       sandbox={HTML_SANDBOX}
       title="HTML output"
-      // The frame auto-sizes to its content (the page scrolls), so normal
-      // artifacts show no inner scrollbar. We do NOT force `scrolling="no"`: a
-      // self-contained artifact with its own full-viewport (100vh) layout
-      // reports a short height, and suppressing the scrollbar would clip it to
-      // nothing — letting it scroll keeps the content reachable.
       style={{
         width: "100%",
-        height,
+        height: bare ? "calc(100dvh - 56px)" : height,
         border: bare ? "none" : "1px solid var(--rule)",
         borderRadius: bare ? 0 : 10,
         background: "var(--paper)",
         display: "block",
-        ...(bare ? { minHeight: "calc(100dvh - 56px)" } : {}),
       }}
     />
   );

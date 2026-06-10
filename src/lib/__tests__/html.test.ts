@@ -131,6 +131,14 @@ describe("composeSrcDoc", () => {
     expect(HTML_MAX_HEIGHT).toBeGreaterThan(0);
   });
 
+  it("hides the document scrollbar only when hideScrollbar is set (full-screen share)", () => {
+    const bare = composeSrcDoc("<p>x</p>", undefined, true);
+    const normal = composeSrcDoc("<p>x</p>");
+    expect(bare).toContain("scrollbar-width:none");
+    expect(bare).toContain("::-webkit-scrollbar");
+    expect(normal).not.toContain("scrollbar-width:none");
+  });
+
   it("injects the editorial baseline style + tab controller", () => {
     const out = composeSrcDoc("<p>plain answer</p>");
     // A predefined component class and the brand accent token are present.
