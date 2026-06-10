@@ -130,37 +130,50 @@ export async function updateRelatedPages(
     const updatedSlugs: string[] = [];
 
     for (const slug of relatedSlugs) {
-      const page = await readWikiPage(slug);
+      const page = await readWikiPageWithFrontmatter(slug);
       if (!page) continue;
+
+      // Never append markdown cross-references to an HTML artifact — its body is
+      // a self-contained document, and the "See also" markdown would render as
+      // literal text below it.
+      if (
+        isArtifactType(
+          typeof page.frontmatter.type === "string"
+            ? page.frontmatter.type
+            : undefined,
+        )
+      ) {
+        continue;
+      }
 
       // Skip if already links to the new page (use proper link detection
       // rather than substring matching to avoid false positives when the slug
       // appears in prose without being a wiki link).
-      if (hasLinkTo(page.content, newSlug)) continue;
+      if (hasLinkTo(page.body, newSlug)) continue;
 
       const link = `[${newTitle}](${newSlug}.md)`;
       let updatedContent: string;
 
       // Check if there's already a "See also" section
       const seeAlsoPattern = /^(\*\*See also:\*\*.*)$/m;
-      const seeAlsoMatch = page.content.match(seeAlsoPattern);
+      const seeAlsoMatch = page.body.match(seeAlsoPattern);
 
       if (seeAlsoMatch) {
         // Append to existing "See also" line
-        updatedContent = page.content.replace(
+        updatedContent = page.body.replace(
           seeAlsoPattern,
           `${seeAlsoMatch[1]}, ${link}`,
         );
       } else {
         // Add a new "See also" section at the end
-        updatedContent = `${page.content.trimEnd()}\n\n**See also:** ${link}\n`;
+        updatedContent = `${page.body.trimEnd()}\n\n**See also:** ${link}\n`;
       }
 
       await writeWikiPage(slug, updatedContent);
       // Keep the backlink index consistent with the new outbound "See also"
       // link — writeWikiPage doesn't, so without this the index goes stale and
       // findBacklinks (which trusts the index) would never surface this edge.
-      await syncBacklinksForPage(slug, updatedContent, page.content);
+      await syncBacklinksForPage(slug, updatedContent, page.body);
       updatedSlugs.push(slug);
     }
 

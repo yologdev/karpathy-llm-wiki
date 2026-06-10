@@ -11,6 +11,7 @@ vi.mock("../wiki", () => ({
   listWikiPages: vi.fn(),
   updateIndex: vi.fn(),
   appendToLog: vi.fn(),
+  isArtifactType: (t: string | undefined) => t === "html",
 }));
 
 vi.mock("../lifecycle", () => ({

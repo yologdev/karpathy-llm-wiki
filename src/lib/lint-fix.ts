@@ -1,4 +1,4 @@
-import { readWikiPage, readWikiPageWithFrontmatter, listWikiPages, updateIndex, appendToLog } from "./wiki";
+import { readWikiPage, readWikiPageWithFrontmatter, listWikiPages, updateIndex, appendToLog, isArtifactType } from "./wiki";
 import { writeWikiPageWithSideEffects, deleteWikiPage } from "./lifecycle";
 import { callLLM, hasLLMKey } from "./llm";
 import { slugify } from "./slugify";
@@ -164,6 +164,24 @@ export async function fixMissingCrossRef(
   const sourcePage = await readWikiPage(slug);
   if (!sourcePage) {
     throw new FixNotFoundError(`Source page not found: ${slug}`);
+  }
+
+  // Never append a markdown "## Related" section to an HTML artifact — its body
+  // is a self-contained document and the markdown would render as literal text.
+  const sourceFm = await readWikiPageWithFrontmatter(slug);
+  if (
+    sourceFm &&
+    isArtifactType(
+      typeof sourceFm.frontmatter.type === "string"
+        ? sourceFm.frontmatter.type
+        : undefined,
+    )
+  ) {
+    return {
+      success: true,
+      slug,
+      message: `Skipped ${slug}: HTML artifacts don't take markdown cross-references`,
+    };
   }
 
   // Read the target page to get its title

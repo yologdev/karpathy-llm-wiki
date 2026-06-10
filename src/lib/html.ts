@@ -145,6 +145,16 @@ export function usesChartLib(html: string): boolean {
 }
 
 /**
+ * Does the artifact lay itself out against the viewport (`100vh`/`100dvh`/etc.)?
+ * Such "app-style" documents define their own full-screen scroll viewport, so an
+ * auto-sizing iframe feedback-loops them to absurd heights. We instead give them
+ * a fixed-height frame and let them scroll inside it (see `HtmlPreview`).
+ */
+export function usesViewportUnits(html: string): boolean {
+  return /\b\d+(?:\.\d+)?(?:vh|dvh|svh|lvh)\b/i.test(html ?? "");
+}
+
+/**
  * Build the `<head>` injection for a given document: the CSP, `<base
  * target="_blank">` (links open in a new tab rather than navigating the frame to
  * an app route), the editorial baseline style, the Chart.js runtime (only when
@@ -211,7 +221,15 @@ export function composeSrcDoc(
   chartLibSource?: string,
   hideScrollbar?: boolean,
 ): string {
-  const src = stripHtmlFence(html);
+  let src = stripHtmlFence(html);
+  // Drop anything after the document's closing </html> — a self-contained
+  // artifact ends there, so trailing content is leaked cross-reference markdown
+  // (a "## Related"/"See also" block the wiki appends to linked pages), which
+  // would otherwise render as literal text below the artifact.
+  const closeHtml = src.match(/<\/html\s*>/i);
+  if (closeHtml?.index !== undefined) {
+    src = src.slice(0, closeHtml.index + closeHtml[0].length);
+  }
   const head = sandboxHead(src, chartLibSource, hideScrollbar);
 
   const headOpen = src.match(/<head[^>]*>/i);

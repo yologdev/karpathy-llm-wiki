@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import {
   composeSrcDoc,
   usesChartLib,
+  usesViewportUnits,
   HTML_SANDBOX,
   HTML_MAX_HEIGHT,
   HTML_HEIGHT_MESSAGE_KEY,
@@ -32,6 +33,9 @@ export function HtmlPreview({
 }) {
   const ref = useRef<HTMLIFrameElement>(null);
   const [height, setHeight] = useState(360);
+  // App-style artifacts (full-viewport 100vh layouts) get a fixed, scroll-hidden
+  // frame instead of auto-height; see the iframe below.
+  const appStyle = usesViewportUnits(html);
 
   // Lazy-load the (~200KB) Chart.js source ONLY for documents that actually use
   // it, so prose/table answers don't pay for it. The chartless render happens
@@ -82,17 +86,22 @@ export function HtmlPreview({
   return (
     <iframe
       ref={ref}
-      // Inline (article) view: auto-size to content so the page scrolls and a
-      // normal artifact shows no inner scrollbar. Full-screen share (`bare`):
-      // fix the frame to the viewport so a self-contained artifact's `100vh`
-      // layout resolves correctly (no auto-grow feedback loop) and it scrolls
-      // INSIDE the frame, with that inner scrollbar hidden — a clean full page.
-      srcDoc={composeSrcDoc(html, chartLib, bare)}
+      // Document-style artifacts auto-size to content (the page scrolls, no
+      // inner scrollbar). "App-style" artifacts that lay out against the
+      // viewport (100vh) define their own scroll viewport — auto-sizing
+      // feedback-loops them to absurd heights — so we fix the frame and let
+      // them scroll INSIDE it, with that inner scrollbar hidden. Full-screen
+      // share (`bare`) fills the viewport; inline gets a tall contained frame.
+      srcDoc={composeSrcDoc(html, chartLib, bare || appStyle)}
       sandbox={HTML_SANDBOX}
       title="HTML output"
       style={{
         width: "100%",
-        height: bare ? "calc(100dvh - 56px)" : height,
+        height: bare
+          ? "calc(100dvh - 56px)"
+          : appStyle
+            ? "80vh"
+            : height,
         border: bare ? "none" : "1px solid var(--rule)",
         borderRadius: bare ? 0 : 10,
         background: "var(--paper)",

@@ -18,6 +18,7 @@ import { listRevisions, type Revision } from "./revisions";
 import { getDiscussRelPrefix } from "./talk";
 import { isEnoent } from "./errors";
 import { logger } from "./logger";
+import { normalizeActor, isAutomationActor } from "./agent-handle";
 import type { ContributorProfile, TalkThread } from "./types";
 
 // ---------------------------------------------------------------------------
@@ -84,10 +85,11 @@ export function reduceActivity(
   for (const revisions of revisionsPerPage) {
     for (const rev of revisions) {
       if (!rev.author) continue;
-      let act = map.get(rev.author);
+      const author = normalizeActor(rev.author);
+      let act = map.get(author);
       if (!act) {
         act = emptyActivity();
-        map.set(rev.author, act);
+        map.set(author, act);
       }
       act.editCount++;
       act.pagesEdited.add(rev.slug);
@@ -105,10 +107,11 @@ export function mergeTalkActivity(
   for (const thread of threads) {
     for (let i = 0; i < thread.comments.length; i++) {
       const comment = thread.comments[i];
-      let act = map.get(comment.author);
+      const author = normalizeActor(comment.author);
+      let act = map.get(author);
       if (!act) {
         act = emptyActivity();
-        map.set(comment.author, act);
+        map.set(author, act);
       }
       act.commentCount++;
       act.dates.push(comment.created);
@@ -335,12 +338,13 @@ export async function listContributors(
   return profiles.filter(isRealContributor);
 }
 
-/** Exclude the "system" seed/placeholder author — it isn't a real contributor
- *  (and has no `/u/<handle>` profile). An empty/whitespace handle is a real data
- *  defect (an edit attributed to a blank author); drop it from the list but log
- *  so the upstream attribution bug stays debuggable rather than silently hidden. */
+/** Keep only real contributors. Automation actors (system/lint-fix/yopedia) are
+ *  normally folded into the agent by {@link normalizeActor}, but a stale
+ *  precomputed index may still carry their raw handles, so exclude them here too.
+ *  An empty/whitespace handle is a real data defect (an edit attributed to a
+ *  blank author); drop it but log so the upstream bug stays debuggable. */
 function isRealContributor(p: ContributorProfile): boolean {
-  if (p.handle === "system") return false;
+  if (isAutomationActor(p.handle)) return false;
   if (p.handle.trim() === "") {
     logger.warn(
       "contributors",

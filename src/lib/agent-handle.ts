@@ -23,3 +23,26 @@ export function isAgentHandle(handle: string | null | undefined): boolean {
     handle.endsWith(`--${DEFAULT_AGENT_NAME}`)
   );
 }
+
+/**
+ * Non-human automation authors: the seed/system placeholder, the auto-linter,
+ * and the platform seed identity. They aren't people and shouldn't appear as
+ * their own contributors — their edits are part of the agent's autonomous
+ * upkeep, so {@link normalizeActor} folds them into the agent ("yoyo").
+ */
+const AUTOMATION_ACTORS = new Set(["system", "lint-fix", "yopedia"]);
+
+/** True when a handle is a non-human automation actor (seed/system/linter). */
+export function isAutomationActor(handle: string | null | undefined): boolean {
+  return !!handle && AUTOMATION_ACTORS.has(handle.trim().toLowerCase());
+}
+
+/**
+ * Normalize an author/actor for attribution: automation actors (system, the
+ * linter, the platform seed) are credited to the agent ("yoyo") so the
+ * contributor list reads as the real people plus the agent, not a scatter of
+ * one-off system handles. Real human/agent handles pass through unchanged.
+ */
+export function normalizeActor(handle: string): string {
+  return isAutomationActor(handle) ? DEFAULT_AGENT_NAME : handle;
+}

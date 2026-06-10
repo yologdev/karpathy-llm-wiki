@@ -4,6 +4,7 @@ import {
   htmlToPlainText,
   stripHtmlFence,
   usesChartLib,
+  usesViewportUnits,
   HTML_SANDBOX,
   HTML_MAX_HEIGHT,
 } from "../html";
@@ -150,6 +151,21 @@ describe("composeSrcDoc", () => {
 });
 
 describe("Chart.js injection", () => {
+  it("usesViewportUnits detects 100vh/dvh app-style layouts", () => {
+    expect(usesViewportUnits("<div style='height:100vh'></div>")).toBe(true);
+    expect(usesViewportUnits("<style>.h{min-height:100dvh}</style>")).toBe(true);
+    expect(usesViewportUnits("<p>just prose, padding: 12px</p>")).toBe(false);
+  });
+
+  it("drops cross-reference markdown leaked after </html>", () => {
+    const leaked =
+      "<!doctype html><html><body><h1>Art</h1></body></html>\n\n## Related\n\n- [Other](other.md)\n";
+    const out = composeSrcDoc(leaked);
+    expect(out).not.toContain("## Related");
+    expect(out).not.toContain("other.md");
+    expect(out).toContain("<h1>Art</h1>");
+  });
+
   it("usesChartLib detects a new Chart(...) call", () => {
     expect(usesChartLib("<canvas></canvas><script>new Chart(el,{})</script>")).toBe(true);
     expect(usesChartLib("<script>const x = new  Chart( a )</script>")).toBe(true);
