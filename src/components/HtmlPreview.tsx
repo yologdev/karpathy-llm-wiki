@@ -32,11 +32,6 @@ export function HtmlPreview({
 }) {
   const ref = useRef<HTMLIFrameElement>(null);
   const [height, setHeight] = useState(360);
-  // True once content exceeds the height cap: we then re-enable the iframe's own
-  // scrollbar as a fallback so the tail isn't silently clipped (normal-height
-  // content keeps `scrolling="no"` → no scrollbar).
-  const [overCap, setOverCap] = useState(false);
-  const warnedOverCap = useRef(false);
 
   // Lazy-load the (~200KB) Chart.js source ONLY for documents that actually use
   // it, so prose/table answers don't pay for it. The chartless render happens
@@ -77,18 +72,7 @@ export function HtmlPreview({
       if (typeof reported === "number" && reported > 0) {
         // Clamp: cap a runaway/hostile grow, and floor a degenerate (e.g. 1px)
         // report so the artifact can't collapse to an invisible sliver.
-        const ceil = Math.ceil(reported);
-        if (ceil > HTML_MAX_HEIGHT) {
-          setOverCap(true);
-          if (!warnedOverCap.current) {
-            warnedOverCap.current = true;
-            logger.warn(
-              "html",
-              `artifact height ${ceil}px exceeds cap ${HTML_MAX_HEIGHT}px — capping and re-enabling inner scroll so content isn't clipped`,
-            );
-          }
-        }
-        setHeight(Math.max(140, Math.min(ceil, HTML_MAX_HEIGHT)));
+        setHeight(Math.max(140, Math.min(Math.ceil(reported), HTML_MAX_HEIGHT)));
       }
     }
     window.addEventListener("message", onMessage);
@@ -101,12 +85,11 @@ export function HtmlPreview({
       srcDoc={composeSrcDoc(html, chartLib)}
       sandbox={HTML_SANDBOX}
       title="HTML output"
-      // The frame auto-sizes to its content, so it never needs its own
-      // scrollbar — the page scrolls. `scrolling="no"` guarantees the inner
-      // scrollbar never appears (e.g. during a brief pre-resize layout), EXCEPT
-      // for a rare artifact taller than the cap, where we re-enable it so the
-      // clipped tail stays reachable rather than silently lost.
-      scrolling={overCap ? "auto" : "no"}
+      // The frame auto-sizes to its content (the page scrolls), so normal
+      // artifacts show no inner scrollbar. We do NOT force `scrolling="no"`: a
+      // self-contained artifact with its own full-viewport (100vh) layout
+      // reports a short height, and suppressing the scrollbar would clip it to
+      // nothing — letting it scroll keeps the content reachable.
       style={{
         width: "100%",
         height,

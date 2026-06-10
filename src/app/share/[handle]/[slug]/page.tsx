@@ -6,12 +6,62 @@ import { readWikiPageWithFrontmatter, isArtifactType } from "@/lib/wiki";
 import { getPrincipal } from "@/lib/auth";
 import { canReadFrontmatter } from "@/lib/authz";
 import { wikiUrlFor, str } from "@/lib/share-url";
+import { parseSources, dedupeSourcesForDisplay } from "@/lib/sources";
+import type { SourceEntry } from "@/lib/types";
 import { Colophon } from "@/components/folio/primitives";
 import { HtmlPreview } from "@/components/HtmlPreview";
 import { MarkdownRenderer } from "@/components/MarkdownRenderer";
 
 interface ShareProps {
   params: Promise<{ handle: string; slug: string }>;
+}
+
+/** Drop a body's own leading `# Title` so it isn't shown twice (we render the
+ *  title from frontmatter). Mirrors ArticleView. */
+function stripLeadingH1(body: string): string {
+  return body.replace(/^#\s+.+(?:\r?\n)?/m, "");
+}
+
+function sourceLabel(s: SourceEntry): string {
+  if (!s.url || s.url === "text-paste") return "pasted text";
+  try {
+    return new URL(s.url).hostname.replace(/^www\./, "");
+  } catch {
+    return s.url;
+  }
+}
+
+/** Citations at the bottom of a shared page. */
+function SourcesFooter({ sources }: { sources: SourceEntry[] }) {
+  if (sources.length === 0) return null;
+  return (
+    <section style={{ marginTop: 40 }}>
+      <p className="fmark" style={{ marginBottom: 14 }}>
+        Sources · {sources.length}
+      </p>
+      <ol className="stack" style={{ gap: 12, margin: 0, paddingLeft: 0, listStyle: "none" }}>
+        {sources.map((s, i) => (
+          <li key={`${s.url}-${i}`} style={{ fontSize: 13.5, lineHeight: 1.5 }}>
+            <span className="receipt" style={{ color: "var(--accent)", marginRight: 6 }}>
+              [{i + 1}]
+            </span>
+            <span style={{ color: "var(--ink-2)" }}>{sourceLabel(s)}</span>
+            {s.url && s.url !== "text-paste" && (
+              <div
+                className="receipt"
+                style={{ fontSize: 11, color: "var(--faint)", marginTop: 3, wordBreak: "break-all" }}
+              >
+                <a href={s.url} target="_blank" rel="noreferrer" style={{ color: "var(--faint)" }}>
+                  {s.url}
+                </a>
+                {s.fetched ? ` · fetched ${s.fetched}` : ""}
+              </div>
+            )}
+          </li>
+        ))}
+      </ol>
+    </section>
+  );
 }
 
 export async function generateMetadata({
@@ -51,6 +101,9 @@ export default async function SharePage({ params }: ShareProps) {
 
   const isHtml = isArtifactType(str(page.frontmatter.type));
   const wikiUrl = wikiUrlFor(slug, page.frontmatter);
+  const sources = dedupeSourcesForDisplay(
+    parseSources(page.frontmatter.sources as string | string[] | undefined),
+  );
 
   return (
     <div className="stack" style={{ minHeight: "100dvh" }}>
@@ -89,7 +142,14 @@ export default async function SharePage({ params }: ShareProps) {
       </header>
 
       {isHtml ? (
-        <HtmlPreview html={page.body} bare />
+        <>
+          <HtmlPreview html={page.body} bare />
+          {sources.length > 0 && (
+            <div style={{ maxWidth: 760, margin: "0 auto", padding: "0 24px 60px", width: "100%" }}>
+              <SourcesFooter sources={sources} />
+            </div>
+          )}
+        </>
       ) : (
         <main
           style={{ maxWidth: 760, margin: "0 auto", padding: "40px 24px 80px" }}
@@ -97,7 +157,9 @@ export default async function SharePage({ params }: ShareProps) {
           <h1 style={{ fontSize: 32, fontWeight: 700, marginBottom: 18 }}>
             {page.title || slug}
           </h1>
-          <MarkdownRenderer content={page.body} />
+          {/* Strip the body's own leading H1 — the title above already shows it. */}
+          <MarkdownRenderer content={stripLeadingH1(page.body)} />
+          <SourcesFooter sources={sources} />
         </main>
       )}
     </div>

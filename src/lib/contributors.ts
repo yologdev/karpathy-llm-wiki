@@ -315,7 +315,7 @@ export async function listContributors(
         "./contributor-index"
       );
       const idx = await getContributorIndex();
-      if (idx) return profilesFromIndex(idx);
+      if (idx) return profilesFromIndex(idx).filter(isRealContributor);
     } catch {
       // Fall through to the live scan — the index is purely an accelerator.
     }
@@ -331,5 +331,11 @@ export async function listContributors(
 
   // Sort by editCount descending, then handle ascending for stability.
   profiles.sort((a, b) => b.editCount - a.editCount || a.handle.localeCompare(b.handle));
-  return profiles;
+  return profiles.filter(isRealContributor);
+}
+
+/** Exclude the "system" seed/placeholder author — it isn't a real contributor
+ *  (and has no `/u/<handle>` profile). */
+function isRealContributor(p: ContributorProfile): boolean {
+  return p.handle.trim() !== "" && p.handle !== "system";
 }
