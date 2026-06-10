@@ -6,15 +6,26 @@ import { IngestReview } from "@/components/IngestReview";
 import { IngestStepper } from "@/components/IngestStepper";
 import { IngestSynthesis } from "@/components/IngestSynthesis";
 import { Icon } from "@/components/folio/icons";
-import { useIngest, type Mode } from "@/hooks/useIngest";
+import { useIngest, isUrlMode, type Mode } from "@/hooks/useIngest";
 
 const TABS: { mode: Mode; label: string }[] = [
   { mode: "url", label: "URL" },
   { mode: "pdf", label: "PDF" },
   { mode: "xpost", label: "X post" },
+  { mode: "youtube", label: "YouTube" },
   { mode: "text", label: "Paste text" },
   { mode: "image", label: "Image" },
 ];
+
+/** Per-URL-mode input hints. */
+const URL_HINTS: Partial<Record<Mode, { placeholder: string; label: string }>> = {
+  xpost: { placeholder: "https://x.com/user/status/…", label: "X post URL" },
+  youtube: {
+    placeholder: "https://youtube.com/watch?v=…",
+    label: "YouTube video URL",
+  },
+  url: { placeholder: "https://example.com/article", label: "Source URL" },
+};
 
 const FEATURES: [string, string][] = [
   ["One canonical page", "duplicate sources merge, never fork"],
@@ -150,8 +161,8 @@ export default function IngestPage() {
             })}
           </div>
 
-          {/* URL / X post: one inline input + Ingest button */}
-          {(mode === "url" || mode === "xpost") && (
+          {/* URL / X post / YouTube: one inline input + Ingest button */}
+          {isUrlMode(mode) && (
             <form onSubmit={handleSourceSubmit}>
               <div
                 className="row"
@@ -170,12 +181,8 @@ export default function IngestPage() {
                   value={url}
                   onChange={(e) => setUrl(e.target.value)}
                   required
-                  placeholder={
-                    mode === "xpost"
-                      ? "https://x.com/user/status/…"
-                      : "https://example.com/article"
-                  }
-                  aria-label={mode === "xpost" ? "X post URL" : "Source URL"}
+                  placeholder={(URL_HINTS[mode] ?? URL_HINTS.url)!.placeholder}
+                  aria-label={(URL_HINTS[mode] ?? URL_HINTS.url)!.label}
                   style={{
                     flex: 1,
                     minWidth: 0,
@@ -196,6 +203,11 @@ export default function IngestPage() {
                   Ingest <Icon.arrow width="16" height="16" />
                 </button>
               </div>
+              {mode === "youtube" && (
+                <p className="mt-2 text-xs text-foreground/40">
+                  Pulls the video&apos;s transcript + metadata into a cited page.
+                </p>
+              )}
               {error && (
                 <Alert variant="error" className="mt-4">
                   {error}

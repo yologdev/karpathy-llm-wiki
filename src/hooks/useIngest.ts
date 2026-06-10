@@ -4,8 +4,14 @@ import { useState } from "react";
 import type { PreviewData } from "@/components/IngestReview";
 import type { IngestPreviewMeta } from "@/lib/types";
 
-export type Mode = "url" | "pdf" | "xpost" | "text" | "image" | "batch";
+export type Mode = "url" | "pdf" | "xpost" | "youtube" | "text" | "image" | "batch";
 export type Stage = "form" | "synthesis" | "review" | "success";
+
+/** Modes whose source is a single URL (routed through the same /api/ingest URL
+ *  path — the backend auto-detects X posts and YouTube videos by their URL). */
+export function isUrlMode(m: Mode): boolean {
+  return m === "url" || m === "xpost" || m === "youtube";
+}
 
 export interface IngestResponse {
   rawPath: string;
@@ -61,7 +67,7 @@ export function validateIngestInput(
   content: string,
   url: string,
 ): string | null {
-  if (mode === "url" || mode === "xpost") {
+  if (isUrlMode(mode)) {
     if (!url.trim()) {
       return "Please enter a URL";
     }
@@ -106,7 +112,7 @@ export function useIngest(): UseIngestReturn {
       setTitle("");
       setContent("");
     }
-    if (newMode !== "url" && newMode !== "xpost") {
+    if (!isUrlMode(newMode)) {
       setUrl("");
     }
     if (newMode !== "image") {
@@ -136,7 +142,7 @@ export function useIngest(): UseIngestReturn {
     setStage("synthesis");
 
     try {
-      const usesUrl = mode === "url" || mode === "xpost";
+      const usesUrl = isUrlMode(mode);
       const body = usesUrl
         ? { url: url.trim(), preview: true }
         : { title, content, preview: true };
