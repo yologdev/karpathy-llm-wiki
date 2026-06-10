@@ -5,8 +5,34 @@ import {
   buildSourceEntry,
   newestSourceType,
   dedupeSourcesForDisplay,
+  sourceLabel,
 } from "../sources";
 import type { SourceEntry } from "../types";
+
+describe("sourceLabel", () => {
+  const mk = (url: string): SourceEntry => ({
+    type: "url",
+    url,
+    fetched: "2026-01-01",
+    triggered_by: "alice",
+  });
+
+  it("returns the bare hostname for a real URL, www stripped", () => {
+    expect(sourceLabel(mk("https://www.example.com/a/b?x=1"))).toBe("example.com");
+    expect(sourceLabel(mk("https://docs.anthropic.com/page"))).toBe("docs.anthropic.com");
+  });
+
+  it("returns 'pasted text' for a text paste / empty url", () => {
+    expect(sourceLabel(mk("text-paste"))).toBe("pasted text");
+    expect(sourceLabel({ ...mk(""), url: "" })).toBe("pasted text");
+  });
+
+  it("falls back to the raw value for a non-URL (e.g. a wiki-ref slug)", () => {
+    expect(sourceLabel({ ...mk("poke-ai-assistant"), type: "wiki-ref" })).toBe(
+      "poke-ai-assistant",
+    );
+  });
+});
 
 describe("dedupeSourcesForDisplay", () => {
   const mk = (

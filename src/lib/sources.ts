@@ -91,6 +91,20 @@ export function dedupeSourcesForDisplay(sources: SourceEntry[]): SourceEntry[] {
 }
 
 /**
+ * A short human label for a source: the bare hostname for a real URL (`www.`
+ * stripped), "pasted text" for a text paste, and the raw value for a non-URL
+ * (e.g. a `wiki-ref` slug, which can't be parsed into a hostname).
+ */
+export function sourceLabel(s: SourceEntry): string {
+  if (!s.url || s.url === "text-paste") return "pasted text";
+  try {
+    return new URL(s.url).hostname.replace(/^www\./, "");
+  } catch {
+    return s.url;
+  }
+}
+
+/**
  * Build a fresh {@link SourceEntry} with sensible defaults.
  *
  * @param url        - Source URL or `"text-paste"` for pasted content.

@@ -17,6 +17,7 @@ import type { Principal } from "./auth";
 import { listRevisions, type Revision } from "./revisions";
 import { getDiscussRelPrefix } from "./talk";
 import { isEnoent } from "./errors";
+import { logger } from "./logger";
 import type { ContributorProfile, TalkThread } from "./types";
 
 // ---------------------------------------------------------------------------
@@ -335,7 +336,17 @@ export async function listContributors(
 }
 
 /** Exclude the "system" seed/placeholder author — it isn't a real contributor
- *  (and has no `/u/<handle>` profile). */
+ *  (and has no `/u/<handle>` profile). An empty/whitespace handle is a real data
+ *  defect (an edit attributed to a blank author); drop it from the list but log
+ *  so the upstream attribution bug stays debuggable rather than silently hidden. */
 function isRealContributor(p: ContributorProfile): boolean {
-  return p.handle.trim() !== "" && p.handle !== "system";
+  if (p.handle === "system") return false;
+  if (p.handle.trim() === "") {
+    logger.warn(
+      "contributors",
+      `dropping a profile with an empty handle (editCount=${p.editCount}) — upstream attribution defect`,
+    );
+    return false;
+  }
+  return true;
 }

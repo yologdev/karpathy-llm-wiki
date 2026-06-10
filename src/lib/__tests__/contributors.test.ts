@@ -111,6 +111,27 @@ describe("contributors data layer", () => {
       expect(contributors.map((c) => c.handle)).toEqual(["alice"]);
     });
 
+    it("excludes the 'system' seed/placeholder author (scan + index paths)", async () => {
+      await createPage(
+        "page-a",
+        "Page A",
+        "---\nowner: alice\nvisibility: public\n---\n\n# Page A\n\nc.",
+      );
+      await saveRevision("page-a", "# Page A\n\nv1", "alice");
+      await saveRevision("page-a", "# Page A\n\nv2", "system");
+
+      // Live-scan path.
+      const scanned = await listContributors({ id: "alice", handle: "alice" });
+      expect(scanned.map((c) => c.handle)).toContain("alice");
+      expect(scanned.map((c) => c.handle)).not.toContain("system");
+
+      // Index fast path (anonymous) — the index stores system, listContributors filters it.
+      const { rebuildContributorIndex } = await import("../contributor-index");
+      await rebuildContributorIndex();
+      const anon = await listContributors(null);
+      expect(anon.map((c) => c.handle)).not.toContain("system");
+    });
+
     it("takes the contributor-index fast path ONLY for an anonymous viewer; a non-null principal uses the per-principal scan (sees their own private pages)", async () => {
       // A PUBLIC page edited by alice (visible to everyone, in the anon index).
       await createPage(

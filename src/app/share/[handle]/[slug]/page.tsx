@@ -6,7 +6,8 @@ import { readWikiPageWithFrontmatter, isArtifactType } from "@/lib/wiki";
 import { getPrincipal } from "@/lib/auth";
 import { canReadFrontmatter } from "@/lib/authz";
 import { wikiUrlFor, str } from "@/lib/share-url";
-import { parseSources, dedupeSourcesForDisplay } from "@/lib/sources";
+import { parseSources, dedupeSourcesForDisplay, sourceLabel } from "@/lib/sources";
+import { stripLeadingH1 } from "@/lib/markdown";
 import type { SourceEntry } from "@/lib/types";
 import { Colophon } from "@/components/folio/primitives";
 import { HtmlPreview } from "@/components/HtmlPreview";
@@ -14,21 +15,6 @@ import { MarkdownRenderer } from "@/components/MarkdownRenderer";
 
 interface ShareProps {
   params: Promise<{ handle: string; slug: string }>;
-}
-
-/** Drop a body's own leading `# Title` so it isn't shown twice (we render the
- *  title from frontmatter). Mirrors ArticleView. */
-function stripLeadingH1(body: string): string {
-  return body.replace(/^#\s+.+(?:\r?\n)?/m, "");
-}
-
-function sourceLabel(s: SourceEntry): string {
-  if (!s.url || s.url === "text-paste") return "pasted text";
-  try {
-    return new URL(s.url).hostname.replace(/^www\./, "");
-  } catch {
-    return s.url;
-  }
 }
 
 /** Citations at the bottom of a shared page. */

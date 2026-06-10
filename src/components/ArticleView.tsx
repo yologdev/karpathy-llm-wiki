@@ -7,8 +7,8 @@ import { findBacklinks, findSimilarPages, buildSlugTenantMap, isArtifactType } f
 import { resolveSlugPath, profileHref } from "@/lib/links";
 import { getCommonsSlugSet, belongsInCommons } from "@/lib/commons";
 import type { Principal } from "@/lib/auth";
-import { parseSources, dedupeSourcesForDisplay } from "@/lib/sources";
-import type { SourceEntry } from "@/lib/types";
+import { parseSources, dedupeSourcesForDisplay, sourceLabel } from "@/lib/sources";
+import { stripLeadingH1 } from "@/lib/markdown";
 import { formatRelativeTime } from "@/lib/format";
 import { Icon } from "@/components/folio/icons";
 import { Avatar, Mark, Confidence, Freshness } from "@/components/folio/primitives";
@@ -104,10 +104,6 @@ function TableOfContents({
 }
 
 /** Remove the first H1 line so the promoted page title isn't duplicated. */
-function stripLeadingH1(body: string): string {
-  return body.replace(/^#\s+.+(?:\r?\n)?/m, "");
-}
-
 interface ArticleViewProps {
   page: WikiPage & { frontmatter: Frontmatter; body: string };
   slug: string;
@@ -260,15 +256,6 @@ export async function ArticleView({
   }
 
   // Sources rail label: a readable host, or the paste sentinel.
-  const sourceLabel = (s: SourceEntry): string => {
-    if (!s.url || s.url === "text-paste") return "pasted text";
-    try {
-      return new URL(s.url).hostname.replace(/^www\./, "");
-    } catch {
-      return s.url;
-    }
-  };
-
   const askHref = `/query?q=${encodeURIComponent(`About "${page.title}": `)}`;
 
   return (
