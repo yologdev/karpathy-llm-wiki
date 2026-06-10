@@ -33,6 +33,7 @@
     "list_discussions",
     "create_discussion",
     "resolve_discussion",
+    "reconcile_page",
     "add_comment",
     "reingest",
     "ingest_history",

@@ -29,6 +29,7 @@
  *   create_discussion  — Start a new discussion thread
  *   add_comment        — Add a comment to a discussion thread
  *   resolve_discussion — Resolve a discussion thread
+ *   reconcile_page     — Reconcile a page from a discussion thread (LLM-driven)
  *   reingest           — Re-ingest a wiki page from its original source URL
  *   ingest_history     — View ingest ledger entries for provenance auditing
  *   dataview_query     — Query wiki pages by frontmatter fields
@@ -81,6 +82,7 @@ import { listRevisions, readRevision, readRevisionMeta, type Revision } from "./
 import { vaultIdFor, getVault, createVault, addToVault, removeFromVault, listVaults, vaultSlugs } from "./lib/vault";
 import type { Vault } from "./lib/vault";
 import { belongsInCommons } from "./lib/commons";
+import { reconcileFromTalk, type ReconcileFromTalkResult } from "./lib/reconcile";
 import type { TalkThread, TalkComment } from "./lib/types";
 
 // ---------------------------------------------------------------------------
@@ -1061,6 +1063,26 @@ export async function handleAddComment(args: {
     throw new Error("author must be a non-empty string");
   }
   return addComment(args.pageSlug, args.threadIndex, args.author.trim(), args.content.trim(), args.parentId);
+}
+
+// ---------------------------------------------------------------------------
+// Reconcile page handler
+// ---------------------------------------------------------------------------
+
+export async function handleReconcilePage(args: {
+  pageSlug: string;
+  threadIndex: number;
+  author?: string | undefined;
+}): Promise<ReconcileFromTalkResult> {
+  if (!args.pageSlug) {
+    throw new Error("pageSlug is required");
+  }
+  if (args.threadIndex === undefined || args.threadIndex === null) {
+    throw new Error("threadIndex is required");
+  }
+  return reconcileFromTalk(args.pageSlug, args.threadIndex, {
+    author: args.author || undefined,
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -2320,6 +2342,52 @@ export function createMcpServer(): McpServer {
   }, async (args) => {
     try {
       const result = await handleAddComment(args);
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: JSON.stringify(result, null, 2),
+          },
+        ],
+      };
+    } catch (err) {
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: (err as Error).message,
+          },
+        ],
+        isError: true,
+      };
+    }
+  });
+
+  // reconcile_page — Reconcile a wiki page from a discussion thread
+  server.registerTool("reconcile_page", {
+    description:
+      "Reconcile a wiki page by applying valid points from a discussion thread — the core 'agents maintain, humans discuss' action. Reads the page and thread, LLM-revises the page, posts a summary comment, and resolves the thread.",
+    inputSchema: {
+      pageSlug: z
+        .string()
+        .describe("Slug of the wiki page to reconcile"),
+      threadIndex: z
+        .number()
+        .describe("Zero-based index of the discussion thread to reconcile from"),
+      author: z
+        .string()
+        .optional()
+        .describe("Author handle for attribution (defaults to 'yoyo')"),
+    },
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: true,
+    },
+  }, async (args) => {
+    try {
+      const result = await handleReconcilePage(args);
       return {
         content: [
           {
