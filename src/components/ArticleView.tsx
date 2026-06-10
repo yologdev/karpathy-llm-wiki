@@ -278,9 +278,18 @@ export async function ArticleView({
           className="row receipt"
           style={{ gap: 8, fontSize: 12, color: "var(--muted)" }}
         >
-          <Link href="/wiki" style={{ color: "var(--muted)" }}>
-            commons
-          </Link>
+          {/* Commons pages live under the commons; owner-scoped pages (html
+              artifacts, private, agent) live under their owner's profile, so
+              don't mislabel those as "commons". */}
+          {isCommonsPage ? (
+            <Link href="/wiki" style={{ color: "var(--muted)" }}>
+              commons
+            </Link>
+          ) : (
+            <Link href={`/u/${pageTenant}`} style={{ color: "var(--muted)" }}>
+              @{pageTenant}
+            </Link>
+          )}
           <span style={{ color: "var(--faint)" }}>/</span>
           <span style={{ color: "var(--ink-2)" }}>{slug}</span>
         </div>
