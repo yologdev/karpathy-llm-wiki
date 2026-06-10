@@ -33,6 +33,20 @@ describe("validateIngestInput", () => {
     ).toBeNull();
   });
 
+  // ── YouTube mode (a URL mode — must validate a URL, not fall to text) ──
+
+  it("youtube mode with empty URL → 'Please enter a URL'", () => {
+    expect(validateIngestInput("youtube", "", "", "")).toBe(
+      "Please enter a URL",
+    );
+  });
+
+  it("youtube mode with a valid URL → null", () => {
+    expect(
+      validateIngestInput("youtube", "", "", "https://youtube.com/watch?v=abc"),
+    ).toBeNull();
+  });
+
   // ── Text mode ─────────────────────────────────────────────────────────
 
   it("text mode with empty title → null (title is optional, derived from content)", () => {
