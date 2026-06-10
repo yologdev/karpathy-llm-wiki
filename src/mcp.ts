@@ -143,6 +143,8 @@ export async function handleListPages(args: {
     tags?: string[];
     confidence?: number;
     updated?: string;
+    type?: string;
+    owner?: string;
   }[]
 > {
   const entries = await listReadableWikiPages(null);
@@ -177,6 +179,8 @@ export async function handleListPages(args: {
     ...(e.tags && e.tags.length > 0 ? { tags: e.tags } : {}),
     ...(e.confidence !== undefined ? { confidence: e.confidence } : {}),
     ...(e.updated ? { updated: e.updated } : {}),
+    ...(e.type ? { type: e.type } : {}),
+    ...(e.owner ? { owner: e.owner } : {}),
   }));
 }
 
@@ -627,7 +631,7 @@ export async function handleIngestImage(args: {
 
 export async function handleQueryWiki(args: {
   question: string;
-  format?: "prose" | "table" | "slides" | undefined;
+  format?: "prose" | "table" | "slides" | "html" | undefined;
   scope?: string | undefined;
 }): Promise<QueryResult> {
   const format: QueryFormat = args.format ?? "prose";
@@ -643,6 +647,8 @@ export async function handleSaveQueryAnswer(args: {
   answer: string;
   slug?: string | undefined;
   sources?: string[] | undefined;
+  format?: "markdown" | "html" | undefined;
+  owner?: string | undefined;
 }): Promise<{ slug: string; success: boolean }> {
   if (!args.question || args.question.trim().length === 0) {
     throw new Error("question is required and must be non-empty");
@@ -656,6 +662,8 @@ export async function handleSaveQueryAnswer(args: {
     args.answer.trim(),
     args.slug?.trim() || undefined,
     args.sources,
+    args.format ?? "markdown",
+    args.owner?.trim() || undefined,
   );
 
   return { slug: result.slug, success: true };
@@ -1760,9 +1768,9 @@ export function createMcpServer(): McpServer {
     inputSchema: {
       question: z.string().describe("The question to ask the wiki"),
       format: z
-        .enum(["prose", "table", "slides"])
+        .enum(["prose", "table", "slides", "html"])
         .optional()
-        .describe("Answer format: prose (default), table, or slides"),
+        .describe("Answer format: prose (default), table, slides, or html (interactive artifact)"),
       scope: z
         .string()
         .optional()
@@ -1817,6 +1825,14 @@ export function createMcpServer(): McpServer {
         .array(z.string())
         .optional()
         .describe("Slugs of wiki pages cited in the answer"),
+      format: z
+        .enum(["markdown", "html"])
+        .optional()
+        .describe("Content type: markdown (default) or html (interactive artifact)"),
+      owner: z
+        .string()
+        .optional()
+        .describe("Owner handle — assigns page ownership (used for html artifacts on profile pages)"),
     },
     annotations: {
       readOnlyHint: false,

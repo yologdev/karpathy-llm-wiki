@@ -395,6 +395,33 @@ describe("list_pages", () => {
     const result = await handleListPages({});
     expect(result).toEqual([]);
   });
+
+  it("includes type and owner when present on entry", async () => {
+    await writeTestPage(
+      "artifact-page",
+      "---\ntitle: Revenue Chart\ntype: html\nowner: alice\ntags: [chart]\nupdated: '2025-06-01'\n---\n<html><body>chart</body></html>",
+    );
+    await writeTestPage(
+      "normal-page",
+      "---\ntags: [test]\nupdated: '2025-06-01'\n---\n# Normal Page\n\nJust a normal page.",
+    );
+    await writeIndex([
+      { title: "Revenue Chart", slug: "artifact-page", summary: "A chart" },
+      { title: "Normal Page", slug: "normal-page", summary: "Just a normal page" },
+    ]);
+
+    const result = await handleListPages({});
+    const artifact = result.find((p) => p.slug === "artifact-page");
+    const normal = result.find((p) => p.slug === "normal-page");
+
+    expect(artifact).toBeDefined();
+    expect(artifact!.type).toBe("html");
+    expect(artifact!.owner).toBe("alice");
+
+    expect(normal).toBeDefined();
+    expect(normal!.type).toBeUndefined();
+    expect(normal!.owner).toBeUndefined();
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -1742,7 +1769,7 @@ describe("query_wiki", () => {
 
   it("accepts format parameter without error", async () => {
     // Verify each format value is accepted
-    const formats = ["prose", "table", "slides"] as const;
+    const formats = ["prose", "table", "slides", "html"] as const;
     for (const format of formats) {
       const result = await handleQueryWiki({
         question: "What is AI?",
@@ -1883,6 +1910,40 @@ describe("save_query_answer", () => {
 
     expect(result.slug).toBeTruthy();
     expect(result.success).toBe(true);
+  });
+
+  it("saves html artifact with format and owner", async () => {
+    await writeIndex([]);
+
+    const result = await handleSaveQueryAnswer({
+      question: "Revenue chart",
+      answer: "<html><body><h1>Revenue</h1></body></html>",
+      format: "html",
+      owner: "alice",
+    });
+
+    expect(result.slug).toBe("revenue-chart");
+    expect(result.success).toBe(true);
+
+    // Verify the saved page has type: html and owner: alice
+    const page = await handleReadPage({ slug: "revenue-chart" });
+    expect(page.frontmatter.type).toBe("html");
+    expect(page.frontmatter.owner).toBe("alice");
+  });
+
+  it("defaults to markdown format when format is omitted", async () => {
+    await writeIndex([]);
+
+    const result = await handleSaveQueryAnswer({
+      question: "Plain markdown answer",
+      answer: "This is a plain text answer.",
+    });
+
+    expect(result.success).toBe(true);
+
+    // Verify the page does NOT have type: html
+    const page = await handleReadPage({ slug: "plain-markdown-answer" });
+    expect(page.frontmatter.type).not.toBe("html");
   });
 });
 
