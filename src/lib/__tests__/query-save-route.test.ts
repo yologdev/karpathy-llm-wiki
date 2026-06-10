@@ -56,6 +56,7 @@ describe("POST /api/query/save", () => {
       sources,
       "markdown",
       undefined,
+      undefined,
     );
   });
 
@@ -74,6 +75,7 @@ describe("POST /api/query/save", () => {
       undefined,
       undefined,
       "markdown",
+      undefined,
       undefined,
     );
   });
@@ -94,7 +96,8 @@ describe("POST /api/query/save", () => {
       undefined,
       undefined,
       "html",
-      "test-user", // owner from the session principal
+      "test-user",
+      "test-user",
     );
   });
 

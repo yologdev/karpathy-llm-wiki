@@ -70,6 +70,7 @@ export async function POST(request: NextRequest) {
       validatedSources,
       isHtml ? "html" : "markdown",
       owner,
+      owner,  // author — same as owner for web saves
     );
 
     return NextResponse.json({ slug: result.slug, success: true });

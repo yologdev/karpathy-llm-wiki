@@ -657,13 +657,15 @@ export async function handleSaveQueryAnswer(args: {
     throw new Error("answer is required and must be non-empty");
   }
 
+  const owner = args.owner?.trim() || undefined;
   const result = await saveAnswerToWiki(
     args.question.trim(),
     args.answer.trim(),
     args.slug?.trim() || undefined,
     args.sources,
     args.format ?? "markdown",
-    args.owner?.trim() || undefined,
+    owner,
+    owner,  // author — same as owner for MCP saves
   );
 
   return { slug: result.slug, success: true };

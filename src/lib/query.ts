@@ -318,6 +318,7 @@ export async function saveAnswerToWiki(
   sources?: string[],
   contentType: "markdown" | "html" = "markdown",
   owner?: string,
+  author?: string,
 ): Promise<{ slug: string }> {
   const slug = explicitSlug || slugify(title);
 
@@ -401,7 +402,7 @@ export async function saveAnswerToWiki(
     summary,
     logOp: "save",
     crossRefSource: isHtml ? null : content,
-    author: "system",
+    author: author ?? owner ?? "system",
     logDetails: ({ updatedSlugs }) =>
       `query answer saved as ${slug} · linked ${updatedSlugs.length} related page(s)`,
   });
