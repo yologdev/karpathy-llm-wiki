@@ -227,7 +227,8 @@ describe("fetchXPostContent — X Articles", () => {
   it("reads a long-form Article body via the X API (token set), with cover + byline", async () => {
     process.env.X_BEARER_TOKEN = "test-bearer";
     mockApi({
-      apiBody: { data: { article: { title: "My Long Essay", text: "## Section\n\nThe full article body." } } },
+      // Recent-search returns an array; the article tweet is the conversation root.
+      apiBody: { data: [{ id: "123", article: { title: "My Long Essay", text: "## Section\n\nThe full article body." } }] },
       // syndication is hit only for the cover image here
       synBody: { article: { cover_media: { media_info: { original_img_url: "https://pbs.twimg.com/cover.jpg" } } } },
     });
@@ -241,10 +242,30 @@ describe("fetchXPostContent — X Articles", () => {
     expect(content).toContain("**Source:** [https://x.com/ada/status/123]");
   });
 
+  it("queries recent-search by conversation_id (the proven request, not GET /:id)", async () => {
+    process.env.X_BEARER_TOKEN = "test-bearer";
+    const calls: string[] = [];
+    globalThis.fetch = vi.fn(async (input: unknown) => {
+      const u = String(input);
+      calls.push(u);
+      if (u.includes("api.twitter.com")) {
+        return { ok: true, status: 200, json: async () => ({ data: [{ id: "123", article: { title: "E", text: "Body." } }] }) };
+      }
+      return { ok: true, status: 200, json: async () => ({}) };
+    }) as unknown as typeof fetch;
+
+    await fetchXPostContent("https://x.com/ada/status/123");
+    const apiCall = calls.find((u) => u.includes("api.twitter.com"));
+    expect(apiCall).toContain("/2/tweets/search/recent");
+    expect(decodeURIComponent(apiCall!)).toContain("conversation_id:123");
+    expect(decodeURIComponent(apiCall!)).toContain("from:ada");
+    expect(apiCall).toContain("tweet.fields=article");
+  });
+
   it("falls back to syndication when the post is not an article", async () => {
     process.env.X_BEARER_TOKEN = "test-bearer";
     mockApi({
-      apiBody: { data: { text: "no article here" } }, // no `article` field
+      apiBody: { data: [{ id: "123", text: "no article here" }] }, // no `article` field
       synBody: { text: "just a normal tweet", user: { name: "Ada", screen_name: "ada" } },
     });
 
@@ -276,10 +297,32 @@ describe("fetchXPostContent — X Articles", () => {
     expect(calls.some((u) => u.includes("api.twitter.com"))).toBe(false);
   });
 
+  it("ingests an article from the syndication preview + cover when the API can't serve it (no token)", async () => {
+    delete process.env.X_BEARER_TOKEN; // no API → syndication only
+    mockApi({
+      synBody: {
+        text: "https://t.co/teaser", // the teaser tweet's bare link
+        user: { name: "Ada", screen_name: "ada" },
+        article: {
+          title: "Every Agentic Engineering Hack I Know",
+          preview_text: "Three months ago I posted Every Claude Code Hack I Know.",
+          cover_media: { media_info: { original_img_url: "https://pbs.twimg.com/cover.jpg" } },
+        },
+      },
+    });
+
+    const { title, content } = await fetchXPostContent("https://x.com/ada/status/123");
+    expect(title).toBe("Every Agentic Engineering Hack I Know");
+    expect(content).toContain("# Every Agentic Engineering Hack I Know");
+    expect(content).toContain("![Every Agentic Engineering Hack I Know](https://pbs.twimg.com/cover.jpg)");
+    expect(content).toContain("Three months ago I posted"); // the preview body, not just the link
+    expect(content).not.toContain("https://t.co/teaser"); // not the bare-link tweet formatter
+  });
+
   it("omits the byline for an /i/web/status/ article URL (no @handle)", async () => {
     process.env.X_BEARER_TOKEN = "test-bearer";
     mockApi({
-      apiBody: { data: { article: { title: "Anon Essay", text: "Body." } } },
+      apiBody: { data: [{ article: { title: "Anon Essay", text: "Body." } }] },
       synBody: {},
     });
     const { content } = await fetchXPostContent("https://x.com/i/web/status/123");
@@ -291,7 +334,7 @@ describe("fetchXPostContent — X Articles", () => {
   it("renders an article with no image line when there's no cover", async () => {
     process.env.X_BEARER_TOKEN = "test-bearer";
     mockApi({
-      apiBody: { data: { article: { title: "No Cover", text: "Just text." } } },
+      apiBody: { data: [{ article: { title: "No Cover", text: "Just text." } }] },
       synBody: {}, // no article.cover_media
     });
     const { content } = await fetchXPostContent("https://x.com/ada/status/9");
@@ -303,7 +346,7 @@ describe("fetchXPostContent — X Articles", () => {
   it("renders a title-only article (empty body) rather than falling back", async () => {
     process.env.X_BEARER_TOKEN = "test-bearer";
     mockApi({
-      apiBody: { data: { article: { title: "Title Only", text: "  " } } },
+      apiBody: { data: [{ article: { title: "Title Only", text: "  " } }] },
       synBody: { text: "SYNDICATION TWEET", user: { name: "Ada", screen_name: "ada" } },
     });
     const { title, content } = await fetchXPostContent("https://x.com/ada/status/9");
@@ -315,7 +358,7 @@ describe("fetchXPostContent — X Articles", () => {
   it("defaults the heading to 'X Article' when the article has body but no title", async () => {
     process.env.X_BEARER_TOKEN = "test-bearer";
     mockApi({
-      apiBody: { data: { article: { text: "Body without a title." } } },
+      apiBody: { data: [{ article: { text: "Body without a title." } }] },
       synBody: {},
     });
     const { title, content } = await fetchXPostContent("https://x.com/ada/status/9");
