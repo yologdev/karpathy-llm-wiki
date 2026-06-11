@@ -58,6 +58,8 @@ describe("POST /api/query/save", () => {
       undefined,
       undefined,
     );
+    // A markdown save is a public commons page → /wiki/<slug>.
+    expect((await res.json()).url).toBe("/wiki/test-page");
   });
 
   it("calls saveAnswerToWiki without sources when sources is omitted", async () => {
@@ -99,6 +101,8 @@ describe("POST /api/query/save", () => {
       "test-user",
       "test-user",
     );
+    // The HTML artifact lives at the owner-scoped URL (it 404s at /wiki/<slug>).
+    expect((await res.json()).url).toBe("/u/test-user/test-page");
   });
 
   it("rejects an HTML save with 401 when the principal can't be resolved", async () => {

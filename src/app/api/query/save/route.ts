@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { saveAnswerToWiki } from "@/lib/query";
 import { getPrincipal } from "@/lib/auth";
+import { commonsPath, pagePath, ownerToTenant } from "@/lib/links";
 import { getErrorMessage } from "@/lib/errors";
 import { logger } from "@/lib/logger";
 
@@ -73,7 +74,15 @@ export async function POST(request: NextRequest) {
       owner,  // author — same as owner for web saves
     );
 
-    return NextResponse.json({ slug: result.slug, success: true });
+    // Return the CANONICAL url so the client links correctly. An HTML answer is
+    // an owned artifact → it lives at `/u/<tenant>/<slug>` and 404s at the
+    // commons `/wiki/<slug>`. A markdown save is a public commons page.
+    const url =
+      isHtml && owner
+        ? pagePath(ownerToTenant(owner), result.slug)
+        : commonsPath(result.slug);
+
+    return NextResponse.json({ slug: result.slug, url, success: true });
   } catch (error) {
     logger.error("query", "Save answer error", error);
     return NextResponse.json(

@@ -14,6 +14,8 @@ import type { QueryFormat } from "@/lib/query-format";
 interface SaveState {
   status: "idle" | "editing" | "saving" | "saved" | "error";
   slug?: string;
+  /** Canonical URL from the save API — correct for owned artifacts (`/u/...`). */
+  url?: string;
   error?: string;
 }
 
@@ -119,7 +121,7 @@ export function QueryResultPanel({
         return;
       }
 
-      setSaveState({ status: "saved", slug: data.slug });
+      setSaveState({ status: "saved", slug: data.slug, url: data.url });
 
       // Mark the history entry as saved
       if (currentHistoryId) {
@@ -268,7 +270,7 @@ export function QueryResultPanel({
             <Alert variant="success">
               {isHtml ? "Saved to your pages." : "Saved to the wiki."}{" "}
               <Link
-                href={hrefForSlug(saveState.slug)}
+                href={saveState.url ?? hrefForSlug(saveState.slug)}
                 className="underline font-medium hover:opacity-80"
               >
                 View →

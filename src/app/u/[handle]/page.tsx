@@ -183,23 +183,24 @@ export default async function UserPage({
         <p style={{ color: "var(--muted)" }}>No public pages yet.</p>
       )}
 
-      {/* Commons pages → a user-scoped activity trail (ingests + edits). */}
-      {trail.length > 0 && (
-        <section style={{ marginBottom: 40 }}>
-          <p className="fmark" style={{ marginBottom: 14 }}>
-            Activity
-          </p>
-          <Trail events={trail} />
-        </section>
-      )}
-
-      {/* Saved HTML artifacts → cards. */}
+      {/* Saved HTML artifacts → cards. Shown above the activity trail: an
+          artifact is the person's actual work, so it leads. */}
       {artifacts.length > 0 && (
-        <section>
+        <section style={{ marginBottom: 40 }}>
           <p className="fmark" style={{ marginBottom: 14 }}>
             {artifacts.length} {artifacts.length === 1 ? "artifact" : "artifacts"}
           </p>
           <ProfileBlogIndex pages={artifacts} discussionStats={discussionStats} />
+        </section>
+      )}
+
+      {/* Commons pages → a user-scoped activity trail (ingests + edits). */}
+      {trail.length > 0 && (
+        <section>
+          <p className="fmark" style={{ marginBottom: 14 }}>
+            Activity
+          </p>
+          <Trail events={trail} />
         </section>
       )}
 
