@@ -105,6 +105,19 @@ describe("POST /api/query/save", () => {
     expect((await res.json()).url).toBe("/u/test-user/test-page");
   });
 
+  it("normalizes the owner handle into the artifact url tenant (case-insensitive)", async () => {
+    mockedGetPrincipal.mockResolvedValueOnce({ id: "u", handle: "Test-User" });
+    const req = makeRequest({
+      title: "Chart",
+      content: "<!doctype html><html><body>x</body></html>",
+      format: "html",
+    });
+    const res = await POST(req);
+    expect(res.status).toBe(200);
+    // ownerToTenant lowercases the handle → the link must resolve, not 404.
+    expect((await res.json()).url).toBe("/u/test-user/test-page");
+  });
+
   it("rejects an HTML save with 401 when the principal can't be resolved", async () => {
     mockedGetPrincipal.mockResolvedValueOnce(null);
     const req = makeRequest({
