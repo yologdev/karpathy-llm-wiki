@@ -86,9 +86,13 @@ export async function renderMermaidInHtml(html: string): Promise<string> {
   for (const { match, code } of blocks) {
     try {
       const svg = await renderMermaid(code);
+      // Replacement via a FUNCTION, not a string: SVG carries model-authored
+      // labels that may contain `$&` / `$$` / `$1`, which String.replace would
+      // otherwise interpret as special patterns and corrupt the output.
       out = out.replace(
         match,
-        `<div class="mermaid-diagram" style="text-align:center;margin:1.5rem 0">${svg}</div>`,
+        () =>
+          `<div class="mermaid-diagram" style="text-align:center;margin:1.5rem 0">${svg}</div>`,
       );
     } catch {
       // Leave the original <pre> block in place — the reader still sees the graph
