@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getPrincipal } from "@/lib/auth";
 import { getIngestJob, effectiveStatus } from "@/lib/ingest-jobs";
+import { readWikiPage } from "@/lib/wiki";
 import { getErrorMessage } from "@/lib/errors";
 import { logger } from "@/lib/logger";
 
@@ -38,6 +39,14 @@ export async function GET(
 
     // A stalled (dead-worker) job reads as failed so the UI stops waiting on it.
     const eff = effectiveStatus(job);
+
+    // The job record outlives its page: if a completed page was later deleted,
+    // the "Recent ingests" strip would show a dead link. Report the job as gone
+    // (404) so the client drops it quietly instead of linking to nothing.
+    if (eff.status === "done" && job.slug && !(await readWikiPage(job.slug))) {
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
+
     return NextResponse.json({
       status: eff.status,
       slug: job.slug,

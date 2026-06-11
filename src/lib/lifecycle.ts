@@ -31,6 +31,7 @@ import { syncBacklinksForPage, removeBacklinksForSlug } from "./backlink-index";
 import { recordEditForAuthor } from "./contributor-index";
 import { pushRecentEvent, removeRecentForSlug } from "./recent-index";
 import { isAgentHandle } from "./agents";
+import { normalizeActor } from "./agent-handle";
 import { parseFrontmatter } from "./frontmatter";
 import { parseSources, newestSourceType } from "./sources";
 import type { LogOperation } from "./wiki";
@@ -476,11 +477,14 @@ async function runPageLifecycleOp(
                 parseSources(fm.sources as string | string[] | undefined),
               )
             : undefined;
+        // Fold automation actors (system / lint-fix / yopedia) into the agent so
+        // the incrementally-pushed event matches the scan/index normalization.
+        const actor = normalizeActor(op.author);
         await pushRecentEvent({
           ts: now,
           when: new Date(now).toISOString(),
-          actor: op.author,
-          isAgent: isAgentHandle(op.author),
+          actor,
+          isAgent: isAgentHandle(actor),
           // An ingest onto a page that already existed is a re-ingest — label
           // it distinctly (prevContent is undefined only for a brand-new page).
           action:

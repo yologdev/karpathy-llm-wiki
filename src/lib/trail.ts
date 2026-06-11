@@ -2,6 +2,7 @@ import { listReadableWikiPages, readWikiPageWithFrontmatter, isAgentScopedType, 
 import { listRevisions } from "./revisions";
 import { parseSources } from "./sources";
 import { isAgentHandle } from "./agents";
+import { normalizeActor } from "./agent-handle";
 import type { SourceEntry } from "./types";
 import type { Principal } from "./auth";
 
@@ -115,7 +116,9 @@ export async function trailEventsForPages(
         for (const s of sources) {
           const ts = Date.parse(s.fetched);
           if (Number.isNaN(ts)) continue;
-          const actor = s.triggered_by || "system";
+          // Fold automation actors (system / lint-fix / yopedia) into the agent
+          // so the trail reads as one yoyo, matching the contributor index.
+          const actor = normalizeActor(s.triggered_by || "system");
           evs.push({
             ts,
             when: s.fetched,
@@ -137,11 +140,12 @@ export async function trailEventsForPages(
         const revisions = await listRevisions(page.slug);
         for (const r of revisions) {
           if (!r.author) continue;
+          const actor = normalizeActor(r.author);
           evs.push({
             ts: r.timestamp,
             when: r.date,
-            actor: r.author,
-            isAgent: isAgentHandle(r.author),
+            actor,
+            isAgent: isAgentHandle(actor),
             action: "edited",
             slug: page.slug,
             title: page.title,
