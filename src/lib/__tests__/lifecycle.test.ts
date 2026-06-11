@@ -783,13 +783,14 @@ describe("recent trail action labeling", () => {
     );
 
     const idx = (await getRecentIndex()) ?? [];
-    const actions = idx
-      .filter((e) => e.slug === "test-page")
-      .map((e) => e.action);
+    const entries = idx.filter((e) => e.slug === "test-page");
+    const actions = entries.map((e) => e.action);
     expect(actions).toHaveLength(2);
     // Exactly one of each — an inverted ternary would yield two of one label.
     expect(actions.filter((a) => a === "ingested")).toHaveLength(1);
     expect(actions.filter((a) => a === "re-ingested")).toHaveLength(1);
+    // The push is gated by belongsInCommons, so a public page is flagged commons.
+    expect(entries.every((e) => e.commons === true)).toBe(true);
   });
 
   it("folds an automation author (lint-fix) into the agent on the incremental push", async () => {

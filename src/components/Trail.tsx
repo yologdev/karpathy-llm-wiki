@@ -47,9 +47,10 @@ export function Trail({ events }: { events: TrailEvent[] }) {
             <Link
               // Public commons pages live at `/wiki/<slug>`; private/agent/
               // artifact pages (e.g. an `html` query answer) live only at the
-              // owner-scoped `/u/<tenant>/<slug>` and 404 at `/wiki/`. Default a
-              // flag-less event (pre-rebuild index entry) to the owner path,
-              // which works for both (public pages 308-redirect to /wiki/).
+              // owner-scoped `/u/<tenant>/<slug>` and 404 at `/wiki/`. A
+              // flag-less event (pre-rebuild index entry) defaults to the owner
+              // path, which resolves for both: a public page is served/redirected
+              // there, and a private one isn't 404'd.
               href={e.commons ? commonsPath(e.slug) : pagePath(e.tenant, e.slug)}
               style={{
                 color: "var(--accent)",
