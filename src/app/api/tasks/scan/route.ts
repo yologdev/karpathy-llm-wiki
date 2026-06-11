@@ -74,6 +74,8 @@ export async function POST(req: Request) {
               op: t.op,
               slug: t.slug,
               ...(t.threadIndex !== undefined ? { threadIndex: t.threadIndex } : {}),
+              ...(t.lintType !== undefined ? { lintType: t.lintType } : {}),
+              ...(t.targetSlug !== undefined ? { targetSlug: t.targetSlug } : {}),
             }
           : t,
       ),
