@@ -5,6 +5,7 @@ import { IngestSuccess } from "@/components/IngestSuccess";
 import { IngestReview } from "@/components/IngestReview";
 import { IngestStepper } from "@/components/IngestStepper";
 import { IngestSynthesis } from "@/components/IngestSynthesis";
+import { RecentIngests } from "@/components/RecentIngests";
 import { Icon } from "@/components/folio/icons";
 import { useIngest, isUrlMode, type Mode } from "@/hooks/useIngest";
 
@@ -76,7 +77,7 @@ export default function IngestPage() {
   }
 
   const currentStep: 1 | 2 | 3 =
-    stage === "review" ? 3 : stage === "synthesis" ? 2 : 1;
+    stage === "review" ? 3 : stage === "synthesis" || stage === "queued" ? 2 : 1;
   const sourceLabel =
     mode === "text"
       ? title.trim() || "your text"
@@ -120,6 +121,25 @@ export default function IngestPage() {
 
       {/* Step 2: synthesis */}
       {stage === "synthesis" && <IngestSynthesis sourceLabel={sourceLabel} />}
+
+      {/* Step 2 (async): a slow source (YouTube) was queued for background work. */}
+      {stage === "queued" && (
+        <div style={{ marginTop: 28 }}>
+          <p style={{ fontSize: 18, fontWeight: 600, color: "var(--ink)", margin: 0 }}>
+            Ingestion job sent.
+          </p>
+          <p style={{ marginTop: 8, color: "var(--muted)", maxWidth: "48ch" }}>
+            Your page is being built in the background — this can take a minute
+            for a long video. It&apos;ll appear here when it&apos;s ready. You can
+            leave this page; the outcome shows under <strong>Recent ingests</strong>.
+          </p>
+          {error && (
+            <Alert variant="error" className="mt-4">
+              {error}
+            </Alert>
+          )}
+        </div>
+      )}
 
       {/* Step 3: review */}
       {stage === "review" && preview && (
@@ -405,6 +425,8 @@ export default function IngestPage() {
               </div>
             ))}
           </div>
+
+          <RecentIngests />
         </>
       )}
     </main>

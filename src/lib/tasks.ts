@@ -40,6 +40,9 @@ export type Task =
       owner?: string;
       author?: string;
       tags?: string[];
+      /** When set, the consumer records this async job's status (queued →
+       *  processing → done/failed) so the UI can poll the outcome. */
+      jobId?: string;
     }
   | {
       /** Autonomous maintenance, enqueued by the scan cron (Q2). `reconcile` a
@@ -160,6 +163,7 @@ export function parseTask(body: unknown): Task | null {
         ...(typeof t.owner === "string" ? { owner: t.owner } : {}),
         ...(typeof t.author === "string" ? { author: t.author } : {}),
         ...(tags && tags.length > 0 ? { tags } : {}),
+        ...(typeof t.jobId === "string" ? { jobId: t.jobId } : {}),
       };
     }
     case "maintain": {

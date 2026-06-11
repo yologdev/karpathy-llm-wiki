@@ -1,11 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import type { PreviewData } from "@/components/IngestReview";
 import type { IngestPreviewMeta } from "@/lib/types";
+import { rememberRecentJob } from "@/lib/recent-ingests";
 
 export type Mode = "url" | "pdf" | "xpost" | "youtube" | "text" | "image" | "batch";
-export type Stage = "form" | "synthesis" | "review" | "success";
+/** `queued` = an async job (YouTube) was accepted; the page polls its status. */
+export type Stage = "form" | "synthesis" | "review" | "success" | "queued";
 
 /** Modes whose source is a single URL (routed through the same /api/ingest URL
  *  path — the backend auto-detects X posts and YouTube videos by their URL). */
@@ -23,6 +25,9 @@ export interface IngestResponse {
   preview?: IngestPreviewMeta;
   sourceContent?: string;
   error?: string;
+  /** Async path (YouTube): the ingest was queued; poll `/api/ingest/status`. */
+  queued?: boolean;
+  jobId?: string;
 }
 
 export interface UseIngestReturn {
@@ -103,6 +108,54 @@ export function useIngest(): UseIngestReturn {
   const [result, setResult] = useState<IngestResponse | null>(null);
   const [preview, setPreview] = useState<PreviewData | null>(null);
 
+  // Poll handle for an async (queued) ingest; cleared on terminal state/unmount.
+  const pollRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  function stopPolling() {
+    if (pollRef.current) clearTimeout(pollRef.current);
+    pollRef.current = null;
+  }
+  useEffect(() => stopPolling, []);
+
+  /** Poll an async ingest job until it's done/failed (or a ~5min cap). */
+  function startPolling(jobId: string) {
+    stopPolling();
+    let tries = 0;
+    const tick = async () => {
+      tries += 1;
+      try {
+        const res = await fetch(`/api/ingest/status/${jobId}`);
+        if (res.ok) {
+          const data = await res.json();
+          if (data.status === "done" && data.slug) {
+            setResult({
+              rawPath: "",
+              primarySlug: data.slug,
+              relatedUpdated: [],
+              wikiPages: [],
+              indexUpdated: true,
+            });
+            setStage("success");
+            return;
+          }
+          if (data.status === "failed") {
+            setError(data.error || "Ingestion failed");
+            setStage("form");
+            return;
+          }
+        }
+      } catch {
+        // Transient network blip — keep polling.
+      }
+      if (tries >= 100) {
+        setError("Still processing — check Recent ingests in a moment.");
+        setStage("form");
+        return;
+      }
+      pollRef.current = setTimeout(tick, 3000);
+    };
+    pollRef.current = setTimeout(tick, 2000);
+  }
+
   function switchMode(newMode: Mode) {
     setMode(newMode);
     setError(null);
@@ -158,6 +211,15 @@ export function useIngest(): UseIngestReturn {
       if (!res.ok) {
         setError(data.error || "Something went wrong");
         setStage("form");
+        return;
+      }
+
+      // Async path (YouTube): the ingest was queued — remember it and poll the
+      // job status instead of showing a synchronous preview/review.
+      if (data.queued && data.jobId) {
+        rememberRecentJob(data.jobId);
+        setStage("queued");
+        startPolling(data.jobId);
         return;
       }
 
@@ -383,6 +445,7 @@ export function useIngest(): UseIngestReturn {
   }
 
   function reset() {
+    stopPolling();
     setTitle("");
     setContent("");
     setUrl("");

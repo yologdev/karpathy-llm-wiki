@@ -4,6 +4,7 @@ import { parseTask } from "@/lib/tasks";
 import { reconcileFromTalk } from "@/lib/reconcile";
 import { ingest, ingestUrl, reingest } from "@/lib/ingest";
 import { fixLintIssue } from "@/lib/lint-fix";
+import { updateIngestJob } from "@/lib/ingest-jobs";
 import { agentIdFor, DEFAULT_AGENT_NAME } from "@/lib/agents";
 import { getErrorMessage } from "@/lib/errors";
 import { logger } from "@/lib/logger";
@@ -95,12 +96,25 @@ export async function POST(req: Request) {
       ...(task.author ? { author: task.author, triggeredBy: task.author } : {}),
       ...(task.tags && task.tags.length > 0 ? { tags: task.tags } : {}),
     };
+    // For a tracked async job, record progress so the UI can poll the outcome.
+    if (task.jobId) await updateIngestJob(task.jobId, { status: "processing" });
     const result = task.url
       ? await ingestUrl(task.url, opts)
       : await ingest(task.title?.trim() || "Untitled", task.content ?? "", opts);
+    if (task.jobId) {
+      await updateIngestJob(task.jobId, {
+        status: "done",
+        slug: result.primarySlug,
+      });
+    }
     return NextResponse.json({ ok: true, slug: result.primarySlug });
   } catch (err) {
     const message = getErrorMessage(err);
+    // Record the failure on a tracked async job so the user sees the reason
+    // (a later retry that succeeds will overwrite this back to "done").
+    if (task.kind === "ingest" && task.jobId) {
+      await updateIngestJob(task.jobId, { status: "failed", error: message });
+    }
     // A missing page/thread is permanent → poison (4xx), don't retry forever.
     if (/not found/i.test(message)) {
       logger.warn("tasks", `task "${task.kind}" permanently failed: ${message}`);

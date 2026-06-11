@@ -1,0 +1,68 @@
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import fs from "fs/promises";
+import os from "os";
+import path from "path";
+import {
+  createIngestJob,
+  getIngestJob,
+  updateIngestJob,
+} from "../ingest-jobs";
+import { _resetStorage } from "../storage";
+
+let tmpDir: string;
+let originalDataDir: string | undefined;
+let originalWikiDir: string | undefined;
+
+beforeEach(async () => {
+  tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "ingest-jobs-test-"));
+  originalDataDir = process.env.DATA_DIR;
+  originalWikiDir = process.env.WIKI_DIR;
+  process.env.DATA_DIR = tmpDir;
+  process.env.WIKI_DIR = path.join(tmpDir, "wiki");
+  _resetStorage();
+});
+
+afterEach(async () => {
+  if (originalDataDir === undefined) delete process.env.DATA_DIR;
+  else process.env.DATA_DIR = originalDataDir;
+  if (originalWikiDir === undefined) delete process.env.WIKI_DIR;
+  else process.env.WIKI_DIR = originalWikiDir;
+  _resetStorage();
+  await fs.rm(tmpDir, { recursive: true, force: true });
+});
+
+describe("ingest-jobs", () => {
+  it("create → get round-trips a queued job", async () => {
+    await createIngestJob({ jobId: "abc-123", url: "https://youtu.be/x", owner: "alice" });
+    const job = await getIngestJob("abc-123");
+    expect(job).toMatchObject({
+      jobId: "abc-123",
+      url: "https://youtu.be/x",
+      owner: "alice",
+      status: "queued",
+    });
+    expect(job!.createdAt).toBeTruthy();
+  });
+
+  it("update merges a patch and re-stamps updatedAt", async () => {
+    await createIngestJob({ jobId: "j1", url: "u", owner: "alice" });
+    const done = await updateIngestJob("j1", { status: "done", slug: "my-page" });
+    expect(done).toMatchObject({ status: "done", slug: "my-page", owner: "alice" });
+    const reread = await getIngestJob("j1");
+    expect(reread!.status).toBe("done");
+    expect(reread!.slug).toBe("my-page");
+  });
+
+  it("get returns null for a missing job", async () => {
+    expect(await getIngestJob("nope")).toBeNull();
+  });
+
+  it("update is a no-op (null) for a missing job — never resurrects it", async () => {
+    expect(await updateIngestJob("ghost", { status: "failed", error: "x" })).toBeNull();
+    expect(await getIngestJob("ghost")).toBeNull();
+  });
+
+  it("rejects a path-traversing job id", async () => {
+    await expect(getIngestJob("../secrets")).rejects.toThrow(/invalid ingest job id/);
+  });
+});

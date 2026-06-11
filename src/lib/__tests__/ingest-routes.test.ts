@@ -30,8 +30,17 @@ vi.mock("@/lib/auth", () => ({
 // The async batch path enqueues; default to "queued" (true).
 vi.mock("@/lib/tasks", () => ({ enqueueTask: vi.fn(async () => true) }));
 
+vi.mock("@/lib/ingest-jobs", () => ({
+  createIngestJob: vi.fn(async () => ({})),
+  updateIngestJob: vi.fn(async () => ({})),
+}));
+vi.mock("@/lib/youtube", () => ({
+  isYouTubeUrl: (u: string) => /youtu\.?be|youtube\.com/i.test(u),
+}));
+
 import { ingest, ingestUrl, reingest } from "@/lib/ingest";
 import { enqueueTask } from "@/lib/tasks";
+import { createIngestJob } from "@/lib/ingest-jobs";
 import { readWikiPageWithFrontmatter } from "@/lib/wiki";
 import { getPrincipal } from "@/lib/auth";
 import { getServicePrincipal } from "@/lib/auth";
@@ -48,6 +57,7 @@ const mockedReadWikiPage = vi.mocked(readWikiPageWithFrontmatter);
 const mockedGetPrincipal = vi.mocked(getPrincipal);
 const mockedGetServicePrincipal = vi.mocked(getServicePrincipal);
 const mockedEnqueue = vi.mocked(enqueueTask);
+const mockedCreateJob = vi.mocked(createIngestJob);
 
 function makeRequest(url: string, body: unknown, token?: string): NextRequest {
   const headers: Record<string, string> = { "Content-Type": "application/json" };
@@ -98,6 +108,42 @@ describe("POST /api/ingest — text title optional", () => {
       makeRequest("http://localhost/api/ingest", { title: "Only a title" }),
     );
     expect(res.status).toBe(400);
+  });
+});
+
+describe("POST /api/ingest — YouTube goes async (queued)", () => {
+  it("enqueues a YouTube URL and returns { queued, jobId } without running ingest", async () => {
+    mockedEnqueue.mockResolvedValue(true);
+    const res = await POST(
+      makeRequest("http://localhost/api/ingest", {
+        url: "https://youtu.be/dQw4w9WgXcQ",
+        preview: true,
+      }),
+    );
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(data.queued).toBe(true);
+    expect(typeof data.jobId).toBe("string");
+    expect(mockedCreateJob).toHaveBeenCalledWith(
+      expect.objectContaining({ url: "https://youtu.be/dQw4w9WgXcQ", owner: "test-user" }),
+    );
+    expect(mockedEnqueue).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: "ingest", url: "https://youtu.be/dQw4w9WgXcQ" }),
+    );
+    expect(mockedIngestUrl).not.toHaveBeenCalled();
+  });
+
+  it("falls back to a synchronous ingest when the queue is unavailable (off-Workers)", async () => {
+    mockedEnqueue.mockResolvedValue(false);
+    mockedIngestUrl.mockResolvedValue(fakeResult);
+    const res = await POST(
+      makeRequest("http://localhost/api/ingest", {
+        url: "https://youtu.be/abc",
+      }),
+    );
+    expect(res.status).toBe(200);
+    expect(mockedIngestUrl).toHaveBeenCalled();
+    expect((await res.json()).primarySlug).toBe("test-page");
   });
 });
 

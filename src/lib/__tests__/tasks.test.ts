@@ -77,6 +77,16 @@ describe("parseTask", () => {
     expect(parseTask({ kind: "ingest" })).toBeNull();
   });
 
+  it("preserves a jobId on an ingest task (async status tracking)", () => {
+    expect(
+      parseTask({ kind: "ingest", url: "https://youtu.be/x", jobId: "job-1" }),
+    ).toMatchObject({ kind: "ingest", url: "https://youtu.be/x", jobId: "job-1" });
+    // No jobId → absent (not undefined-key noise).
+    expect(parseTask({ kind: "ingest", url: "https://x.com" })).not.toHaveProperty(
+      "jobId",
+    );
+  });
+
   it("accepts maintain tasks; reconcile needs a threadIndex", () => {
     expect(parseTask({ kind: "maintain", op: "staleness", slug: "p" })).toEqual({
       kind: "maintain",
