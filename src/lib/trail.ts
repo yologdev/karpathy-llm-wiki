@@ -123,16 +123,21 @@ export async function trailEventsForPages(
       } catch {
         // Page unreadable — fall through with no frontmatter (commons defaults true).
       }
-      const commons = belongsInCommons({
-        visibility:
-          typeof full?.frontmatter.visibility === "string"
-            ? full.frontmatter.visibility
-            : undefined,
-        type:
-          typeof full?.frontmatter.type === "string"
-            ? full.frontmatter.type
-            : undefined,
-      });
+      // An unreadable page defaults to the OWNER-scoped path (commons=false),
+      // not /wiki/ — that link works for a public page (308-redirects) and
+      // doesn't 404 a private one, matching the project's secure-default stance.
+      const commons = full
+        ? belongsInCommons({
+            visibility:
+              typeof full.frontmatter.visibility === "string"
+                ? full.frontmatter.visibility
+                : undefined,
+            type:
+              typeof full.frontmatter.type === "string"
+                ? full.frontmatter.type
+                : undefined,
+          })
+        : false;
 
       // Ingests — structured provenance entries.
       try {
