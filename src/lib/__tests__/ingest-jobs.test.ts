@@ -7,7 +7,9 @@ import {
   getIngestJob,
   updateIngestJob,
   effectiveStatus,
+  purgeStaleIngestJobs,
   INGEST_JOB_STALE_MS,
+  INGEST_JOB_GC_TTL_MS,
 } from "../ingest-jobs";
 import { _resetStorage } from "../storage";
 
@@ -91,5 +93,72 @@ describe("effectiveStatus (stale detection)", () => {
     expect(effectiveStatus({ status: "failed", updatedAt: iso(INGEST_JOB_STALE_MS * 10) })).toEqual({
       status: "failed",
     });
+  });
+});
+
+describe("purgeStaleIngestJobs (GC)", () => {
+  /** Helper: create a job and manually backdate its updatedAt. */
+  async function createBackdatedJob(
+    jobId: string,
+    status: "queued" | "processing" | "done" | "failed",
+    msAgo: number,
+  ) {
+    const job = await createIngestJob({ jobId, url: "https://example.com", owner: "alice" });
+    // Patch the status and backdate updatedAt directly on disk.
+    const backdated = {
+      ...job,
+      status,
+      updatedAt: new Date(Date.now() - msAgo).toISOString(),
+    };
+    const { getStorage } = await import("../storage");
+    await getStorage().writeFile(
+      `ingest-jobs/${jobId}.json`,
+      JSON.stringify(backdated),
+    );
+    return backdated;
+  }
+
+  it("deletes terminal jobs older than the TTL", async () => {
+    await createBackdatedJob("old-done", "done", INGEST_JOB_GC_TTL_MS + 1000);
+    await createBackdatedJob("old-failed", "failed", INGEST_JOB_GC_TTL_MS + 1000);
+
+    const deleted = await purgeStaleIngestJobs();
+    expect(deleted).toBe(2);
+    expect(await getIngestJob("old-done")).toBeNull();
+    expect(await getIngestJob("old-failed")).toBeNull();
+  });
+
+  it("keeps jobs younger than the TTL regardless of status", async () => {
+    await createBackdatedJob("young-done", "done", INGEST_JOB_GC_TTL_MS - 60_000);
+    await createBackdatedJob("young-failed", "failed", INGEST_JOB_GC_TTL_MS - 60_000);
+    await createBackdatedJob("young-queued", "queued", INGEST_JOB_GC_TTL_MS - 60_000);
+
+    const deleted = await purgeStaleIngestJobs();
+    expect(deleted).toBe(0);
+    expect(await getIngestJob("young-done")).not.toBeNull();
+    expect(await getIngestJob("young-failed")).not.toBeNull();
+    expect(await getIngestJob("young-queued")).not.toBeNull();
+  });
+
+  it("keeps non-terminal jobs even if older than the TTL", async () => {
+    await createBackdatedJob("old-queued", "queued", INGEST_JOB_GC_TTL_MS + 1000);
+    await createBackdatedJob("old-processing", "processing", INGEST_JOB_GC_TTL_MS + 1000);
+
+    const deleted = await purgeStaleIngestJobs();
+    expect(deleted).toBe(0);
+    expect(await getIngestJob("old-queued")).not.toBeNull();
+    expect(await getIngestJob("old-processing")).not.toBeNull();
+  });
+
+  it("handles a mix of keep and delete in the same scan", async () => {
+    await createBackdatedJob("old-done", "done", INGEST_JOB_GC_TTL_MS + 1000);
+    await createBackdatedJob("young-done", "done", INGEST_JOB_GC_TTL_MS - 60_000);
+    await createBackdatedJob("old-processing", "processing", INGEST_JOB_GC_TTL_MS + 1000);
+
+    const deleted = await purgeStaleIngestJobs();
+    expect(deleted).toBe(1);
+    expect(await getIngestJob("old-done")).toBeNull();
+    expect(await getIngestJob("young-done")).not.toBeNull();
+    expect(await getIngestJob("old-processing")).not.toBeNull();
   });
 });

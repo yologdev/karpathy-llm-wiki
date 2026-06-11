@@ -4,17 +4,19 @@ vi.mock("@/lib/auth", () => ({ getServicePrincipal: vi.fn() }));
 vi.mock("@/lib/maintenance", () => ({
   scanForMaintenance: vi.fn(),
   rebuildDerivedIndexes: vi.fn(),
+  purgeStaleJobs: vi.fn(),
   DEFAULT_MAINTENANCE_CAP: 10,
 }));
 vi.mock("@/lib/tasks", () => ({ enqueueTask: vi.fn() }));
 
 import { getServicePrincipal } from "@/lib/auth";
-import { scanForMaintenance, rebuildDerivedIndexes } from "@/lib/maintenance";
+import { scanForMaintenance, rebuildDerivedIndexes, purgeStaleJobs } from "@/lib/maintenance";
 import { enqueueTask } from "@/lib/tasks";
 
 const mockedGetService = vi.mocked(getServicePrincipal);
 const mockedScan = vi.mocked(scanForMaintenance);
 const mockedRebuild = vi.mocked(rebuildDerivedIndexes);
+const mockedPurge = vi.mocked(purgeStaleJobs);
 const mockedEnqueue = vi.mocked(enqueueTask);
 
 const SAMPLE = [
@@ -37,6 +39,7 @@ beforeEach(() => {
   mockedGetService.mockReturnValue({ id: "service:yopedia", handle: "yopedia" });
   mockedScan.mockResolvedValue(SAMPLE);
   mockedRebuild.mockResolvedValue({});
+  mockedPurge.mockResolvedValue(0);
   mockedEnqueue.mockResolvedValue(true);
 });
 afterEach(() => {

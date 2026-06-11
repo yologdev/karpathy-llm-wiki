@@ -31,6 +31,7 @@ import { getOnDiskSlugs, checkMissingCrossRefs } from "./lint-checks";
 import { listThreads } from "./talk";
 import { isAgentHandle } from "./agents";
 import { extractWikiLinks } from "./links";
+import { purgeStaleIngestJobs } from "./ingest-jobs";
 import type { Task } from "./tasks";
 import { logger } from "./logger";
 
@@ -257,4 +258,21 @@ export async function rebuildDerivedIndexes(): Promise<
       .join(" ")}`,
   );
   return results;
+}
+
+// ---------------------------------------------------------------------------
+// Ingest-job GC — purge terminal jobs older than their TTL
+// ---------------------------------------------------------------------------
+
+/**
+ * Fail-soft wrapper around {@link purgeStaleIngestJobs} for the maintenance
+ * scan. Returns the count of deleted jobs (0 on error).
+ */
+export async function purgeStaleJobs(): Promise<number> {
+  try {
+    return await purgeStaleIngestJobs();
+  } catch (err) {
+    logger.error("maintenance", "ingest-job GC failed:", err);
+    return 0;
+  }
 }

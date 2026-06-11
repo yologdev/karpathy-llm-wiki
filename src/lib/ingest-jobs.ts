@@ -10,6 +10,9 @@ import { getStorage } from "./storage";
 import { isEnoent } from "./errors";
 import { logger } from "./logger";
 
+/** Default TTL for terminal ingest jobs before GC deletes the file (7 days). */
+export const INGEST_JOB_GC_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+
 export type IngestJobStatus = "queued" | "processing" | "done" | "failed";
 
 /**
@@ -118,4 +121,51 @@ export async function updateIngestJob(
   };
   await getStorage().writeFile(relPathFor(jobId), JSON.stringify(updated));
   return updated;
+}
+
+// ---------------------------------------------------------------------------
+// Garbage collection — purge terminal jobs older than a TTL
+// ---------------------------------------------------------------------------
+
+const TERMINAL_STATUSES: Set<IngestJobStatus> = new Set(["done", "failed"]);
+const JOBS_PREFIX = "ingest-jobs";
+
+/**
+ * List all job files and delete terminal (`done` / `failed`) jobs whose
+ * `updatedAt` is older than `ttlMs`. Non-terminal jobs are never deleted —
+ * they may still be processing or retrying, even if they look old.
+ *
+ * Returns the number of files deleted.
+ */
+export async function purgeStaleIngestJobs(
+  ttlMs: number = INGEST_JOB_GC_TTL_MS,
+): Promise<number> {
+  const storage = getStorage();
+  const entries = await storage.listFiles(JOBS_PREFIX);
+  const cutoff = Date.now() - ttlMs;
+  let deleted = 0;
+
+  for (const entry of entries) {
+    if (entry.isDirectory || !entry.name.endsWith(".json")) continue;
+    const relPath = `${JOBS_PREFIX}/${entry.name}`;
+    try {
+      const raw = await storage.readFile(relPath);
+      const job: IngestJob = JSON.parse(raw);
+      if (!TERMINAL_STATUSES.has(job.status)) continue;
+      const updatedMs = Date.parse(job.updatedAt);
+      if (!Number.isFinite(updatedMs) || updatedMs > cutoff) continue;
+      await storage.deleteFile(relPath);
+      deleted++;
+    } catch (err) {
+      // Best-effort: skip files that vanish mid-scan or are unparseable.
+      if (!isEnoent(err)) {
+        logger.warn("ingest-jobs", `GC: failed to process ${entry.name}:`, err);
+      }
+    }
+  }
+
+  if (deleted > 0) {
+    logger.info("ingest-jobs", `GC: purged ${deleted} stale job(s)`);
+  }
+  return deleted;
 }

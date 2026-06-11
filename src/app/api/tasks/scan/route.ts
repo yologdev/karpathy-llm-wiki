@@ -3,6 +3,7 @@ import { getServicePrincipal } from "@/lib/auth";
 import {
   scanForMaintenance,
   rebuildDerivedIndexes,
+  purgeStaleJobs,
   DEFAULT_MAINTENANCE_CAP,
 } from "@/lib/maintenance";
 import { enqueueTask } from "@/lib/tasks";
@@ -44,6 +45,9 @@ export async function POST(req: Request) {
     // it runs even in dry-run mode. Fully fail-soft (each rebuild is isolated).
     const indexRebuild = await rebuildDerivedIndexes();
 
+    // Purge stale ingest-job status files (fail-soft, like the index rebuild).
+    const jobsPurged = await purgeStaleJobs();
+
     let enqueued = 0;
     if (!dry) {
       for (const t of tasks) {
@@ -62,6 +66,7 @@ export async function POST(req: Request) {
       found: tasks.length,
       enqueued,
       indexRebuild,
+      jobsPurged,
       // The candidate list — for dry-run inspection of what it would do.
       tasks: tasks.map((t) =>
         t.kind === "maintain"
