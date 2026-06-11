@@ -2609,6 +2609,68 @@ describe("ingest — chunked LLM calls", () => {
     mockedCallLLM.mockReset();
   });
 
+  it("map-reduce partial failure: single chunk error does not crash ingest", async () => {
+    mockedHasLLMKey.mockReturnValue(true);
+    let mapCallCount = 0;
+    mockedCallLLM.mockImplementation(async (system: string, _user: string) => {
+      // Reduce call — identified by the reduce system prompt
+      if (/given faithful NOTES/.test(system)) {
+        return "CONCEPT: Topic\nTAGS: t\n\n# Topic\n\n## Summary\n\nMerged.\n\n## Key Points\n\n- point";
+      }
+      // Map calls — fail the first one, succeed the rest
+      mapCallCount++;
+      if (mapCallCount === 1) {
+        throw new Error("content filter triggered");
+      }
+      return "Distilled note from a chunk.";
+    });
+
+    const longContent = Array.from(
+      { length: 300 },
+      (_, i) => `Paragraph ${i} discusses topic number ${i} in detail with enough text to be substantial.`,
+    ).join("\n\n");
+    expect(longContent.length).toBeGreaterThan(MAX_LLM_INPUT_CHARS);
+
+    // Should NOT throw — the failed chunk is skipped gracefully
+    const result = await ingest("Topic", longContent);
+
+    // Verify a reduce call still happened (not all chunks failed)
+    const reduceCalls = mockedCallLLM.mock.calls.filter((c) => /given faithful NOTES/.test(c[0]));
+    expect(reduceCalls).toHaveLength(1);
+
+    // The page was created despite one chunk failing
+    const page = await readWikiPageWithFrontmatter(result.primarySlug);
+    expect(page!.content).toContain("Merged.");
+
+    mockedHasLLMKey.mockReturnValue(false);
+    mockedCallLLM.mockReset();
+  });
+
+  it("map-reduce total failure: all chunks error produces clear error", async () => {
+    mockedHasLLMKey.mockReturnValue(true);
+    mockedCallLLM.mockImplementation(async (system: string, _user: string) => {
+      // Map calls all fail; reduce should never be reached
+      if (/given faithful NOTES/.test(system)) {
+        return "CONCEPT: Topic\nTAGS: t\n\n# Topic\n\n## Summary\n\nShould not appear.";
+      }
+      throw new Error("context overflow");
+    });
+
+    const longContent = Array.from(
+      { length: 300 },
+      (_, i) => `Paragraph ${i} discusses topic number ${i} in detail with enough text to be substantial.`,
+    ).join("\n\n");
+    expect(longContent.length).toBeGreaterThan(MAX_LLM_INPUT_CHARS);
+
+    // Should throw because ALL map calls failed
+    await expect(ingest("Topic", longContent)).rejects.toThrow(
+      /synthesis produced no content/,
+    );
+
+    mockedHasLLMKey.mockReturnValue(false);
+    mockedCallLLM.mockReset();
+  });
+
   it("calls LLM exactly once for short content", async () => {
     mockedHasLLMKey.mockReturnValue(true);
     mockedCallLLM.mockResolvedValue("# Short Page\n\n## Summary\n\nBrief.");

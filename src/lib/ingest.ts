@@ -1423,13 +1423,23 @@ export async function ingest(
       for (let i = 0; i < chunks.length; i += INGEST_MAP_CONCURRENCY) {
         const batch = chunks.slice(i, i + INGEST_MAP_CONCURRENCY);
         const mapped = await Promise.all(
-          batch.map((chunk, j) =>
-            callLLM(
-              MAP_SYSTEM_PROMPT,
-              `Part ${i + j + 1} of ${chunks.length} of the source:\n\n${chunk}`,
-              mapOptions,
-            ),
-          ),
+          batch.map(async (chunk, j) => {
+            const chunkIndex = i + j + 1;
+            try {
+              return await callLLM(
+                MAP_SYSTEM_PROMPT,
+                `Part ${chunkIndex} of ${chunks.length} of the source:\n\n${chunk}`,
+                mapOptions,
+              );
+            } catch (err) {
+              logger.warn(
+                "ingest",
+                `map chunk ${chunkIndex}/${chunks.length} failed, skipping:`,
+                err,
+              );
+              return "";
+            }
+          }),
         );
         partials.push(...mapped);
       }
