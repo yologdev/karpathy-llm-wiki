@@ -2571,12 +2571,14 @@ describe("ingest — chunked LLM calls", () => {
 
   it("map-reduces long content: maps each chunk from source, then merges into one article", async () => {
     mockedHasLLMKey.mockReturnValue(true);
-    // Distinguish MAP calls (per-chunk, from source) from the single REDUCE call
-    // (merges the partials) by which system prompt each receives.
-    mockedCallLLM.mockImplementation(async (system: string) => {
-      if (/distilling ONE part/.test(system)) return "Distilled note from a chunk.";
-      // REDUCE
-      return "CONCEPT: Topic\nTAGS: t\n\n# Topic\n\n## Summary\n\nMerged.\n\n## Key Points\n\n- point";
+    // Route MAP vs REDUCE off the USER message structure (stable behavior), not
+    // prompt prose: reduce is fed the merged "# Part N" notes; map is fed a raw
+    // "Part k of N of the source" chunk.
+    mockedCallLLM.mockImplementation(async (_system: string, user: string) => {
+      if (/^# Part 1\b/.test(user)) {
+        return "CONCEPT: Topic\nTAGS: t\n\n# Topic\n\n## Summary\n\nMerged.\n\n## Key Points\n\n- point";
+      }
+      return "Distilled note from a chunk.";
     });
 
     const longContent = Array.from(
