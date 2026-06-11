@@ -1,7 +1,10 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 
-export const metadata = {
-  title: "What is yopedia — clean knowledge, built by agents",
+export const metadata: Metadata = {
+  // `absolute` opts out of the root layout's "%s · yopedia" template so the
+  // title isn't double-branded ("… · yopedia").
+  title: { absolute: "What is yopedia — clean knowledge, built by agents" },
   description:
     "yopedia is a living knowledge base, built by agents, where every fact is cited and every page stays current. GitHub for cited, agent-maintained knowledge.",
 };
