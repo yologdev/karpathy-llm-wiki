@@ -84,6 +84,27 @@ describe("dedupeSourcesForDisplay", () => {
     expect(out).toHaveLength(2);
     expect(out.map((s) => s.raw_id)).toEqual(["hashA", "hashB"]);
   });
+
+  it("collapses URL variants (http vs https, www, trailing slash) into one entry", () => {
+    const out = dedupeSourcesForDisplay([
+      mk("http://example.com", "url"),
+      mk("https://www.example.com/", "url"),
+      mk("https://example.com", "pdf"),
+    ]);
+    expect(out).toHaveLength(1);
+    // First entry wins
+    expect(out[0].url).toBe("http://example.com");
+  });
+
+  it("still dedupes text-paste by (url, type) without normalization", () => {
+    const out = dedupeSourcesForDisplay([
+      mk("text-paste", "text"),
+      mk("text-paste", "x-mention"),
+      mk("text-paste", "text"), // dup → dropped
+    ]);
+    expect(out).toHaveLength(2);
+    expect(out.map((s) => s.type)).toEqual(["text", "x-mention"]);
+  });
 });
 
 describe("newestSourceType", () => {

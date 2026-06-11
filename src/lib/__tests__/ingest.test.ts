@@ -17,6 +17,7 @@ import {
   computeConfidence,
   tokenizeSourceImages,
   restoreImageTokens,
+  mergeSourceEntry,
 } from "../ingest";
 import { slugify } from "../slugify";
 import { loadPageConventions } from "../schema";
@@ -3613,5 +3614,52 @@ describe("tokenizeSourceImages / restoreImageTokens", () => {
     ).join("\n\n");
     const { refs } = tokenizeSourceImages(imgs);
     expect(refs.length).toBe(12); // MAX_APPENDED_IMAGES
+  });
+});
+
+// ---------------------------------------------------------------------------
+// mergeSourceEntry — URL normalization
+// ---------------------------------------------------------------------------
+
+describe("mergeSourceEntry URL normalization", () => {
+  const mk = (
+    url: string,
+    type: SourceEntry["type"] = "url",
+    fetched = "2026-01-01",
+  ): SourceEntry => ({ type, url, fetched, triggered_by: "system" });
+
+  it("treats http and https+www variants as the same source", () => {
+    const existing = [mk("http://example.com")];
+    const result = mergeSourceEntry(existing, mk("https://www.example.com/", "url", "2026-02-01"));
+    expect(result).toHaveLength(1);
+    // The first entry's URL is preserved, but metadata is updated
+    expect(result[0].url).toBe("http://example.com");
+    expect(result[0].fetched).toBe("2026-02-01");
+  });
+
+  it("treats URLs with trailing slash as same source", () => {
+    const existing = [mk("https://example.com/path")];
+    const result = mergeSourceEntry(existing, mk("https://example.com/path/", "url", "2026-03-01"));
+    expect(result).toHaveLength(1);
+    expect(result[0].fetched).toBe("2026-03-01");
+  });
+
+  it("still keeps text-paste dedup by (url, type)", () => {
+    const existing = [mk("text-paste", "text")];
+    const result = mergeSourceEntry(existing, mk("text-paste", "text", "2026-04-01"));
+    expect(result).toHaveLength(1);
+    expect(result[0].fetched).toBe("2026-04-01");
+  });
+
+  it("keeps distinct text-paste entries for different types", () => {
+    const existing = [mk("text-paste", "text")];
+    const result = mergeSourceEntry(existing, mk("text-paste", "x-mention"));
+    expect(result).toHaveLength(2);
+  });
+
+  it("appends a genuinely different URL", () => {
+    const existing = [mk("https://a.com")];
+    const result = mergeSourceEntry(existing, mk("https://b.com"));
+    expect(result).toHaveLength(2);
   });
 });

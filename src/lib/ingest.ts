@@ -19,6 +19,7 @@ import {
   parseSources,
   buildSourceEntry,
 } from "./sources";
+import { normalizeUrl } from "./source-index";
 
 /**
  * Merge a provenance entry into a sources list. A real source URL supersedes a
@@ -26,20 +27,22 @@ import {
  * "no URL was known"), so once a real URL arrives the placeholder is dropped.
  * Updates an existing match in place; otherwise appends.
  */
-function mergeSourceEntry(sources: SourceEntry[], entry: SourceEntry): SourceEntry[] {
-  const base =
-    entry.url !== "text-paste"
-      ? sources.filter((s) => !(s.type === entry.type && s.url === "text-paste"))
-      : sources;
+export function mergeSourceEntry(sources: SourceEntry[], entry: SourceEntry): SourceEntry[] {
+  const isRealUrl = entry.url !== "text-paste";
+  const base = isRealUrl
+    ? sources.filter((s) => !(s.type === entry.type && s.url === "text-paste"))
+    : sources;
   // A real (non-text-paste) source is identified by its URL alone: the same URL
   // is the same source even if a re-ingest classified its type differently
   // (e.g. a PDF URL re-fetched as a plain "url"). Matching on URL+type here let
   // such a re-ingest append a duplicate entry. text-paste placeholders have no
   // real URL, so they still dedup on (url, type).
-  const idx =
-    entry.url !== "text-paste"
-      ? base.findIndex((s) => s.url === entry.url)
-      : base.findIndex((s) => s.url === entry.url && s.type === entry.type);
+  // Normalize both sides so URL variants (http vs https, www vs bare, trailing
+  // slash, etc.) are treated as the same source.
+  const entryNorm = isRealUrl ? normalizeUrl(entry.url) : entry.url;
+  const idx = isRealUrl
+    ? base.findIndex((s) => normalizeUrl(s.url) === entryNorm)
+    : base.findIndex((s) => s.url === entry.url && s.type === entry.type);
   if (idx >= 0) {
     base[idx] = {
       ...base[idx],

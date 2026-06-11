@@ -7,6 +7,7 @@
 // ---------------------------------------------------------------------------
 
 import type { SourceEntry } from "./types";
+import { normalizeUrl } from "./source-index";
 
 /** Valid provenance types. */
 const VALID_TYPES = new Set<SourceEntry["type"]>(["url", "text", "x-mention", "wiki-ref", "image", "pdf", "youtube"]);
@@ -82,7 +83,7 @@ export function dedupeSourcesForDisplay(sources: SourceEntry[]): SourceEntry[] {
   const out: SourceEntry[] = [];
   for (const s of sources) {
     const isHttp = /^https?:\/\//i.test(s.url);
-    const key = isHttp ? s.url : `${s.url}:${s.raw_id ?? s.type}`;
+    const key = isHttp ? normalizeUrl(s.url) : `${s.url}:${s.raw_id ?? s.type}`;
     if (seen.has(key)) continue;
     seen.add(key);
     out.push(s);
