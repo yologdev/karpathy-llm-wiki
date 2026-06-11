@@ -2569,6 +2569,43 @@ describe("ingest — chunked LLM calls", () => {
     mockedCallLLM.mockReset();
   });
 
+  it("refines long content into one article (folds chunks in, doesn't append)", async () => {
+    mockedHasLLMKey.mockReturnValue(true);
+    // Each call returns a DISTINCT full article so we can tell whether the final
+    // page is the last refinement (correct) or a concatenation of all chunks.
+    let call = 0;
+    mockedCallLLM.mockImplementation(async () => {
+      call += 1;
+      return `CONCEPT: Topic\nTAGS: t\n\n# Topic\n\n## Summary\n\nRefined v${call}.\n\n## Key Points\n\n- point ${call}`;
+    });
+
+    const longContent = Array.from(
+      { length: 300 },
+      (_, i) => `Paragraph ${i} discusses topic number ${i} in detail with enough text to be substantial.`,
+    ).join("\n\n");
+    expect(longContent.length).toBeGreaterThan(MAX_LLM_INPUT_CHARS);
+
+    const result = await ingest("Topic", longContent);
+    const calls = mockedCallLLM.mock.calls.length;
+    expect(calls).toBeGreaterThan(1);
+
+    // The 2nd call is a REFINE call: it gets the prior article as "Current
+    // article", not a fresh continuation that would append a new section block.
+    expect(mockedCallLLM.mock.calls[1][0]).toMatch(/COMPLETE, updated article/);
+    expect(mockedCallLLM.mock.calls[1][1]).toContain("# Current article");
+    expect(mockedCallLLM.mock.calls[1][1]).toContain("Refined v1");
+
+    // The persisted page is the LAST refinement only — no pile-up of every
+    // chunk's sections, and exactly one "## Key Points".
+    const page = await readWikiPageWithFrontmatter(result.primarySlug);
+    expect(page!.content).toContain(`Refined v${calls}`);
+    expect(page!.content).not.toContain("Refined v1");
+    expect(page!.content.match(/## Key Points/g) ?? []).toHaveLength(1);
+
+    mockedHasLLMKey.mockReturnValue(false);
+    mockedCallLLM.mockReset();
+  });
+
   it("calls LLM exactly once for short content", async () => {
     mockedHasLLMKey.mockReturnValue(true);
     mockedCallLLM.mockResolvedValue("# Short Page\n\n## Summary\n\nBrief.");

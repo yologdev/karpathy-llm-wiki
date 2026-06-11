@@ -806,18 +806,26 @@ Images: the source may contain placeholder tokens like \`[[IMG:1]]\`. KEEP the o
 Write a focused, distilled page, not a transcript of the source. Output the CONCEPT, ALIASES, and TAGS lines, then pure markdown, and nothing else. Do not wrap in code fences.`;
 
 /**
- * System prompt for continuation chunks when a long source document has been
- * split into multiple parts. The LLM receives the article produced so far and
- * a new batch of source material and should produce only the *additional*
- * sections — no duplicate title or summary.
+ * System prompt for refining a long source document chunk-by-chunk. When the
+ * source is too long for one call, we synthesize the first chunk into a full
+ * article, then fold each remaining chunk INTO that article with this prompt —
+ * a running "refine" rather than appending. The model returns the COMPLETE,
+ * rewritten article each step, so the page keeps ONE set of sections (no
+ * "Key Points (additional)" pileup) however many chunks the source spans.
  */
-const CONTINUATION_SYSTEM_PROMPT = `You are a wiki editor. You have already started a wiki article from earlier parts of a long source document. You are now given additional source material.
+const REFINE_SYSTEM_PROMPT = `You are a wiki editor improving a wiki article with more of its source document. You are given the CURRENT article (built from earlier parts) and the NEXT part of the same source. Fold the new material into the current article and return the COMPLETE, updated article.
 
-Add new key points, concepts, and details from the additional source material. Do NOT repeat the title, summary, or any content already in the article. Only output the new sections or bullet points to append.
+Rules:
+- Keep the three leading header lines exactly in this form, refining them only if the new material genuinely warrants it:
+CONCEPT: <canonical concept name>
+ALIASES: <comma-separated synonyms, or "none">
+TAGS: <3-6 lowercase, hyphenated topic tags, comma-separated>
+- Then the article: one \`# Title\`, then EXACTLY ONE of each \`## Summary\`, \`## Key Points\`, \`## Concepts\`, \`## Details\` — never create a second copy of a section or a "(additional)" variant. Integrate the new key points, concepts, and details into the existing sections.
+- Preserve everything already covered; add what's genuinely new from the next part; merge duplicates and resolve overlaps. Keep it distilled — summarize, don't transcribe. Update the Summary to reflect the whole article so far. Invent nothing unsupported by the source.
 
-Images: the source may contain placeholder tokens like \`[[IMG:1]]\`. Keep genuine content images (diagrams, figures, charts, screenshots) by writing the SAME token on its own line where relevant; omit any whose image is clearly decorative/branding/UI. Never invent tokens or change their numbers.
+Images: the source may contain placeholder tokens like \`[[IMG:1]]\`. Keep tokens already in the article and add new genuine-content ones (diagrams, figures, charts, screenshots) on their own line where relevant; omit decorative/branding/UI ones. Never invent tokens or change their numbers; output each kept token verbatim.
 
-Output pure markdown and nothing else. Do not wrap in code fences.`;
+Output the CONCEPT, ALIASES, and TAGS lines, then pure markdown, and nothing else. Do not wrap in code fences.`;
 
 /**
  * System prompt for reconciling an existing page with a newly ingested source
@@ -1383,18 +1391,19 @@ export async function ingest(
       // Short content — single LLM call (no behaviour change)
       wikiContent = await callLLM(systemPrompt, chunks[0], llmOptions);
     } else {
-      // Long content — call LLM per chunk, merge results
-      // First chunk produces the primary page structure
+      // Long content — synthesize the first chunk into a full article, then
+      // REFINE it with each remaining chunk (fold new material into the existing
+      // sections). This keeps one coherent page with a single set of sections,
+      // instead of appending a fresh "Key Points / Concepts / Details" block per
+      // chunk (which a long transcript turned into a wall of "(additional)").
       wikiContent = await callLLM(systemPrompt, chunks[0], llmOptions);
 
-      // Subsequent chunks add supplemental content
       for (let i = 1; i < chunks.length; i++) {
-        const continuation = await callLLM(
-          CONTINUATION_SYSTEM_PROMPT,
-          `# Existing article so far\n\n${wikiContent}\n\n# Additional source material (part ${i + 1} of ${chunks.length})\n\n${chunks[i]}`,
+        wikiContent = await callLLM(
+          REFINE_SYSTEM_PROMPT,
+          `# Current article\n\n${wikiContent}\n\n# Next part of the source (part ${i + 1} of ${chunks.length})\n\n${chunks[i]}`,
           llmOptions,
         );
-        wikiContent += "\n\n" + continuation;
       }
     }
 
