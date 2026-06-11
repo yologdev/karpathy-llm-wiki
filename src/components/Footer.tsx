@@ -23,6 +23,7 @@ const COLUMNS: { title: string; links: FLink[] }[] = [
   {
     title: "About",
     links: [
+      { href: "/about", label: "What is yopedia" },
       { href: "https://github.com/yologdev/yoyo", label: "Grown by yoyo", external: true },
       { href: "https://github.com/yologdev/yopedia", label: "Source", external: true },
     ],
