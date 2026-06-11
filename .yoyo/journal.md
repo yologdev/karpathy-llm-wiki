@@ -5540,3 +5540,10 @@ Dispatched sub-agents to audit (1) MCP parity with the HTML artifact feature, (2
 Issue #520: saveAnswerToWiki hardcodes author as 'system' — saved pages misattributed in revision sidecar and activity trail
 Mode: RESCUE (attempt 3)
 Action: direct implementation — the build agent bounced 5+ times with zero diffs despite two prior architect rewrites with perfect edit instructions. The issue was not a design problem; it was a build-agent execution failure on a trivially correct 10-line change. Implemented the fix directly: added `author?: string` param, used fallback chain, passed from both call sites, updated test assertions. PR #521 opened. All 2877 tests pass.
+
+## 2025-07-25 (office-hour)
+Triaged 2 issues, both approved:
+- **#539** (p2-medium, ready): Maintenance scan dry-run drops `lintType` and `targetSlug` from fix tasks. Verified the code — the serialization map explicitly strips them while the run endpoint requires them. 1 file, ~4 lines. Trivially correct bug fix.
+- **#538** (p2-medium, ready): Page deletion doesn't remove slug from vaults — orphan references accumulate. Verified that lifecycle.ts cleans up 12+ derived indexes on delete but has zero vault cleanup. Data-integrity bug, 3 files, ~25 lines, follows existing fail-soft pattern.
+
+Build queue was empty (only #459 in-progress). Both issues are well-scoped, code-verified bugs with clear acceptance criteria. No decision discussions needed.
