@@ -146,6 +146,11 @@ export function NavHeader() {
                       labelIcon={<span aria-hidden>🗄️</span>}
                       href="/vault"
                     />
+                    <UserButton.Link
+                      label="Agents"
+                      labelIcon={<span aria-hidden>🤖</span>}
+                      href="/agents"
+                    />
                     {isOwner && (
                       <>
                         <UserButton.Link

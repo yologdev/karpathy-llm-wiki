@@ -7,7 +7,7 @@ import { VaultManager } from "@/components/VaultManager";
 /**
  * `/vault` — the signed-in user's vault management surface: a list of their
  * named vaults (each a curated reference lens over the commons) with create /
- * rename / delete / view. Agents moved to `/vault/agents`. Signed-out visitors
+ * rename / delete / view. Agents live on the top-level `/agents`. Signed-out visitors
  * see only a sign-in prompt — no data is fetched or leaked.
  */
 export default async function VaultPage() {
@@ -69,7 +69,7 @@ export default async function VaultPage() {
             Vaults
           </h1>
           <Link
-            href="/vault/agents"
+            href="/agents"
             className="receipt"
             style={{
               fontSize: 13,
