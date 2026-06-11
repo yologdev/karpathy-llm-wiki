@@ -136,6 +136,21 @@ export const LLM_MAX_OUTPUT_TOKENS = 4096;
 export const INGEST_MAX_OUTPUT_TOKENS = 8192;
 
 /**
+ * Output-token cap for a single MAP partial when long-source synthesis distils
+ * one chunk. Smaller than {@link INGEST_MAX_OUTPUT_TOKENS}: a chunk is only
+ * ~{@link MAX_LLM_INPUT_CHARS} of source, and bounding each partial keeps the
+ * combined notes fed to the REDUCE step well within one input.
+ */
+export const INGEST_MAP_MAX_OUTPUT_TOKENS = 2400;
+
+/**
+ * Max MAP chunks distilled concurrently. Parallelism cuts the wall-clock of a
+ * long transcript from the sum of all chunks to a few batches, while the cap
+ * keeps us within the LLM provider's burst/rate limits.
+ */
+export const INGEST_MAP_CONCURRENCY = 4;
+
+/**
  * Output-token cap for query answers. Higher than the default so multi-section
  * answers, tables, and longer syntheses aren't truncated mid-response.
  */

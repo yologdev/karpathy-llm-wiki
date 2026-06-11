@@ -95,6 +95,8 @@ export function computeConfidence(
 import {
   MAX_LLM_INPUT_CHARS,
   INGEST_MAX_OUTPUT_TOKENS,
+  INGEST_MAP_MAX_OUTPUT_TOKENS,
+  INGEST_MAP_CONCURRENCY,
   MAX_APPENDED_IMAGES,
   MAX_CONTENT_LENGTH,
   MAX_PDF_SIZE,
@@ -806,24 +808,42 @@ Images: the source may contain placeholder tokens like \`[[IMG:1]]\`. KEEP the o
 Write a focused, distilled page, not a transcript of the source. Output the CONCEPT, ALIASES, and TAGS lines, then pure markdown, and nothing else. Do not wrap in code fences.`;
 
 /**
- * System prompt for refining a long source document chunk-by-chunk. When the
- * source is too long for one call, we synthesize the first chunk into a full
- * article, then fold each remaining chunk INTO that article with this prompt —
- * a running "refine" rather than appending. The model returns the COMPLETE,
- * rewritten article each step, so the page keeps ONE set of sections (no
- * "Key Points (additional)" pileup) however many chunks the source spans.
+ * MAP step of the long-source synthesis. Each chunk is distilled DIRECTLY from
+ * the source (not from a running summary), so coverage stays faithful and
+ * specifics don't drift — the accuracy property the old append path had. The
+ * partials carry no CONCEPT marker and no fixed section scaffold; the reduce
+ * step imposes the final structure. Bullets are reined in here so the merged
+ * page reads as prose, not a wall of fragments.
  */
-const REFINE_SYSTEM_PROMPT = `You are a wiki editor improving a wiki article with more of its source document. You are given the CURRENT article (built from earlier parts) and the NEXT part of the same source. Fold the new material into the current article and return the COMPLETE, updated article.
+const MAP_SYSTEM_PROMPT = `You are a wiki editor distilling ONE part of a long source document into faithful notes that will later be merged with the other parts.
 
-Rules:
-- Keep the three leading header lines exactly in this form, refining them only if the new material genuinely warrants it:
+From THIS part of the source, capture the substantive material a reader needs: the explanations, definitions, mechanisms, claims, examples, names, and numbers actually present. Be FAITHFUL — preserve concrete specifics exactly; do not generalize them away, and invent nothing not in this part.
+
+Write mostly in concise prose. Use a bullet only for genuinely list-like material — do not turn every sentence into a bullet. Omit boilerplate, marketing, repetition, and tangents. Do NOT add a title, a "Summary", or section headings — output only the distilled notes for this part.
+
+Images: the source may contain placeholder tokens like \`[[IMG:1]]\`. Keep genuine content images (diagrams, figures, charts, screenshots) by writing the SAME token on its own line where relevant; omit decorative/branding/UI ones. Never invent tokens or change their numbers.
+
+Output pure markdown and nothing else. Do not wrap in code fences.`;
+
+/**
+ * REDUCE step: merge the per-chunk notes into ONE coherent article with the
+ * standard structure. This is a MERGE/REORGANISE, not a re-summary — it must
+ * keep the concrete substance the map step preserved (so a long source stays as
+ * accurate as the old append path) while collapsing the parts into a single set
+ * of sections (fixing the "(additional)" pileup the refine approach replaced).
+ */
+const REDUCE_SYSTEM_PROMPT = `You are a wiki editor. You are given faithful NOTES distilled from consecutive parts of ONE source document (delimited as "Part 1", "Part 2", ...). Combine them into a single coherent wiki article.
+
+This is a MERGE, not a new summary: keep the concrete substance from the notes — specifics, names, numbers, claims, examples — and drop only true duplication. Do not compress the material down to generic bullet points or lose detail that the notes preserved.
+
+Begin your output with these three header lines in EXACTLY this form:
 CONCEPT: <canonical concept name>
-ALIASES: <comma-separated synonyms, or "none">
+ALIASES: <comma-separated alternative names / synonyms for the concept, or "none">
 TAGS: <3-6 lowercase, hyphenated topic tags, comma-separated>
-- Then the article: one \`# Title\`, then EXACTLY ONE of each \`## Summary\`, \`## Key Points\`, \`## Concepts\`, \`## Details\` — never create a second copy of a section or a "(additional)" variant. Integrate the new key points, concepts, and details into the existing sections.
-- Preserve everything already covered; add what's genuinely new from the next part; merge duplicates and resolve overlaps. Keep it distilled — summarize, don't transcribe. Update the Summary to reflect the whole article so far. Invent nothing unsupported by the source.
 
-Images: the source may contain placeholder tokens like \`[[IMG:1]]\`. Keep tokens already in the article and add new genuine-content ones (diagrams, figures, charts, screenshots) on their own line where relevant; omit decorative/branding/UI ones. Never invent tokens or change their numbers; output each kept token verbatim.
+Then the article: one \`# Title\` (the canonical concept), then EXACTLY ONE of each \`## Summary\`, \`## Key Points\`, \`## Concepts\`, \`## Details\`. Reorganise the merged notes into these sections — never emit a section twice or an "(additional)" variant. Prefer readable prose; use bullets only where the material is genuinely list-like. The \`## Details\` section should carry the substance in prose and lists, not a flat dump of every bullet.
+
+Images: the notes may contain placeholder tokens like \`[[IMG:1]]\`. Keep each genuine-content token on its own line at the most relevant point; never invent tokens or change their numbers; output each kept token verbatim.
 
 Output the CONCEPT, ALIASES, and TAGS lines, then pure markdown, and nothing else. Do not wrap in code fences.`;
 
@@ -1391,23 +1411,40 @@ export async function ingest(
       // Short content — single LLM call (no behaviour change)
       wikiContent = await callLLM(systemPrompt, chunks[0], llmOptions);
     } else {
-      // Long content — synthesize the first chunk into a full article, then
-      // REFINE it with each remaining chunk (fold new material into the existing
-      // sections). This keeps one coherent page with a single set of sections,
-      // instead of appending a fresh "Key Points / Concepts / Details" block per
-      // chunk (which a long transcript turned into a wall of "(additional)").
-      wikiContent = await callLLM(systemPrompt, chunks[0], llmOptions);
-
-      for (let i = 1; i < chunks.length; i++) {
-        const refined = await callLLM(
-          REFINE_SYSTEM_PROMPT,
-          `# Current article\n\n${wikiContent}\n\n# Next part of the source (part ${i + 1} of ${chunks.length})\n\n${chunks[i]}`,
-          llmOptions,
+      // Long content — MAP/REDUCE. Distil each chunk straight from the SOURCE
+      // (in bounded-concurrency batches), then merge the partials into one
+      // article. Mapping from source keeps coverage faithful and stops the
+      // cross-chunk drift a sequential refine caused; merging collapses the
+      // parts into a single set of sections (no "(additional)" pileup); and the
+      // parallel map keeps a long transcript well under the request budget that
+      // sequential synthesis blew past.
+      const mapOptions = { maxOutputTokens: INGEST_MAP_MAX_OUTPUT_TOKENS };
+      const partials: string[] = [];
+      for (let i = 0; i < chunks.length; i += INGEST_MAP_CONCURRENCY) {
+        const batch = chunks.slice(i, i + INGEST_MAP_CONCURRENCY);
+        const mapped = await Promise.all(
+          batch.map((chunk, j) =>
+            callLLM(
+              MAP_SYSTEM_PROMPT,
+              `Part ${i + j + 1} of ${chunks.length} of the source:\n\n${chunk}`,
+              mapOptions,
+            ),
+          ),
         );
-        // Refine REPLACES the whole article, so an empty/blank response would
-        // discard everything synthesized so far — keep the prior draft instead.
-        if (refined.trim()) wikiContent = refined;
+        partials.push(...mapped);
       }
+
+      const notes = partials
+        .map((p, i) => ({ part: i + 1, text: p.trim() }))
+        .filter((p) => p.text)
+        .map((p) => `# Part ${p.part}\n\n${p.text}`)
+        .join("\n\n");
+      if (!notes) {
+        // Every map call came back blank — surface a real failure rather than
+        // reducing nothing into a hallucinated page.
+        throw new Error("synthesis produced no content from the source");
+      }
+      wikiContent = await callLLM(REDUCE_SYSTEM_PROMPT, notes, llmOptions);
     }
 
     // Restore the kept [[IMG:n]] tokens to real refs (omitted ones are dropped).

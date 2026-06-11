@@ -16,11 +16,12 @@ export type IngestJobStatus = "queued" | "processing" | "done" | "failed";
  * A job that's been `queued`/`processing` longer than this is treated as
  * `failed` ON READ — the consumer worker likely died mid-run (a long video can
  * hit the CPU limit) and would never write a terminal status, leaving the UI
- * polling "working…" forever. Generous: well past the client's ~5min poll cap
- * and any real ingest time, and the queue refreshes `updatedAt` on each retry,
- * so a job actively being retried is never falsely flagged.
+ * polling "working…" forever. Generous: well past any real ingest time (a long
+ * transcript's map/reduce synthesis runs in a few parallel batches, not tens of
+ * minutes), and the queue refreshes `updatedAt` on each retry, so a job actively
+ * being retried is never falsely flagged.
  */
-export const INGEST_JOB_STALE_MS = 10 * 60 * 1000;
+export const INGEST_JOB_STALE_MS = 20 * 60 * 1000;
 
 /**
  * The status a reader should act on: a non-terminal job that hasn't advanced in

@@ -2569,14 +2569,14 @@ describe("ingest — chunked LLM calls", () => {
     mockedCallLLM.mockReset();
   });
 
-  it("refines long content into one article (folds chunks in, doesn't append)", async () => {
+  it("map-reduces long content: maps each chunk from source, then merges into one article", async () => {
     mockedHasLLMKey.mockReturnValue(true);
-    // Each call returns a DISTINCT full article so we can tell whether the final
-    // page is the last refinement (correct) or a concatenation of all chunks.
-    let call = 0;
-    mockedCallLLM.mockImplementation(async () => {
-      call += 1;
-      return `CONCEPT: Topic\nTAGS: t\n\n# Topic\n\n## Summary\n\nRefined v${call}.\n\n## Key Points\n\n- point ${call}`;
+    // Distinguish MAP calls (per-chunk, from source) from the single REDUCE call
+    // (merges the partials) by which system prompt each receives.
+    mockedCallLLM.mockImplementation(async (system: string) => {
+      if (/distilling ONE part/.test(system)) return "Distilled note from a chunk.";
+      // REDUCE
+      return "CONCEPT: Topic\nTAGS: t\n\n# Topic\n\n## Summary\n\nMerged.\n\n## Key Points\n\n- point";
     });
 
     const longContent = Array.from(
@@ -2586,20 +2586,21 @@ describe("ingest — chunked LLM calls", () => {
     expect(longContent.length).toBeGreaterThan(MAX_LLM_INPUT_CHARS);
 
     const result = await ingest("Topic", longContent);
-    const calls = mockedCallLLM.mock.calls.length;
-    expect(calls).toBeGreaterThan(1);
+    const calls = mockedCallLLM.mock.calls;
 
-    // The 2nd call is a REFINE call: it gets the prior article as "Current
-    // article", not a fresh continuation that would append a new section block.
-    expect(mockedCallLLM.mock.calls[1][0]).toMatch(/COMPLETE, updated article/);
-    expect(mockedCallLLM.mock.calls[1][1]).toContain("# Current article");
-    expect(mockedCallLLM.mock.calls[1][1]).toContain("Refined v1");
+    // N map calls (one per chunk, each fed the SOURCE part — never a prior
+    // summary, so no cross-chunk drift) + exactly one reduce call.
+    const mapCalls = calls.filter((c) => /distilling ONE part/.test(c[0]));
+    const reduceCalls = calls.filter((c) => /given faithful NOTES/.test(c[0]));
+    expect(mapCalls.length).toBeGreaterThan(1);
+    expect(reduceCalls).toHaveLength(1);
+    expect(mapCalls[0][1]).toMatch(/Part 1 of \d+ of the source/);
+    // The reduce input is the merged per-part notes, not a single chunk.
+    expect(reduceCalls[0][1]).toContain("# Part 1");
 
-    // The persisted page is the LAST refinement only — no pile-up of every
-    // chunk's sections, and exactly one "## Key Points".
+    // The persisted page is the reduce output — one clean set of sections.
     const page = await readWikiPageWithFrontmatter(result.primarySlug);
-    expect(page!.content).toContain(`Refined v${calls}`);
-    expect(page!.content).not.toContain("Refined v1");
+    expect(page!.content).toContain("Merged.");
     expect(page!.content.match(/## Key Points/g) ?? []).toHaveLength(1);
 
     mockedHasLLMKey.mockReturnValue(false);
