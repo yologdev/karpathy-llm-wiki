@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { renderMermaid } from "@/lib/mermaid";
+import { logger } from "@/lib/logger";
 
 /**
  * Render a Mermaid graph definition (from a ` ```mermaid ` fenced block) to an
@@ -20,8 +21,11 @@ export function Mermaid({ chart }: { chart: string }) {
       .then((s) => {
         if (!cancelled) setSvg(s);
       })
-      .catch(() => {
-        if (!cancelled) setFailed(true);
+      .catch((err) => {
+        if (!cancelled) {
+          logger.warn("markdown", "mermaid render failed; showing source", err);
+          setFailed(true);
+        }
       });
     return () => {
       cancelled = true;
