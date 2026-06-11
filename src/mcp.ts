@@ -39,6 +39,9 @@
  *   get_contributor    — Get a specific contributor's trust profile
  *   vault_curate       — Curate a commons page into one of a user's named vaults
  *   vault_uncurate     — Remove a curated page from one of a user's named vaults
+ *   vault_create       — Create a new named vault for a user
+ *   vault_rename       — Rename an existing vault
+ *   vault_delete       — Delete a vault
  *   list_vaults        — List all named vaults for a user
  *   vault_pages        — List page slugs curated into a named vault
  *
@@ -79,7 +82,7 @@ import { fixLintIssue, type FixResult } from "./lib/lint-fix";
 import { listThreads, createThread, resolveThread, addComment } from "./lib/talk";
 import { queryByFrontmatter, validateQuery, type DataviewFilter, type DataviewQuery, type DataviewResult } from "./lib/dataview";
 import { listRevisions, readRevision, readRevisionMeta, type Revision } from "./lib/revisions";
-import { vaultIdFor, getVault, createVault, addToVault, removeFromVault, listVaults, vaultSlugs } from "./lib/vault";
+import { vaultIdFor, getVault, createVault, renameVault, deleteVault, addToVault, removeFromVault, listVaults, vaultSlugs } from "./lib/vault";
 import type { Vault } from "./lib/vault";
 import { belongsInCommons } from "./lib/commons";
 import { reconcileFromTalk, type ReconcileFromTalkResult } from "./lib/reconcile";
@@ -922,6 +925,37 @@ export async function handleVaultPages(args: {
   const id = vaultIdFor(args.owner, args.vault);
   const slugs = await vaultSlugs(id);
   return { owner: args.owner, vault: args.vault, slugs };
+}
+
+export async function handleVaultCreate(args: {
+  owner: string;
+  name: string;
+}): Promise<{ vault: Vault }> {
+  const vault = await createVault(args.owner, args.name, "public");
+  return { vault };
+}
+
+export async function handleVaultRename(args: {
+  vault_id: string;
+  name: string;
+}): Promise<{ renamed: true; vault_id: string; name: string }> {
+  const existing = await getVault(args.vault_id);
+  if (!existing) {
+    throw new Error(`Vault not found: ${args.vault_id}`);
+  }
+  await renameVault(args.vault_id, args.name);
+  return { renamed: true, vault_id: args.vault_id, name: args.name };
+}
+
+export async function handleVaultDelete(args: {
+  vault_id: string;
+}): Promise<{ deleted: true; vault_id: string }> {
+  const existing = await getVault(args.vault_id);
+  if (!existing) {
+    throw new Error(`Vault not found: ${args.vault_id}`);
+  }
+  await deleteVault(args.vault_id);
+  return { deleted: true, vault_id: args.vault_id };
 }
 
 // ---------------------------------------------------------------------------
@@ -2861,6 +2895,133 @@ export function createMcpServer(): McpServer {
   }, async (args) => {
     try {
       const result = await handleVaultPages(args);
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: JSON.stringify(result, null, 2),
+          },
+        ],
+      };
+    } catch (err) {
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: (err as Error).message,
+          },
+        ],
+        isError: true,
+      };
+    }
+  });
+
+  // vault_create — Create a new named vault
+  server.registerTool("vault_create", {
+    description:
+      "Create a new named vault for a user. A vault is a personal reference lens over the commons. " +
+      "Idempotent — if a vault with the same owner and name already exists, the existing vault is " +
+      "returned. Visibility defaults to public.",
+    inputSchema: {
+      owner: z
+        .string()
+        .describe("Handle of the vault owner (must match the MCP caller's identity)"),
+      name: z
+        .string()
+        .describe("Display name for the new vault"),
+    },
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+  }, async (args) => {
+    try {
+      const result = await handleVaultCreate(args);
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: JSON.stringify(result, null, 2),
+          },
+        ],
+      };
+    } catch (err) {
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: (err as Error).message,
+          },
+        ],
+        isError: true,
+      };
+    }
+  });
+
+  // vault_rename — Rename an existing vault
+  server.registerTool("vault_rename", {
+    description:
+      "Rename an existing vault. The vault ID stays stable; only the display name changes. " +
+      "Returns an error if the vault does not exist.",
+    inputSchema: {
+      vault_id: z
+        .string()
+        .describe("ID of the vault to rename (e.g. 'owner--vault-slug')"),
+      name: z
+        .string()
+        .describe("New display name for the vault"),
+    },
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+  }, async (args) => {
+    try {
+      const result = await handleVaultRename(args);
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: JSON.stringify(result, null, 2),
+          },
+        ],
+      };
+    } catch (err) {
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: (err as Error).message,
+          },
+        ],
+        isError: true,
+      };
+    }
+  });
+
+  // vault_delete — Delete a vault
+  server.registerTool("vault_delete", {
+    description:
+      "Delete a vault entirely. All curated page references in the vault are dropped (the commons " +
+      "pages themselves are unaffected). Returns an error if the vault does not exist.",
+    inputSchema: {
+      vault_id: z
+        .string()
+        .describe("ID of the vault to delete (e.g. 'owner--vault-slug')"),
+    },
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: true,
+      idempotentHint: false,
+      openWorldHint: false,
+    },
+  }, async (args) => {
+    try {
+      const result = await handleVaultDelete(args);
       return {
         content: [
           {
