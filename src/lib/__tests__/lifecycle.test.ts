@@ -792,6 +792,22 @@ describe("recent trail action labeling", () => {
     expect(actions.filter((a) => a === "re-ingested")).toHaveLength(1);
   });
 
+  it("folds an automation author (lint-fix) into the agent on the incremental push", async () => {
+    const { getRecentIndex } = await import("../recent-index");
+    await getStorage().putIndex("recent", []);
+
+    await writeWikiPageWithSideEffects(
+      makeOpts({ author: "lint-fix", content: "# Test Page\n\nv1." }),
+    );
+
+    const idx = (await getRecentIndex()) ?? [];
+    const ev = idx.find((e) => e.slug === "test-page");
+    expect(ev).toBeDefined();
+    // Raw "lint-fix" must not leak into the live "Recent" strip — it reads as yoyo.
+    expect(ev!.actor).toBe("yoyo");
+    expect(ev!.isAgent).toBe(true);
+  });
+
   it("labels a manual edit 'edited', not re-ingested", async () => {
     const { getRecentIndex } = await import("../recent-index");
     await getStorage().putIndex("recent", []);

@@ -259,6 +259,28 @@ export function _getPageCacheSize(): number {
 // Wiki page I/O
 // ---------------------------------------------------------------------------
 
+/**
+ * Whether a commons wiki page exists. Unlike {@link readWikiPage} (which
+ * swallows ALL read errors as `null`), this RE-THROWS a non-ENOENT storage
+ * failure so a caller can tell "the page is genuinely gone" from "the store
+ * hiccuped" — e.g. the ingest-status route must not drop a live job's strip
+ * entry on a transient blip. A malformed slug is treated as "no such page".
+ */
+export async function wikiPageExists(slug: string): Promise<boolean> {
+  try {
+    validateSlug(slug);
+  } catch {
+    return false;
+  }
+  try {
+    await getStorage().readFile(wikiRelPath(`${slug}.md`));
+    return true;
+  } catch (err) {
+    if (isEnoent(err)) return false;
+    throw err; // real storage error — let the caller decide, don't mask as "gone"
+  }
+}
+
 /** Read a wiki page by slug. Returns `null` when the file doesn't exist or the slug is invalid. */
 export async function readWikiPage(slug: string): Promise<WikiPage | null> {
   try {

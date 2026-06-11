@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getPrincipal } from "@/lib/auth";
 import { getIngestJob, effectiveStatus } from "@/lib/ingest-jobs";
-import { readWikiPage } from "@/lib/wiki";
+import { wikiPageExists } from "@/lib/wiki";
 import { getErrorMessage } from "@/lib/errors";
 import { logger } from "@/lib/logger";
 
@@ -42,9 +42,20 @@ export async function GET(
 
     // The job record outlives its page: if a completed page was later deleted,
     // the "Recent ingests" strip would show a dead link. Report the job as gone
-    // (404) so the client drops it quietly instead of linking to nothing.
-    if (eff.status === "done" && job.slug && !(await readWikiPage(job.slug))) {
-      return NextResponse.json({ error: "Not found" }, { status: 404 });
+    // (404) so the client drops it quietly instead of linking to nothing. Only a
+    // GENUINE miss should drop it — a transient storage error must not, or a blip
+    // would silently evict a live job, so on a read error we fall through and
+    // return the job as-is.
+    if (eff.status === "done" && job.slug) {
+      let gone = false;
+      try {
+        gone = !(await wikiPageExists(job.slug));
+      } catch (e) {
+        logger.warn("ingest", `status: page existence check failed for ${job.slug}`, e);
+      }
+      if (gone) {
+        return NextResponse.json({ error: "Not found" }, { status: 404 });
+      }
     }
 
     return NextResponse.json({

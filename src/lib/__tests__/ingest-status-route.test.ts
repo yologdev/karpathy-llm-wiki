@@ -9,7 +9,7 @@ vi.mock("@/lib/auth", () => ({
   getPrincipal: vi.fn(),
 }));
 vi.mock("@/lib/wiki", () => ({
-  readWikiPage: vi.fn(),
+  wikiPageExists: vi.fn(),
 }));
 vi.mock("@/lib/logger", () => ({
   logger: { error: vi.fn(), warn: vi.fn(), info: vi.fn(), debug: vi.fn() },
@@ -17,12 +17,12 @@ vi.mock("@/lib/logger", () => ({
 
 import { getIngestJob } from "@/lib/ingest-jobs";
 import { getPrincipal } from "@/lib/auth";
-import { readWikiPage } from "@/lib/wiki";
+import { wikiPageExists } from "@/lib/wiki";
 import { GET } from "@/app/api/ingest/status/[jobId]/route";
 
 const mockedGetJob = vi.mocked(getIngestJob);
 const mockedGetPrincipal = vi.mocked(getPrincipal);
-const mockedReadPage = vi.mocked(readWikiPage);
+const mockedPageExists = vi.mocked(wikiPageExists);
 
 const call = (jobId: string) =>
   GET(new Request("http://localhost/api/ingest/status/" + jobId), {
@@ -32,9 +32,8 @@ const call = (jobId: string) =>
 beforeEach(() => {
   vi.clearAllMocks();
   mockedGetPrincipal.mockResolvedValue({ id: "alice", handle: "alice" });
-  // Default: a done job's page still exists (override to null to simulate delete).
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  mockedReadPage.mockResolvedValue({ slug: "x" } as any);
+  // Default: a done job's page still exists (override to false to simulate delete).
+  mockedPageExists.mockResolvedValue(true);
 });
 
 describe("GET /api/ingest/status/[jobId]", () => {
@@ -76,18 +75,44 @@ describe("GET /api/ingest/status/[jobId]", () => {
     expect(await res.json()).toMatchObject({ status: "done", slug: "my-page" });
   });
 
+  const doneJob = (over: Record<string, unknown> = {}) => ({
+    jobId: "j1",
+    url: "https://youtu.be/x",
+    owner: "alice",
+    status: "done" as const,
+    slug: "the-page",
+    createdAt: "",
+    updatedAt: "",
+    ...over,
+  });
+
   it("404s a done job whose page was deleted (drops a dead link from the strip)", async () => {
-    mockedGetJob.mockResolvedValue({
-      jobId: "j1",
-      url: "https://youtu.be/x",
-      owner: "alice",
-      status: "done",
-      slug: "deleted-page",
-      createdAt: "",
-      updatedAt: "",
-    });
-    mockedReadPage.mockResolvedValue(null); // page no longer exists
+    mockedGetJob.mockResolvedValue(doneJob({ slug: "deleted-page" }));
+    mockedPageExists.mockResolvedValue(false); // page no longer exists
     expect((await call("j1")).status).toBe(404);
+  });
+
+  it("returns the job (200) when the page-existence check errors — a storage blip must not evict a live job", async () => {
+    mockedGetJob.mockResolvedValue(doneJob());
+    mockedPageExists.mockRejectedValue(new Error("R2 timeout"));
+    const res = await call("j1");
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ status: "done", slug: "the-page" });
+  });
+
+  it("does not existence-check a done job with no slug (returns 200)", async () => {
+    mockedGetJob.mockResolvedValue(doneJob({ slug: undefined }));
+    const res = await call("j1");
+    expect(res.status).toBe(200);
+    expect(mockedPageExists).not.toHaveBeenCalled();
+  });
+
+  it("never existence-checks a non-done job (a missing page can't 404 a failed job)", async () => {
+    mockedGetJob.mockResolvedValue(doneJob({ status: "failed", error: "boom", slug: "p" }));
+    mockedPageExists.mockResolvedValue(false);
+    const res = await call("j1");
+    expect(res.status).toBe(200);
+    expect(mockedPageExists).not.toHaveBeenCalled();
   });
 
   it("reports a long-stalled processing job as failed (dead worker)", async () => {
