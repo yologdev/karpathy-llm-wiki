@@ -1399,11 +1399,14 @@ export async function ingest(
       wikiContent = await callLLM(systemPrompt, chunks[0], llmOptions);
 
       for (let i = 1; i < chunks.length; i++) {
-        wikiContent = await callLLM(
+        const refined = await callLLM(
           REFINE_SYSTEM_PROMPT,
           `# Current article\n\n${wikiContent}\n\n# Next part of the source (part ${i + 1} of ${chunks.length})\n\n${chunks[i]}`,
           llmOptions,
         );
+        // Refine REPLACES the whole article, so an empty/blank response would
+        // discard everything synthesized so far — keep the prior draft instead.
+        if (refined.trim()) wikiContent = refined;
       }
     }
 
