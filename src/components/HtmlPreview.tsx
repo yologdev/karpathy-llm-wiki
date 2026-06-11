@@ -9,6 +9,7 @@ import {
   HTML_MAX_HEIGHT,
   HTML_HEIGHT_MESSAGE_KEY,
 } from "@/lib/html";
+import { htmlHasMermaid, renderMermaidInHtml } from "@/lib/mermaid";
 import { logger } from "@/lib/logger";
 
 /**
@@ -66,6 +67,29 @@ export function HtmlPreview({
     };
   }, [needsChart, chartLib]);
 
+  // Pre-render `<pre class="mermaid">` blocks to inline SVG in the parent app
+  // (Mermaid is browser-only + ~3MB, lazy-loaded). The iframe then receives
+  // static SVG — no library injection and no CSP exception. Starts from the raw
+  // html (diagram source briefly visible) and swaps in the rendered version.
+  const [renderedHtml, setRenderedHtml] = useState(html);
+  useEffect(() => {
+    let cancelled = false;
+    setRenderedHtml(html);
+    if (htmlHasMermaid(html)) {
+      renderMermaidInHtml(html)
+        .then((out) => {
+          if (!cancelled) setRenderedHtml(out);
+        })
+        .catch((err) => {
+          if (!cancelled)
+            logger.warn("html", "mermaid render failed; showing source", err);
+        });
+    }
+    return () => {
+      cancelled = true;
+    };
+  }, [html]);
+
   useEffect(() => {
     function onMessage(e: MessageEvent) {
       // Trust only messages from THIS frame's window, with the expected shape.
@@ -92,7 +116,7 @@ export function HtmlPreview({
       // feedback-loops them to absurd heights — so we fix the frame and let
       // them scroll INSIDE it, with that inner scrollbar hidden. Full-screen
       // share (`bare`) fills the viewport; inline gets a tall contained frame.
-      srcDoc={composeSrcDoc(html, chartLib, bare || appStyle)}
+      srcDoc={composeSrcDoc(renderedHtml, chartLib, bare || appStyle)}
       sandbox={HTML_SANDBOX}
       title="HTML output"
       style={{

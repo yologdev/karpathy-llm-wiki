@@ -77,6 +77,7 @@ export const SLIDES_FORMAT_INSTRUCTION = `Format your answer as a Marp slide dec
 The first slide should be a title slide with \`# {question}\`.
 Each subsequent slide should cover one key point with a heading and 2-4 bullet points.
 Keep slides concise — aim for 5-8 slides total.
+When a point is structural — a flow, process, architecture, hierarchy, sequence, or relationship — prefer a **Mermaid diagram** over a wall of bullets. Put it in a fenced \`\`\`mermaid code block (e.g. \`graph TD\`, \`flowchart LR\`, \`sequenceDiagram\`); it renders as a diagram. Keep node labels short.
 Include a final "Sources" slide citing wiki pages as [Page Title](slug.md).
 Use standard Marp markdown (no custom directives needed).
 Start the response with the Marp front matter:
@@ -114,6 +115,12 @@ CHARTS — use Chart.js, never hand-drawn SVG
   \`new Chart(document.getElementById('c1'),{type:'bar',data:{labels:['A','B','C'],datasets:[{label:'Score',data:[12,19,7],backgroundColor:'#4d6bfe'}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}}}});\`
 - ALWAYS set \`options.responsive:true\` and \`options.maintainAspectRatio:false\` (the \`.chart\` box controls height). Use \`type\` of bar/line/pie/doughnut/radar/scatter as fits the data.
 - Use this on-brand palette for series: \`#4d6bfe\`, \`#11a36b\`, \`#e8893a\`, \`#9b59d0\`, \`#d24d6b\`, \`#3aa6c4\`. Keep charts clean (concise labels, light gridlines).
+
+DIAGRAMS — use Mermaid for structure (Chart.js is for data)
+- For a flow, process, architecture, hierarchy, sequence, state, or relationship, embed a **Mermaid** diagram — it pre-renders to a clean, on-brand SVG. Charts visualize DATA; Mermaid visualizes STRUCTURE.
+- Use this exact block (the \`mermaid\` class is required) — write the graph definition inside, no \`<script>\`, no code fence:
+  \`<pre class="mermaid">\nflowchart LR\n  A[Source] --> B[Ingest] --> C[Cited page]\n</pre>\`
+- Supports \`flowchart\`/\`graph\`, \`sequenceDiagram\`, \`classDiagram\`, \`stateDiagram\`, \`erDiagram\`, and more. Keep node labels short; it's themed automatically — do not set colors.
 
 INTERACTIVITY (optional, encouraged where it adds insight)
 - You MAY add small inline \`<script>\` for sliders/toggles that recompute and update a chart (mutate \`chart.data\` then call \`chart.update()\`). It runs in a locked-down sandbox: no network, no access outside the document.

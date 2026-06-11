@@ -4,6 +4,25 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { slugify } from "@/lib/slugify";
 import { resolveSlugPath, type SlugTenantMap } from "@/lib/links";
+import { Mermaid } from "@/components/Mermaid";
+
+/**
+ * A ` ```mermaid ` fence arrives as a `<code class="language-mermaid">` nested in
+ * a `<pre>`. Pull out the graph definition so we can render it as a diagram
+ * instead of a code block; return null for any other code block.
+ */
+function mermaidCodeFromPre(children: ReactNode): string | null {
+  const child = Array.isArray(children) ? children[0] : children;
+  if (child && typeof child === "object" && "props" in child) {
+    const props = (child as { props?: { className?: unknown; children?: unknown } })
+      .props;
+    const cls = typeof props?.className === "string" ? props.className : "";
+    if (/\blanguage-mermaid\b/.test(cls)) {
+      return String(props?.children ?? "").replace(/\n$/, "");
+    }
+  }
+  return null;
+}
 
 interface MarkdownRendererProps {
   content: string;
@@ -135,6 +154,11 @@ export function MarkdownRenderer({
               {children}
             </h3>
           ),
+          pre: ({ children, ...props }) => {
+            const chart = mermaidCodeFromPre(children);
+            if (chart !== null) return <Mermaid chart={chart} />;
+            return <pre {...props}>{children}</pre>;
+          },
           img: ({ src, alt, ...props }) => {
             if (typeof src !== "string") return null;
             return (
