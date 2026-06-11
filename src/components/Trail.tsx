@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { formatRelativeTime } from "@/lib/format";
-import { commonsPath, profileHref } from "@/lib/links";
+import { commonsPath, pagePath, profileHref } from "@/lib/links";
 import { Mark, SrcChip } from "./folio/primitives";
 import type { TrailEvent } from "@/lib/trail";
 
@@ -45,7 +45,12 @@ export function Trail({ events }: { events: TrailEvent[] }) {
             <span style={{ color: "var(--muted)" }}>{e.action}</span>
             {e.sourceType && <SrcChip type={e.sourceType} />}
             <Link
-              href={commonsPath(e.slug)}
+              // Public commons pages live at `/wiki/<slug>`; private/agent/
+              // artifact pages (e.g. an `html` query answer) live only at the
+              // owner-scoped `/u/<tenant>/<slug>` and 404 at `/wiki/`. Default a
+              // flag-less event (pre-rebuild index entry) to the owner path,
+              // which works for both (public pages 308-redirect to /wiki/).
+              href={e.commons ? commonsPath(e.slug) : pagePath(e.tenant, e.slug)}
               style={{
                 color: "var(--accent)",
                 borderBottom: "1px solid var(--accent-soft)",

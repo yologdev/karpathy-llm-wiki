@@ -499,6 +499,9 @@ async function runPageLifecycleOp(
           tenant: tenantForOwner(
             typeof fm.owner === "string" ? fm.owner : undefined,
           ),
+          // This push is gated by `isCommons` above, so the page is, by
+          // construction, a public commons page → links at `/wiki/<slug>`.
+          commons: true,
         });
       }
     }

@@ -43,6 +43,7 @@ function ev(over: Partial<TrailEvent> = {}): TrailEvent {
     slug: "page-a",
     title: "Page A",
     tenant: "alice",
+    commons: true,
     ...over,
   };
 }
