@@ -111,9 +111,19 @@ export async function POST(req: Request) {
   } catch (err) {
     const message = getErrorMessage(err);
     // Record the failure on a tracked async job so the user sees the reason
-    // (a later retry that succeeds will overwrite this back to "done").
+    // (a later retry that succeeds will overwrite this back to "done"). Guarded:
+    // a storage error here must not mask the original failure or skip the
+    // status mapping below.
     if (task.kind === "ingest" && task.jobId) {
-      await updateIngestJob(task.jobId, { status: "failed", error: message });
+      try {
+        await updateIngestJob(task.jobId, { status: "failed", error: message });
+      } catch (writeErr) {
+        logger.error(
+          "tasks",
+          `failed to record ingest job ${task.jobId} failure`,
+          writeErr,
+        );
+      }
     }
     // A missing page/thread is permanent → poison (4xx), don't retry forever.
     if (/not found/i.test(message)) {

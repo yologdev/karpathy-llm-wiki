@@ -1,6 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-vi.mock("@/lib/ingest-jobs", () => ({
+vi.mock("@/lib/ingest-jobs", async (importActual) => ({
+  // Keep the real (pure) effectiveStatus; only stub the storage-backed read.
+  ...(await importActual<typeof import("@/lib/ingest-jobs")>()),
   getIngestJob: vi.fn(),
 }));
 vi.mock("@/lib/auth", () => ({
@@ -64,5 +66,21 @@ describe("GET /api/ingest/status/[jobId]", () => {
     const res = await call("j1");
     expect(res.status).toBe(200);
     expect(await res.json()).toMatchObject({ status: "done", slug: "my-page" });
+  });
+
+  it("reports a long-stalled processing job as failed (dead worker)", async () => {
+    mockedGetJob.mockResolvedValue({
+      jobId: "j1",
+      url: "https://youtu.be/x",
+      owner: "alice",
+      status: "processing",
+      createdAt: "",
+      updatedAt: new Date(Date.now() - 30 * 60 * 1000).toISOString(),
+    });
+    const res = await call("j1");
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.status).toBe("failed");
+    expect(body.error).toMatch(/stalled/i);
   });
 });

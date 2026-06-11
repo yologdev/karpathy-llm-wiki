@@ -6,6 +6,8 @@ import {
   createIngestJob,
   getIngestJob,
   updateIngestJob,
+  effectiveStatus,
+  INGEST_JOB_STALE_MS,
 } from "../ingest-jobs";
 import { _resetStorage } from "../storage";
 
@@ -64,5 +66,30 @@ describe("ingest-jobs", () => {
 
   it("rejects a path-traversing job id", async () => {
     await expect(getIngestJob("../secrets")).rejects.toThrow(/invalid ingest job id/);
+  });
+});
+
+describe("effectiveStatus (stale detection)", () => {
+  const iso = (msAgo: number) => new Date(Date.now() - msAgo).toISOString();
+
+  it("ages a long-stuck processing job to failed", () => {
+    const eff = effectiveStatus({ status: "processing", updatedAt: iso(INGEST_JOB_STALE_MS + 1000) });
+    expect(eff.status).toBe("failed");
+    expect(eff.error).toMatch(/stalled/i);
+  });
+
+  it("leaves a recently-updated processing job alone", () => {
+    expect(effectiveStatus({ status: "processing", updatedAt: iso(1000) })).toEqual({
+      status: "processing",
+    });
+  });
+
+  it("never overrides a terminal status", () => {
+    expect(effectiveStatus({ status: "done", updatedAt: iso(INGEST_JOB_STALE_MS * 10) })).toEqual({
+      status: "done",
+    });
+    expect(effectiveStatus({ status: "failed", updatedAt: iso(INGEST_JOB_STALE_MS * 10) })).toEqual({
+      status: "failed",
+    });
   });
 });

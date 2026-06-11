@@ -12,6 +12,33 @@ import { logger } from "./logger";
 
 export type IngestJobStatus = "queued" | "processing" | "done" | "failed";
 
+/**
+ * A job that's been `queued`/`processing` longer than this is treated as
+ * `failed` ON READ — the consumer worker likely died mid-run (a long video can
+ * hit the CPU limit) and would never write a terminal status, leaving the UI
+ * polling "working…" forever. Generous: well past the client's ~5min poll cap
+ * and any real ingest time, and the queue refreshes `updatedAt` on each retry,
+ * so a job actively being retried is never falsely flagged.
+ */
+export const INGEST_JOB_STALE_MS = 10 * 60 * 1000;
+
+/**
+ * The status a reader should act on: a non-terminal job that hasn't advanced in
+ * {@link INGEST_JOB_STALE_MS} is reported as `failed` (it stalled), so the UI
+ * shows a reason and stops polling instead of waiting on a dead job forever.
+ */
+export function effectiveStatus(
+  job: Pick<IngestJob, "status" | "updatedAt">,
+): { status: IngestJobStatus; error?: string } {
+  if (job.status === "queued" || job.status === "processing") {
+    const age = Date.now() - Date.parse(job.updatedAt);
+    if (Number.isFinite(age) && age > INGEST_JOB_STALE_MS) {
+      return { status: "failed", error: "This ingest stalled — please try again." };
+    }
+  }
+  return { status: job.status };
+}
+
 export interface IngestJob {
   jobId: string;
   /** The source URL being ingested. */

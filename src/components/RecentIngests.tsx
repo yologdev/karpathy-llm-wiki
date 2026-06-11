@@ -32,6 +32,7 @@ export function RecentIngests() {
   useEffect(() => {
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout> | null = null;
+    let refreshes = 0;
 
     async function load() {
       const ids = getRecentJobIds();
@@ -53,8 +54,14 @@ export function RecentIngests() {
       if (cancelled) return;
       const live = results.filter((j): j is JobView => j !== null);
       setJobs(live);
-      // Keep refreshing while anything is still in flight.
-      if (live.some((j) => j.status === "queued" || j.status === "processing")) {
+      // Keep refreshing while anything is still in flight, with a hard cap
+      // (~6min) so a stuck job can't drive an endless background refresh. The
+      // server also ages a stalled job to `failed`, so this rarely matters.
+      refreshes += 1;
+      if (
+        refreshes < 90 &&
+        live.some((j) => j.status === "queued" || j.status === "processing")
+      ) {
         timer = setTimeout(load, 4000);
       }
     }

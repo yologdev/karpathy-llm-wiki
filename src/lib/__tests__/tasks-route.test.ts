@@ -8,11 +8,13 @@ vi.mock("@/lib/ingest", () => ({
   reingest: vi.fn(),
 }));
 vi.mock("@/lib/lint-fix", () => ({ fixLintIssue: vi.fn() }));
+vi.mock("@/lib/ingest-jobs", () => ({ updateIngestJob: vi.fn(async () => ({})) }));
 
 import { getServicePrincipal } from "@/lib/auth";
 import { reconcileFromTalk } from "@/lib/reconcile";
 import { ingest, ingestUrl, reingest } from "@/lib/ingest";
 import { fixLintIssue } from "@/lib/lint-fix";
+import { updateIngestJob } from "@/lib/ingest-jobs";
 
 const mockedGetService = vi.mocked(getServicePrincipal);
 const mockedReconcile = vi.mocked(reconcileFromTalk);
@@ -20,6 +22,7 @@ const mockedIngest = vi.mocked(ingest);
 const mockedIngestUrl = vi.mocked(ingestUrl);
 const mockedReingest = vi.mocked(reingest);
 const mockedFixLint = vi.mocked(fixLintIssue);
+const mockedUpdateJob = vi.mocked(updateIngestJob);
 
 async function run(body: unknown) {
   const { POST } = await import("@/app/api/tasks/run/route");
@@ -114,6 +117,46 @@ describe("POST /api/tasks/run", () => {
     const res = await run({ kind: "maintain", op: "staleness", slug: "s" });
     expect(res.status).toBe(200);
     expect(mockedReingest).toHaveBeenCalledWith("s", expect.objectContaining({ author: "yoyo" }));
+  });
+
+  it("drives a tracked ingest job processing → done on success", async () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    mockedIngestUrl.mockResolvedValue({ primarySlug: "made" } as any);
+    const res = await run({
+      kind: "ingest",
+      url: "https://youtu.be/x",
+      owner: "alice",
+      jobId: "job-1",
+    });
+    expect(res.status).toBe(200);
+    expect(mockedUpdateJob).toHaveBeenNthCalledWith(1, "job-1", { status: "processing" });
+    expect(mockedUpdateJob).toHaveBeenNthCalledWith(2, "job-1", {
+      status: "done",
+      slug: "made",
+    });
+  });
+
+  it("records a tracked ingest job as failed when ingest throws", async () => {
+    mockedIngestUrl.mockRejectedValueOnce(new Error("LLM timeout"));
+    const res = await run({
+      kind: "ingest",
+      url: "https://youtu.be/x",
+      owner: "alice",
+      jobId: "job-2",
+    });
+    expect(res.status).toBe(500); // transient → retry
+    expect(mockedUpdateJob).toHaveBeenNthCalledWith(1, "job-2", { status: "processing" });
+    expect(mockedUpdateJob).toHaveBeenNthCalledWith(2, "job-2", {
+      status: "failed",
+      error: "LLM timeout",
+    });
+  });
+
+  it("leaves an untracked ingest task (no jobId) alone — no job writes", async () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    mockedIngestUrl.mockResolvedValue({ primarySlug: "made" } as any);
+    await run({ kind: "ingest", url: "https://example.com", owner: "alice" });
+    expect(mockedUpdateJob).not.toHaveBeenCalled();
   });
 
   it("maps a 'not found' failure to 422 (poison), other failures to 500 (retry)", async () => {

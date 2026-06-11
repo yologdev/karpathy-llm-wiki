@@ -101,16 +101,27 @@ export async function POST(request: NextRequest) {
           url: trimmedUrl,
           owner: principal.handle,
         });
-        const enqueued = await enqueueTask({
-          kind: "ingest",
-          url: trimmedUrl,
-          owner: options.owner,
-          author: options.author,
-          ...(options.tags && options.tags.length > 0
-            ? { tags: options.tags }
-            : {}),
-          jobId,
-        });
+        let enqueued: boolean;
+        try {
+          enqueued = await enqueueTask({
+            kind: "ingest",
+            url: trimmedUrl,
+            owner: options.owner,
+            author: options.author,
+            ...(options.tags && options.tags.length > 0
+              ? { tags: options.tags }
+              : {}),
+            jobId,
+          });
+        } catch (e) {
+          // Enqueue threw after the job was created → it would be orphaned at
+          // "queued"; mark it failed so it can't show "working…" forever.
+          await updateIngestJob(jobId, {
+            status: "failed",
+            error: getErrorMessage(e),
+          }).catch(() => {});
+          throw e; // surfaces as a 500 to the submitter
+        }
         if (enqueued) {
           return NextResponse.json({ queued: true, jobId });
         }
