@@ -12,7 +12,8 @@ export interface TrailEvent {
   ts: number;
   /** ISO date string for display. */
   when: string;
-  /** Who acted — a human handle, an agent id, or "system". */
+  /** Who acted — a human handle or an agent id (automation actors like
+   * `system`/`lint-fix` are folded to the agent via {@link normalizeActor}). */
   actor: string;
   /** True when the actor is an autonomous agent (e.g. `yoyo`). */
   isAgent: boolean;
