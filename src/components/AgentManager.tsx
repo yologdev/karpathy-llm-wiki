@@ -306,9 +306,10 @@ function CreateAgent({ handle }: { handle: string }) {
 }
 
 /**
- * The owner's agent management surface on `/vault`: lists their agents with
- * inline edit / token / delete, plus a create form. All actions hit the
- * existing `/api/agents` endpoints and refresh the server tree on success.
+ * The owner's agent management surface (rendered on the `/agents` page): lists
+ * their agents with inline edit / token / delete, plus a create form. All
+ * actions hit the existing `/api/agents` endpoints and refresh the server tree
+ * on success.
  */
 export function AgentManager({ handle, agents }: AgentManagerProps) {
   return (
