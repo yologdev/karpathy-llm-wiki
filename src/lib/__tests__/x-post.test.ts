@@ -6,6 +6,7 @@ import {
   fetchXPostContent,
 } from "../x-post";
 import { ClientInputError } from "../errors";
+import { logger } from "../logger";
 
 // ---------------------------------------------------------------------------
 // isXPostUrl
@@ -260,6 +261,88 @@ describe("fetchXPostContent — X Articles", () => {
     expect(decodeURIComponent(apiCall!)).toContain("conversation_id:123");
     expect(decodeURIComponent(apiCall!)).toContain("from:ada");
     expect(apiCall).toContain("tweet.fields=article");
+  });
+
+  it("selects the conversation ROOT (matching id), not a reply in the results", async () => {
+    process.env.X_BEARER_TOKEN = "test-bearer";
+    mockApi({
+      // recent-search returns the root PLUS a reply that itself carries an article.
+      apiBody: {
+        data: [
+          { id: "999", article: { title: "A REPLY", text: "reply body" } },
+          { id: "123", article: { title: "Root Essay", text: "the real body" } },
+        ],
+      },
+      synBody: {},
+    });
+    const { title, content } = await fetchXPostContent("https://x.com/ada/status/123");
+    expect(title).toBe("Root Essay");
+    expect(content).toContain("the real body");
+    expect(content).not.toContain("reply body");
+  });
+
+  it("falls back to the first result with an article when no id matches (handle-less URL)", async () => {
+    process.env.X_BEARER_TOKEN = "test-bearer";
+    mockApi({
+      apiBody: { data: [{ id: "other", text: "no article" }, { id: "x", article: { title: "Found", text: "via fallback" } }] },
+      synBody: {},
+    });
+    const { content } = await fetchXPostContent("https://x.com/i/web/status/123");
+    expect(content).toContain("via fallback");
+  });
+
+  it("logs LOUD (error) on a 401/403 bad-token, but only warns on a transient 429", async () => {
+    process.env.X_BEARER_TOKEN = "test-bearer";
+    const err = vi.spyOn(logger, "error").mockImplementation(() => {});
+    const warn = vi.spyOn(logger, "warn").mockImplementation(() => {});
+
+    mockApi({ apiStatus: 403, synBody: { text: "t", user: { name: "A", screen_name: "a" } } });
+    await fetchXPostContent("https://x.com/a/status/1");
+    expect(err).toHaveBeenCalledTimes(1); // config defect is loud
+    expect(warn).not.toHaveBeenCalled();
+
+    err.mockClear();
+    warn.mockClear();
+    mockApi({ apiStatus: 429, synBody: { text: "t", user: { name: "A", screen_name: "a" } } });
+    await fetchXPostContent("https://x.com/a/status/1");
+    expect(warn).toHaveBeenCalledTimes(1); // transient is a warn
+    expect(err).not.toHaveBeenCalled();
+  });
+
+  it("prefers the full API body over the syndication preview when both exist", async () => {
+    process.env.X_BEARER_TOKEN = "test-bearer";
+    mockApi({
+      apiBody: { data: [{ id: "123", article: { title: "Essay", text: "REAL API BODY" } }] },
+      synBody: { article: { title: "Essay", preview_text: "STALE TEASER" } },
+    });
+    const { content } = await fetchXPostContent("https://x.com/ada/status/123");
+    expect(content).toContain("REAL API BODY");
+    expect(content).not.toContain("STALE TEASER");
+  });
+
+  it("uses the syndication preview when recent-search returns no results (article older than the window)", async () => {
+    process.env.X_BEARER_TOKEN = "test-bearer";
+    mockApi({
+      apiBody: { data: [] }, // outside the ~7-day search window
+      synBody: { text: "https://t.co/x", user: { name: "A", screen_name: "ada" }, article: { title: "Old Essay", preview_text: "the gist" } },
+    });
+    const { title, content } = await fetchXPostContent("https://x.com/ada/status/123");
+    expect(title).toBe("Old Essay");
+    expect(content).toContain("the gist");
+    expect(content).toContain("preview only"); // honestly labeled as partial
+  });
+
+  it("rejects a deleted/tombstoned post even if a stale article object lingers (no stub)", async () => {
+    delete process.env.X_BEARER_TOKEN; // syndication-only path
+    mockApi({
+      synBody: {
+        tombstone: { text: "This Post was deleted" },
+        article: { title: "Ghost", preview_text: "stale cached teaser" },
+      },
+    });
+    await expect(fetchXPostContent("https://x.com/ada/status/123")).rejects.toBeInstanceOf(
+      ClientInputError,
+    );
   });
 
   it("falls back to syndication when the post is not an article", async () => {

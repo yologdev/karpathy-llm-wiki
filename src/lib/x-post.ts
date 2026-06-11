@@ -11,8 +11,8 @@
  * `article` field. Only the **recent-search** endpoint actually populates
  * `article.text` — a plain `GET /2/tweets/:id?tweet.fields=article` returns the
  * title with an empty body — so when `X_BEARER_TOKEN` is configured we fetch the
- * article via the SAME request the @yoyo mention worker uses (recent-search by
- * `conversation_id`). We fall back to syndication for plain tweets / no token /
+ * article via the same recent-search-by-`conversation_id` request the @yoyo
+ * mention worker relies on. We fall back to syndication for plain tweets / no token /
  * articles older than the ~7-day search window — and there we use the
  * `article.preview_text` teaser + cover so an article still ingests with its
  * gist rather than just the bare link.
@@ -255,9 +255,9 @@ async function fetchArticleCover(id: string): Promise<string | null> {
 /**
  * Fetch a long-form X Article's full body via the authenticated X API v2.
  *
- * Uses the **recent-search** endpoint (`conversation_id:<id>`), exactly as the
- * @yoyo mention worker does — this is the only X API call that actually
- * populates `article.text`. (The plain `GET /2/tweets/:id?tweet.fields=article`
+ * Uses the **recent-search** endpoint (`conversation_id:<id>`), the same
+ * recent-search request the @yoyo mention worker relies on — this is the only X
+ * API call that actually populates `article.text`. (The plain `GET /2/tweets/:id?tweet.fields=article`
  * returns the title with an EMPTY body, which is why the previous version
  * produced title-only article pages.) Recent-search only covers ~7 days, so
  * older articles return nothing here and the caller falls back to the
@@ -279,6 +279,7 @@ async function fetchArticleViaApi(id: string, url: string): Promise<XPostContent
   const endpoint =
     `https://api.twitter.com/2/tweets/search/recent?query=${encodeURIComponent(query)}` +
     `&max_results=10&tweet.fields=article,conversation_id`;
+  let tweets: NonNullable<XApiSearchResponse["data"]>;
   try {
     const res = await fetch(endpoint, {
       headers: { Authorization: `Bearer ${bearer}` },
@@ -296,32 +297,37 @@ async function fetchArticleViaApi(id: string, url: string): Promise<XPostContent
       } else {
         logger.warn(
           "x-post",
-          `X API article fetch failed (HTTP ${res.status}) for ${id}; using syndication`,
+          `X API article fetch failed (HTTP ${res.status}) for ${id}; degrading to the syndication teaser — full body not ingested`,
         );
       }
       return null;
     }
-    const tweets = ((await res.json()) as XApiSearchResponse).data ?? [];
-    // The article tweet is the conversation root (id matches the URL); fall back
-    // to the first result that carries an article.
-    const tweet = tweets.find((t) => t.id === id) ?? tweets.find((t) => t.article);
-    const article = tweet?.article;
-    if (!article || (!article.text?.trim() && !article.title?.trim())) return null;
-
-    const title = article.title?.trim() || "X Article";
-    const cover = await fetchArticleCover(id);
-    const lines: string[] = [`# ${title}`, ""];
-    if (handle) lines.push(`**@${handle}** · X Article`, "");
-    if (cover) lines.push(`![${title}](${cover})`, "");
-    const body = article.text?.trim();
-    if (body) lines.push(body, "");
-    lines.push(`**Source:** [${url}](${url})`);
-    return { title, content: lines.join("\n").trim() };
+    tweets = ((await res.json()) as XApiSearchResponse).data ?? [];
   } catch (err) {
-    // Pass the error object (not a string) so the stack survives in logs.
+    // Only the network/JSON read is guarded → a transient fetch failure falls
+    // back to syndication. Tweet SELECTION + formatting live below, outside the
+    // try, so a response-shape or logic defect throws to the caller instead of
+    // silently degrading EVERY article to a teaser (the 401/403 case is loud for
+    // the same reason).
     logger.warn("x-post", `X API article fetch error for ${id}; using syndication`, err);
     return null;
   }
+
+  // The article tweet is the conversation root (id matches the URL); fall back
+  // to the first result that carries an article.
+  const tweet = tweets.find((t) => t.id === id) ?? tweets.find((t) => t.article);
+  const article = tweet?.article;
+  if (!article || (!article.text?.trim() && !article.title?.trim())) return null;
+
+  const title = article.title?.trim() || "X Article";
+  const cover = await fetchArticleCover(id);
+  const lines: string[] = [`# ${title}`, ""];
+  if (handle) lines.push(`**@${handle}** · X Article`, "");
+  if (cover) lines.push(`![${title}](${cover})`, "");
+  const body = article.text?.trim();
+  if (body) lines.push(body, "");
+  lines.push(`**Source:** [${url}](${url})`);
+  return { title, content: lines.join("\n").trim() };
 }
 
 /**
@@ -335,7 +341,11 @@ function formatSyndicationArticle(
   url: string,
 ): XPostContent | null {
   const art = tweet.article;
-  if (!art || (!art.preview_text?.trim() && !art.title?.trim())) return null;
+  const preview = art?.preview_text?.trim();
+  // Require an actual teaser body: a title/cover with no preview_text would be a
+  // body-free stub dressed as a full article — return null so the empty-payload
+  // gate in the caller rejects it instead.
+  if (!art || !preview) return null;
 
   const title = art.title?.trim() || "X Article";
   const handle = handleFromUrl(url);
@@ -343,8 +353,10 @@ function formatSyndicationArticle(
   const lines: string[] = [`# ${title}`, ""];
   if (handle) lines.push(`**@${handle}** · X Article`, "");
   if (cover) lines.push(`![${title}](${cover})`, "");
-  const preview = art.preview_text?.trim();
-  if (preview) lines.push(preview, "");
+  lines.push(preview, "");
+  // Be honest this is the truncated teaser, not the full body, so the page (and
+  // anyone reviewing it) can tell it's partial and re-ingest once available.
+  lines.push("_Article preview only — see the source for the full article._", "");
   lines.push(`**Source:** [${url}](${url})`);
   return { title, content: lines.join("\n").trim() };
 }
@@ -358,9 +370,11 @@ function formatSyndicationArticle(
  *
  * 1. Extract the tweet ID (throws on an unrecognized URL).
  * 2. If it's a long-form Article and `X_BEARER_TOKEN` is set, read the full
- *    body via the X API v2; otherwise read the post via the syndication CDN.
- * 3. Return the content (article body, or tweet text + media + quoted tweet)
- *    as markdown.
+ *    body via the X API v2; an article the API can't serve (no token / older
+ *    than the ~7-day search window) falls back to the syndication preview_text +
+ *    cover teaser; a plain tweet reads from the syndication CDN.
+ * 3. Return the content (article body/teaser, or tweet text + media + quoted
+ *    tweet) as markdown.
  *
  * Throws a {@link ClientInputError} for a missing/private/deleted post so the
  * caller surfaces a useful message rather than ingesting an error page.
@@ -376,9 +390,13 @@ export async function fetchXPostContent(url: string): Promise<XPostContent> {
   const tweet = await fetchSyndication(id);
   // An article the API couldn't serve (no token / older than the search window):
   // use the syndication preview_text + cover so it ingests with its gist rather
-  // than just the teaser tweet's bare t.co link.
-  const previewArticle = formatSyndicationArticle(tweet, url);
-  if (previewArticle) return previewArticle;
+  // than just the teaser tweet's bare t.co link. Gated on the error/tombstone
+  // signal so a deleted/private post with a STALE cached `article` object still
+  // rejects below instead of ingesting as a stub.
+  if (!tweet.error && !tweet.tombstone) {
+    const previewArticle = formatSyndicationArticle(tweet, url);
+    if (previewArticle) return previewArticle;
+  }
   // Reject only a genuinely empty payload — no renderable text/media on the
   // tweet itself OR the tweet it quotes (mirrors the media set the formatter
   // actually emits, covering the `photos` shape and URL-less entries) — so a
