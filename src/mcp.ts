@@ -652,7 +652,7 @@ export async function handleSaveQueryAnswer(args: {
   answer: string;
   slug?: string | undefined;
   sources?: string[] | undefined;
-  format?: "markdown" | "html" | undefined;
+  format?: "markdown" | "html" | "slides" | undefined;
   owner?: string | undefined;
 }): Promise<{ slug: string; success: boolean }> {
   if (!args.question || args.question.trim().length === 0) {
@@ -1884,9 +1884,9 @@ export function createMcpServer(): McpServer {
         .optional()
         .describe("Slugs of wiki pages cited in the answer"),
       format: z
-        .enum(["markdown", "html"])
+        .enum(["markdown", "html", "slides"])
         .optional()
-        .describe("Content type: markdown (default) or html (interactive artifact)"),
+        .describe("Content type: markdown (default), html (interactive artifact), or slides (Marp deck)"),
       owner: z
         .string()
         .optional()

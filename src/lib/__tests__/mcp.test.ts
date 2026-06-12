@@ -1932,6 +1932,29 @@ describe("save_query_answer", () => {
     expect(page.frontmatter.owner).toBe("alice");
   });
 
+  it("saves slides artifact with format and owner", async () => {
+    await writeIndex([]);
+
+    const slidesContent = "---\nmarp: true\n---\n# Slide 1\n\nHello world\n\n---\n\n# Slide 2\n\nGoodbye";
+    const result = await handleSaveQueryAnswer({
+      question: "Intro deck",
+      answer: slidesContent,
+      format: "slides",
+      owner: "alice",
+    });
+
+    expect(result.slug).toBe("intro-deck");
+    expect(result.success).toBe(true);
+
+    // Verify the saved page has type: slides and owner: alice
+    const page = await handleReadPage({ slug: "intro-deck" });
+    expect(page.frontmatter.type).toBe("slides");
+    expect(page.frontmatter.owner).toBe("alice");
+    // Content preserved verbatim (slides are not modified)
+    expect(page.content).toContain("marp: true");
+    expect(page.content).toContain("# Slide 1");
+  });
+
   it("defaults to markdown format when format is omitted", async () => {
     await writeIndex([]);
 
