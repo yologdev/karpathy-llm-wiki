@@ -183,6 +183,7 @@ export async function ArticleView({
 
   // ---- Folio header / provenance values (from real frontmatter) ----------
   const fm = page.frontmatter;
+  const pageType = typeof fm.type === "string" ? fm.type : undefined;
   const tags = Array.isArray(fm.tags) ? (fm.tags as string[]) : [];
   const summary = typeof fm.summary === "string" ? fm.summary : "";
   const updatedRaw =
@@ -395,14 +396,14 @@ export async function ArticleView({
       >
         <div className="min-w-0">
           <article>
-            {(typeof fm.type === "string" ? fm.type : undefined) === "html" ? (
+            {pageType === "html" ? (
               // A saved HTML output is rendered verbatim in a sandboxed iframe
               // (isolated; no app cookie/DOM/network access) — never markdown.
               <HtmlPreview html={page.body} />
-            ) : (typeof fm.type === "string" ? fm.type : undefined) ===
-              "slides" ? (
-              // A saved slide deck renders as a deck (Marp markdown → slides),
-              // not flattened markdown.
+            ) : pageType === "slides" ? (
+              // A saved slide deck renders as a paginated carousel (SlidePreview
+              // splits the body on `---` and renders each slide as markdown), not
+              // one flattened markdown flow. (No Marp engine / Marp directives.)
               <SlidePreview content={page.body} />
             ) : (
               <MarkdownRenderer

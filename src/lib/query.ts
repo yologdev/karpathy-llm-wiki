@@ -341,10 +341,9 @@ export async function saveAnswerToWiki(
   }
 
   const isHtml = contentType === "html";
-  const isSlides = contentType === "slides";
   // HTML and slides are personal rendered artifacts (owned, typed, kept out of
   // the commons/search corpus); plain markdown is a system-owned commons page.
-  const isArtifact = isHtml || isSlides;
+  const isArtifact = contentType !== "markdown";
 
   // Bake any `yoyo-illustration` directives into the content now (generate the
   // image server-side, embed the data URI) so the SAVED artifact is permanent
@@ -360,13 +359,12 @@ export async function saveAnswerToWiki(
   //  - slides: store the Marp markdown verbatim, no H1 (it renders as a deck).
   //  - markdown: prepend an H1 if missing.
   const html = isHtml ? stripHtmlFence(content) : content;
+  const needsH1 = !isArtifact && !content.trimStart().startsWith("# ");
   const pageContent = isHtml
     ? html
-    : isSlides
-      ? content
-      : content.trimStart().startsWith("# ")
-        ? content
-        : `# ${title}\n\n${content}`;
+    : needsH1
+      ? `# ${title}\n\n${content}`
+      : content;
 
   // Summary comes from plain text: tag-stripped for HTML; for markdown/slides,
   // heading-stripped — and with baked illustration images dropped so a giant

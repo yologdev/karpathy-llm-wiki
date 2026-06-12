@@ -144,8 +144,9 @@ export default async function SharePage({ params }: ShareProps) {
         // via "Open in wiki" rather than forcing a scroll past the full frame.
         <HtmlPreview html={page.body} bare />
       ) : pageType === "slides" ? (
-        // A shared deck renders as a deck (Marp markdown → slides), not flattened
-        // markdown or raw text in the HTML iframe.
+        // A shared deck renders as a paginated carousel (SlidePreview splits the
+        // body on `---`, each slide rendered as markdown) — not flattened markdown
+        // or raw text in the HTML iframe.
         <main
           style={{ maxWidth: 960, margin: "0 auto", padding: "40px 24px 80px" }}
         >
