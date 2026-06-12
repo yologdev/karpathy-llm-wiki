@@ -163,7 +163,9 @@ export async function generateYoyoIllustration(
  * viewer (including anonymous shares) with no per-view fetch or auth. Called at
  * save time. Generation failures leave the directive in place (`onMissing:
  * "keep"`) so a transient hiccup never permanently strips it. Returns the
- * content unchanged when it carries no directives or there's no API key.
+ * content unchanged when it carries no directives; a missing API key (or any
+ * generation failure) likewise leaves every directive in place via that same
+ * `onMissing: "keep"`.
  */
 export async function bakeYoyoIllustrations(
   content: string,

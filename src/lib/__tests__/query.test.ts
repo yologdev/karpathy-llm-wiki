@@ -916,6 +916,37 @@ describe("saveAnswerToWiki", () => {
     expect(headingCount).toBe(1);
   });
 
+  it("bakes illustration directives at save time, keeping unfillable ones and leaving mermaid alone", async () => {
+    await ensureDirectories();
+    // No XAI_API_KEY in the test env → generation returns null, so the bake runs
+    // in the save path but each directive is *kept* (onMissing: "keep"), not
+    // stripped. This proves: (1) baking is wired before the write, (2) a
+    // transient/no-key failure never drops the directive from the stored page,
+    // and (3) mermaid (free, client-rendered) is untouched by baking.
+    await saveAnswerToWiki(
+      "Baked Deck",
+      [
+        "# Baked Deck",
+        "",
+        "```yoyo-illustration",
+        "yoyo holding a lantern",
+        "```",
+        "",
+        "```mermaid",
+        "flowchart LR; A-->B",
+        "```",
+      ].join("\n"),
+    );
+
+    const page = await readWikiPage("baked-deck");
+    expect(page).not.toBeNull();
+    // Directive preserved for on-demand fallback (not silently dropped)...
+    expect(page!.content).toContain("```yoyo-illustration");
+    expect(page!.content).toContain("yoyo holding a lantern");
+    // ...and the mermaid block is left exactly as written.
+    expect(page!.content).toContain("flowchart LR; A-->B");
+  });
+
   it("updates existing index entry on re-save", async () => {
     await ensureDirectories();
 

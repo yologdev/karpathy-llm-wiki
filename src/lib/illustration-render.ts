@@ -65,7 +65,7 @@ function escapeHtml(s: string): string {
  *   save time**, so a transient generation failure doesn't permanently strip the
  *   directive (an on-demand viewer can still fill it later).
  */
-export interface RenderOptions {
+export interface IllustrationRenderOptions {
   onMissing?: "drop" | "keep";
 }
 
@@ -82,7 +82,7 @@ export function htmlHasYoyoIllustration(html: string): boolean {
 export async function renderYoyoIllustrationsInHtml(
   html: string,
   fetcher: IllustrateFetcher = defaultFetcher,
-  { onMissing = "drop" }: RenderOptions = {},
+  { onMissing = "drop" }: IllustrationRenderOptions = {},
 ): Promise<string> {
   const matches = [...html.matchAll(FIGURE_RE)].slice(0, MAX_ILLUSTRATIONS);
   if (matches.length === 0) return html;
@@ -125,11 +125,17 @@ export function markdownHasYoyoIllustration(md: string): boolean {
  * markdown string (slides) with a baked `![scene](data:...)` image. A fence
  * whose scene can't be generated is dropped (default) or left in place
  * (`onMissing: "keep"`). Used to bake slide illustrations at save time.
+ *
+ * Labels bake in English — a slide fence carries no lang hint (unlike the HTML
+ * `data-lang`). A *kept* fence still renders in our app (the slide/page
+ * MarkdownRenderer routes it to `<YoyoIllustration>`), but shows as a literal
+ * code block in a plain-markdown viewer; that's the accepted price of not
+ * permanently dropping a directive on a transient failure.
  */
 export async function renderYoyoIllustrationsInMarkdown(
   md: string,
   fetcher: IllustrateFetcher = defaultFetcher,
-  { onMissing = "drop" }: RenderOptions = {},
+  { onMissing = "drop" }: IllustrationRenderOptions = {},
 ): Promise<string> {
   const matches = [...md.matchAll(MD_FENCE_RE)].slice(0, MAX_ILLUSTRATIONS);
   if (matches.length === 0) return md;
