@@ -810,6 +810,8 @@ Then, on the following lines, the wiki article. Include:
 
 Images: the source may contain placeholder tokens like \`[[IMG:1]]\`. KEEP the ones that are genuine content — diagrams, figures, charts, screenshots that illustrate the topic — by writing the SAME token on its own line at the most relevant point in the article (next to the text it illustrates). Omit any token whose image is clearly decorative/branding/UI. Never invent tokens or change their numbers; output each kept token verbatim.
 
+Diagrams: when the concept has a clear STRUCTURE (a flow, pipeline, architecture, hierarchy, sequence, or relationship), you MAY include ONE concise Mermaid diagram in a fenced \`\`\`mermaid code block (e.g. flowchart LR, graph TD, sequenceDiagram); it renders as a diagram. Use it only where it genuinely clarifies, base it strictly on the source, and keep node labels short. Most pages need none.
+
 Write a focused, distilled page, not a transcript of the source. Output the CONCEPT, ALIASES, and TAGS lines, then pure markdown, and nothing else. Do not wrap in code fences.`;
 
 /**
@@ -850,6 +852,8 @@ Then the article: one \`# Title\` (the canonical concept), then EXACTLY ONE of e
 
 Images: the notes may contain placeholder tokens like \`[[IMG:1]]\`. Keep each genuine-content token on its own line at the most relevant point; never invent tokens or change their numbers; output each kept token verbatim.
 
+Diagrams: when the concept has a clear STRUCTURE (a flow, pipeline, architecture, hierarchy, sequence, or relationship), you MAY include ONE concise Mermaid diagram in a fenced \`\`\`mermaid code block (e.g. flowchart LR, graph TD, sequenceDiagram). Use it only where it genuinely clarifies, base it strictly on the notes, and keep node labels short. Most pages need none.
+
 Output the CONCEPT, ALIASES, and TAGS lines, then pure markdown, and nothing else. Do not wrap in code fences.`;
 
 /**
@@ -862,7 +866,7 @@ const RECONCILE_SYSTEM_PROMPT = `You are a wiki editor maintaining a single cano
 
 Rules:
 - Preserve all substantive information from BOTH versions; integrate the new material rather than discarding what's already on the page.
-- Remove redundancy; keep the existing section structure (## Summary, ## Key Points, ## Concepts, ## Details) and any image markdown, without duplicating images.
+- Remove redundancy; keep the existing section structure (## Summary, ## Key Points, ## Concepts, ## Details) and any image markdown or Mermaid (\`\`\`mermaid) diagram blocks, without duplicating images or diagrams.
 - Do NOT invent anything not supported by either source.
 - If the new article CONTRADICTS the current page on any material fact, do not silently pick one side: keep both positions (attributing each) and begin your ENTIRE output with a single line, exactly:
 DISPUTED: yes
