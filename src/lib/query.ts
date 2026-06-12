@@ -78,6 +78,7 @@ The first slide should be a title slide with \`# {question}\`.
 Each subsequent slide should cover one key point with a heading and 2-4 bullet points.
 Keep slides concise — aim for 5-8 slides total.
 When a point is structural — a flow, process, architecture, hierarchy, sequence, or relationship — prefer a **Mermaid diagram** over a wall of bullets. Put it in a fenced \`\`\`mermaid code block (e.g. \`graph TD\`, \`flowchart LR\`, \`sequenceDiagram\`); it renders as a diagram. Keep node labels short.
+Sparingly — for at most 1-2 slides where a metaphor, a key judgment, a before/after, or a change-of-state would land better as a picture than text — you MAY request a hand-drawn **yoyo illustration** with a fenced \`\`\`yoyo-illustration block whose body is a short SCENE: what the yoyo octopus is doing with its tentacles to express the idea, plus 2-4 short labels. Use it for feeling/metaphor (not data, not structure). Most slides need none.
 Include a final "Sources" slide citing wiki pages as [Page Title](slug.md).
 Use standard Marp markdown (no custom directives needed).
 Start the response with the Marp front matter:
@@ -121,6 +122,11 @@ DIAGRAMS — use Mermaid for structure (Chart.js is for data)
 - Use this exact block (the \`mermaid\` class is required) — write the graph definition inside, no \`<script>\`, no code fence:
   \`<pre class="mermaid">\nflowchart LR\n  A[Source] --> B[Ingest] --> C[Cited page]\n</pre>\`
 - Supports \`flowchart\`/\`graph\`, \`sequenceDiagram\`, \`classDiagram\`, \`stateDiagram\`, \`erDiagram\`, and more. Keep node labels short; it's themed automatically — do not set colors.
+
+ILLUSTRATIONS — a hand-drawn yoyo picture, sparingly (feeling, not data/structure)
+- For at most 1-3 places where a metaphor, a key judgment, a before/after, or a change-of-state would land better as a PICTURE than prose, you MAY request a hand-drawn brand illustration with an EMPTY figure that carries the scene:
+  \`<figure class="yoyo-illustration" data-scene="A short scene: what the yoyo octopus is doing with its tentacles to express the idea, plus 2-4 short labels"></figure>\`
+- It renders to a generated image automatically (leave the figure empty — no \`<img>\`). Use it for FEELING/METAPHOR; use Chart.js for data and Mermaid for structure. Most answers need none; never more than 3.
 
 INTERACTIVITY (optional, encouraged where it adds insight)
 - You MAY add small inline \`<script>\` for sliders/toggles that recompute and update a chart (mutate \`chart.data\` then call \`chart.update()\`). It runs in a locked-down sandbox: no network, no access outside the document.

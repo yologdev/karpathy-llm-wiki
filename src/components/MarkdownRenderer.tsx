@@ -5,19 +5,21 @@ import remarkGfm from "remark-gfm";
 import { slugify } from "@/lib/slugify";
 import { resolveSlugPath, type SlugTenantMap } from "@/lib/links";
 import { Mermaid } from "@/components/Mermaid";
+import { YoyoIllustration } from "@/components/YoyoIllustration";
 
 /**
- * A ` ```mermaid ` fence arrives as a `<code class="language-mermaid">` nested in
- * a `<pre>`. Pull out the graph definition so we can render it as a diagram
- * instead of a code block; return null for any other code block.
+ * A fenced ` ```<lang> ` block arrives as a `<code class="language-<lang>">`
+ * nested in a `<pre>`. Pull out its text when the language matches, so we can
+ * render it specially (a Mermaid diagram, a yoyo illustration) instead of a
+ * code block; return null otherwise.
  */
-function mermaidCodeFromPre(children: ReactNode): string | null {
+function fencedCode(children: ReactNode, lang: string): string | null {
   const child = Array.isArray(children) ? children[0] : children;
   if (child && typeof child === "object" && "props" in child) {
     const props = (child as { props?: { className?: unknown; children?: unknown } })
       .props;
     const cls = typeof props?.className === "string" ? props.className : "";
-    if (/\blanguage-mermaid\b/.test(cls)) {
+    if (new RegExp(`\\blanguage-${lang}\\b`).test(cls)) {
       return String(props?.children ?? "").replace(/\n$/, "");
     }
   }
@@ -155,8 +157,10 @@ export function MarkdownRenderer({
             </h3>
           ),
           pre: ({ children, ...props }) => {
-            const chart = mermaidCodeFromPre(children);
+            const chart = fencedCode(children, "mermaid");
             if (chart !== null) return <Mermaid chart={chart} />;
+            const scene = fencedCode(children, "yoyo-illustration");
+            if (scene !== null) return <YoyoIllustration scene={scene} />;
             return <pre {...props}>{children}</pre>;
           },
           img: ({ src, alt, ...props }) => {

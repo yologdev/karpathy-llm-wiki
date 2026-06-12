@@ -10,6 +10,10 @@ import {
   HTML_HEIGHT_MESSAGE_KEY,
 } from "@/lib/html";
 import { htmlHasMermaid, renderMermaidInHtml } from "@/lib/mermaid";
+import {
+  htmlHasYoyoIllustration,
+  renderYoyoIllustrationsInHtml,
+} from "@/lib/illustration-render";
 import { logger } from "@/lib/logger";
 
 /**
@@ -67,24 +71,33 @@ export function HtmlPreview({
     };
   }, [needsChart, chartLib]);
 
-  // Pre-render `<pre class="mermaid">` blocks to inline SVG in the parent app
-  // (Mermaid is browser-only + ~3MB, lazy-loaded). The iframe then receives
-  // static SVG — no library injection and no CSP exception. Starts from the raw
-  // html (diagram source briefly visible) and swaps in the rendered version.
+  // Transform the model HTML in the parent app before it reaches the iframe:
+  // (1) Mermaid `<pre class="mermaid">` → inline SVG, (2) `yoyo-illustration`
+  // figures → generated data-URI images. Both keep the iframe self-contained
+  // (static SVG / `data:` image — no library injection, no CSP exception, no
+  // network). Starts from the raw html and swaps in the transformed version.
   const [renderedHtml, setRenderedHtml] = useState(html);
   useEffect(() => {
     let cancelled = false;
     setRenderedHtml(html);
-    if (htmlHasMermaid(html)) {
-      renderMermaidInHtml(html)
-        .then((out) => {
-          if (!cancelled) setRenderedHtml(out);
-        })
-        .catch((err) => {
-          if (!cancelled)
-            logger.warn("html", "mermaid render failed; showing source", err);
-        });
-    }
+    (async () => {
+      let out = html;
+      if (htmlHasMermaid(out)) {
+        try {
+          out = await renderMermaidInHtml(out);
+        } catch (err) {
+          logger.warn("html", "mermaid render failed; showing source", err);
+        }
+      }
+      if (htmlHasYoyoIllustration(out)) {
+        try {
+          out = await renderYoyoIllustrationsInHtml(out);
+        } catch (err) {
+          logger.warn("html", "yoyo illustration render failed", err);
+        }
+      }
+      if (!cancelled && out !== html) setRenderedHtml(out);
+    })();
     return () => {
       cancelled = true;
     };
