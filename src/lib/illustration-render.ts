@@ -57,6 +57,18 @@ function escapeHtml(s: string): string {
     .replace(/"/g, "&quot;");
 }
 
+/**
+ * What to do with a directive whose scene can't be generated.
+ * - `"drop"` (default): remove the placeholder — right for client-side iframe
+ *   rendering, where a leftover `data-scene` figure would just be blank.
+ * - `"keep"`: leave the original directive untouched — right for **baking at
+ *   save time**, so a transient generation failure doesn't permanently strip the
+ *   directive (an on-demand viewer can still fill it later).
+ */
+export interface RenderOptions {
+  onMissing?: "drop" | "keep";
+}
+
 /** True when an HTML document contains a `yoyo-illustration` figure. Pure. */
 export function htmlHasYoyoIllustration(html: string): boolean {
   return /<figure\b[^>]*\bclass=["'][^"']*\byoyo-illustration\b/i.test(html);
@@ -65,11 +77,12 @@ export function htmlHasYoyoIllustration(html: string): boolean {
 /**
  * Replace up to {@link MAX_ILLUSTRATIONS} `yoyo-illustration` figures in an HTML
  * string with the generated image (parallel). A figure whose scene can't be
- * generated is dropped (no broken placeholder).
+ * generated is dropped (default) or left in place (`onMissing: "keep"`).
  */
 export async function renderYoyoIllustrationsInHtml(
   html: string,
   fetcher: IllustrateFetcher = defaultFetcher,
+  { onMissing = "drop" }: RenderOptions = {},
 ): Promise<string> {
   const matches = [...html.matchAll(FIGURE_RE)].slice(0, MAX_ILLUSTRATIONS);
   if (matches.length === 0) return html;
@@ -90,8 +103,55 @@ export async function renderYoyoIllustrationsInHtml(
       ? `<figure class="yoyo-illustration"><img src="${image}" alt="${escapeHtml(
           alt,
         )}" style="max-width:100%;height:auto" /></figure>`
-      : ""; // generation failed — drop the placeholder
+      : onMissing === "keep"
+        ? match // preserve the directive — a viewer can still fill it on demand
+        : ""; // generation failed — drop the placeholder
     // Function replacement: a data-URI / alt text may contain `$&`/`$1`.
+    out = out.replace(match, () => replacement);
+  }
+  return out;
+}
+
+/** A ` ```yoyo-illustration ` fenced block; the body is the scene. */
+const MD_FENCE_RE = /```yoyo-illustration\b[^\n]*\n([\s\S]*?)\n```/g;
+
+/** True when markdown (e.g. slides) contains a `yoyo-illustration` fence. Pure. */
+export function markdownHasYoyoIllustration(md: string): boolean {
+  return /```yoyo-illustration\b/.test(md);
+}
+
+/**
+ * Replace up to {@link MAX_ILLUSTRATIONS} ` ```yoyo-illustration ` fences in a
+ * markdown string (slides) with a baked `![scene](data:...)` image. A fence
+ * whose scene can't be generated is dropped (default) or left in place
+ * (`onMissing: "keep"`). Used to bake slide illustrations at save time.
+ */
+export async function renderYoyoIllustrationsInMarkdown(
+  md: string,
+  fetcher: IllustrateFetcher = defaultFetcher,
+  { onMissing = "drop" }: RenderOptions = {},
+): Promise<string> {
+  const matches = [...md.matchAll(MD_FENCE_RE)].slice(0, MAX_ILLUSTRATIONS);
+  if (matches.length === 0) return md;
+
+  const filled = await Promise.all(
+    matches.map(async (m) => {
+      const scene = m[1].trim();
+      const image = scene ? await fetcher(scene, "English") : null;
+      return { match: m[0], image, alt: scene };
+    }),
+  );
+
+  let out = md;
+  for (const { match, image, alt } of filled) {
+    // Markdown alt can't span lines or hold `]` — collapse to a safe one-liner.
+    const safeAlt = alt.replace(/\s+/g, " ").replace(/[[\]]/g, "").trim();
+    const replacement = image
+      ? `![${safeAlt}](${image})`
+      : onMissing === "keep"
+        ? match
+        : "";
+    // Function replacement: a data-URI may contain `$&`/`$1`.
     out = out.replace(match, () => replacement);
   }
   return out;

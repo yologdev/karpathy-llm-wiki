@@ -9,6 +9,7 @@ import {
 } from "./wiki";
 import { slugify } from "./slugify";
 import { htmlToPlainText, stripHtmlFence } from "./html";
+import { bakeYoyoIllustrations } from "./illustration";
 import { extractSummary } from "./ingest";
 import { loadPageConventions } from "./schema";
 import { serializeFrontmatter } from "./frontmatter";
@@ -326,7 +327,7 @@ export async function query(
  */
 export async function saveAnswerToWiki(
   title: string,
-  content: string,
+  rawContent: string,
   explicitSlug?: string,
   sources?: string[],
   contentType: "markdown" | "html" = "markdown",
@@ -340,6 +341,14 @@ export async function saveAnswerToWiki(
   }
 
   const isHtml = contentType === "html";
+
+  // Bake any `yoyo-illustration` directives into the content now (generate the
+  // image server-side, embed the data URI) so the SAVED artifact is permanent
+  // and self-contained — every viewer, including anonymous shares, sees it with
+  // no per-view fetch or auth. Mermaid stays client-rendered (it's free). A
+  // directive whose image can't be generated is left in place for on-demand
+  // fallback. No-op when there are no directives.
+  const content = await bakeYoyoIllustrations(rawContent, isHtml);
 
   // Strip any markdown code fence the model wrapped the document in, so the saved
   // page is clean HTML (stored as-is apart from that, with no H1 prepend — the

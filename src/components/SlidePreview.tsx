@@ -53,7 +53,7 @@ export function SlidePreview({ content }: SlidePreviewProps) {
         {slides.map((slide, i) => (
           <div
             key={i}
-            className="relative rounded-lg border border-foreground/10 bg-foreground/[0.02] p-6"
+            className="relative flex min-h-[20rem] flex-col justify-center rounded-lg border border-foreground/10 bg-foreground/[0.02] p-8"
           >
             <span className="absolute top-3 right-3 text-xs font-medium text-foreground/40 bg-foreground/5 rounded-full px-2 py-0.5">
               {i + 1}
@@ -70,7 +70,7 @@ export function SlidePreview({ content }: SlidePreviewProps) {
   return (
     <div className="space-y-4">
       {/* Slide card */}
-      <div className="relative rounded-lg border border-foreground/10 bg-foreground/[0.02] p-6 min-h-[12rem]">
+      <div className="relative flex min-h-[24rem] flex-col justify-center rounded-lg border border-foreground/10 bg-foreground/[0.02] p-8">
         <span className="absolute top-3 right-3 text-xs font-medium text-foreground/40 bg-foreground/5 rounded-full px-2 py-0.5">
           {safeIndex + 1}
         </span>

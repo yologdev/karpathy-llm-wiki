@@ -2,6 +2,10 @@ import { getStorage } from "./storage";
 import { isEnoent } from "./errors";
 import { logger } from "./logger";
 import { YOYO_REFERENCE_PNG_BASE64 } from "./vendor/yoyo-reference.generated";
+import {
+  renderYoyoIllustrationsInHtml,
+  renderYoyoIllustrationsInMarkdown,
+} from "./illustration-render";
 
 /**
  * yoyo brand illustrations via the xAI Grok image API. The static brand DNA
@@ -150,6 +154,26 @@ export async function generateYoyoIllustration(
     .writeFile(relPathFor(key), dataUri)
     .catch((err) => logger.warn("illustration", "illustration cache write failed", err));
   return dataUri;
+}
+
+/**
+ * Bake any `yoyo-illustration` directives in a saved answer into the content
+ * itself — generating each image server-side (cache-first) and embedding the
+ * `data:` URI — so the stored artifact is self-contained: it renders for every
+ * viewer (including anonymous shares) with no per-view fetch or auth. Called at
+ * save time. Generation failures leave the directive in place (`onMissing:
+ * "keep"`) so a transient hiccup never permanently strips it. Returns the
+ * content unchanged when it carries no directives or there's no API key.
+ */
+export async function bakeYoyoIllustrations(
+  content: string,
+  isHtml: boolean,
+): Promise<string> {
+  const fetcher = (scene: string, lang: string) =>
+    generateYoyoIllustration(scene, lang);
+  return isHtml
+    ? renderYoyoIllustrationsInHtml(content, fetcher, { onMissing: "keep" })
+    : renderYoyoIllustrationsInMarkdown(content, fetcher, { onMissing: "keep" });
 }
 
 export const _internal = { buildIllustrationPrompt, cacheKeyFor };
