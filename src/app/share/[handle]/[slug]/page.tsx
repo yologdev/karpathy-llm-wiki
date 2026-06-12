@@ -2,7 +2,7 @@ import Link from "next/link";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { decodeSlug } from "@/lib/slugify";
-import { readWikiPageWithFrontmatter, isArtifactType, tenantForOwner } from "@/lib/wiki";
+import { readWikiPageWithFrontmatter, tenantForOwner } from "@/lib/wiki";
 import { getPrincipal } from "@/lib/auth";
 import { canReadFrontmatter } from "@/lib/authz";
 import { wikiUrlFor, str } from "@/lib/share-url";
@@ -12,6 +12,7 @@ import type { SourceEntry } from "@/lib/types";
 import { Colophon } from "@/components/folio/primitives";
 import { HtmlPreview } from "@/components/HtmlPreview";
 import { MarkdownRenderer } from "@/components/MarkdownRenderer";
+import { SlidePreview } from "@/components/SlidePreview";
 
 interface ShareProps {
   params: Promise<{ handle: string; slug: string }>;
@@ -94,7 +95,7 @@ export default async function SharePage({ params }: ShareProps) {
   const expectedTenant = tenantForOwner(str(page.frontmatter.owner));
   if (handle.toLowerCase() !== expectedTenant) notFound();
 
-  const isHtml = isArtifactType(str(page.frontmatter.type));
+  const pageType = str(page.frontmatter.type);
   const wikiUrl = wikiUrlFor(slug, page.frontmatter);
   const sources = dedupeSourcesForDisplay(
     parseSources(page.frontmatter.sources as string | string[] | undefined),
@@ -136,11 +137,23 @@ export default async function SharePage({ params }: ShareProps) {
         </Link>
       </header>
 
-      {isHtml ? (
+      {pageType === "html" ? (
         // A self-contained artifact fills the viewport exactly (header + frame =
         // 100dvh) so there's no page scrollbar; its sources stay one click away
         // via "Open in wiki" rather than forcing a scroll past the full frame.
         <HtmlPreview html={page.body} bare />
+      ) : pageType === "slides" ? (
+        // A shared deck renders as a deck (Marp markdown → slides), not flattened
+        // markdown or raw text in the HTML iframe.
+        <main
+          style={{ maxWidth: 960, margin: "0 auto", padding: "40px 24px 80px" }}
+        >
+          <h1 style={{ fontSize: 32, fontWeight: 700, marginBottom: 18 }}>
+            {page.title || slug}
+          </h1>
+          <SlidePreview content={page.body} />
+          <SourcesFooter sources={sources} />
+        </main>
       ) : (
         <main
           style={{ maxWidth: 760, margin: "0 auto", padding: "40px 24px 80px" }}
