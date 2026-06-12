@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getPrincipal, getServicePrincipal } from "@/lib/auth";
+import { getPrincipal } from "@/lib/auth";
 import { generateYoyoIllustration } from "@/lib/illustration";
 import { getErrorMessage } from "@/lib/errors";
 import { logger } from "@/lib/logger";
@@ -18,7 +18,9 @@ const MAX_SCENE = 800;
  */
 export async function POST(request: Request) {
   try {
-    const principal = (await getPrincipal()) ?? getServicePrincipal(request);
+    // Middleware write-gates /api POSTs to a signed-in user, so only a Clerk
+    // session reaches here (no service-token caller). Re-check defensively.
+    const principal = await getPrincipal();
     if (!principal) {
       return NextResponse.json({ error: "Sign in required." }, { status: 401 });
     }

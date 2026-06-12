@@ -29,15 +29,20 @@ function buildIllustrationPrompt(scene: string, lang: string): string {
   ].join("\n\n");
 }
 
-/** Small stable hash for the cache key (scene + lang + model + prompt version). */
+/** Stable 64-bit cache key (forward + reverse FNV-1a) — wide enough that a wrong
+ *  cached illustration from a collision is implausible at any real volume. */
 function cacheKeyFor(scene: string, lang: string): string {
   const s = `v1|${XAI_IMAGE_MODEL}|${lang}|${scene}`;
-  let h = 0x811c9dc5;
+  let a = 0x811c9dc5;
+  let b = 0x811c9dc5;
   for (let i = 0; i < s.length; i++) {
-    h ^= s.charCodeAt(i);
-    h = Math.imul(h, 0x01000193);
+    a = Math.imul(a ^ s.charCodeAt(i), 0x01000193);
+    b = Math.imul(b ^ s.charCodeAt(s.length - 1 - i), 0x01000193);
   }
-  return (h >>> 0).toString(16).padStart(8, "0");
+  return (
+    (a >>> 0).toString(16).padStart(8, "0") +
+    (b >>> 0).toString(16).padStart(8, "0")
+  );
 }
 
 function relPathFor(key: string): string {
