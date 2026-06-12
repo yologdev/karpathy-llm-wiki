@@ -181,6 +181,7 @@ export async function handleListPages(args: {
   return limited.map((e) => ({
     slug: e.slug,
     title: e.title,
+    ...(e.summary ? { summary: e.summary } : {}),
     ...(e.tags && e.tags.length > 0 ? { tags: e.tags } : {}),
     ...(e.confidence !== undefined ? { confidence: e.confidence } : {}),
     ...(e.updated ? { updated: e.updated } : {}),

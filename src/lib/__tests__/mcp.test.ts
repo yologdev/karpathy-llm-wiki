@@ -324,7 +324,9 @@ describe("list_pages", () => {
     expect(result.length).toBe(2);
     // Default sort is by title
     expect(result[0].slug).toBe("alpha");
+    expect(result[0].summary).toBe("Alpha page");
     expect(result[1].slug).toBe("beta");
+    expect(result[1].summary).toBe("Beta page");
   });
 
   it("respects limit parameter", async () => {
