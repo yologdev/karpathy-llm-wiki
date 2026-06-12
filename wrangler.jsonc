@@ -18,6 +18,12 @@
 	"compatibility_flags": [
 		"nodejs_compat"
 	],
+	// Persist Worker logs (errors/warns from e.g. illustration generation) so they
+	// can be queried after the fact via `wrangler tail` / the dashboard, not just
+	// live-streamed.
+	"observability": {
+		"enabled": true
+	},
 	"assets": {
 		"directory": ".open-next/assets",
 		"binding": "ASSETS"

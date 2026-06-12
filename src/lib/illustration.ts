@@ -62,33 +62,28 @@ async function readCache(key: string): Promise<string | null> {
   }
 }
 
-function base64ToBytes(b64: string): Uint8Array {
-  const bin = atob(b64);
-  const bytes = new Uint8Array(bin.length);
-  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-  return bytes;
-}
-
-/** Call Grok's image-edits endpoint with the brand reference → a jpeg data URI. */
+/** Call Grok's image-edits endpoint with the brand reference → a jpeg data URI.
+ *
+ * xAI's `/v1/images/edits` is **JSON, not multipart** — the OpenAI-SDK
+ * `images.edit()` shape (a `FormData` file upload) is rejected with a 4xx. The
+ * reference image is passed inline as a base64 data URI in an `image_url`
+ * object. See https://github.com/vercel/ai/issues/12368. */
 async function callGrok(prompt: string, key: string): Promise<string | null> {
-  const form = new FormData();
-  form.append(
-    "image",
-    // Cast: the lib's BlobPart doesn't accept the generic Uint8Array<ArrayBufferLike>.
-    new Blob([base64ToBytes(YOYO_REFERENCE_PNG_BASE64) as BlobPart], {
-      type: "image/png",
-    }),
-    "yoyo-reference.png",
-  );
-  form.append("prompt", prompt);
-  form.append("model", XAI_IMAGE_MODEL);
-  form.append("n", "1");
-  form.append("response_format", "b64_json");
-
   const res = await fetch(XAI_EDITS_ENDPOINT, {
     method: "POST",
-    headers: { Authorization: `Bearer ${key}` },
-    body: form,
+    headers: {
+      Authorization: `Bearer ${key}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model: XAI_IMAGE_MODEL,
+      prompt,
+      image: {
+        type: "image_url",
+        url: `data:image/png;base64,${YOYO_REFERENCE_PNG_BASE64}`,
+      },
+      response_format: "b64_json",
+    }),
   });
   if (!res.ok) {
     const snip = (await res.text().catch(() => "")).slice(0, 200).replace(/\s+/g, " ");
@@ -178,4 +173,4 @@ export async function bakeYoyoIllustrations(
     : renderYoyoIllustrationsInMarkdown(content, fetcher, { onMissing: "keep" });
 }
 
-export const _internal = { buildIllustrationPrompt, cacheKeyFor };
+export const _internal = { buildIllustrationPrompt, cacheKeyFor, callGrok };
