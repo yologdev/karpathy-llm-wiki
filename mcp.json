@@ -31,6 +31,7 @@
     "lint_wiki",
     "fix_lint_issue",
     "list_discussions",
+    "read_discussion",
     "create_discussion",
     "resolve_discussion",
     "reconcile_page",

@@ -26,6 +26,7 @@ import {
   handleLintWiki,
   handleFixLintIssue,
   handleListDiscussions,
+  handleReadDiscussion,
   handleCreateDiscussion,
   handleResolveDiscussion,
   handleAddComment,
@@ -2237,6 +2238,76 @@ describe("list_discussions", () => {
     expect(result.threads[1].index).toBe(1);
     expect(result.threads[1].title).toBe("Second thread");
     expect(result.threads[1].author).toBe("bob");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// read_discussion tests
+// ---------------------------------------------------------------------------
+
+describe("read_discussion", () => {
+  it("returns full thread with comment bodies", async () => {
+    await writeTestPage(
+      "discuss-read",
+      "---\ntags: [test]\n---\n# Discuss Read\n\nContent.",
+    );
+
+    await handleCreateDiscussion({
+      pageSlug: "discuss-read",
+      title: "Thread to read",
+      body: "This is the opening comment body.",
+      author: "alice",
+    });
+
+    await handleAddComment({
+      pageSlug: "discuss-read",
+      threadIndex: 0,
+      content: "This is a reply.",
+      author: "bob",
+    });
+
+    const result = await handleReadDiscussion({
+      pageSlug: "discuss-read",
+      threadIndex: 0,
+    });
+
+    expect(result.pageSlug).toBe("discuss-read");
+    expect(result.threadIndex).toBe(0);
+    expect(result.title).toBe("Thread to read");
+    expect(result.status).toBe("open");
+    expect(result.created).toBeDefined();
+    expect(result.updated).toBeDefined();
+    expect(result.comments).toHaveLength(2);
+    expect(result.comments[0].author).toBe("alice");
+    expect(result.comments[0].body).toBe("This is the opening comment body.");
+    expect(result.comments[0].id).toBeDefined();
+    expect(result.comments[0].parentId).toBeNull();
+    expect(result.comments[1].author).toBe("bob");
+    expect(result.comments[1].body).toBe("This is a reply.");
+  });
+
+  it("throws for nonexistent page (no discussions file)", async () => {
+    await expect(
+      handleReadDiscussion({ pageSlug: "no-such-page", threadIndex: 0 }),
+    ).rejects.toThrow("thread not found");
+  });
+
+  it("throws for out-of-bounds thread index", async () => {
+    await writeTestPage(
+      "oob-thread",
+      "---\ntags: [test]\n---\n# OOB\n\nContent.",
+    );
+
+    await handleCreateDiscussion({
+      pageSlug: "oob-thread",
+      title: "Only thread",
+      body: "Body.",
+      author: "alice",
+    });
+
+    await expect(
+      handleReadDiscussion({ pageSlug: "oob-thread", threadIndex: 99 }),
+    ).rejects.toThrow("thread not found: index 99 on page oob-thread");
   });
 });
 

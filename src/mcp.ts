@@ -26,6 +26,7 @@
  *   lint_wiki      — Run quality checks on the wiki
  *   fix_lint_issue — Auto-fix a lint issue found by lint_wiki
  *   list_discussions   — List discussion threads for a wiki page
+ *   read_discussion    — Read a single discussion thread with full comment bodies
  *   create_discussion  — Start a new discussion thread
  *   add_comment        — Add a comment to a discussion thread
  *   resolve_discussion — Resolve a discussion thread
@@ -79,7 +80,7 @@ import type { DeletePageResult } from "./lib/lifecycle";
 import { resolveScope, type ContentSearchResult } from "./lib/search";
 import { lint, ALL_CHECK_TYPES } from "./lib/lint";
 import { fixLintIssue, type FixResult } from "./lib/lint-fix";
-import { listThreads, createThread, resolveThread, addComment } from "./lib/talk";
+import { listThreads, getThread, createThread, resolveThread, addComment } from "./lib/talk";
 import { queryByFrontmatter, validateQuery, type DataviewFilter, type DataviewQuery, type DataviewResult } from "./lib/dataview";
 import { listRevisions, readRevision, readRevisionMeta, type Revision } from "./lib/revisions";
 import { vaultIdFor, getVault, createVault, renameVault, deleteVault, addToVault, removeFromVault, listVaults, vaultSlugs } from "./lib/vault";
@@ -1031,6 +1032,45 @@ export async function handleListDiscussions(args: {
       commentCount: t.comments.length,
       created: t.created,
       updated: t.updated,
+    })),
+  };
+}
+
+export async function handleReadDiscussion(args: {
+  pageSlug: string;
+  threadIndex: number;
+}): Promise<{
+  pageSlug: string;
+  threadIndex: number;
+  title: string;
+  status: string;
+  created: string;
+  updated: string;
+  comments: { id: string; author: string; created: string; body: string; parentId: string | null }[];
+}> {
+  if (!args.pageSlug) {
+    throw new Error("pageSlug is required");
+  }
+  if (typeof args.threadIndex !== "number" || !Number.isInteger(args.threadIndex) || args.threadIndex < 0) {
+    throw new Error("threadIndex must be a non-negative integer");
+  }
+  const thread = await getThread(args.pageSlug, args.threadIndex);
+  if (!thread) {
+    throw new Error(`thread not found: index ${args.threadIndex} on page ${args.pageSlug}`);
+  }
+  return {
+    pageSlug: args.pageSlug,
+    threadIndex: args.threadIndex,
+    title: thread.title,
+    status: thread.status,
+    created: thread.created,
+    updated: thread.updated,
+    comments: thread.comments.map((c) => ({
+      id: c.id,
+      author: c.author,
+      created: c.created,
+      body: c.body,
+      parentId: c.parentId,
     })),
   };
 }
@@ -2234,6 +2274,49 @@ export function createMcpServer(): McpServer {
   }, async (args) => {
     try {
       const result = await handleListDiscussions(args);
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: JSON.stringify(result, null, 2),
+          },
+        ],
+      };
+    } catch (err) {
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: (err as Error).message,
+          },
+        ],
+        isError: true,
+      };
+    }
+  });
+
+  // read_discussion — Read a single discussion thread with full comment bodies
+  server.registerTool("read_discussion", {
+    description:
+      "Read a single discussion thread for a wiki page, including full comment bodies. " +
+      "Use list_discussions first to discover thread indices.",
+    inputSchema: {
+      pageSlug: z
+        .string()
+        .describe("Slug of the wiki page the discussion belongs to"),
+      threadIndex: z
+        .number()
+        .describe("Zero-based index of the thread (from list_discussions)"),
+    },
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+  }, async (args) => {
+    try {
+      const result = await handleReadDiscussion(args);
       return {
         content: [
           {
