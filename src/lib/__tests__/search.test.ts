@@ -110,8 +110,9 @@ describe("isAgentScopedType", () => {
 });
 
 describe("isArtifactType", () => {
-  it("is true only for saved-artifact types (html)", () => {
+  it("is true only for saved-artifact types (html, slides)", () => {
     expect(isArtifactType("html")).toBe(true);
+    expect(isArtifactType("slides")).toBe(true);
     expect(isArtifactType("wiki")).toBe(false);
     expect(isArtifactType("agent-knowledge")).toBe(false);
     expect(isArtifactType(undefined)).toBe(false);

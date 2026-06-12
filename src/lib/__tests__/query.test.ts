@@ -916,6 +916,46 @@ describe("saveAnswerToWiki", () => {
     expect(headingCount).toBe(1);
   });
 
+  it("saves a slides deck as an owner-attributed artifact (type slides, verbatim body, no data-URI in summary)", async () => {
+    await ensureDirectories();
+    const deck = [
+      "---",
+      "marp: true",
+      "---",
+      "# My Deck",
+      "",
+      "A short opening line for the summary.",
+      "",
+      "---",
+      "",
+      "![an illustration](data:image/jpeg;base64,AAAAAAAA)",
+    ].join("\n");
+
+    const { slug } = await saveAnswerToWiki(
+      "My Deck",
+      deck,
+      undefined,
+      undefined,
+      "slides",
+      "alice",
+      "alice",
+    );
+
+    const page = await readWikiPageWithFrontmatter(slug);
+    expect(page).not.toBeNull();
+    // Typed as a slides artifact and attributed to the asker.
+    expect(page!.frontmatter.type).toBe("slides");
+    expect(page!.frontmatter.owner).toBe("alice");
+    expect(page!.frontmatter.authors).toEqual(["alice"]);
+    // Body stored verbatim — Marp markdown, no injected `# ` heading prepended.
+    expect(page!.body).toContain("marp: true");
+    expect(page!.body).toContain("![an illustration](data:image/jpeg;base64,AAAAAAAA)");
+    // The baked image's data URI never leaks into the index summary.
+    const entry = (await listWikiPages()).find((e) => e.slug === slug);
+    expect(entry!.summary).not.toContain("data:image");
+    expect(entry!.type).toBe("slides");
+  });
+
   it("bakes illustration directives at save time, keeping unfillable ones and leaving mermaid alone", async () => {
     await ensureDirectories();
     // No XAI_API_KEY in the test env → generation returns null, so the bake runs

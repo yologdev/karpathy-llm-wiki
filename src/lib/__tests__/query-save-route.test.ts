@@ -105,6 +105,38 @@ describe("POST /api/query/save", () => {
     expect((await res.json()).url).toBe("/u/test-user/test-page");
   });
 
+  it("saves a slides answer as an artifact owned by the asker", async () => {
+    const deck = "---\nmarp: true\n---\n# Deck\n\n- point";
+    const req = makeRequest({ title: "Deck", content: deck, format: "slides" });
+
+    const res = await POST(req);
+    expect(res.status).toBe(200);
+
+    expect(mockedSaveAnswer).toHaveBeenCalledWith(
+      "Deck",
+      deck,
+      undefined,
+      undefined,
+      "slides",
+      "test-user",
+      "test-user",
+    );
+    // Like HTML, a slide deck is an owned artifact at the owner-scoped URL.
+    expect((await res.json()).url).toBe("/u/test-user/test-page");
+  });
+
+  it("rejects a slides save with 401 when the principal can't be resolved", async () => {
+    mockedGetPrincipal.mockResolvedValueOnce(null);
+    const req = makeRequest({
+      title: "Deck",
+      content: "---\nmarp: true\n---\n# Deck",
+      format: "slides",
+    });
+    const res = await POST(req);
+    expect(res.status).toBe(401);
+    expect(mockedSaveAnswer).not.toHaveBeenCalled();
+  });
+
   it("normalizes the owner handle into the artifact url tenant (case-insensitive)", async () => {
     mockedGetPrincipal.mockResolvedValueOnce({ id: "u", handle: "Test-User" });
     const req = makeRequest({

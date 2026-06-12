@@ -1,6 +1,6 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
-import ReactMarkdown from "react-markdown";
+import ReactMarkdown, { defaultUrlTransform } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { slugify } from "@/lib/slugify";
 import { resolveSlugPath, type SlugTenantMap } from "@/lib/links";
@@ -99,6 +99,19 @@ function stripFrontmatter(content: string): string {
  * those are served by `/api/assets/...`. Absolute URLs (http(s)/data) are left
  * untouched so images that weren't downloaded still render.
  */
+/**
+ * react-markdown's default `urlTransform` strips `data:` URIs (an XSS guard),
+ * which would blank out our baked yoyo-illustration images (stored inline as
+ * `data:image/jpeg;base64,…`). Allow **raster** image data URIs through —
+ * jpeg/png/gif/webp can't carry script — while still deferring everything else
+ * (including the dangerous `data:image/svg+xml` and `data:text/html`) to the
+ * default sanitizer.
+ */
+export function urlTransform(url: string): string {
+  if (/^data:image\/(?:png|jpe?g|gif|webp)[;,]/i.test(url)) return url;
+  return defaultUrlTransform(url);
+}
+
 function resolveImageSrc(src: string): string {
   if (
     src.startsWith("data:") ||
@@ -142,6 +155,7 @@ export function MarkdownRenderer({
     >
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
+        urlTransform={urlTransform}
         components={{
           // Stable heading IDs so an in-page Table of Contents can anchor to
           // them (the typography plugin emits no ids). IDs come from the page's

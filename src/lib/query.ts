@@ -330,7 +330,7 @@ export async function saveAnswerToWiki(
   rawContent: string,
   explicitSlug?: string,
   sources?: string[],
-  contentType: "markdown" | "html" = "markdown",
+  contentType: "markdown" | "html" | "slides" = "markdown",
   owner?: string,
   author?: string,
 ): Promise<{ slug: string }> {
@@ -341,30 +341,42 @@ export async function saveAnswerToWiki(
   }
 
   const isHtml = contentType === "html";
+  const isSlides = contentType === "slides";
+  // HTML and slides are personal rendered artifacts (owned, typed, kept out of
+  // the commons/search corpus); plain markdown is a system-owned commons page.
+  const isArtifact = isHtml || isSlides;
 
   // Bake any `yoyo-illustration` directives into the content now (generate the
   // image server-side, embed the data URI) so the SAVED artifact is permanent
   // and self-contained — every viewer, including anonymous shares, sees it with
   // no per-view fetch or auth. Mermaid stays client-rendered (it's free). A
   // directive whose image can't be generated is left in place for on-demand
-  // fallback. No-op when there are no directives.
+  // fallback. No-op when there are no directives. (Slides bake as markdown.)
   const content = await bakeYoyoIllustrations(rawContent, isHtml);
 
-  // Strip any markdown code fence the model wrapped the document in, so the saved
-  // page is clean HTML (stored as-is apart from that, with no H1 prepend — the
-  // title shows via ArticleView's <h1> outside the iframe). Markdown gets the
-  // usual H1 if missing.
+  // Body, by type:
+  //  - HTML: strip a wrapping ```html fence; store verbatim, no H1 (the title
+  //    shows via ArticleView's <h1> outside the iframe).
+  //  - slides: store the Marp markdown verbatim, no H1 (it renders as a deck).
+  //  - markdown: prepend an H1 if missing.
   const html = isHtml ? stripHtmlFence(content) : content;
   const pageContent = isHtml
     ? html
-    : content.trimStart().startsWith("# ")
+    : isSlides
       ? content
-      : `# ${title}\n\n${content}`;
+      : content.trimStart().startsWith("# ")
+        ? content
+        : `# ${title}\n\n${content}`;
 
-  // Summary comes from plain text: tag-stripped for HTML, heading-stripped for md.
+  // Summary comes from plain text: tag-stripped for HTML; for markdown/slides,
+  // heading-stripped — and with baked illustration images dropped so a giant
+  // `data:` URI never leaks into the summary/index.
   const plainContent = isHtml
     ? htmlToPlainText(html)
-    : content.replace(/^#.*$/gm, "").trim();
+    : content
+        .replace(/!\[[^\]]*\]\([^)]*\)/g, "")
+        .replace(/^#.*$/gm, "")
+        .trim();
   const summary = extractSummary(plainContent) || title;
 
   // Wrap in YAML frontmatter so saved answers have the same metadata as
@@ -388,13 +400,13 @@ export async function saveAnswerToWiki(
     authors: ["system"],
   };
 
-  // An HTML output is a personal artifact: mark its type (so the page renders in
-  // the sandboxed iframe and is excluded from the commons/search/query corpus)
-  // and attribute it to the asker so it lives in THEIR silo + Mine/vault lens and
-  // is reachable at /u/<handle>/<slug>. Markdown saves keep the legacy
-  // system-owned commons behavior.
-  if (isHtml) {
-    frontmatterData.type = "html";
+  // HTML/slides outputs are personal artifacts: mark the type (so the page
+  // renders with the right surface — sandboxed iframe / slide deck — and is
+  // excluded from the commons/search/query corpus) and attribute it to the asker
+  // so it lives in THEIR silo + vault lens and is reachable at /u/<handle>/<slug>.
+  // Plain markdown saves keep the legacy system-owned commons behavior.
+  if (isArtifact) {
+    frontmatterData.type = contentType;
     if (owner) {
       frontmatterData.owner = owner;
       frontmatterData.authors = [owner];
@@ -415,15 +427,15 @@ export async function saveAnswerToWiki(
 
   // Hand off to the unified write pipeline. For markdown we pass the original
   // answer `content` as the cross-ref source so the related-pages prompt sees
-  // what the user saw. HTML artifacts are personal outputs — skip cross-ref
-  // (no `null` source) so commons pages don't backlink to them.
+  // what the user saw. HTML/slides artifacts are personal outputs — skip
+  // cross-ref (null source) so commons pages don't backlink to them.
   const { slug: writtenSlug } = await writeWikiPageWithSideEffects({
     slug,
     title,
     content: contentWithFm,
     summary,
     logOp: "save",
-    crossRefSource: isHtml ? null : content,
+    crossRefSource: isArtifact ? null : content,
     author: author ?? owner ?? "system",
     logDetails: ({ updatedSlugs }) =>
       `query answer saved as ${slug} · linked ${updatedSlugs.length} related page(s)`,

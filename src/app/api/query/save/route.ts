@@ -45,17 +45,17 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // An HTML answer is saved verbatim as a sandboxed, personal artifact owned by
-    // the asker. Writes are middleware-gated to a signed-in user; if the principal
-    // can't be resolved here (a transient auth failure) we must NOT silently write
-    // a mis-attributed system-owned page — surface it. Other formats save as
-    // markdown (unchanged, system-owned behavior).
-    const isHtml = format === "html";
+    // HTML and slides answers are saved as personal, owned artifacts (a sandboxed
+    // iframe / a slide deck) attributed to the asker. Writes are middleware-gated
+    // to a signed-in user; if the principal can't be resolved here (a transient
+    // auth failure) we must NOT silently write a mis-attributed system-owned page
+    // — surface it. Prose/table save as markdown (unchanged, system-owned commons).
+    const isArtifact = format === "html" || format === "slides";
     let owner: string | undefined;
-    if (isHtml) {
+    if (isArtifact) {
       const principal = await getPrincipal();
       if (!principal) {
-        logger.error("query", "HTML save: could not resolve principal despite write-gate");
+        logger.error("query", "Artifact save: could not resolve principal despite write-gate");
         return NextResponse.json(
           { error: "Could not resolve your account — sign in again and retry." },
           { status: 401 },
@@ -64,21 +64,24 @@ export async function POST(request: NextRequest) {
       owner = principal.handle;
     }
 
+    const contentType =
+      format === "html" ? "html" : format === "slides" ? "slides" : "markdown";
+
     const result = await saveAnswerToWiki(
       title.trim(),
       content.trim(),
       undefined,
       validatedSources,
-      isHtml ? "html" : "markdown",
+      contentType,
       owner,
       owner,  // author — same as owner for web saves
     );
 
-    // Return the CANONICAL url so the client links correctly. An HTML answer is
-    // an owned artifact → it lives at `/u/<tenant>/<slug>` and 404s at the
-    // commons `/wiki/<slug>`. A markdown save is a public commons page.
+    // Return the CANONICAL url so the client links correctly. An owned artifact
+    // (html/slides) lives at `/u/<tenant>/<slug>` and 404s at the commons
+    // `/wiki/<slug>`. A markdown save is a public commons page.
     const url =
-      isHtml && owner
+      isArtifact && owner
         ? pagePath(ownerToTenant(owner), result.slug)
         : commonsPath(result.slug);
 

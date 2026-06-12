@@ -3,7 +3,7 @@ import type { ReactNode } from "react";
 import { slugify } from "@/lib/slugify";
 import type { Frontmatter } from "@/lib/frontmatter";
 import type { WikiPage } from "@/lib/types";
-import { findBacklinks, findSimilarPages, buildSlugTenantMap, isArtifactType } from "@/lib/wiki";
+import { findBacklinks, findSimilarPages, buildSlugTenantMap } from "@/lib/wiki";
 import { resolveSlugPath, profileHref } from "@/lib/links";
 import { getCommonsSlugSet, belongsInCommons } from "@/lib/commons";
 import type { Principal } from "@/lib/auth";
@@ -14,6 +14,7 @@ import { Icon } from "@/components/folio/icons";
 import { Avatar, Mark, Confidence, Freshness } from "@/components/folio/primitives";
 import { MarkdownRenderer } from "@/components/MarkdownRenderer";
 import { HtmlPreview } from "@/components/HtmlPreview";
+import { SlidePreview } from "@/components/SlidePreview";
 import { SharePageButton } from "@/components/SharePageButton";
 import { ArticleActions } from "@/components/ArticleActions";
 import { RevisionHistory } from "@/components/RevisionHistory";
@@ -394,10 +395,15 @@ export async function ArticleView({
       >
         <div className="min-w-0">
           <article>
-            {isArtifactType(typeof fm.type === "string" ? fm.type : undefined) ? (
+            {(typeof fm.type === "string" ? fm.type : undefined) === "html" ? (
               // A saved HTML output is rendered verbatim in a sandboxed iframe
               // (isolated; no app cookie/DOM/network access) — never markdown.
               <HtmlPreview html={page.body} />
+            ) : (typeof fm.type === "string" ? fm.type : undefined) ===
+              "slides" ? (
+              // A saved slide deck renders as a deck (Marp markdown → slides),
+              // not flattened markdown.
+              <SlidePreview content={page.body} />
             ) : (
               <MarkdownRenderer
                 content={articleBody}
