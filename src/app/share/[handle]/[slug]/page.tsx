@@ -79,8 +79,9 @@ export async function generateMetadata({
  * Full-screen, chrome-less SHARE view of a page (the global nav/footer are
  * hidden on `/share/*` via {@link SiteChrome}). Just a minimal header (yopedia +
  * a link back to the wiki page) and the content filling the rest — an HTML
- * artifact renders in its sandboxed frame full-bleed; other pages render as
- * markdown. Read-gated identically to the owner-scoped page.
+ * artifact renders in its sandboxed frame full-bleed; a slides artifact renders
+ * as a deck; other pages render as markdown. Read-gated identically to the
+ * owner-scoped page.
  */
 export default async function SharePage({ params }: ShareProps) {
   const { handle, slug: encodedSlug } = await params;
