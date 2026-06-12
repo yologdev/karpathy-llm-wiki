@@ -89,7 +89,9 @@ export function computeConfidence(
   const base = Math.max(
     ...sources.map((s) => SOURCE_TYPE_WEIGHT[s.type] ?? 0.5),
   );
-  const distinctUrls = new Set(sources.map((s) => s.url)).size;
+  const distinctUrls = new Set(
+    sources.map((s) => (s.url === "text-paste" ? s.url : normalizeUrl(s.url))),
+  ).size;
   const corroboration = Math.min(0.15, Math.max(0, distinctUrls - 1) * 0.05);
   let score = base + corroboration;
   if (disputed) score = Math.min(score, 0.5);

@@ -1950,6 +1950,23 @@ describe("computeConfidence", () => {
     ).toBe(0.75); // 0.6 + capped 0.15
   });
 
+  it("normalizes URL variants before counting distinct sources", () => {
+    // http vs https + trailing slash → same source, no corroboration bonus
+    expect(
+      computeConfidence(
+        [src("url", "http://example.com"), src("url", "https://www.example.com/")],
+        false,
+      ),
+    ).toBe(0.6); // only 1 distinct URL after normalization → no bonus
+    // text-paste sentinel should NOT be normalized
+    expect(
+      computeConfidence(
+        [src("text", "text-paste"), src("text", "text-paste")],
+        false,
+      ),
+    ).toBe(0.5); // both are text-paste → 1 distinct, no bonus
+  });
+
   it("caps a disputed page at 0.5 and falls back to 0.5 for no sources", () => {
     expect(computeConfidence([src("pdf", "https://a.com/p.pdf")], true)).toBe(0.5);
     expect(computeConfidence([], false)).toBe(0.5);
