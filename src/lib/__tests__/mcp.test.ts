@@ -36,6 +36,7 @@ import {
   handleDataviewQuery,
   handleListRevisions,
   handleReadRevision,
+  handleRevertRevision,
   handleVaultCurate,
   handleVaultUncurate,
   handleListVaults,
@@ -3756,6 +3757,97 @@ describe("vault_pages", () => {
     expect(result.owner).toBe("viewer");
     expect(result.vault).toBe("My Vault");
     expect(result.slugs).toEqual(["vault-pages-a", "vault-pages-b"]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// revert_revision
+// ---------------------------------------------------------------------------
+
+describe("revert_revision", () => {
+  it("reverts a page to a previous revision", async () => {
+    const v1Content = "---\ntitle: Test\n---\n# Test\nVersion 1";
+    await writeTestPage("revert-test", v1Content);
+
+    const { saveRevision } = await import("../../lib/revisions");
+    await saveRevision("revert-test", v1Content, "yoyo", "v1 snapshot");
+
+    // Overwrite with v2
+    await writeTestPage("revert-test", "---\ntitle: Test\n---\n# Test\nVersion 2");
+
+    // Get the v1 timestamp
+    const list = await handleListRevisions({ slug: "revert-test" });
+    expect(list.revisions.length).toBeGreaterThanOrEqual(1);
+    const v1Ts = list.revisions[0].timestamp;
+
+    // Revert to v1
+    const result = await handleRevertRevision({
+      slug: "revert-test",
+      timestamp: v1Ts,
+      author: "test-agent",
+    });
+    expect(result.slug).toBe("revert-test");
+    expect(Array.isArray(result.updatedSlugs)).toBe(true);
+
+    // Verify the page now has v1 content
+    const page = await handleReadPage({ slug: "revert-test" });
+    expect(page.content).toContain("Version 1");
+  });
+
+  it("defaults author to 'agent' when not provided", async () => {
+    const content = "---\ntitle: Default\n---\n# Default\nContent";
+    await writeTestPage("revert-default", content);
+
+    const { saveRevision } = await import("../../lib/revisions");
+    await saveRevision("revert-default", content, "yoyo", "snapshot");
+
+    const list = await handleListRevisions({ slug: "revert-default" });
+    const ts = list.revisions[0].timestamp;
+
+    // Should not throw — author defaults to "agent"
+    const result = await handleRevertRevision({
+      slug: "revert-default",
+      timestamp: ts,
+    });
+    expect(result.slug).toBe("revert-default");
+  });
+
+  it("throws for a nonexistent page", async () => {
+    await expect(
+      handleRevertRevision({ slug: "no-such-page", timestamp: 1234567890 }),
+    ).rejects.toThrow("page not found: no-such-page");
+  });
+
+  it("throws for a nonexistent revision timestamp", async () => {
+    await writeTestPage(
+      "revert-missing-rev",
+      "---\ntitle: Test\n---\n# Test\nHello",
+    );
+    await expect(
+      handleRevertRevision({ slug: "revert-missing-rev", timestamp: 9999999999999 }),
+    ).rejects.toThrow("revision not found: 9999999999999");
+  });
+
+  it("throws for an invalid slug", async () => {
+    await expect(
+      handleRevertRevision({ slug: "BAD SLUG!", timestamp: 123 }),
+    ).rejects.toThrow(/invalid slug/i);
+  });
+
+  it("throws when slug is empty", async () => {
+    await expect(
+      handleRevertRevision({ slug: "", timestamp: 123 }),
+    ).rejects.toThrow("slug is required");
+  });
+
+  it("throws for invalid timestamp values", async () => {
+    await expect(
+      handleRevertRevision({ slug: "test-page", timestamp: -1 }),
+    ).rejects.toThrow("timestamp must be a positive number");
+
+    await expect(
+      handleRevertRevision({ slug: "test-page", timestamp: 0 }),
+    ).rejects.toThrow("timestamp must be a positive number");
   });
 });
 

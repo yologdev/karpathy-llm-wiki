@@ -36,6 +36,7 @@
  *   dataview_query     — Query wiki pages by frontmatter fields
  *   list_revisions     — List revision history for a wiki page
  *   read_revision      — Read a specific revision's content
+ *   revert_revision    — Revert a wiki page to a previous revision
  *   list_contributors  — List all contributors with trust scores
  *   get_contributor    — Get a specific contributor's trust profile
  *   vault_curate       — Curate a commons page into one of a user's named vaults
@@ -1263,6 +1264,65 @@ export async function handleReadRevision(args: {
       ...(meta?.reason !== undefined && { reason: meta.reason }),
     },
   };
+}
+
+export async function handleRevertRevision(args: {
+  slug: string;
+  timestamp: number;
+  author?: string;
+}): Promise<{ slug: string; updatedSlugs: string[] }> {
+  if (!args.slug) {
+    throw new Error("slug is required");
+  }
+  validateSlug(args.slug);
+
+  if (
+    typeof args.timestamp !== "number" ||
+    !Number.isFinite(args.timestamp) ||
+    args.timestamp <= 0
+  ) {
+    throw new Error("timestamp must be a positive number");
+  }
+
+  const existing = await readWikiPageWithFrontmatter(args.slug);
+  if (!existing) {
+    throw new Error(`page not found: ${args.slug}`);
+  }
+
+  const revisionContent = await readRevision(args.slug, args.timestamp);
+  if (revisionContent === null) {
+    throw new Error(`revision not found: ${args.timestamp}`);
+  }
+
+  const title = extractTitle(revisionContent, existing.title);
+  const bodyForSummary = revisionContent.replace(/^#\s+.+$/m, "").trim();
+  const summary = extractSummary(bodyForSummary);
+
+  const today = new Date().toISOString().slice(0, 10);
+  const mergedFrontmatter: Frontmatter = { ...existing.frontmatter };
+  if (!mergedFrontmatter.created) {
+    mergedFrontmatter.created = today;
+  }
+  mergedFrontmatter.updated = today;
+
+  const hasYamlBlock = revisionContent.trimStart().startsWith("---");
+  const finalContent = hasYamlBlock
+    ? revisionContent
+    : serializeFrontmatter(mergedFrontmatter, revisionContent);
+
+  const author = args.author ?? "agent";
+
+  const result = await writeWikiPageWithSideEffects({
+    slug: args.slug,
+    title,
+    content: finalContent,
+    summary,
+    logOp: "edit",
+    author,
+    crossRefSource: revisionContent,
+  });
+
+  return { slug: result.slug, updatedSlugs: result.updatedSlugs };
 }
 
 // ---------------------------------------------------------------------------
@@ -2731,6 +2791,54 @@ export function createMcpServer(): McpServer {
   }, async (args) => {
     try {
       const result = await handleReadRevision(args);
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: JSON.stringify(result, null, 2),
+          },
+        ],
+      };
+    } catch (err) {
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: (err as Error).message,
+          },
+        ],
+        isError: true,
+      };
+    }
+  });
+
+  // revert_revision — Revert a wiki page to a previous revision
+  server.registerTool("revert_revision", {
+    description:
+      "Revert a yopedia wiki page to a previous revision. " +
+      "Use list_revisions to discover available timestamps, then read_revision to preview. " +
+      "The page content is replaced with the revision content and a new revision is saved.",
+    inputSchema: {
+      slug: z
+        .string()
+        .describe("Slug of the wiki page to revert"),
+      timestamp: z
+        .number()
+        .describe("Unix timestamp in milliseconds identifying the revision to restore"),
+      author: z
+        .string()
+        .optional()
+        .describe("Who is performing the revert (defaults to 'agent')"),
+    },
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+  }, async (args) => {
+    try {
+      const result = await handleRevertRevision(args);
       return {
         content: [
           {

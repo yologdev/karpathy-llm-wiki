@@ -41,6 +41,7 @@
     "dataview_query",
     "list_revisions",
     "read_revision",
+    "revert_revision",
     "vault_curate",
     "vault_uncurate",
     "vault_create",
