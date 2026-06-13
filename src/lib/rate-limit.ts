@@ -33,14 +33,25 @@ export const RATE_LIMITS = {
 
 /** The KV-backed store, or null outside an OpenNext Cloudflare request. */
 function getStore(): RateLimitStore | null {
+  let env: { YOPEDIA_CONFIG?: RateLimitStore } | undefined;
   try {
-    const { env } = getCloudflareContext();
-    const kv = (env as { YOPEDIA_CONFIG?: RateLimitStore } | undefined)
-      ?.YOPEDIA_CONFIG;
-    return kv ?? null;
+    env = getCloudflareContext().env as { YOPEDIA_CONFIG?: RateLimitStore };
   } catch {
-    return null; // not in a Workers request context (local/test)
+    return null; // not in a Workers request context (local/test) — expected, silent
   }
+  const kv = env?.YOPEDIA_CONFIG;
+  if (!kv) {
+    // We ARE in a deployed Worker but the KV binding is absent — a config defect
+    // that silently disables the cost guard. Make it LOUD (error tier → alerting)
+    // rather than failing open without a trace, which is how a surprise bill
+    // happens. (The no-context case above stays silent — that's just local/test.)
+    logger.error(
+      "rate-limit",
+      "YOPEDIA_CONFIG KV binding missing in a Worker request — rate limiting is DISABLED",
+    );
+    return null;
+  }
+  return kv;
 }
 
 /**
