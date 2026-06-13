@@ -30,6 +30,9 @@ import {
   handleCreatePage,
   handleSaveQueryAnswer,
 } from "@/mcp";
+import { readWikiPageWithFrontmatter } from "@/lib/wiki";
+import { canWriteFrontmatter } from "@/lib/authz";
+import type { Principal } from "@/lib/auth";
 
 /** Protocol version we advertise in `initialize`. */
 export const MCP_PROTOCOL_VERSION = "2025-06-18";
@@ -83,11 +86,11 @@ interface ToolDef {
   name: string;
   description: string;
   inputSchema: Record<string, unknown>;
-  /** Write tools require an authenticated `owner`; reads don't. */
+  /** Write tools require an authenticated principal; reads don't. */
   write: boolean;
   run: (
     args: Record<string, unknown>,
-    owner: string | null,
+    principal: Principal | null,
   ) => Promise<unknown>;
 }
 
@@ -170,9 +173,9 @@ export const MCP_TOOLS: ToolDef[] = [
       ["url"],
     ),
     write: true,
-    run: (a, owner) =>
+    run: (a, p) =>
       handleIngestUrl(
-        attributed(a, owner!) as Parameters<typeof handleIngestUrl>[0],
+        attributed(a, p!.handle) as Parameters<typeof handleIngestUrl>[0],
       ),
   },
   {
@@ -187,9 +190,9 @@ export const MCP_TOOLS: ToolDef[] = [
       ["content"],
     ),
     write: true,
-    run: (a, owner) =>
+    run: (a, p) =>
       handleIngestText(
-        attributed(a, owner!) as Parameters<typeof handleIngestText>[0],
+        attributed(a, p!.handle) as Parameters<typeof handleIngestText>[0],
       ),
   },
   {
@@ -204,9 +207,9 @@ export const MCP_TOOLS: ToolDef[] = [
       ["slug", "content"],
     ),
     write: true,
-    run: (a, owner) =>
+    run: (a, p) =>
       handleCreatePage(
-        attributed(a, owner!) as Parameters<typeof handleCreatePage>[0],
+        attributed(a, p!.handle) as Parameters<typeof handleCreatePage>[0],
       ),
   },
   {
@@ -223,9 +226,9 @@ export const MCP_TOOLS: ToolDef[] = [
       ["question", "answer"],
     ),
     write: true,
-    run: (a, owner) =>
+    run: (a, p) =>
       handleSaveQueryAnswer(
-        attributed(a, owner!) as Parameters<typeof handleSaveQueryAnswer>[0],
+        attributed(a, p!.handle) as Parameters<typeof handleSaveQueryAnswer>[0],
       ),
   },
   {
@@ -233,7 +236,21 @@ export const MCP_TOOLS: ToolDef[] = [
     description: "Re-fetch a page's original source and refresh it.",
     inputSchema: schema({ slug: str("Page slug to re-ingest") }, ["slug"]),
     write: true,
-    run: (a) => handleReingest(a as Parameters<typeof handleReingest>[0]),
+    // Enforce the same write ACL as the REST reingest route: you can only
+    // re-synthesize a page you may write (public commons = collectively
+    // editable; another user's PRIVATE page = denied). Without this, any
+    // token-holder could overwrite/fork others' pages. A missing/unauthorized
+    // page throws a single cloaked error (no private-page existence oracle).
+    run: async (a, p) => {
+      const slug = typeof a.slug === "string" ? a.slug : "";
+      const page = slug ? await readWikiPageWithFrontmatter(slug) : null;
+      if (!page || !canWriteFrontmatter(page.frontmatter, p)) {
+        throw new Error(
+          `Page not found or you don't have permission to re-ingest it: ${slug || "(missing slug)"}`,
+        );
+      }
+      return handleReingest({ slug });
+    },
   },
 ];
 
@@ -246,15 +263,19 @@ function toolDescriptor(t: ToolDef) {
 // Dispatch
 // ---------------------------------------------------------------------------
 
+/** Max JSON-RPC messages in one batch (cost/DoS guard — each may fan out to a
+ *  network fetch + LLM call). */
+export const MCP_MAX_BATCH = 20;
+
 /**
- * Handle one JSON-RPC message. `owner` is the resolved write-principal handle
- * (or null when unauthenticated — reads still work). Returns `null` for
- * notifications (no response body). Tool failures surface as an `isError` tool
- * result, not a JSON-RPC error, matching the stdio server's convention.
+ * Handle one JSON-RPC message. `principal` is the resolved caller (or null when
+ * unauthenticated — reads still work). Returns `null` for notifications (no
+ * response body). Tool failures surface as an `isError` tool result, not a
+ * JSON-RPC error, matching the stdio server's convention.
  */
 export async function dispatchMcp(
   msg: JsonRpcRequest,
-  owner: string | null,
+  principal: Principal | null,
 ): Promise<JsonRpcResponse | null> {
   const { id, method } = msg;
   switch (method) {
@@ -280,7 +301,7 @@ export async function dispatchMcp(
       if (!tool) {
         return ok(id, toolResult(`Unknown tool: ${params.name}`, true));
       }
-      if (tool.write && !owner) {
+      if (tool.write && !principal) {
         return ok(
           id,
           toolResult(
@@ -290,7 +311,7 @@ export async function dispatchMcp(
         );
       }
       try {
-        const result = await tool.run(params.arguments ?? {}, owner);
+        const result = await tool.run(params.arguments ?? {}, principal);
         return ok(id, toolResult(result));
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);

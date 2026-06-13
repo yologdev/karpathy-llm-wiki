@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { verifyAgentToken, getAgent } from "@/lib/agents";
-import { getServicePrincipal } from "@/lib/auth";
-import { dispatchMcp, type JsonRpcRequest } from "@/lib/mcp-http";
+import { getServicePrincipal, type Principal } from "@/lib/auth";
+import { dispatchMcp, MCP_MAX_BATCH, type JsonRpcRequest } from "@/lib/mcp-http";
 import { logger } from "@/lib/logger";
 
 /**
@@ -23,16 +23,19 @@ import { logger } from "@/lib/logger";
  * Middleware-exempt (authenticates in-route via the token, not a Clerk session).
  */
 
-/** Resolve the write-owner handle from a Bearer token. Returns `{ owner }` on
- *  success (owner may be null = unauthenticated reads), or `{ unauthorized }`
- *  when a token was presented but is invalid. */
-async function resolveOwner(
+/** Resolve the calling principal from a Bearer token. Returns `{ principal }`
+ *  on success (principal may be null = unauthenticated reads), or
+ *  `{ unauthorized }` when a token was presented but is invalid. A per-user
+ *  agent token resolves to its human OWNER (handle), so writes attribute to and
+ *  are authorized as that user; the service token resolves to the trusted
+ *  service principal. */
+async function resolvePrincipal(
   req: Request,
-): Promise<{ owner: string | null } | { unauthorized: true }> {
+): Promise<{ principal: Principal | null } | { unauthorized: true }> {
   const bearer = req.headers
     .get("authorization")
     ?.match(/^Bearer\s+(.+)$/i)?.[1];
-  if (!bearer) return { owner: null };
+  if (!bearer) return { principal: null };
 
   const agentId = await verifyAgentToken(bearer);
   if (agentId) {
@@ -40,11 +43,14 @@ async function resolveOwner(
     // Token valid but the agent is gone (deleted/renamed) → no owner to
     // attribute to: reject rather than silently downgrade to anonymous.
     if (!agent?.owner) return { unauthorized: true };
-    return { owner: agent.owner };
+    // Act as the agent's human owner (handle-keyed ownership). The non-service
+    // id means this is NOT a write-anything principal — it can only write the
+    // owner's own pages + the public commons (canWriteFrontmatter).
+    return { principal: { id: `agent:${agentId}`, handle: agent.owner } };
   }
 
   const service = getServicePrincipal(req);
-  if (service) return { owner: service.handle };
+  if (service) return { principal: service };
 
   return { unauthorized: true };
 }
@@ -53,14 +59,14 @@ const PARSE_ERROR: JsonRpcRequest = {};
 
 export async function POST(req: Request) {
   try {
-    const auth = await resolveOwner(req);
+    const auth = await resolvePrincipal(req);
     if ("unauthorized" in auth) {
       return NextResponse.json(
         { error: "Invalid token." },
         { status: 401 },
       );
     }
-    const owner = auth.owner;
+    const principal = auth.principal;
 
     let body: unknown;
     try {
@@ -74,9 +80,20 @@ export async function POST(req: Request) {
 
     // JSON-RPC batch (array) or single message.
     if (Array.isArray(body)) {
+      if (body.length > MCP_MAX_BATCH) {
+        // Each message can fan out to a fetch + LLM call — cap the burst.
+        return NextResponse.json(
+          {
+            jsonrpc: "2.0",
+            id: null,
+            error: { code: -32600, message: `Batch too large (max ${MCP_MAX_BATCH}).` },
+          },
+          { status: 400 },
+        );
+      }
       const responses = (
         await Promise.all(
-          body.map((m) => dispatchMcp((m ?? PARSE_ERROR) as JsonRpcRequest, owner)),
+          body.map((m) => dispatchMcp((m ?? PARSE_ERROR) as JsonRpcRequest, principal)),
         )
       ).filter((r) => r !== null);
       // All notifications → 202 with no body.
@@ -84,7 +101,7 @@ export async function POST(req: Request) {
       return NextResponse.json(responses);
     }
 
-    const res = await dispatchMcp((body ?? PARSE_ERROR) as JsonRpcRequest, owner);
+    const res = await dispatchMcp((body ?? PARSE_ERROR) as JsonRpcRequest, principal);
     if (res === null) return new NextResponse(null, { status: 202 });
     return NextResponse.json(res);
   } catch (err) {
