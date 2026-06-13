@@ -1,0 +1,162 @@
+import { describe, it, expect, vi, beforeEach } from "vitest";
+
+// Mock the auth resolution + the reused tool handlers so we test the ROUTE's
+// auth/attribution/transport logic in isolation (no storage/LLM).
+vi.mock("@/lib/agents", () => ({
+  verifyAgentToken: vi.fn(),
+  getAgent: vi.fn(),
+}));
+vi.mock("@/lib/auth", () => ({
+  getServicePrincipal: vi.fn(() => null),
+}));
+vi.mock("@/mcp", () => ({
+  handleSearchWiki: vi.fn(async () => []),
+  handleReadPage: vi.fn(),
+  handleListPages: vi.fn(),
+  handleQueryWiki: vi.fn(),
+  handleIngestUrl: vi.fn(),
+  handleIngestText: vi.fn(),
+  handleReingest: vi.fn(),
+  handleCreatePage: vi.fn(async () => ({ slug: "x", title: "X", created: true })),
+  handleSaveQueryAnswer: vi.fn(),
+}));
+
+import { verifyAgentToken, getAgent } from "@/lib/agents";
+import { getServicePrincipal } from "@/lib/auth";
+import { handleCreatePage } from "@/mcp";
+import { POST, GET } from "@/app/api/mcp/route";
+
+const mockedVerify = vi.mocked(verifyAgentToken);
+const mockedGetAgent = vi.mocked(getAgent);
+const mockedService = vi.mocked(getServicePrincipal);
+const mockedCreate = vi.mocked(handleCreatePage);
+
+function post(body: unknown, headers: Record<string, string> = {}): Request {
+  return new Request("http://localhost/api/mcp", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...headers },
+    body: typeof body === "string" ? body : JSON.stringify(body),
+  });
+}
+const auth = (token: string) => ({ Authorization: `Bearer ${token}` });
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  mockedVerify.mockResolvedValue(null);
+  mockedGetAgent.mockResolvedValue(null);
+  mockedService.mockReturnValue(null);
+});
+
+describe("POST /api/mcp — auth resolution", () => {
+  it("allows unauthenticated reads (no token → tools/list 200)", async () => {
+    const res = await POST(post({ id: 1, method: "tools/list" }));
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.result.tools.length).toBeGreaterThan(0);
+  });
+
+  it("401s a presented-but-invalid token (not a silent downgrade to anon)", async () => {
+    // verifyAgentToken → null AND no service principal.
+    const res = await POST(post({ id: 1, method: "tools/list" }, auth("bogus")));
+    expect(res.status).toBe(401);
+  });
+
+  it("401s a valid token whose agent is gone (orphaned) — no anon downgrade", async () => {
+    mockedVerify.mockResolvedValue("alice--yoyo");
+    mockedGetAgent.mockResolvedValue(null); // deleted/renamed
+    const res = await POST(post({ id: 1, method: "tools/list" }, auth("t")));
+    expect(res.status).toBe(401);
+  });
+
+  it("500s (not 401) when the agent store errors — outage isn't masked as a bad token", async () => {
+    mockedVerify.mockResolvedValue("alice--yoyo");
+    mockedGetAgent.mockRejectedValue(new Error("R2 down"));
+    const res = await POST(post({ id: 1, method: "ping" }, auth("t")));
+    expect(res.status).toBe(500);
+  });
+});
+
+describe("POST /api/mcp — write attribution", () => {
+  it("attributes a write to the agent's OWNER and ignores a spoofed arguments.owner", async () => {
+    mockedVerify.mockResolvedValue("alice--yoyo");
+    mockedGetAgent.mockResolvedValue({ owner: "alice" } as Awaited<ReturnType<typeof getAgent>>);
+
+    const res = await POST(
+      post(
+        {
+          id: 1,
+          method: "tools/call",
+          params: {
+            name: "create_page",
+            // Attacker tries to attribute the page to someone else.
+            arguments: { slug: "p", content: "# P", owner: "victim", author: "victim" },
+          },
+        },
+        auth("t"),
+      ),
+    );
+    expect(res.status).toBe(200);
+    expect(mockedCreate).toHaveBeenCalledTimes(1);
+    const arg = mockedCreate.mock.calls[0][0];
+    // The resolved owner wins over the spoofed values.
+    expect(arg.owner).toBe("alice");
+    expect(arg.author).toBe("alice");
+  });
+
+  it("a write via the service token attributes to the service principal", async () => {
+    mockedService.mockReturnValue({ id: "service:sys", handle: "sys" });
+    const res = await POST(
+      post(
+        { id: 1, method: "tools/call", params: { name: "create_page", arguments: { slug: "p", content: "# P" } } },
+        auth("service-tok"),
+      ),
+    );
+    expect(res.status).toBe(200);
+    expect(mockedCreate.mock.calls[0][0].owner).toBe("sys");
+  });
+
+  it("a write with no token returns an auth-required isError (handler not called)", async () => {
+    const res = await POST(
+      post({ id: 1, method: "tools/call", params: { name: "create_page", arguments: { slug: "p", content: "# P" } } }),
+    );
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.result.isError).toBe(true);
+    expect(mockedCreate).not.toHaveBeenCalled();
+  });
+});
+
+describe("POST /api/mcp — transport", () => {
+  it("rejects an oversized batch with -32600/400", async () => {
+    const batch = Array.from({ length: 21 }, (_, i) => ({ id: i, method: "ping" }));
+    const res = await POST(post(batch));
+    expect(res.status).toBe(400);
+    expect((await res.json()).error.code).toBe(-32600);
+  });
+
+  it("accepts a batch at the cap and returns an array of responses", async () => {
+    const batch = Array.from({ length: 20 }, (_, i) => ({ id: i, method: "ping" }));
+    const res = await POST(post(batch));
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(Array.isArray(body)).toBe(true);
+    expect(body).toHaveLength(20);
+  });
+
+  it("a batch of only notifications → 202 no body", async () => {
+    const res = await POST(post([{ method: "notifications/initialized" }]));
+    expect(res.status).toBe(202);
+  });
+
+  it("malformed JSON body → -32700/400", async () => {
+    const res = await POST(post("{not json"));
+    expect(res.status).toBe(400);
+    expect((await res.json()).error.code).toBe(-32700);
+  });
+
+  it("GET is 405 with Allow: POST", async () => {
+    const res = GET();
+    expect(res.status).toBe(405);
+    expect(res.headers.get("Allow")).toBe("POST");
+  });
+});

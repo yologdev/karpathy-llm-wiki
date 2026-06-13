@@ -95,7 +95,6 @@ interface ToolDef {
 }
 
 const str = (description: string) => ({ type: "string", description });
-const optStr = str;
 const schema = (
   props: Record<string, unknown>,
   required: string[] = [],
@@ -122,7 +121,7 @@ export const MCP_TOOLS: ToolDef[] = [
       {
         query: str("Search query"),
         limit: { type: "number", description: "Max results (default 10)" },
-        scope: optStr("Optional scope, e.g. 'agent:yoyo'"),
+        scope: str("Optional scope, e.g. 'agent:yoyo'"),
       },
       ["query"],
     ),
@@ -140,7 +139,7 @@ export const MCP_TOOLS: ToolDef[] = [
     name: "list_pages",
     description: "List wiki pages, optionally sorted.",
     inputSchema: schema({
-      sort: optStr("title | updated | confidence"),
+      sort: str("title | updated | confidence"),
       limit: { type: "number", description: "Max results" },
     }),
     write: false,
@@ -153,8 +152,8 @@ export const MCP_TOOLS: ToolDef[] = [
     inputSchema: schema(
       {
         question: str("The question to answer"),
-        format: optStr("prose | table | slides | html (default prose)"),
-        scope: optStr("Optional scope, e.g. 'agent:yoyo'"),
+        format: str("prose | table | slides | html (default prose)"),
+        scope: str("Optional scope, e.g. 'agent:yoyo'"),
       },
       ["question"],
     ),
@@ -184,7 +183,7 @@ export const MCP_TOOLS: ToolDef[] = [
     inputSchema: schema(
       {
         content: str("The text to ingest"),
-        title: optStr("Optional title"),
+        title: str("Optional title"),
         tags: { type: "array", items: { type: "string" }, description: "Optional tags" },
       },
       ["content"],
@@ -219,9 +218,9 @@ export const MCP_TOOLS: ToolDef[] = [
       {
         question: str("The question"),
         answer: str("The answer (markdown/html/slides)"),
-        slug: optStr("Optional explicit slug"),
+        slug: str("Optional explicit slug"),
         sources: { type: "array", items: { type: "string" }, description: "Cited slugs" },
-        format: optStr("markdown | html | slides"),
+        format: str("markdown | html | slides"),
       },
       ["question", "answer"],
     ),

@@ -23,36 +23,41 @@ import { logger } from "@/lib/logger";
  * Middleware-exempt (authenticates in-route via the token, not a Clerk session).
  */
 
-/** Resolve the calling principal from a Bearer token. Returns `{ principal }`
- *  on success (principal may be null = unauthenticated reads), or
- *  `{ unauthorized }` when a token was presented but is invalid. A per-user
- *  agent token resolves to its human OWNER (handle), so writes attribute to and
- *  are authorized as that user; the service token resolves to the trusted
- *  service principal. */
-async function resolvePrincipal(
-  req: Request,
-): Promise<{ principal: Principal | null } | { unauthorized: true }> {
+/** `kind:"ok"` carries the caller (null = unauthenticated reads); `unauthorized`
+ *  means a token was presented but is invalid → 401. Literal discriminant so the
+ *  three outcomes are compiler-checked, not a structural `in` probe. */
+type AuthResult =
+  | { kind: "ok"; principal: Principal | null }
+  | { kind: "unauthorized" };
+
+/** Resolve the calling principal from a Bearer token. A per-user agent token
+ *  resolves to its human OWNER (handle), so writes attribute to and are
+ *  authorized as that user; the service token resolves to the trusted service
+ *  principal; no token → unauthenticated (reads only). */
+async function resolvePrincipal(req: Request): Promise<AuthResult> {
   const bearer = req.headers
     .get("authorization")
     ?.match(/^Bearer\s+(.+)$/i)?.[1];
-  if (!bearer) return { principal: null };
+  if (!bearer) return { kind: "ok", principal: null };
 
   const agentId = await verifyAgentToken(bearer);
   if (agentId) {
-    const agent = await getAgent(agentId).catch(() => null);
-    // Token valid but the agent is gone (deleted/renamed) → no owner to
+    // getAgent returns null on not-found (→ reject) and throws only on a real
+    // storage error (→ propagates to the outer catch → logged 500, not masked
+    // as a bad token). Token valid but the agent is gone → no owner to
     // attribute to: reject rather than silently downgrade to anonymous.
-    if (!agent?.owner) return { unauthorized: true };
+    const agent = await getAgent(agentId);
+    if (!agent?.owner) return { kind: "unauthorized" };
     // Act as the agent's human owner (handle-keyed ownership). The non-service
     // id means this is NOT a write-anything principal — it can only write the
     // owner's own pages + the public commons (canWriteFrontmatter).
-    return { principal: { id: `agent:${agentId}`, handle: agent.owner } };
+    return { kind: "ok", principal: { id: `agent:${agentId}`, handle: agent.owner } };
   }
 
   const service = getServicePrincipal(req);
-  if (service) return { principal: service };
+  if (service) return { kind: "ok", principal: service };
 
-  return { unauthorized: true };
+  return { kind: "unauthorized" };
 }
 
 const PARSE_ERROR: JsonRpcRequest = {};
@@ -60,7 +65,7 @@ const PARSE_ERROR: JsonRpcRequest = {};
 export async function POST(req: Request) {
   try {
     const auth = await resolvePrincipal(req);
-    if ("unauthorized" in auth) {
+    if (auth.kind === "unauthorized") {
       return NextResponse.json(
         { error: "Invalid token." },
         { status: 401 },
