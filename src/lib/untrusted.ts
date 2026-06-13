@@ -10,8 +10,11 @@
  *
  * This is the Anthropic "put untrusted content in a clearly-marked block and
  * tell the model what it is" / Microsoft spotlighting / OWASP-mitigation-#6
- * pattern. It's additive: legitimate answers are unaffected; only attempts to
- * smuggle instructions through page content are contained.
+ * pattern. It is a **best-effort, model-dependent** mitigation, not an enforced
+ * sandbox: the delimiter neutralization is hard (an attacker cannot forge the
+ * boundary), but "treat inner text as data, not instructions" relies on the
+ * model honoring {@link UNTRUSTED_CONTENT_RULE}. It's additive — legitimate
+ * answers are unaffected.
  */
 
 const TAG = "wiki_content";
