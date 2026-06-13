@@ -20,6 +20,7 @@ import { listRevisions, saveRevision } from "../revisions";
 import { resolveAlias, buildAliasIndex, resetAliasIndex } from "../alias-index";
 import { serializeFrontmatter } from "../frontmatter";
 import { getStorage, _resetStorage } from "../storage";
+import { registerAgent, getAgent } from "../agents";
 
 // ---------------------------------------------------------------------------
 // Temp directory setup — mirrors wiki.test.ts approach
@@ -827,5 +828,96 @@ describe("recent trail action labeling", () => {
     expect(actions).toContain("ingested");
     expect(actions).toContain("edited");
     expect(actions).not.toContain("re-ingested");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Agent page cleanup on delete
+// ---------------------------------------------------------------------------
+
+describe("agent page cleanup on delete", () => {
+  it("removes a deleted slug from an agent's learningPages", async () => {
+    // 1. Register an agent with a slug in learningPages.
+    const agentProfile = {
+      id: "test-agent",
+      name: "Test Agent",
+      description: "Agent for lifecycle test",
+      owner: "tester",
+      identityPages: [],
+      learningPages: ["test-page"],
+      socialPages: [],
+      registered: new Date().toISOString(),
+      lastUpdated: new Date().toISOString(),
+    };
+    await registerAgent(agentProfile);
+
+    // 2. Create the wiki page via the lifecycle pipeline.
+    const content = serializeFrontmatter(
+      { title: "Test Page", owner: "tester" },
+      "# Test Page\n\nContent.",
+    );
+    await writeWikiPageWithSideEffects(
+      makeOpts({ slug: "test-page", title: "Test Page", content }),
+    );
+
+    // Verify agent has the slug before delete.
+    const before = await getAgent("test-agent");
+    expect(before?.learningPages).toContain("test-page");
+
+    // 3. Delete the page via the lifecycle pipeline.
+    await deleteWikiPage("test-page");
+
+    // 4. Verify the agent profile no longer references the slug.
+    const after = await getAgent("test-agent");
+    expect(after).not.toBeNull();
+    expect(after!.learningPages).not.toContain("test-page");
+  });
+
+  it("removes a slug from multiple page lists and multiple agents", async () => {
+    const slug = "shared-page";
+
+    // Agent A has it in identityPages and learningPages.
+    await registerAgent({
+      id: "agent-a",
+      name: "Agent A",
+      description: "First agent",
+      owner: "owner-a",
+      identityPages: [slug, "other-page"],
+      learningPages: [slug],
+      socialPages: [],
+      registered: new Date().toISOString(),
+      lastUpdated: new Date().toISOString(),
+    });
+
+    // Agent B has it only in socialPages.
+    await registerAgent({
+      id: "agent-b",
+      name: "Agent B",
+      description: "Second agent",
+      owner: "owner-b",
+      identityPages: [],
+      learningPages: [],
+      socialPages: [slug],
+      registered: new Date().toISOString(),
+      lastUpdated: new Date().toISOString(),
+    });
+
+    // Create and delete the page.
+    const content = serializeFrontmatter(
+      { title: "Shared Page", owner: "owner-a" },
+      "# Shared Page\n\nContent.",
+    );
+    await writeWikiPageWithSideEffects(
+      makeOpts({ slug, title: "Shared Page", content }),
+    );
+    await deleteWikiPage(slug);
+
+    const agentA = await getAgent("agent-a");
+    expect(agentA!.identityPages).not.toContain(slug);
+    expect(agentA!.identityPages).toContain("other-page");
+    expect(agentA!.learningPages).not.toContain(slug);
+
+    const agentB = await getAgent("agent-b");
+    expect(agentB!.socialPages).not.toContain(slug);
   });
 });

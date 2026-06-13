@@ -30,7 +30,7 @@ import { syncOwnerIndexForPage, removeOwnerIndexForSlug } from "./owner-index";
 import { syncBacklinksForPage, removeBacklinksForSlug } from "./backlink-index";
 import { recordEditForAuthor } from "./contributor-index";
 import { pushRecentEvent, removeRecentForSlug } from "./recent-index";
-import { isAgentHandle } from "./agents";
+import { isAgentHandle, removeSlugFromAgentPages } from "./agents";
 import { normalizeActor } from "./agent-handle";
 import { parseFrontmatter } from "./frontmatter";
 import { parseSources, newestSourceType } from "./sources";
@@ -546,6 +546,17 @@ async function runPageLifecycleOp(
   //     vault membership is EXPLICIT — a page joins a vault only via an
   //     ingest-into-vault or curate-into-vault action. Plain ingest lands in the
   //     commons only.
+
+  // 3e. Agent page cleanup — remove the slug from any agent profile that
+  //     references it in identityPages, learningPages, or socialPages. Mirrors
+  //     the vault orphan cleanup (#538). Delete-only; fail-soft.
+  if (op.kind === "delete") {
+    try {
+      await removeSlugFromAgentPages(slug);
+    } catch (err) {
+      logger.warn("agents", `agent page cleanup skipped for "${slug}":`, err);
+    }
+  }
 
   // 4. Cross-reference other pages.
   //    - write: discover related pages and add backlinks TO this slug.

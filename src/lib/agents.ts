@@ -494,6 +494,50 @@ export async function deleteAgent(id: string): Promise<boolean> {
 }
 
 // ---------------------------------------------------------------------------
+// removeSlugFromAgentPages — lifecycle cleanup on page deletion
+// ---------------------------------------------------------------------------
+
+/**
+ * Remove a slug from every agent profile that references it in
+ * `identityPages`, `learningPages`, or `socialPages`.
+ *
+ * Called by the page-deletion lifecycle pipeline so deleted wiki pages don't
+ * leave orphan references in agent profiles. Fail-soft: errors are logged but
+ * never thrown, matching the existing lifecycle cleanup pattern.
+ */
+export async function removeSlugFromAgentPages(slug: string): Promise<void> {
+  let agents: AgentProfile[];
+  try {
+    agents = await listAgents();
+  } catch (err) {
+    logger.warn("agents", `removeSlugFromAgentPages: failed to list agents for "${slug}":`, err);
+    return;
+  }
+
+  for (const agent of agents) {
+    const hasSlug =
+      agent.identityPages?.includes(slug) ||
+      agent.learningPages?.includes(slug) ||
+      agent.socialPages?.includes(slug);
+    if (!hasSlug) continue;
+
+    try {
+      agent.identityPages = (agent.identityPages ?? []).filter((s) => s !== slug);
+      agent.learningPages = (agent.learningPages ?? []).filter((s) => s !== slug);
+      agent.socialPages = (agent.socialPages ?? []).filter((s) => s !== slug);
+      agent.lastUpdated = new Date().toISOString();
+      await registerAgent(agent);
+    } catch (err) {
+      logger.warn(
+        "agents",
+        `removeSlugFromAgentPages: failed to update agent "${agent.id}" for slug "${slug}":`,
+        err,
+      );
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
 // updateAgent — partial updates to an existing agent profile
 // ---------------------------------------------------------------------------
 
