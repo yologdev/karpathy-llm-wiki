@@ -184,8 +184,10 @@ export async function PUT(req: Request, { params }: RouteParams) {
     const message = getErrorMessage(err);
     if (
       message.includes("Invalid agent ID") ||
-      message.includes("must be a non-empty string")
+      message.includes("must be a non-empty string") ||
+      message.includes("must be a vault you own")
     ) {
+      // Caller-input validation failures (incl. a bad `defaultVault`) are 400s.
       return NextResponse.json({ error: message }, { status: 400 });
     }
     return NextResponse.json({ error: message }, { status: 500 });

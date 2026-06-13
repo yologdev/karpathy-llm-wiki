@@ -266,6 +266,9 @@ function toolDescriptor(t: ToolDef) {
   return { name: t.name, description: t.description, inputSchema: t.inputSchema };
 }
 
+/** Exposed for tests (the reingest→primarySlug filing contract). */
+export const _internal = { resultSlug };
+
 // ---------------------------------------------------------------------------
 // Dispatch
 // ---------------------------------------------------------------------------

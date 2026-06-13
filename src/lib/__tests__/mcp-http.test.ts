@@ -8,6 +8,7 @@ import {
   MCP_MAX_BATCH,
   MCP_PROTOCOL_VERSION,
   MCP_SERVER_INFO,
+  _internal,
 } from "../mcp-http";
 import { ensureDirectories } from "../wiki";
 import { _resetStorage } from "../storage";
@@ -174,6 +175,16 @@ describe("dispatchMcp — per-agent target vault", () => {
     // The new page is referenced into the vault, and the result records it.
     expect(await vaultSlugs(vault.id)).toContain("from-agent");
     expect(r.content[0].text).toContain("filedIntoVault");
+  });
+
+  it("resultSlug reads `slug` (most write tools) and `primarySlug` (reingest)", () => {
+    // Guards the reingest filing path: reingest returns IngestResult with
+    // primarySlug and no top-level slug.
+    expect(_internal.resultSlug({ slug: "a" })).toBe("a");
+    expect(_internal.resultSlug({ primarySlug: "b" })).toBe("b");
+    expect(_internal.resultSlug({ slug: "a", primarySlug: "b" })).toBe("a");
+    expect(_internal.resultSlug({})).toBeNull();
+    expect(_internal.resultSlug("nope")).toBeNull();
   });
 
   it("a vault-filing failure does not fail the write (fail-soft)", async () => {

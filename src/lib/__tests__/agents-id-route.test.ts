@@ -93,6 +93,12 @@ describe("PUT /api/agents/[id] — ownership", () => {
     expect(mockedUpdate).not.toHaveBeenCalled();
   });
 
+  it("returns 400 (not 500) for an invalid defaultVault", async () => {
+    mockedUpdate.mockRejectedValue(new Error("defaultVault must be a vault you own"));
+    const res = await PUT(putReq({ defaultVault: "bob--x" }), { params });
+    expect(res.status).toBe(400);
+  });
+
   it("returns 404 when the agent does not exist", async () => {
     mockedAssert.mockResolvedValue(null);
     const res = await PUT(putReq({ name: "x" }), { params });

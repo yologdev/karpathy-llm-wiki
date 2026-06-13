@@ -241,7 +241,8 @@ export interface AgentProfile {
   socialPages: string[];
   /** Optional vault id this agent's remote-MCP ingests are filed into (by
    *  reference). Set by the owner; must be a vault they own. Surfaced to the
-   *  connecting agent via the MCP `initialize` instructions. */
+   *  connecting agent via the MCP `initialize` instructions and the write-tool
+   *  descriptions in `tools/list`. */
   defaultVault?: string;
   /** ISO date of when the agent was registered */
   registered: string;

@@ -73,8 +73,10 @@ ingests into a specific **vault** — set `defaultVault` on the agent
 owner-only; must be a vault you own). When set, the MCP server tells the
 connecting agent (via the `initialize` instructions and the write-tool
 descriptions) that saves are filed into that vault, and every ingest is
-auto-added to it by reference. A private target vault works as a staging area
-you review before sharing.
+auto-added to it by reference. Note: the page itself still lands in the public
+commons (attributed to you) immediately — the vault holds a *reference* to it,
+so filing into a private vault curates a private reference list, it does not yet
+keep the page itself private (clone-to-private is not implemented).
 
 ## Typical use
 
