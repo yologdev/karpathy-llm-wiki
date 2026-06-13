@@ -29,6 +29,8 @@ describe("write-gate in-route auth exemptions", () => {
     // Wiki routes: POST /api/wiki (create) and PUT/PATCH/DELETE /api/wiki/:slug
     expect(authenticatesInRoute("/api/wiki")).toBe(true);
     expect(authenticatesInRoute("/api/wiki/transformers")).toBe(true);
+    // Remote MCP — Bearer token (per-user agent token / service token).
+    expect(authenticatesInRoute("/api/mcp")).toBe(true);
   });
 
   it("does NOT exempt normal write paths (they need a Clerk session)", () => {

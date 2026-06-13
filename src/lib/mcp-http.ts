@@ -1,0 +1,303 @@
+/**
+ * Stateless JSON-RPC dispatch for the REMOTE (HTTP) MCP endpoint at
+ * `/api/mcp`. yopedia's MCP server is otherwise stdio-only; this exposes the
+ * same tools to external agents (Claude Desktop/Code, Cursor, OpenClaw) over
+ * HTTP so they can read and ingest into a DEPLOYED instance.
+ *
+ * Transport: Streamable-HTTP in **stateless** mode — each POST is one
+ * self-contained JSON-RPC message (no SSE, no session). That's the only viable
+ * shape on this stack (Cloudflare Workers, no Durable Objects for the SDK's
+ * session-backed transport), and it's enough for `initialize` → `tools/list` →
+ * `tools/call`.
+ *
+ * Tool handlers are REUSED from the stdio server (`@/mcp`) — single source of
+ * truth, no parallel write-path to drift (see `.yoyo/learnings.md`). We expose a
+ * curated subset (read + ingestion/query), not all 43 tools: smaller surface,
+ * less agent context.
+ *
+ * Auth/attribution lives in the route (`src/app/api/mcp/route.ts`): a Bearer
+ * token resolves to an `owner` handle; WRITE tools require it and attribute the
+ * page to that owner. Reads run unauthenticated against the public commons.
+ */
+import {
+  handleSearchWiki,
+  handleReadPage,
+  handleListPages,
+  handleQueryWiki,
+  handleIngestUrl,
+  handleIngestText,
+  handleReingest,
+  handleCreatePage,
+  handleSaveQueryAnswer,
+} from "@/mcp";
+
+/** Protocol version we advertise in `initialize`. */
+export const MCP_PROTOCOL_VERSION = "2025-06-18";
+export const MCP_SERVER_INFO = { name: "yopedia", version: "1.0.0" } as const;
+
+// ---------------------------------------------------------------------------
+// JSON-RPC envelope
+// ---------------------------------------------------------------------------
+
+export interface JsonRpcRequest {
+  jsonrpc?: string;
+  id?: string | number | null;
+  method?: string;
+  params?: Record<string, unknown>;
+}
+
+export interface JsonRpcResponse {
+  jsonrpc: "2.0";
+  id: string | number | null;
+  result?: unknown;
+  error?: { code: number; message: string };
+}
+
+function ok(id: JsonRpcRequest["id"], result: unknown): JsonRpcResponse {
+  return { jsonrpc: "2.0", id: id ?? null, result };
+}
+function rpcError(
+  id: JsonRpcRequest["id"],
+  code: number,
+  message: string,
+): JsonRpcResponse {
+  return { jsonrpc: "2.0", id: id ?? null, error: { code, message } };
+}
+
+/** A tool result in MCP's content shape. `isError` surfaces a handled failure. */
+function toolResult(data: unknown, isError = false) {
+  return {
+    content: [{ type: "text" as const, text: jsonText(data) }],
+    ...(isError ? { isError: true } : {}),
+  };
+}
+function jsonText(data: unknown): string {
+  return typeof data === "string" ? data : JSON.stringify(data, null, 2);
+}
+
+// ---------------------------------------------------------------------------
+// Curated tool registry
+// ---------------------------------------------------------------------------
+
+interface ToolDef {
+  name: string;
+  description: string;
+  inputSchema: Record<string, unknown>;
+  /** Write tools require an authenticated `owner`; reads don't. */
+  write: boolean;
+  run: (
+    args: Record<string, unknown>,
+    owner: string | null,
+  ) => Promise<unknown>;
+}
+
+const str = (description: string) => ({ type: "string", description });
+const optStr = str;
+const schema = (
+  props: Record<string, unknown>,
+  required: string[] = [],
+): Record<string, unknown> => ({
+  type: "object",
+  properties: props,
+  ...(required.length ? { required } : {}),
+});
+
+/** Owner-attribution for writes: every write tool stamps the resolved owner. */
+function attributed(
+  args: Record<string, unknown>,
+  owner: string,
+): Record<string, unknown> {
+  // Handlers destructure only the fields they accept; extra keys are ignored.
+  return { ...args, owner, author: owner, triggeredBy: owner };
+}
+
+export const MCP_TOOLS: ToolDef[] = [
+  {
+    name: "search_wiki",
+    description: "Search yopedia wiki pages by query string (public commons).",
+    inputSchema: schema(
+      {
+        query: str("Search query"),
+        limit: { type: "number", description: "Max results (default 10)" },
+        scope: optStr("Optional scope, e.g. 'agent:yoyo'"),
+      },
+      ["query"],
+    ),
+    write: false,
+    run: (a) => handleSearchWiki(a as Parameters<typeof handleSearchWiki>[0]),
+  },
+  {
+    name: "read_page",
+    description: "Read a single wiki page (markdown + frontmatter) by slug.",
+    inputSchema: schema({ slug: str("Page slug") }, ["slug"]),
+    write: false,
+    run: (a) => handleReadPage(a as Parameters<typeof handleReadPage>[0]),
+  },
+  {
+    name: "list_pages",
+    description: "List wiki pages, optionally sorted.",
+    inputSchema: schema({
+      sort: optStr("title | updated | confidence"),
+      limit: { type: "number", description: "Max results" },
+    }),
+    write: false,
+    run: (a) => handleListPages(a as Parameters<typeof handleListPages>[0]),
+  },
+  {
+    name: "query_wiki",
+    description:
+      "Ask a question; returns an LLM-synthesized, cited answer from the wiki.",
+    inputSchema: schema(
+      {
+        question: str("The question to answer"),
+        format: optStr("prose | table | slides | html (default prose)"),
+        scope: optStr("Optional scope, e.g. 'agent:yoyo'"),
+      },
+      ["question"],
+    ),
+    write: false,
+    run: (a) => handleQueryWiki(a as Parameters<typeof handleQueryWiki>[0]),
+  },
+  {
+    name: "ingest_url",
+    description:
+      "Fetch a URL (web/YouTube/X/PDF), summarize, and save it as a wiki page in YOUR content.",
+    inputSchema: schema(
+      {
+        url: str("The URL to ingest"),
+        tags: { type: "array", items: { type: "string" }, description: "Optional tags" },
+      },
+      ["url"],
+    ),
+    write: true,
+    run: (a, owner) =>
+      handleIngestUrl(
+        attributed(a, owner!) as Parameters<typeof handleIngestUrl>[0],
+      ),
+  },
+  {
+    name: "ingest_text",
+    description: "Ingest raw text/markdown as a wiki page in YOUR content.",
+    inputSchema: schema(
+      {
+        content: str("The text to ingest"),
+        title: optStr("Optional title"),
+        tags: { type: "array", items: { type: "string" }, description: "Optional tags" },
+      },
+      ["content"],
+    ),
+    write: true,
+    run: (a, owner) =>
+      handleIngestText(
+        attributed(a, owner!) as Parameters<typeof handleIngestText>[0],
+      ),
+  },
+  {
+    name: "create_page",
+    description: "Create a new wiki page (markdown) in YOUR content.",
+    inputSchema: schema(
+      {
+        slug: str("Page slug"),
+        content: str("Markdown body"),
+        tags: { type: "array", items: { type: "string" }, description: "Optional tags" },
+      },
+      ["slug", "content"],
+    ),
+    write: true,
+    run: (a, owner) =>
+      handleCreatePage(
+        attributed(a, owner!) as Parameters<typeof handleCreatePage>[0],
+      ),
+  },
+  {
+    name: "save_query_answer",
+    description: "Persist a question + answer as a wiki page in YOUR content.",
+    inputSchema: schema(
+      {
+        question: str("The question"),
+        answer: str("The answer (markdown/html/slides)"),
+        slug: optStr("Optional explicit slug"),
+        sources: { type: "array", items: { type: "string" }, description: "Cited slugs" },
+        format: optStr("markdown | html | slides"),
+      },
+      ["question", "answer"],
+    ),
+    write: true,
+    run: (a, owner) =>
+      handleSaveQueryAnswer(
+        attributed(a, owner!) as Parameters<typeof handleSaveQueryAnswer>[0],
+      ),
+  },
+  {
+    name: "reingest",
+    description: "Re-fetch a page's original source and refresh it.",
+    inputSchema: schema({ slug: str("Page slug to re-ingest") }, ["slug"]),
+    write: true,
+    run: (a) => handleReingest(a as Parameters<typeof handleReingest>[0]),
+  },
+];
+
+/** Public (transport-facing) tool descriptor for `tools/list`. */
+function toolDescriptor(t: ToolDef) {
+  return { name: t.name, description: t.description, inputSchema: t.inputSchema };
+}
+
+// ---------------------------------------------------------------------------
+// Dispatch
+// ---------------------------------------------------------------------------
+
+/**
+ * Handle one JSON-RPC message. `owner` is the resolved write-principal handle
+ * (or null when unauthenticated — reads still work). Returns `null` for
+ * notifications (no response body). Tool failures surface as an `isError` tool
+ * result, not a JSON-RPC error, matching the stdio server's convention.
+ */
+export async function dispatchMcp(
+  msg: JsonRpcRequest,
+  owner: string | null,
+): Promise<JsonRpcResponse | null> {
+  const { id, method } = msg;
+  switch (method) {
+    case "initialize":
+      return ok(id, {
+        protocolVersion: MCP_PROTOCOL_VERSION,
+        capabilities: { tools: {} },
+        serverInfo: MCP_SERVER_INFO,
+      });
+    case "notifications/initialized":
+    case "notifications/cancelled":
+      return null; // notifications get no response
+    case "ping":
+      return ok(id, {});
+    case "tools/list":
+      return ok(id, { tools: MCP_TOOLS.map(toolDescriptor) });
+    case "tools/call": {
+      const params = (msg.params ?? {}) as {
+        name?: string;
+        arguments?: Record<string, unknown>;
+      };
+      const tool = MCP_TOOLS.find((t) => t.name === params.name);
+      if (!tool) {
+        return ok(id, toolResult(`Unknown tool: ${params.name}`, true));
+      }
+      if (tool.write && !owner) {
+        return ok(
+          id,
+          toolResult(
+            "Authentication required: this tool writes to your content. Send Authorization: Bearer <your yopedia token>.",
+            true,
+          ),
+        );
+      }
+      try {
+        const result = await tool.run(params.arguments ?? {}, owner);
+        return ok(id, toolResult(result));
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        return ok(id, toolResult(`Error: ${message}`, true));
+      }
+    }
+    default:
+      return rpcError(id, -32601, `Method not found: ${method ?? "(none)"}`);
+  }
+}

@@ -26,11 +26,13 @@ const WRITE_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 //   - /api/wiki                   — Clerk session OR the system service token
 //   - /api/wiki/<slug>            — Clerk session OR the system service token
 //   - /api/wiki/<slug>/revisions   — Clerk session OR the system service token
+//   - /api/mcp                    — remote MCP: Bearer agent/service token (reads need none)
 // This is not a hole.
-//
-// The MCP server is stdio-only and not exposed over HTTP, so it is unaffected.
 const IN_ROUTE_AUTH_PATHS = new Set([
   "/api/agents/seed",
+  // Remote (HTTP) MCP endpoint — authenticates in-route via a Bearer token
+  // (per-user agent token or the service token); reads work unauthenticated.
+  "/api/mcp",
   "/api/ingest",
   "/api/ingest/batch",
   "/api/ingest/image",
