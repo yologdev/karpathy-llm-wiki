@@ -20,7 +20,7 @@ import {
   type CorpusStats,
 } from "./bm25";
 import { extractCitedSlugs } from "./citations";
-import { UNTRUSTED_CONTENT_RULE } from "./untrusted";
+import { UNTRUSTED_CONTENT_RULE, wrapUntrusted } from "./untrusted";
 import type { QueryResult } from "./types";
 import type { QueryFormat } from "./query-format";
 
@@ -189,7 +189,14 @@ export async function buildQuerySystemPrompt(
     const remainder = others.length - listed.length;
     const moreLine =
       remainder > 0 ? `\n…and ${remainder} more pages not listed here.\n` : "\n";
-    indexSection = `\nThe wiki also contains these other pages (not loaded in full):\n${indexListing}\n${moreLine}`;
+    // The titles/summaries are collectively-editable, frontmatter-derived data
+    // (an attacker can plant instructions in a page title/summary), so the
+    // listing goes inside the same untrusted-content boundary as page bodies —
+    // the model may use the titles/slugs to cite, never obey text within.
+    indexSection = `\nThe wiki also contains these other pages (not loaded in full):\n${wrapUntrusted(
+      indexListing,
+      { source: "page index (titles + summaries)" },
+    )}\n${moreLine}`;
   }
 
   let systemPrompt = SYSTEM_PROMPT_TEMPLATE

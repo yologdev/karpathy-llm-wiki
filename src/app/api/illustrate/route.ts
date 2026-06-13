@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getPrincipal } from "@/lib/auth";
 import { generateYoyoIllustration } from "@/lib/illustration";
+import { enforceRateLimit } from "@/lib/rate-limit";
 import { getErrorMessage } from "@/lib/errors";
 import { logger } from "@/lib/logger";
 
@@ -23,6 +24,15 @@ export async function POST(request: Request) {
     const principal = await getPrincipal();
     if (!principal) {
       return NextResponse.json({ error: "Sign in required." }, { status: 401 });
+    }
+
+    // Per-user cost guard — image generation hits a paid API.
+    const rl = await enforceRateLimit("illustrate", principal.id);
+    if (!rl.allowed) {
+      return NextResponse.json(
+        { error: "Rate limit exceeded — slow down and retry shortly." },
+        { status: 429 },
+      );
     }
 
     const body = await request.json().catch(() => ({}));

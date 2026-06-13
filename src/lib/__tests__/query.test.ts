@@ -1502,6 +1502,19 @@ describe("buildQuerySystemPrompt — format option", () => {
     expect(prompt).toMatch(/untrusted reference DATA/i);
   });
 
+  it("wraps the other-pages index listing in the untrusted boundary", async () => {
+    // alpha is selected → beta is an "other" page whose title/summary are
+    // attacker-influenceable and must sit inside the boundary.
+    const prompt = await buildQuerySystemPrompt("ctx", entries, ["alpha"]);
+    const section = prompt.slice(prompt.indexOf("other pages"));
+    const open = section.indexOf("<wiki_content");
+    const beta = section.indexOf("[Beta](beta.md)");
+    const close = section.indexOf("</wiki_content>");
+    expect(open).toBeGreaterThanOrEqual(0);
+    expect(beta).toBeGreaterThan(open); // listing is inside the opened block
+    expect(close).toBeGreaterThan(beta); // …and closed after it
+  });
+
   it("omits the table instruction when format is 'prose' (default)", async () => {
     const proseExplicit = await buildQuerySystemPrompt(
       "context body",

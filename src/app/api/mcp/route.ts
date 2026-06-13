@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { verifyAgentToken, getAgent } from "@/lib/agents";
 import { getServicePrincipal, type Principal } from "@/lib/auth";
 import { getVault, vaultOwnedBy } from "@/lib/vault";
+import { enforceRateLimit } from "@/lib/rate-limit";
 import {
   dispatchMcp,
   MCP_MAX_BATCH,
@@ -94,6 +95,19 @@ export async function POST(req: Request) {
       );
     }
     const { principal, targetVault } = auth;
+
+    // Cost guard. Key by the authenticated principal when present, else the
+    // client IP — anonymous reads still reach query_wiki, which hits the LLM.
+    const rlKey = principal
+      ? `p:${principal.handle}`
+      : `ip:${req.headers.get("cf-connecting-ip") ?? req.headers.get("x-forwarded-for") ?? "unknown"}`;
+    const rl = await enforceRateLimit("mcp", rlKey);
+    if (!rl.allowed) {
+      return NextResponse.json(
+        { jsonrpc: "2.0", id: null, error: { code: -32000, message: "Rate limit exceeded." } },
+        { status: 429 },
+      );
+    }
 
     let body: unknown;
     try {

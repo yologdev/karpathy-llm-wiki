@@ -9,6 +9,9 @@ vi.mock("@/lib/agents", () => ({
 vi.mock("@/lib/auth", () => ({
   getServicePrincipal: vi.fn(() => null),
 }));
+vi.mock("@/lib/rate-limit", () => ({
+  enforceRateLimit: vi.fn(async () => ({ allowed: true, remaining: 1 })),
+}));
 vi.mock("@/mcp", () => ({
   handleSearchWiki: vi.fn(async () => []),
   handleReadPage: vi.fn(),
@@ -23,12 +26,14 @@ vi.mock("@/mcp", () => ({
 
 import { verifyAgentToken, getAgent } from "@/lib/agents";
 import { getServicePrincipal } from "@/lib/auth";
+import { enforceRateLimit } from "@/lib/rate-limit";
 import { handleCreatePage } from "@/mcp";
 import { POST, GET } from "@/app/api/mcp/route";
 
 const mockedVerify = vi.mocked(verifyAgentToken);
 const mockedGetAgent = vi.mocked(getAgent);
 const mockedService = vi.mocked(getServicePrincipal);
+const mockedRateLimit = vi.mocked(enforceRateLimit);
 const mockedCreate = vi.mocked(handleCreatePage);
 
 function post(body: unknown, headers: Record<string, string> = {}): Request {
@@ -45,6 +50,7 @@ beforeEach(() => {
   mockedVerify.mockResolvedValue(null);
   mockedGetAgent.mockResolvedValue(null);
   mockedService.mockReturnValue(null);
+  mockedRateLimit.mockResolvedValue({ allowed: true, remaining: 1 });
 });
 
 describe("POST /api/mcp — auth resolution", () => {
@@ -158,5 +164,12 @@ describe("POST /api/mcp — transport", () => {
     const res = GET();
     expect(res.status).toBe(405);
     expect(res.headers.get("Allow")).toBe("POST");
+  });
+
+  it("returns 429 when the rate limit is exceeded", async () => {
+    mockedRateLimit.mockResolvedValue({ allowed: false, remaining: 0 });
+    const res = await POST(post({ id: 1, method: "ping" }));
+    expect(res.status).toBe(429);
+    expect((await res.json()).error.code).toBe(-32000);
   });
 });
