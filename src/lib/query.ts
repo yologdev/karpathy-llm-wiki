@@ -20,6 +20,7 @@ import {
   type CorpusStats,
 } from "./bm25";
 import { extractCitedSlugs } from "./citations";
+import { UNTRUSTED_CONTENT_RULE } from "./untrusted";
 import type { QueryResult } from "./types";
 import type { QueryFormat } from "./query-format";
 
@@ -58,6 +59,7 @@ Rules:
 - Format your answer in markdown
 - Prefer non-disputed pages when multiple sources cover the same topic; if you must cite a disputed page, note that its claims are under discussion
 - Do not cite superseded pages without noting the replacement page
+- ${UNTRUSTED_CONTENT_RULE}
 {index_section}
 Wiki pages:
 {context}`;

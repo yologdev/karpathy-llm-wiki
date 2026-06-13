@@ -11,6 +11,8 @@ import { searchByVector } from "./embeddings";
 import { callLLM, hasLLMKey } from "./llm";
 import { MAX_CONTEXT_PAGES, RRF_K, BM25_FULLBODY_MAX_PAGES } from "./constants";
 import { logger } from "./logger";
+import { parseSources } from "./sources";
+import { wrapUntrusted } from "./untrusted";
 import type { IndexEntry } from "./types";
 
 // ---------------------------------------------------------------------------
@@ -367,7 +369,23 @@ export async function buildContext(slugs?: string[]): Promise<{
       header += "\n" + markers.join("\n");
     }
 
-    parts.push(`${header}\n${page.body}`);
+    // The system-generated header + markers above are trusted; the page BODY is
+    // collectively-editable, third-party-sourced content, so it's wrapped in an
+    // untrusted-data boundary (see ./untrusted + UNTRUSTED_CONTENT_RULE in the
+    // query system prompt) to contain indirect prompt injection. The `source`
+    // label summarizes the page's provenance types for the model.
+    const sourceTypes = Array.from(
+      new Set(
+        parseSources(
+          page.frontmatter.sources as string | string[] | undefined,
+        ).map((s) => s.type),
+      ),
+    );
+    const wrappedBody = wrapUntrusted(page.body, {
+      slug: page.slug,
+      source: sourceTypes.length > 0 ? sourceTypes.join(", ") : undefined,
+    });
+    parts.push(`${header}\n${wrappedBody}`);
   }
 
   return { context: parts.join("\n\n"), slugs: loadedSlugs };
