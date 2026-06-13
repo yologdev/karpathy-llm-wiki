@@ -1,7 +1,13 @@
 import { NextResponse } from "next/server";
 import { verifyAgentToken, getAgent } from "@/lib/agents";
 import { getServicePrincipal, type Principal } from "@/lib/auth";
-import { dispatchMcp, MCP_MAX_BATCH, type JsonRpcRequest } from "@/lib/mcp-http";
+import { getVault, vaultOwnedBy } from "@/lib/vault";
+import {
+  dispatchMcp,
+  MCP_MAX_BATCH,
+  type JsonRpcRequest,
+  type TargetVault,
+} from "@/lib/mcp-http";
 import { logger } from "@/lib/logger";
 
 /**
@@ -27,8 +33,20 @@ import { logger } from "@/lib/logger";
  *  means a token was presented but is invalid → 401. Literal discriminant so the
  *  three outcomes are compiler-checked, not a structural `in` probe. */
 type AuthResult =
-  | { kind: "ok"; principal: Principal | null }
+  | { kind: "ok"; principal: Principal | null; targetVault: TargetVault | null }
   | { kind: "unauthorized" };
+
+/** Resolve an agent's configured `defaultVault` to a usable target — only if it
+ *  still exists and is owned by `owner` (stale/foreign ids are ignored, not an
+ *  error). */
+async function resolveTargetVault(
+  vaultId: string | undefined,
+  owner: string,
+): Promise<TargetVault | null> {
+  if (!vaultId || !vaultOwnedBy(vaultId, owner)) return null;
+  const vault = await getVault(vaultId);
+  return vault ? { id: vault.id, name: vault.name } : null;
+}
 
 /** Resolve the calling principal from a Bearer token. A per-user agent token
  *  resolves to its human OWNER (handle), so writes attribute to and are
@@ -38,7 +56,7 @@ async function resolvePrincipal(req: Request): Promise<AuthResult> {
   const bearer = req.headers
     .get("authorization")
     ?.match(/^Bearer\s+(.+)$/i)?.[1];
-  if (!bearer) return { kind: "ok", principal: null };
+  if (!bearer) return { kind: "ok", principal: null, targetVault: null };
 
   const agentId = await verifyAgentToken(bearer);
   if (agentId) {
@@ -51,11 +69,15 @@ async function resolvePrincipal(req: Request): Promise<AuthResult> {
     // Act as the agent's human owner (handle-keyed ownership). The non-service
     // id means this is NOT a write-anything principal — it can only write the
     // owner's own pages + the public commons (canWriteFrontmatter).
-    return { kind: "ok", principal: { id: `agent:${agentId}`, handle: agent.owner } };
+    return {
+      kind: "ok",
+      principal: { id: `agent:${agentId}`, handle: agent.owner },
+      targetVault: await resolveTargetVault(agent.defaultVault, agent.owner),
+    };
   }
 
   const service = getServicePrincipal(req);
-  if (service) return { kind: "ok", principal: service };
+  if (service) return { kind: "ok", principal: service, targetVault: null };
 
   return { kind: "unauthorized" };
 }
@@ -71,7 +93,7 @@ export async function POST(req: Request) {
         { status: 401 },
       );
     }
-    const principal = auth.principal;
+    const { principal, targetVault } = auth;
 
     let body: unknown;
     try {
@@ -98,7 +120,9 @@ export async function POST(req: Request) {
       }
       const responses = (
         await Promise.all(
-          body.map((m) => dispatchMcp((m ?? PARSE_ERROR) as JsonRpcRequest, principal)),
+          body.map((m) =>
+            dispatchMcp((m ?? PARSE_ERROR) as JsonRpcRequest, principal, targetVault),
+          ),
         )
       ).filter((r) => r !== null);
       // All notifications → 202 with no body.
@@ -106,7 +130,11 @@ export async function POST(req: Request) {
       return NextResponse.json(responses);
     }
 
-    const res = await dispatchMcp((body ?? PARSE_ERROR) as JsonRpcRequest, principal);
+    const res = await dispatchMcp(
+      (body ?? PARSE_ERROR) as JsonRpcRequest,
+      principal,
+      targetVault,
+    );
     if (res === null) return new NextResponse(null, { status: 202 });
     return NextResponse.json(res);
   } catch (err) {

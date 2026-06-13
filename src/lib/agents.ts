@@ -16,6 +16,7 @@ import { serializeFrontmatter } from "./frontmatter";
 import { slugify } from "./slugify";
 import { writeWikiPageWithSideEffects } from "./lifecycle";
 import { readWikiPageWithFrontmatter } from "./wiki";
+import { getVault, vaultOwnedBy } from "./vault";
 import { logger } from "./logger";
 import type { AgentProfile } from "./types";
 
@@ -560,6 +561,9 @@ export interface UpdateAgentOptions {
   addPages?: UpdateAgentPage[];
   /** Slugs to remove from the profile's page lists (does NOT delete wiki pages). */
   removePages?: string[];
+  /** Vault id to file this agent's remote-MCP ingests into (must be a vault the
+   *  agent's owner owns). Pass `""`/`null` to clear. */
+  defaultVault?: string | null;
 }
 
 /**
@@ -599,6 +603,24 @@ export async function updateAgent(
       throw new Error("Agent description must be a non-empty string");
     }
     existing.description = options.description;
+  }
+  if (options.defaultVault !== undefined) {
+    if (!options.defaultVault) {
+      // "" / null clears the target vault.
+      delete existing.defaultVault;
+    } else {
+      // Must be a vault the agent's OWNER owns AND that exists — so a target
+      // can't point at someone else's (or a phantom) vault.
+      const vault = await getVault(options.defaultVault);
+      if (
+        !vault ||
+        !existing.owner ||
+        !vaultOwnedBy(options.defaultVault, existing.owner)
+      ) {
+        throw new Error("defaultVault must be a vault you own");
+      }
+      existing.defaultVault = options.defaultVault;
+    }
   }
 
   // Remove pages from lists (before adding, so add-then-remove of same slug

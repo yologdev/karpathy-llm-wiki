@@ -11,6 +11,7 @@ import {
 } from "../mcp-http";
 import { ensureDirectories } from "../wiki";
 import { _resetStorage } from "../storage";
+import { createVault, vaultSlugs } from "../vault";
 import type { Principal } from "../auth";
 
 const ALICE: Principal = { id: "agent:a--yoyo", handle: "alice" };
@@ -135,5 +136,61 @@ describe("dispatchMcp — tools/call auth gating", () => {
 
   it("exposes a batch cap constant", () => {
     expect(MCP_MAX_BATCH).toBeGreaterThan(0);
+  });
+});
+
+describe("dispatchMcp — per-agent target vault", () => {
+  const VAULT = { id: "alice--inbox", name: "Inbox" };
+
+  it("initialize surfaces the target vault in instructions (and omits it without one)", async () => {
+    const withVault = await dispatchMcp({ id: 1, method: "initialize" }, ALICE, VAULT);
+    expect((withVault!.result as { instructions?: string }).instructions).toMatch(/Inbox/);
+    const without = await dispatchMcp({ id: 1, method: "initialize" }, ALICE, null);
+    expect((without!.result as { instructions?: string }).instructions).toBeUndefined();
+  });
+
+  it("tools/list appends the vault destination to WRITE tool descriptions only", async () => {
+    const res = await dispatchMcp({ id: 1, method: "tools/list" }, ALICE, VAULT);
+    const tools = (res!.result as { tools: { name: string; description: string }[] }).tools;
+    const ingest = tools.find((t) => t.name === "ingest_url")!;
+    const search = tools.find((t) => t.name === "search_wiki")!;
+    expect(ingest.description).toMatch(/Inbox/);
+    expect(search.description).not.toMatch(/Inbox/);
+  });
+
+  it("files a created page into the target vault and notes it in the result", async () => {
+    const vault = await createVault("alice", "Inbox", "public");
+    const res = await dispatchMcp(
+      {
+        id: 1,
+        method: "tools/call",
+        params: { name: "create_page", arguments: { slug: "from-agent", content: "# From Agent\n\nbody." } },
+      },
+      ALICE,
+      { id: vault.id, name: vault.name },
+    );
+    const r = res!.result as { isError?: boolean; content: { text: string }[] };
+    expect(r.isError).toBeFalsy();
+    // The new page is referenced into the vault, and the result records it.
+    expect(await vaultSlugs(vault.id)).toContain("from-agent");
+    expect(r.content[0].text).toContain("filedIntoVault");
+  });
+
+  it("a vault-filing failure does not fail the write (fail-soft)", async () => {
+    // No such vault → addToVault's mutate is a no-op/throws internally; the page
+    // is still created and the call succeeds.
+    const res = await dispatchMcp(
+      {
+        id: 1,
+        method: "tools/call",
+        params: { name: "create_page", arguments: { slug: "still-created", content: "# X\n\nbody." } },
+      },
+      ALICE,
+      { id: "alice--ghost", name: "Ghost" },
+    );
+    const r = res!.result as { isError?: boolean };
+    expect(r.isError).toBeFalsy();
+    const { readWikiPage } = await import("../wiki");
+    expect(await readWikiPage("still-created")).not.toBeNull();
   });
 });

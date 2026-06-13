@@ -65,6 +65,17 @@ Omit the `Authorization` header for read-only access.
 | `save_query_answer` | Bearer | Persist a Q&A as your page |
 | `reingest` | Bearer | Re-fetch a page's source and refresh it |
 
+## Target vault (where your saves land)
+
+By default, writes land in your own content. You can optionally route an agent's
+ingests into a specific **vault** — set `defaultVault` on the agent
+(`PUT /api/agents/<your-agent-id>` with `{ "defaultVault": "<vault-id>" }`,
+owner-only; must be a vault you own). When set, the MCP server tells the
+connecting agent (via the `initialize` instructions and the write-tool
+descriptions) that saves are filed into that vault, and every ingest is
+auto-added to it by reference. A private target vault works as a staging area
+you review before sharing.
+
 ## Typical use
 
 - "Add this to my wiki: <url>" → `ingest_url`. The agent ingests directly; the user never copy-pastes.

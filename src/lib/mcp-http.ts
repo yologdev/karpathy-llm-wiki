@@ -32,7 +32,15 @@ import {
 } from "@/mcp";
 import { readWikiPageWithFrontmatter } from "@/lib/wiki";
 import { canWriteFrontmatter } from "@/lib/authz";
+import { addToVault } from "@/lib/vault";
+import { logger } from "@/lib/logger";
 import type { Principal } from "@/lib/auth";
+
+/** The resolved vault that an authenticated caller's ingests are filed into. */
+export interface TargetVault {
+  id: string;
+  name: string;
+}
 
 /** Protocol version we advertise in `initialize`. */
 export const MCP_PROTOCOL_VERSION = "2025-06-18";
@@ -266,31 +274,83 @@ function toolDescriptor(t: ToolDef) {
  *  network fetch + LLM call). */
 export const MCP_MAX_BATCH = 20;
 
+/** A new page's slug from a write-tool result (handlers vary: ingest →
+ *  `primarySlug`, create/save → `slug`). */
+function resultSlug(result: unknown): string | null {
+  if (result && typeof result === "object") {
+    const r = result as { slug?: unknown; primarySlug?: unknown };
+    if (typeof r.slug === "string") return r.slug;
+    if (typeof r.primarySlug === "string") return r.primarySlug;
+  }
+  return null;
+}
+
+/**
+ * After a successful write, file the new page into the caller's per-agent target
+ * vault (by reference). Fail-soft: the page is already written, so a vault hiccup
+ * must never fail the call — log and return the result unchanged.
+ */
+async function fileIntoVault(
+  result: unknown,
+  targetVault: TargetVault | null,
+): Promise<unknown> {
+  if (!targetVault) return result;
+  const slug = resultSlug(result);
+  if (!slug) return result;
+  try {
+    await addToVault(targetVault.id, slug);
+    return result && typeof result === "object"
+      ? { ...result, filedIntoVault: targetVault.id }
+      : result;
+  } catch (err) {
+    logger.warn("mcp", `vault filing failed for ${slug} → ${targetVault.id}`, err);
+    return result;
+  }
+}
+
 /**
  * Handle one JSON-RPC message. `principal` is the resolved caller (or null when
- * unauthenticated — reads still work). Returns `null` for notifications (no
- * response body). Tool failures surface as an `isError` tool result, not a
+ * unauthenticated — reads still work); `targetVault` is the caller's per-agent
+ * vault that successful ingests are filed into. Returns `null` for notifications
+ * (no response body). Tool failures surface as an `isError` tool result, not a
  * JSON-RPC error, matching the stdio server's convention.
  */
 export async function dispatchMcp(
   msg: JsonRpcRequest,
   principal: Principal | null,
+  targetVault: TargetVault | null = null,
 ): Promise<JsonRpcResponse | null> {
   const { id, method } = msg;
   switch (method) {
-    case "initialize":
+    case "initialize": {
+      // Tell the connecting agent where its saves land (the user configured a
+      // target vault for this agent) — prompt-level transparency; the server
+      // still enforces attribution + vault filing.
+      const instructions = targetVault
+        ? `Pages you save (ingest_url/ingest_text/create_page/save_query_answer) are filed into the user's "${targetVault.name}" vault, attributed to the user.`
+        : undefined;
       return ok(id, {
         protocolVersion: MCP_PROTOCOL_VERSION,
         capabilities: { tools: {} },
         serverInfo: MCP_SERVER_INFO,
+        ...(instructions ? { instructions } : {}),
       });
+    }
     case "notifications/initialized":
     case "notifications/cancelled":
       return null; // notifications get no response
     case "ping":
       return ok(id, {});
-    case "tools/list":
-      return ok(id, { tools: MCP_TOOLS.map(toolDescriptor) });
+    case "tools/list": {
+      // Append the vault destination to write-tool descriptions so the agent
+      // sees it in the schema, not just the initialize instructions.
+      const suffix = targetVault ? ` Filed into the "${targetVault.name}" vault.` : "";
+      const tools = MCP_TOOLS.map((t) => {
+        const d = toolDescriptor(t);
+        return t.write && suffix ? { ...d, description: d.description + suffix } : d;
+      });
+      return ok(id, { tools });
+    }
     case "tools/call": {
       const params = (msg.params ?? {}) as {
         name?: string;
@@ -311,7 +371,8 @@ export async function dispatchMcp(
       }
       try {
         const result = await tool.run(params.arguments ?? {}, principal);
-        return ok(id, toolResult(result));
+        const filed = tool.write ? await fileIntoVault(result, targetVault) : result;
+        return ok(id, toolResult(filed));
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         return ok(id, toolResult(`Error: ${message}`, true));

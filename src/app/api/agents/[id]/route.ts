@@ -117,6 +117,8 @@ export async function DELETE(_req: Request, { params }: RouteParams) {
  *   - `description?` — new description
  *   - `addPages?` — array of `{ slug, title, type, content }` to create and link
  *   - `removePages?` — array of slugs to unlink (does NOT delete wiki pages)
+ *   - `defaultVault?` — vault id to file this agent's remote-MCP ingests into
+ *     (must be a vault you own; `""`/`null` clears it)
  *
  * Only the owner may update (feed) the agent. Returns the updated profile.
  * 403 if not the owner, 404 if agent doesn't exist, 400 for validation.

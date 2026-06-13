@@ -27,6 +27,7 @@ import {
 import type { UpdateAgentPage } from "../agents";
 import { readWikiPage, readWikiPageWithFrontmatter } from "../wiki";
 import type { AgentProfile } from "../types";
+import { createVault } from "../vault";
 import { _resetStorage, getStorage } from "../storage";
 
 // ---------------------------------------------------------------------------
@@ -174,6 +175,46 @@ describe("getAgent", () => {
     await expect(getAgent("INVALID")).rejects.toThrow(/Invalid agent ID/);
     await expect(getAgent("")).rejects.toThrow(/Invalid agent ID/);
     await expect(getAgent("-bad")).rejects.toThrow(/Invalid agent ID/);
+  });
+});
+
+describe("updateAgent — defaultVault", () => {
+  async function aliceAgent(): Promise<AgentProfile> {
+    const profile = makeProfile({ id: "alice--yoyo", owner: "alice" });
+    await registerAgent(profile);
+    return profile;
+  }
+
+  it("sets a target vault the owner owns", async () => {
+    await aliceAgent();
+    const vault = await createVault("alice", "Inbox", "public");
+    const updated = await updateAgent("alice--yoyo", { defaultVault: vault.id });
+    expect(updated!.defaultVault).toBe(vault.id);
+    // Persisted.
+    expect((await getAgent("alice--yoyo"))!.defaultVault).toBe(vault.id);
+  });
+
+  it("rejects a vault the owner does not own", async () => {
+    await aliceAgent();
+    const foreign = await createVault("bob", "Stuff", "public");
+    await expect(
+      updateAgent("alice--yoyo", { defaultVault: foreign.id }),
+    ).rejects.toThrow(/vault you own/i);
+  });
+
+  it("rejects a non-existent vault (even with the owner's prefix)", async () => {
+    await aliceAgent();
+    await expect(
+      updateAgent("alice--yoyo", { defaultVault: "alice--ghost" }),
+    ).rejects.toThrow(/vault you own/i);
+  });
+
+  it("clears the target vault with an empty string", async () => {
+    await aliceAgent();
+    const vault = await createVault("alice", "Inbox", "public");
+    await updateAgent("alice--yoyo", { defaultVault: vault.id });
+    const cleared = await updateAgent("alice--yoyo", { defaultVault: "" });
+    expect(cleared!.defaultVault).toBeUndefined();
   });
 });
 
