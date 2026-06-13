@@ -274,8 +274,9 @@ function toolDescriptor(t: ToolDef) {
  *  network fetch + LLM call). */
 export const MCP_MAX_BATCH = 20;
 
-/** A new page's slug from a write-tool result (handlers vary: ingest →
- *  `primarySlug`, create/save → `slug`). */
+/** A new page's slug from a write-tool result. Most handlers return a top-level
+ *  `slug` (ingest_url/ingest_text/create_page/save_query_answer); `reingest`
+ *  returns the raw IngestResult with `primarySlug`. Probe both. */
 function resultSlug(result: unknown): string | null {
   if (result && typeof result === "object") {
     const r = result as { slug?: unknown; primarySlug?: unknown };
