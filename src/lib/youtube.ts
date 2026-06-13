@@ -7,6 +7,7 @@
  */
 
 import { YoutubeTranscript } from "youtube-transcript";
+import { ClientInputError } from "./errors";
 import { logger } from "./logger";
 
 // ---------------------------------------------------------------------------
@@ -121,7 +122,7 @@ export async function fetchYouTubeMetadata(
   const res = await fetch(oembedUrl);
 
   if (!res.ok) {
-    throw new Error(
+    throw new ClientInputError(
       `YouTube oEmbed request failed (HTTP ${res.status}): video "${videoId}" not found or unavailable`,
     );
   }
@@ -348,7 +349,7 @@ export async function fetchYouTubeContent(
 ): Promise<YouTubeContent> {
   const videoId = extractVideoId(url);
   if (!videoId) {
-    throw new Error(`Invalid YouTube URL: "${url}"`);
+    throw new ClientInputError(`Invalid YouTube URL: "${url}"`);
   }
 
   const metadata = await fetchYouTubeMetadata(videoId);

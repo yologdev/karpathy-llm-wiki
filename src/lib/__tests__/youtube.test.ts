@@ -7,6 +7,7 @@ import {
   formatTranscriptAsMarkdown,
   fetchYouTubeContent,
 } from "../youtube";
+import { ClientInputError } from "../errors";
 import { YoutubeTranscript } from "youtube-transcript";
 
 // ---------------------------------------------------------------------------
@@ -157,12 +158,15 @@ describe("fetchYouTubeMetadata", () => {
     });
   });
 
-  it("throws on HTTP errors", async () => {
+  it("throws ClientInputError on HTTP errors", async () => {
     globalThis.fetch = vi.fn().mockResolvedValue({
       ok: false,
       status: 404,
     }) as unknown as typeof fetch;
 
+    await expect(fetchYouTubeMetadata("nonexistent")).rejects.toThrow(
+      ClientInputError,
+    );
     await expect(fetchYouTubeMetadata("nonexistent")).rejects.toThrow(
       /404/,
     );
@@ -443,10 +447,16 @@ describe("fetchYouTubeContent", () => {
 
     await expect(
       fetchYouTubeContent("https://www.youtube.com/watch?v=dQw4w9WgXcQ"),
+    ).rejects.toThrow(ClientInputError);
+    await expect(
+      fetchYouTubeContent("https://www.youtube.com/watch?v=dQw4w9WgXcQ"),
     ).rejects.toThrow(/404/);
   });
 
   it("throws for invalid YouTube URL", async () => {
+    await expect(
+      fetchYouTubeContent("https://example.com/not-youtube"),
+    ).rejects.toThrow(ClientInputError);
     await expect(
       fetchYouTubeContent("https://example.com/not-youtube"),
     ).rejects.toThrow(/Invalid YouTube URL/);
