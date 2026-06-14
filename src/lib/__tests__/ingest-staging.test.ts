@@ -8,6 +8,7 @@ import {
   readStagedBytes,
   readStagedText,
   deleteStaged,
+  assertStagedKey,
 } from "../ingest-staging";
 import { _resetStorage, getStorage } from "../storage";
 
@@ -51,6 +52,27 @@ describe("ingest-staging", () => {
     const key = await stageText("job-2", "a long pasted document");
     expect(key).toContain("uploads/job-2/text.md");
     expect(await readStagedText(key)).toBe("a long pasted document");
+  });
+
+  it("guards the staged key on read/delete — a crafted key can't escape the prefix", () => {
+    // Producer-built keys pass.
+    expect(() => assertStagedKey("raw/uploads/job-9/doc.pdf")).not.toThrow();
+    // Traversal / non-staging keys are refused.
+    expect(() => assertStagedKey("raw/uploads/../wiki/secret.md")).toThrow(/non-staging/i);
+    expect(() => assertStagedKey("wiki/agentic-systems.md")).toThrow(/non-staging/i);
+    expect(() => assertStagedKey("raw/uploads/job-9/../../x")).toThrow(/non-staging/i);
+  });
+
+  it("readStagedBytes/Text reject a non-staging key (don't read arbitrary objects)", async () => {
+    await expect(readStagedBytes("wiki/secret.md")).rejects.toThrow(/non-staging/i);
+    await expect(readStagedText("../../etc/passwd")).rejects.toThrow(/non-staging/i);
+  });
+
+  it("deleteStaged never throws on a bad key and does not delete it", async () => {
+    // A wiki asset that must NOT be deletable via a crafted staged key.
+    await getStorage().writeFile("wiki/keep.md", "important");
+    await deleteStaged("wiki/keep.md"); // guard refuses → logged, no delete
+    expect(await getStorage().fileExists("wiki/keep.md")).toBe(true);
   });
 
   it("sanitizes a traversal-y filename to a safe single segment", async () => {

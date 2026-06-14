@@ -143,6 +143,31 @@ describe("POST /api/tasks/run", () => {
     expect(mockedDeleteStaged).toHaveBeenCalledWith("raw/uploads/j/doc.pdf");
   });
 
+  it("forwards a user-supplied title to ingestPdf/ingestImage across the queue", async () => {
+    // Regression: title rode the task but was dropped from the consumer opts, so
+    // a typed PDF/image title was ignored on the production (queued) path (and
+    // for images the title also drives the slug).
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    mockedIngestPdf.mockResolvedValue({ primarySlug: "p" } as any);
+    await run({ kind: "ingest", url: "https://x/a.pdf", source: "pdf", owner: "alice", title: "My Doc" });
+    expect(mockedIngestPdf).toHaveBeenLastCalledWith(
+      { pdfUrl: "https://x/a.pdf" },
+      expect.objectContaining({ title: "My Doc" }),
+    );
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    mockedIngestImage.mockResolvedValue({ primarySlug: "i" } as any);
+    await run({
+      kind: "ingest",
+      owner: "alice",
+      title: "My Pic",
+      staged: { key: "raw/uploads/j/p.png", kind: "image", filename: "p.png" },
+    });
+    expect(mockedIngestImage).toHaveBeenLastCalledWith(
+      expect.objectContaining({ filename: "p.png" }),
+      expect.objectContaining({ title: "My Pic" }),
+    );
+  });
+
   it("reads a staged image from R2, ingests it, and deletes the blob", async () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     mockedIngestImage.mockResolvedValue({ primarySlug: "staged-img" } as any);

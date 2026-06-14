@@ -96,6 +96,10 @@ export async function POST(req: Request) {
       ...(task.owner ? { owner: task.owner } : {}),
       ...(task.author ? { author: task.author, triggeredBy: task.author } : {}),
       ...(task.tags && task.tags.length > 0 ? { tags: task.tags } : {}),
+      // A user-supplied title must survive the queue hop — ingestPdf/ingestImage
+      // use it to override the derived title (and, for images, the slug). The
+      // text path passes title positionally below; for it `opts.title` is unused.
+      ...(task.title && task.title.trim() ? { title: task.title.trim() } : {}),
     };
     // For a tracked async job, record progress so the UI can poll the outcome.
     if (task.jobId) await updateIngestJob(task.jobId, { status: "processing" });
