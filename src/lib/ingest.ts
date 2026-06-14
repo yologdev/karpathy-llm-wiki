@@ -5,8 +5,11 @@ import {
   readWikiPageWithFrontmatter,
   serializeFrontmatter,
   listWikiPages,
+  isArtifactType,
+  isAgentScopedType,
   type Frontmatter,
 } from "./wiki";
+import { buildCorpusStats, bm25Score, tokenize } from "./bm25";
 import { callLLM, hasLLMKey } from "./llm";
 import { fetchUrlContent, downloadImages, fetchImageBytes, storeImageBytes, pdfToText } from "./fetch";
 import { describeImage } from "./vision";
@@ -930,10 +933,87 @@ export function normalizeTags(raw: string[], max: number = MAX_AUTO_TAGS): strin
   return out;
 }
 
-/** Cosine-similarity floor for treating the nearest existing page as the SAME
- *  concept on a semantic match. Deliberately conservative — a wrong merge is
- *  harder to undo than a fork, so we err toward a new page when unsure. */
-export const CONCEPT_MERGE_THRESHOLD = 0.86;
+/** Recall floor for RETRIEVING merge candidates by embedding similarity — low on
+ *  purpose. It only gates which existing pages the LLM gets to judge; the LLM is
+ *  the accept arbiter. (Replaces the old conservative cosine-only 0.86 accept
+ *  gate, which forked whenever two sources worded the same concept apart.) */
+export const CONCEPT_ADJUDICATE_FLOOR = 0.6;
+
+/** Most existing pages shown to the merge adjudicator per ingest (prompt/cost guard). */
+const MAX_MERGE_CANDIDATES = 5;
+
+const MERGE_ADJUDICATION_SYSTEM_PROMPT = `You decide whether a newly written wiki page describes the SAME underlying concept as one of a few existing pages — so they are merged into ONE page instead of creating a duplicate.
+
+Merge ONLY when the new page and an existing page are about the SAME concept / topic / entity (the same thing — possibly worded differently or drawn from a different source). Do NOT merge pages that are merely related, adjacent, complementary, or in the same broad domain.
+
+Reply with ONLY the slug of the matching existing page, copied exactly from the list — or the single word "none" if no existing page is the same concept. When unsure, answer "none".`;
+
+/**
+ * Find existing pages that might be the SAME concept as a freshly-synthesized
+ * one, for {@link adjudicateMerge}. Uses embedding similarity when available (a
+ * wide recall net at {@link CONCEPT_ADJUDICATE_FLOOR}); otherwise a title+summary
+ * BM25 pass over the index (`fullBody:false` → no disk reads, no LLM) so merge
+ * still works before the vector store is backfilled. Returns candidate slugs,
+ * best-first.
+ */
+async function findMergeCandidates(
+  concept: string,
+  embedBody: string,
+): Promise<string[]> {
+  const query = `${concept}\n\n${embedBody}`;
+  if (hasEmbeddingSupport()) {
+    const hits = await searchByVector(query, MAX_MERGE_CANDIDATES + 3);
+    return hits
+      .filter((h) => h.score >= CONCEPT_ADJUDICATE_FLOOR)
+      .map((h) => h.slug);
+  }
+  const entries = await listWikiPages();
+  if (entries.length === 0) return [];
+  const stats = await buildCorpusStats(entries, { fullBody: false });
+  const qTokens = tokenize(query);
+  return entries
+    .map((e) => ({ slug: e.slug, score: bm25Score(e, qTokens, stats) }))
+    .filter((s) => s.score > 0)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, MAX_MERGE_CANDIDATES + 3)
+    .map((s) => s.slug);
+}
+
+/**
+ * Ask the LLM which (if any) candidate page is the SAME concept as the new page.
+ * Returns the chosen slug — validated to be one we actually offered (a
+ * hallucination guard; longest match wins so a slug that's a substring of
+ * another can't shadow it) — or `null` (→ fork). Conservative: no LLM key, an
+ * empty / "none" answer, an unrecognized slug, or an LLM error all yield `null`.
+ */
+async function adjudicateMerge(
+  concept: string,
+  embedBody: string,
+  candidates: { slug: string; title: string; snippet: string }[],
+): Promise<string | null> {
+  if (!hasLLMKey()) return null;
+  const list = candidates
+    .map((c) => `- slug: ${c.slug}\n  title: ${c.title}\n  snippet: ${c.snippet}`)
+    .join("\n");
+  const user = `NEW page concept: "${concept}"\n\nNEW page (excerpt):\n${embedBody.slice(
+    0,
+    800,
+  )}\n\nEXISTING pages that might be the same concept:\n${list}\n\nWhich existing page is the SAME concept as the NEW page? Reply with its slug, or "none".`;
+  let out: string;
+  try {
+    out = await callLLM(MERGE_ADJUDICATION_SYSTEM_PROMPT, user, {
+      maxOutputTokens: 24,
+    });
+  } catch (err) {
+    logger.warn("ingest", "merge adjudication failed; forking to a new page", err);
+    return null;
+  }
+  const answer = out.trim().toLowerCase();
+  const matches = candidates
+    .filter((c) => answer.includes(c.slug.toLowerCase()))
+    .sort((a, b) => b.slug.length - a.slug.length);
+  return matches[0]?.slug ?? null;
+}
 
 /**
  * Resolve the slug an ingest should land on, given a content-derived concept.
@@ -943,13 +1023,15 @@ export const CONCEPT_MERGE_THRESHOLD = 0.86;
  *   1. Exact — the candidate concept slug is already a page.
  *   2. Alias — the concept or one of its synonyms resolves (via the alias
  *      index) to an existing page.
- *   3. Semantic — the nearest existing page by embedding similarity is at or
- *      above {@link CONCEPT_MERGE_THRESHOLD}. Scoped to the SAME owner's silo so
- *      a fuzzy match never attaches a source to another tenant's page.
+ *   3. Adjudicated merge — retrieve nearby existing pages (embedding similarity,
+ *      or a title+summary BM25 fallback) and let the LLM decide which, if any,
+ *      is the SAME concept. Scoped to the SAME owner + scope, never an artifact /
+ *      agent-knowledge page, so a fuzzy match can't cross silos or corrupt an
+ *      artifact's markup.
  *
- * `embedBody` is the synthesized page body used for the semantic query. Returns
- * the candidate concept slug unchanged when no confident existing match is
- * found. Embedding-unavailable environments (e.g. tests) cleanly skip step 3.
+ * `embedBody` is the synthesized page body used for retrieval + adjudication.
+ * Returns the candidate concept slug unchanged when no confident match is found
+ * (and whenever there's no LLM key — adjudication is conservative by default).
  */
 async function resolveConceptSlug(
   candidateSlug: string,
@@ -974,21 +1056,33 @@ async function resolveConceptSlug(
     }
   }
 
-  // 3. Semantic nearest-page (the robust catch for LLM wording drift).
-  if (hasEmbeddingSupport()) {
-    const hits = await searchByVector(`${concept}\n\n${embedBody}`, 3);
-    for (const { slug: hitSlug, score } of hits) {
-      if (score < CONCEPT_MERGE_THRESHOLD) break; // sorted desc — none closer
-      if (hitSlug === candidateSlug) continue;
-      const page = await readWikiPageWithFrontmatter(hitSlug);
-      if (!page) continue;
-      // Same-silo guard: only merge into a page this owner owns, AND only when
-      // the page scope matches — so a fuzzy match can't fold agent-knowledge
-      // into a public feed page (or vice versa). Conservative: err toward fork.
-      const sameOwner = (page.frontmatter.owner ?? "system") === owner;
-      const sameScope = (page.frontmatter.type ?? "") === (pageType ?? "");
-      if (sameOwner && sameScope) return hitSlug;
-    }
+  // 3. Adjudicated merge (the robust catch for LLM concept-wording drift across
+  //    sources). Retrieve nearby existing pages, keep only same-owner/same-scope
+  //    non-artifact candidates, then let the LLM decide which — if any — is the
+  //    same concept.
+  const candidates: { slug: string; title: string; snippet: string }[] = [];
+  for (const hitSlug of await findMergeCandidates(concept, embedBody)) {
+    if (candidates.length >= MAX_MERGE_CANDIDATES) break;
+    if (hitSlug === candidateSlug) continue;
+    const page = await readWikiPageWithFrontmatter(hitSlug);
+    if (!page) continue;
+    const hitType =
+      typeof page.frontmatter.type === "string" ? page.frontmatter.type : "";
+    // Never fold into an artifact (slides/html) or an agent-knowledge page; only
+    // within the same owner's silo + same scope. Conservative: err toward fork.
+    if (isArtifactType(hitType) || isAgentScopedType(hitType)) continue;
+    if ((page.frontmatter.owner ?? "system") !== owner) continue;
+    if (hitType !== (pageType ?? "")) continue;
+    candidates.push({
+      slug: hitSlug,
+      title: page.title,
+      snippet: page.body.replace(/\s+/g, " ").trim().slice(0, 240),
+    });
+  }
+  if (candidates.length > 0) {
+    const chosen = await adjudicateMerge(concept, embedBody, candidates);
+    // Re-read post-adjudication (defensive: fork if it vanished concurrently).
+    if (chosen && (await readWikiPageWithFrontmatter(chosen))) return chosen;
   }
 
   // 4. No confident match — fork onto the candidate concept slug.

@@ -2123,11 +2123,18 @@ describe("ingest — semantic concept resolver", () => {
     // Each ingest's synthesis reports a concept derived from the source body, so
     // two differently-worded sources get DIFFERENT concept slugs — only the
     // embedding step can merge them.
-    mockedCallLLM.mockImplementation(async (_system: string, user: string) =>
-      user.includes("alpha")
+    mockedCallLLM.mockImplementation(async (system: string, user: string) => {
+      // The adjudicator (distinct system prompt) decides merges; by default it
+      // confirms a merge into "alpha-thing" whenever that candidate is offered.
+      if (system.includes("decide whether")) {
+        return user.includes("alpha-thing") ? "alpha-thing" : "none";
+      }
+      // Otherwise it's the synthesis call — two differently-worded sources get
+      // DIFFERENT concept slugs, so only the adjudicator can merge them.
+      return user.includes("alpha")
         ? "CONCEPT: Alpha Thing\nALIASES: none\n\n# Alpha Thing\n\n## Summary\n\nAbout alpha."
-        : "CONCEPT: Beta Thing\nALIASES: none\n\n# Beta Thing\n\n## Summary\n\nAbout beta.",
-    );
+        : "CONCEPT: Beta Thing\nALIASES: none\n\n# Beta Thing\n\n## Summary\n\nAbout beta.";
+    });
   });
   afterEach(() => {
     mockedHasLLMKey.mockReturnValue(false);
@@ -2136,9 +2143,10 @@ describe("ingest — semantic concept resolver", () => {
     mockedSearchByVector.mockResolvedValue([]);
   });
 
-  it("merges a differently-worded source into the nearest page above threshold", async () => {
+  it("merges a differently-worded source into the candidate the adjudicator confirms", async () => {
     mockedHasEmbeddingSupport.mockReturnValue(true);
-    // The nearest existing page is "alpha-thing" with a confident score.
+    // The retrieval surfaces "alpha-thing" as a near candidate; the adjudicator
+    // (mock) confirms it's the same concept.
     mockedSearchByVector.mockResolvedValue([
       { slug: "alpha-thing", score: 0.95 },
     ]);
@@ -2149,8 +2157,8 @@ describe("ingest — semantic concept resolver", () => {
     await ingest("Alpha Source", "First source, alpha topic. Details here.");
     expect((await listWikiPages()).map((p) => p.slug)).toEqual(["alpha-thing"]);
 
-    // Second source's concept slug would be "beta-thing", but the embedding
-    // search points at "alpha-thing" ≥ threshold (same owner) → merge.
+    // Second source's concept slug would be "beta-thing", but retrieval points
+    // at "alpha-thing" (same owner/scope) and the adjudicator confirms → merge.
     const result = await ingest("Beta Source", "Second source, beta wording. More.");
 
     expect(result.primarySlug).toBe("alpha-thing");
@@ -2165,9 +2173,10 @@ describe("ingest — semantic concept resolver", () => {
     ).toBe(2);
   });
 
-  it("forks a new page when the nearest hit is below threshold", async () => {
+  it("forks when no candidate clears the retrieval floor (no adjudication call)", async () => {
     mockedHasEmbeddingSupport.mockReturnValue(true);
-    // Nearest page exists but is NOT similar enough — err toward a new page.
+    // Nearest page exists but is below CONCEPT_ADJUDICATE_FLOOR (0.6) → it isn't
+    // even offered to the adjudicator → fork.
     mockedSearchByVector.mockResolvedValue([
       { slug: "alpha-thing", score: 0.5 },
     ]);
@@ -2177,6 +2186,67 @@ describe("ingest — semantic concept resolver", () => {
 
     const slugs = (await listWikiPages()).map((p) => p.slug).sort();
     expect(slugs).toEqual(["alpha-thing", "beta-thing"]);
+  });
+
+  it("forks when the adjudicator judges the candidate a DIFFERENT concept", async () => {
+    mockedHasEmbeddingSupport.mockReturnValue(true);
+    mockedSearchByVector.mockResolvedValue([{ slug: "alpha-thing", score: 0.95 }]);
+    // Override: adjudicator always says "none".
+    mockedCallLLM.mockImplementation(async (system: string, user: string) =>
+      system.includes("decide whether")
+        ? "none"
+        : user.includes("alpha")
+          ? "CONCEPT: Alpha Thing\nALIASES: none\n\n# Alpha Thing\n\n## Summary\n\nA."
+          : "CONCEPT: Beta Thing\nALIASES: none\n\n# Beta Thing\n\n## Summary\n\nB.",
+    );
+
+    await ingest("Alpha Source", "First source, alpha topic. Details here.");
+    const result = await ingest("Beta Source", "Second source, beta wording. More.");
+
+    expect(result.primarySlug).toBe("beta-thing");
+    expect((await listWikiPages()).map((p) => p.slug).sort()).toEqual([
+      "alpha-thing",
+      "beta-thing",
+    ]);
+  });
+
+  it("forks when the adjudicator returns a slug that wasn't offered (hallucination guard)", async () => {
+    mockedHasEmbeddingSupport.mockReturnValue(true);
+    mockedSearchByVector.mockResolvedValue([{ slug: "alpha-thing", score: 0.95 }]);
+    mockedCallLLM.mockImplementation(async (system: string, user: string) =>
+      system.includes("decide whether")
+        ? "some-other-slug" // not one of the candidates
+        : user.includes("alpha")
+          ? "CONCEPT: Alpha Thing\nALIASES: none\n\n# Alpha Thing\n\n## Summary\n\nA."
+          : "CONCEPT: Beta Thing\nALIASES: none\n\n# Beta Thing\n\n## Summary\n\nB.",
+    );
+
+    await ingest("Alpha Source", "First source, alpha topic. Details here.");
+    const result = await ingest("Beta Source", "Second source, beta wording. More.");
+
+    expect(result.primarySlug).toBe("beta-thing");
+  });
+
+  it("merges via the BM25 fallback when embeddings are unavailable (the pre-backfill prod path)", async () => {
+    // Vectorize not backfilled → searchByVector unused; candidates come from a
+    // title+summary BM25 pass. The two sources share tokens ("widget protocol").
+    mockedHasEmbeddingSupport.mockReturnValue(false);
+    mockedCallLLM.mockImplementation(async (system: string, user: string) => {
+      if (system.includes("decide whether")) {
+        return user.includes("widget-protocol") ? "widget-protocol" : "none";
+      }
+      return user.toLowerCase().includes("specification")
+        ? "CONCEPT: Widget Protocol\nALIASES: none\n\n# Widget Protocol\n\n## Summary\n\nThe widget protocol specification."
+        : "CONCEPT: Widget Spec\nALIASES: none\n\n# Widget Spec\n\n## Summary\n\nThe widget protocol, explained.";
+    });
+
+    await ingest("First", "First note on the widget protocol specification details.");
+    expect((await listWikiPages()).map((p) => p.slug)).toContain("widget-protocol");
+
+    const result = await ingest("Second", "Second note, widget protocol explained anew.");
+
+    expect(result.primarySlug).toBe("widget-protocol");
+    expect(await listWikiPages()).toHaveLength(1);
   });
 
   it("does NOT semantic-merge an agent-knowledge ingest into a public page (scope guard)", async () => {
