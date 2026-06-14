@@ -174,6 +174,25 @@ describe("source images → bottom Figures gallery (ingest, LLM path)", () => {
     // The only image was decorative → no gallery section at all.
     expect(page!.content).not.toContain("## Figures");
   });
+
+  it("no-LLM-key fallback: image appears once, in the gallery (not inline twice)", async () => {
+    // The fallback path is also fed image-free text, then the gallery is
+    // appended — so the image renders exactly once, under ## Figures.
+    mockedHasLLMKey.mockReturnValue(false);
+
+    const result = await ingest(
+      "Doc Fallback",
+      "Some prose.\n\n![a chart](assets/doc/chart.png)\n\nmore prose.",
+      { author: "alice", owner: "alice" },
+    );
+
+    const page = await readWikiPageWithFrontmatter(result.primarySlug);
+    expect(page!.content).toContain("## Figures");
+    expect((page!.content.match(/!\[a chart\]\(assets\/doc\/chart\.png\)/g) ?? []).length).toBe(1);
+    expect(page!.content.indexOf("## Figures")).toBeGreaterThan(
+      page!.content.indexOf("Some prose."),
+    );
+  });
 });
 
 describe("source provenance — text-paste supersession", () => {

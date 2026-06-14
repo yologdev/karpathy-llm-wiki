@@ -559,10 +559,10 @@ const DECORATIVE_IMAGE_RE = /(logo|icon|avatar|sprite|favicon|emoji|banner)/i;
 
 /**
  * Collect the RE-HOSTED source images for a trailing `## Figures` gallery. Only
- * local `assets/…` refs are kept (never a hotlinked `http(s)` URL — a failed
- * download that kept its original URL is excluded so a page never re-fetches a
- * third-party image on view, which would be a tracking/exfil vector). Decorative
- * images are dropped, duplicates collapsed, and the list capped at
+ * local `assets/…` (or `raw/assets/…`) refs are kept — never a hotlinked
+ * `http(s)` URL: a failed download that kept its original URL is excluded so a
+ * page never re-fetches a third-party image on view (a tracking/exfil vector).
+ * Decorative images are dropped, duplicates collapsed, and the list capped at
  * {@link MAX_APPENDED_IMAGES}. Run on the post-`downloadImages` content.
  */
 export function collectGalleryImages(content: string): SourceImageRef[] {
@@ -1278,7 +1278,8 @@ async function attachIngestTrigger(
  * short content, MAP/REDUCE for long content (parallel map in bounded-concurrency
  * batches → merge), or a deterministic fallback page when there's no LLM key.
  * Returns the raw synthesized body (still carrying the leading CONCEPT marker on
- * the LLM path); the caller strips that and appends the Figures gallery.
+ * the LLM path); the caller appends the Figures gallery and strips that marker
+ * (order-independent — the marker leads, the gallery trails).
  */
 async function synthesizeBody(title: string, content: string): Promise<string> {
   if (!hasLLMKey()) {
@@ -1424,6 +1425,16 @@ export async function ingest(
     // the re-hosted ones, then feed the synthesizer/fallback IMAGE-FREE text so
     // the body stays clean prose (better for index/query) with no inline images.
     const galleryImages = collectGalleryImages(content);
+    // Observability tripwire: a sudden "0 of N" signals a regression upstream
+    // (e.g. downloadImages stopped re-hosting → all refs stay hotlinks → the
+    // re-hosted-only filter drops everything) that would otherwise vanish silently.
+    const sourceImageCount = (content.match(/!\[[^\]]*\]\([^)]*\)/g) ?? []).length;
+    if (sourceImageCount > 0) {
+      logger.debug(
+        "ingest",
+        `figures: kept ${galleryImages.length} of ${sourceImageCount} source image(s)`,
+      );
+    }
     const cleanContent = stripImageMarkdown(content);
     wikiContent = await synthesizeBody(effectiveTitle, cleanContent);
     wikiContent = appendFigures(wikiContent, galleryImages);
