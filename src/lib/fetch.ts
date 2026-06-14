@@ -310,7 +310,9 @@ export async function fetchUrlContent(
   // Readability prunes figures that look decorative (lazy-loaded, empty alt, SVG
   // diagrams), so technical posts often lose their diagrams. Salvage image URLs
   // straight from the source DOM and reference any the extracted content is
-  // missing — downloadImages() then localizes them (or keeps the URL). Appended
+  // missing, so the immutable RAW source snapshot still captures the article's
+  // figures. (Ingest strips all images from the synthesized wiki page — see
+  // `stripImageMarkdown` — so these never appear in the page body.) Appended
   // AFTER truncation so a long article never drops its figures. HTML path only.
   if (mimeType !== "text/plain" && mimeType !== "text/markdown") {
     const salvaged = extractImageUrls(body, url).filter(

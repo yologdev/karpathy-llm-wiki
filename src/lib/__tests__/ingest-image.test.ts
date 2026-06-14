@@ -147,6 +147,9 @@ describe("source images → dropped (ingest, LLM path)", () => {
     // No gallery, and no image anywhere in the page body.
     expect(page!.content).not.toContain("## Figures");
     expect(page!.content).not.toContain("chart.png");
+    // No re-hosting: source images are never fetched or stored to R2.
+    expect(mockedFetchBytes).not.toHaveBeenCalled();
+    expect(mockedStoreBytes).not.toHaveBeenCalled();
 
     // Invariant: the RAW source is untouched — it keeps the original image ref.
     const rawId = parseSources(page!.frontmatter.sources as string)[0]?.raw_id;

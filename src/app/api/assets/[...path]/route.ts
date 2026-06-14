@@ -6,11 +6,11 @@ import { logger } from "@/lib/logger";
 /**
  * GET /api/assets/[...path]
  *
- * Serves a binary asset (image) that was stored during ingest. Ingested images
- * live at the storage key `raw/assets/{slug}/{file}` and are referenced in
- * markdown by the relative path `assets/{slug}/{file}` (see `downloadImages` in
- * `lib/fetch.ts`). This route maps a request path back to that storage key and
- * streams the bytes with the right Content-Type.
+ * Serves a binary asset (image) that was stored during ingest. Stored images
+ * (e.g. single-image ingests via `storeImageBytes` / `ingestImage`, and baked
+ * yoyo illustrations) live at the storage key `raw/assets/{slug}/{file}` and are
+ * referenced in markdown by the relative path `assets/{slug}/{file}`. This route
+ * maps a request path back to that storage key and streams the bytes.
  *
  * Public + read-only: the middleware only gates write methods on `/api`.
  */

@@ -53,9 +53,9 @@ import { parseFrontmatter } from "../frontmatter";
 import { registerAgent } from "../agents";
 
 // ---------------------------------------------------------------------------
-// Mock fetchUrlContent, downloadImages, fetchImageBytes, and storeImageBytes
-// so no test makes real HTTP calls.
-// All other exports from ../fetch (isUrl, validateUrlSafety, etc.) are kept.
+// Mock fetchUrlContent, fetchImageBytes, and storeImageBytes so no test makes
+// real HTTP calls. All other exports from ../fetch (isUrl, validateUrlSafety,
+// etc.) are kept.
 // ---------------------------------------------------------------------------
 vi.mock("../fetch", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../fetch")>();
@@ -65,7 +65,6 @@ vi.mock("../fetch", async (importOriginal) => {
       title: `Mocked page for ${url}`,
       content: `Mocked content fetched from ${url}`,
     })),
-    downloadImages: vi.fn(async (markdown: string) => markdown),
     fetchImageBytes: vi.fn(async (url: string) => ({
       bytes: new ArrayBuffer(8),
       filename: url.split("/").pop() || "image.png",
@@ -107,11 +106,10 @@ vi.mock("../llm", async (importOriginal) => {
   };
 });
 
-import { fetchUrlContent, downloadImages } from "../fetch";
+import { fetchUrlContent } from "../fetch";
 import { fetchXPostContent } from "../x-post";
 const mockedFetchUrlContent = vi.mocked(fetchUrlContent);
 const mockedFetchXPostContent = vi.mocked(fetchXPostContent);
-const mockedDownloadImages = vi.mocked(downloadImages);
 
 let tmpDir: string;
 let originalWikiDir: string | undefined;
@@ -134,7 +132,6 @@ beforeEach(async () => {
     title: `Mocked page for ${url}`,
     content: `Mocked content fetched from ${url}`,
   }));
-  mockedDownloadImages.mockImplementation(async (markdown: string) => markdown);
 });
 
 afterEach(async () => {
