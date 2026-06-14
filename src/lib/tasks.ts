@@ -58,6 +58,8 @@ export type Task =
         filename?: string;
         contentType?: string;
       };
+      /** Optional vault to auto-file the resulting page into (fail-soft). */
+      vaultId?: string;
     }
   | {
       /** Autonomous maintenance, enqueued by the scan cron (Q2). `reconcile` a
@@ -206,6 +208,9 @@ export function parseTask(body: unknown): Task | null {
         ...(typeof t.jobId === "string" ? { jobId: t.jobId } : {}),
         ...(source ? { source } : {}),
         ...(staged ? { staged } : {}),
+        ...(typeof t.vaultId === "string" && t.vaultId.trim() !== ""
+          ? { vaultId: t.vaultId }
+          : {}),
       };
     }
     case "maintain": {

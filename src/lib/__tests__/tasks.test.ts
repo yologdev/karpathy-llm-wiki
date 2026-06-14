@@ -204,4 +204,26 @@ describe("parseTask", () => {
     expect(parseTask("string")).toBeNull();
     expect(parseTask(42)).toBeNull();
   });
+
+  it("preserves vaultId on an ingest task when present", () => {
+    expect(
+      parseTask({ kind: "ingest", url: "https://example.com", vaultId: "tenant--my-vault" }),
+    ).toMatchObject({ kind: "ingest", url: "https://example.com", vaultId: "tenant--my-vault" });
+  });
+
+  it("strips vaultId when empty or non-string", () => {
+    expect(
+      parseTask({ kind: "ingest", url: "https://example.com", vaultId: "" }),
+    ).not.toHaveProperty("vaultId");
+    expect(
+      parseTask({ kind: "ingest", url: "https://example.com", vaultId: "   " }),
+    ).not.toHaveProperty("vaultId");
+    expect(
+      parseTask({ kind: "ingest", url: "https://example.com", vaultId: 42 }),
+    ).not.toHaveProperty("vaultId");
+  });
+
+  it("omits vaultId from the parsed task when not provided", () => {
+    expect(parseTask({ kind: "ingest", url: "https://x.com" })).not.toHaveProperty("vaultId");
+  });
 });
