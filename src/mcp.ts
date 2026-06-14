@@ -10,6 +10,7 @@
  *   update_page    — Update an existing wiki page
  *   update_metadata — Update page frontmatter without changing body
  *   delete_page    — Delete a wiki page by slug
+ *   merge_pages    — Merge one wiki page into another (dedup cure: fold → redirect → delete)
  *   ingest_url     — Ingest a URL into the wiki (fetch → chunk → summarize → write)
  *   batch_ingest_urls — Batch ingest multiple URLs with upfront validation
  *   ingest_text    — Ingest raw text content into the wiki (chunk → summarize → write)
@@ -90,6 +91,7 @@ import type { Vault } from "./lib/vault";
 import { belongsInCommons } from "./lib/commons";
 import { reconcileFromTalk, type ReconcileFromTalkResult } from "./lib/reconcile";
 import { buildWikiGraph, type GraphNode, type GraphEdge } from "./lib/graph-build";
+import { mergePages, type MergePagesResult } from "./lib/merge";
 import type { TalkThread, TalkComment } from "./lib/types";
 
 // ---------------------------------------------------------------------------
@@ -341,6 +343,23 @@ export async function handleDeletePage(args: {
   slug: string;
 }): Promise<DeletePageResult> {
   return deleteWikiPage(args.slug);
+}
+
+// ---------------------------------------------------------------------------
+// Merge pages handler
+// ---------------------------------------------------------------------------
+
+export async function handleMergePages(args: {
+  from: string;
+  into: string;
+  author?: string;
+}): Promise<MergePagesResult> {
+  // MCP is deployment-trusted (stdio-only) → act as an admin caller so the merge
+  // isn't blocked by the same-human-owner guard.
+  return mergePages(args.from, args.into, {
+    actor: args.author ?? "system",
+    admin: true,
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -1701,6 +1720,44 @@ export function createMcpServer(): McpServer {
   }, async (args) => {
     try {
       const result = await handleDeletePage(args);
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: JSON.stringify(result, null, 2),
+          },
+        ],
+      };
+    } catch (err) {
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: (err as Error).message,
+          },
+        ],
+        isError: true,
+      };
+    }
+  });
+
+  // merge_pages — Merge one wiki page into another (duplicate-concept cure)
+  server.registerTool("merge_pages", {
+    description:
+      "Merge one wiki page into another: folds both bodies into the target (LLM reconcile), unions their sources/aliases, re-points links, records the absorbed slug as an alias of the survivor so its URL redirects, then deletes the absorbed page. Use to fix two pages that are the same concept.",
+    inputSchema: {
+      from: z.string().describe("Slug of the page to absorb (will be deleted)"),
+      into: z.string().describe("Slug of the surviving canonical page"),
+    },
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: true,
+      idempotentHint: false,
+      openWorldHint: false,
+    },
+  }, async (args) => {
+    try {
+      const result = await handleMergePages(args);
       return {
         content: [
           {

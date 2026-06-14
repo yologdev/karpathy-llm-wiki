@@ -10,6 +10,7 @@ import {
   handleUpdatePage,
   handleUpdateMetadata,
   handleDeletePage,
+  handleMergePages,
   handleIngestUrl,
   handleBatchIngest,
   handleIngestText,
@@ -45,6 +46,7 @@ import {
   createMcpServer,
 } from "../../mcp";
 import { vaultIdFor, listVaults, getVault } from "../vault";
+import { readWikiPageWithFrontmatter } from "../wiki";
 import { _resetStorage } from "../storage";
 import { _resetConfigCache } from "../config";
 import { parseFrontmatter } from "../frontmatter";
@@ -1293,6 +1295,50 @@ describe("delete_page", () => {
     // The keeper page should have had backlinks stripped
     const keeper = await handleReadPage({ slug: "keeper" });
     expect(keeper.content).not.toContain("[Target](target.md)");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// merge_pages tests
+// ---------------------------------------------------------------------------
+
+describe("merge_pages", () => {
+  it("merges one page into another, recording an alias + supersedes, and deletes the absorbed page", async () => {
+    await handleCreatePage({
+      slug: "concept-a",
+      content: "# Concept A\n\nThe harness loop.",
+      owner: "alice",
+    });
+    await handleCreatePage({
+      slug: "concept-a-dup",
+      content: "# Concept A Dup\n\nContext window management.",
+      owner: "alice",
+    });
+
+    const result = await handleMergePages({
+      from: "concept-a-dup",
+      into: "concept-a",
+      author: "alice",
+    });
+    expect(result).toMatchObject({
+      fromSlug: "concept-a-dup",
+      intoSlug: "concept-a",
+    });
+
+    // Absorbed page is gone; the survivor points back at it (alias + supersedes).
+    await expect(handleReadPage({ slug: "concept-a-dup" })).rejects.toThrow(
+      "Page not found",
+    );
+    const into = await readWikiPageWithFrontmatter("concept-a");
+    expect(into!.frontmatter.supersedes).toBe("concept-a-dup");
+    expect(into!.frontmatter.aliases as string[]).toContain("concept-a-dup");
+  });
+
+  it("throws when merging a page into itself", async () => {
+    await handleCreatePage({ slug: "solo", content: "# Solo\n\nBody." });
+    await expect(
+      handleMergePages({ from: "solo", into: "solo" }),
+    ).rejects.toThrow(/into itself/);
   });
 });
 

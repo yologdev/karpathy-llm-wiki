@@ -1,6 +1,6 @@
 import Link from "next/link";
 import type { Metadata } from "next";
-import { notFound } from "next/navigation";
+import { notFound, permanentRedirect } from "next/navigation";
 import { decodeSlug } from "@/lib/slugify";
 import {
   readWikiPageWithFrontmatter,
@@ -9,6 +9,7 @@ import {
 } from "@/lib/wiki";
 import { commonsPath } from "@/lib/links";
 import { belongsInCommons } from "@/lib/commons";
+import { commonsRedirectForMissing } from "@/lib/page-redirect";
 import { ArticleView } from "@/components/ArticleView";
 
 interface PublicWikiPageProps {
@@ -89,6 +90,14 @@ export default async function PublicWikiPage({
   }
 
   const page = await readWikiPageWithFrontmatter(slug);
+
+  // No page here — but a merged-away/renamed slug may alias to a survivor.
+  // Forward only to a PUBLIC commons page (never a private one — no existence
+  // oracle); otherwise fall through to the neutral 404.
+  if (!page) {
+    const redirectTo = await commonsRedirectForMissing(slug);
+    if (redirectTo) permanentRedirect(redirectTo); // 308
+  }
 
   // Missing OR not a public commons page → neutral 404. Crucially, a PRIVATE
   // page falls into this branch (it is not `belongsInCommons`) and so is

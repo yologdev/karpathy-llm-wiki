@@ -13,6 +13,7 @@
     "update_page",
     "update_metadata",
     "delete_page",
+    "merge_pages",
     "ingest_url",
     "batch_ingest_urls",
     "ingest_text",

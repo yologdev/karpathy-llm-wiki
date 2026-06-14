@@ -1019,7 +1019,7 @@ export function parseDisputedMarker(raw: string): {
  * echoed `CONCEPT:`/`ALIASES:` synthesis headers. Falls back to the new body on
  * an empty/failed response so a reconcile hiccup never blanks the page.
  */
-async function reconcilePage(
+export async function reconcilePage(
   existingBody: string,
   newBody: string,
 ): Promise<{ body: string; disputed: boolean }> {
@@ -1173,7 +1173,7 @@ function humanOf(handle: string): string {
  * decide whether an ingest may converge onto a PRIVATE page: private content is
  * owner-only, so a non-owner must never dedup/merge into it.
  */
-function sameHumanOwner(actorOwner: string | undefined, pageOwner: unknown): boolean {
+export function sameHumanOwner(actorOwner: string | undefined, pageOwner: unknown): boolean {
   if (typeof pageOwner !== "string" || pageOwner.trim() === "") return false;
   if (!actorOwner || actorOwner.trim() === "") return false;
   return humanOf(actorOwner) === humanOf(pageOwner);
