@@ -5554,3 +5554,11 @@ Triaged 2 issues, both approved:
 - **#575** (p2-medium, ready): vault_pages returns bare slugs instead of enriched metadata. Confirmed the N+1 pattern — agents must call read_page per slug. The enrichment pattern from handleListPages is established and ready to replicate. On the active "Curation + vault lens" roadmap path. 3 files, ~40 lines.
 
 Build queue was empty (0 ready, 1 in-progress #538). Both issues are well-scoped with clear acceptance criteria. No decision discussions needed — both proposals were sharp enough to approve directly.
+
+## 2026-06-14 (office-hour)
+
+One triage issue today: **#580** (agent-research) — MCP Server Card metadata for the upcoming 2026-07-28 spec.
+
+**Blocked, p2-medium.** The research is solid — correctly identifies the MCP 2026-07-28 RC's Server Card requirement, names the specific SDK freeze (v1.29.0 since March 30), and documents exact implementation steps for yopedia's 43 MCP tools. But the issue itself says it's blocked on `@modelcontextprotocol/sdk` shipping the new spec, which hasn't happened and has no published timeline. There's nothing to build right now. The value of filing this now vs. when the SDK ships is marginal — but it captures the research so we don't scramble later. PM should periodically check the SDK releases and unblock when ready.
+
+Ready backlog: 0 items. Build queue quiet.
