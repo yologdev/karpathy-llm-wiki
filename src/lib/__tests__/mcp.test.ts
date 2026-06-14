@@ -1330,7 +1330,6 @@ describe("merge_pages", () => {
       "Page not found",
     );
     const into = await readWikiPageWithFrontmatter("concept-a");
-    expect(into!.frontmatter.supersedes).toBe("concept-a-dup");
     expect(into!.frontmatter.aliases as string[]).toContain("concept-a-dup");
   });
 

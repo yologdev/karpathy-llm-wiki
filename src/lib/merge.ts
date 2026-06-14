@@ -7,9 +7,9 @@
  *  - {@link reconcilePage} LLM-folds the two bodies into one canonical page
  *    (escalating `disputed` on contradiction), exactly like accumulate-and-
  *    reconcile on re-ingest.
- *  - sources / contributors / authors / aliases are UNIONed; `from`'s title is
- *    recorded as an alias of `into` so a later ingest — and the `/wiki/<from>`
- *    URL (via the alias redirect) — resolves to the survivor.
+ *  - sources / contributors / authors / aliases are UNIONed; `from`'s title AND
+ *    slug are recorded as aliases of `into` so a later ingest — and the
+ *    `/wiki/<from>` URL (via the slug alias redirect) — resolve to the survivor.
  *  - internal `[..](<from>.md)` backlinks are re-pointed to `into` BEFORE the
  *    delete (otherwise {@link deleteWikiPage} would strip them).
  *  - `from` is then hard-deleted. NOTE: its revision history and discussion
@@ -101,7 +101,15 @@ async function repointBacklinks(
   const repointed: string[] = [];
   for (const src of linkers) {
     const page = await readWikiPageWithFrontmatter(src);
-    if (!page) continue;
+    if (!page) {
+      // `src` was named as a linker by the index / page list, so a null read is
+      // NOT an expected "no such page" — `readWikiPage` also collapses transient
+      // storage faults to null. Abort rather than let the later hard-delete
+      // strip an un-re-pointed link; `from` is left intact and the merge retries.
+      throw new Error(
+        `merge aborted: backlink source "${src}" could not be read while re-pointing links from "${fromSlug}" to "${intoSlug}"`,
+      );
+    }
     const updated = page.content.replace(re, `](${intoSlug}.md)`);
     if (updated === page.content) continue;
     await writeWikiPageWithSideEffects({
@@ -213,7 +221,6 @@ export async function mergePages(
     asStringArray(from.frontmatter.aliases),
     [from.title, fromSlug],
   ).filter((a) => a.toLowerCase() !== into.title.toLowerCase());
-  fm.supersedes = fromSlug;
   fm.disputed = disputed;
   fm.confidence = computeConfidence(sources, disputed);
   const earliestCreated = earlierDate(
@@ -236,7 +243,13 @@ export async function mergePages(
     opts.actor,
   );
 
-  // 4. Write the survivor.
+  // 4. Write the survivor. Defensive: if the folded body itself references the
+  // absorbed slug, re-point that too — the delete-strip below only touches
+  // OTHER pages, never the survivor.
+  mergedBody = mergedBody.replace(
+    new RegExp(`\\]\\(${escapeRegex(fromSlug)}\\.md\\)`, "g"),
+    `](${intoSlug}.md)`,
+  );
   const summary = extractSummary(mergedBody.replace(/^#\s+.+$/m, "").trim());
   await writeWikiPageWithSideEffects({
     slug: intoSlug,

@@ -23,6 +23,7 @@ import { extractSummary } from "../ingest";
 import { commonsPath } from "../links";
 import { resetSourceIndex } from "../source-index";
 import { resetAliasIndex, resolveAlias } from "../alias-index";
+import { rebuildBacklinkIndex } from "../backlink-index";
 import { _resetStorage } from "../storage";
 import { hasLLMKey, callLLM } from "../llm";
 import type { SourceEntry } from "../types";
@@ -135,8 +136,7 @@ describe("mergePages", () => {
     // Provenance unioned; from's title + slug recorded as aliases; supersedes set.
     const aliases = into!.frontmatter.aliases as string[];
     expect(aliases).toContain("Harness (AI agents)");
-    expect(aliases).toContain("harness-ai-agents");
-    expect(into!.frontmatter.supersedes).toBe("harness-ai-agents");
+    expect(aliases).toContain("harness-ai-agents"); // slug alias powers the redirect
     expect(into!.frontmatter.source_count).toBe(2);
     // Earlier created date wins; two distinct sources raise confidence above a lone 0.6.
     expect(into!.frontmatter.created).toBe("2026-01-15");
@@ -157,6 +157,27 @@ describe("mergePages", () => {
       title: "Other",
       body: "# Other\n\nSee the [harness](harness-ai-agents.md) page.",
     });
+
+    const result = await mergePages("harness-ai-agents", "agent-harness", {
+      actor: "alice",
+    });
+
+    expect(result.repointedBacklinksFrom).toContain("other");
+    const other = await readWikiPage("other");
+    expect(other!.content).toContain("](agent-harness.md)");
+    expect(other!.content).not.toContain("](harness-ai-agents.md)");
+  });
+
+  it("re-points via the precomputed backlink index when it's present (the production fast path)", async () => {
+    await seedPage("agent-harness", { title: "Agent Harness" });
+    await seedPage("harness-ai-agents", { title: "Harness (AI agents)" });
+    await seedPage("other", {
+      title: "Other",
+      body: "# Other\n\nSee the [harness](harness-ai-agents.md) page.",
+    });
+    // Build the index so getBacklinkIndex() is non-null → exercises the
+    // `index[fromSlug]` fast path rather than the full-scan fallback.
+    await rebuildBacklinkIndex();
 
     const result = await mergePages("harness-ai-agents", "agent-harness", {
       actor: "alice",
@@ -240,10 +261,18 @@ describe("mergePages", () => {
     await expect(
       mergePages("bob-pg", "alice-pg", { actor: "alice" }),
     ).rejects.toThrow(/same owner/);
-    // An admin caller bypasses the owner guard.
-    await expect(
-      mergePages("bob-pg", "alice-pg", { admin: true }),
-    ).resolves.toMatchObject({ intoSlug: "alice-pg" });
+    // An admin caller bypasses the owner guard AND unions both pages'
+    // contributors/authors (deduped) onto the survivor.
+    const result = await mergePages("bob-pg", "alice-pg", { admin: true });
+    expect(result.intoSlug).toBe("alice-pg");
+    const into = await readWikiPageWithFrontmatter("alice-pg");
+    expect(into!.frontmatter.contributors as string[]).toEqual(
+      expect.arrayContaining(["alice", "bob"]),
+    );
+    expect((into!.frontmatter.contributors as string[]).length).toBe(2); // deduped
+    expect(into!.frontmatter.authors as string[]).toEqual(
+      expect.arrayContaining(["alice", "bob"]),
+    );
   });
 });
 
