@@ -45,7 +45,7 @@
  *   vault_rename       — Rename an existing vault
  *   vault_delete       — Delete a vault
  *   list_vaults        — List all named vaults for a user
- *   vault_pages        — List page slugs curated into a named vault
+ *   vault_pages        — List enriched page entries curated into a named vault
  *
  * Usage:
  *   pnpm mcp          # starts the stdio server
@@ -921,13 +921,69 @@ export async function handleListVaults(args: {
   return { vaults };
 }
 
+/** Enriched page entry returned by `vault_pages`. */
+export interface VaultPageEntry {
+  slug: string;
+  title: string;
+  summary?: string;
+  tags?: string[];
+  confidence?: number;
+  updated?: string;
+  type?: string;
+  owner?: string;
+}
+
 export async function handleVaultPages(args: {
   owner: string;
   vault: string;
-}): Promise<{ owner: string; vault: string; slugs: string[] }> {
+}): Promise<{ owner: string; vault: string; slugs: string[]; pages: VaultPageEntry[] }> {
   const id = vaultIdFor(args.owner, args.vault);
   const slugs = await vaultSlugs(id);
-  return { owner: args.owner, vault: args.vault, slugs };
+
+  // Resolve enriched metadata for each slug.  Try the page-metadata index
+  // first (O(1) per slug), falling back to per-page frontmatter reads.
+  const { getPageIndex } = await import("./lib/page-index");
+  const metaIndex = await getPageIndex();
+
+  const pages: VaultPageEntry[] = await Promise.all(
+    slugs.map(async (slug): Promise<VaultPageEntry> => {
+      // Fast path: page-metadata index hit
+      if (metaIndex) {
+        const m = metaIndex[slug];
+        if (m) {
+          return {
+            slug: m.slug,
+            title: m.title,
+            ...(m.summary ? { summary: m.summary } : {}),
+            ...(m.tags && m.tags.length > 0 ? { tags: m.tags } : {}),
+            ...(m.confidence !== undefined ? { confidence: m.confidence } : {}),
+            ...(m.updated ? { updated: m.updated } : {}),
+            ...(m.type ? { type: m.type } : {}),
+            ...(m.owner ? { owner: m.owner } : {}),
+          };
+        }
+      }
+      // Slow fallback: read page frontmatter directly
+      const page = await readWikiPageWithFrontmatter(slug);
+      if (page) {
+        const fm = page.frontmatter;
+        return {
+          slug,
+          title: typeof fm.title === "string" && fm.title ? fm.title : slug,
+          ...(typeof fm.summary === "string" && fm.summary ? { summary: fm.summary } : {}),
+          ...(Array.isArray(fm.tags) && fm.tags.length > 0 ? { tags: fm.tags as string[] } : {}),
+          ...(typeof fm.confidence === "number" ? { confidence: fm.confidence } : {}),
+          ...(typeof fm.updated === "string" && fm.updated ? { updated: fm.updated } : {}),
+          ...(typeof fm.type === "string" && fm.type ? { type: fm.type } : {}),
+          ...(typeof fm.owner === "string" && fm.owner ? { owner: fm.owner } : {}),
+        };
+      }
+      // Page no longer exists — return a minimal entry with the slug as title
+      return { slug, title: slug };
+    }),
+  );
+
+  return { owner: args.owner, vault: args.vault, slugs, pages };
 }
 
 export async function handleVaultCreate(args: {
@@ -3065,11 +3121,12 @@ export function createMcpServer(): McpServer {
     }
   });
 
-  // vault_pages — List page slugs in a named vault
+  // vault_pages — List enriched page entries in a named vault
   server.registerTool("vault_pages", {
     description:
-      "List the page slugs curated into one of a user's named vaults. Returns the ordered slug " +
-      "array (insertion order, most-recent last). Returns an empty array if the vault does not exist.",
+      "List the pages curated into one of a user's named vaults with enriched metadata. Returns both " +
+      "a slug array (backward compatible) and an enriched pages array with title, summary, tags, " +
+      "confidence, updated, type, and owner. Returns empty arrays if the vault does not exist.",
     inputSchema: {
       owner: z
         .string()

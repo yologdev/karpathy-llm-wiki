@@ -3726,6 +3726,7 @@ describe("vault_pages", () => {
       owner: "nobody",
       vault: "nonexistent",
       slugs: [],
+      pages: [],
     });
   });
 
@@ -3757,6 +3758,37 @@ describe("vault_pages", () => {
     expect(result.owner).toBe("viewer");
     expect(result.vault).toBe("My Vault");
     expect(result.slugs).toEqual(["vault-pages-a", "vault-pages-b"]);
+
+    // Enriched page entries should be present alongside the slug array
+    expect(result.pages).toHaveLength(2);
+    expect(result.pages[0]).toMatchObject({ slug: "vault-pages-a", title: "Page A" });
+    expect(result.pages[1]).toMatchObject({ slug: "vault-pages-b", title: "Page B" });
+  });
+
+  it("returns enriched entries with frontmatter metadata", async () => {
+    await writeTestPage(
+      "vault-enrich",
+      "---\ntitle: Enriched\nsummary: A summary\ntags: [alpha, beta]\nconfidence: 0.9\ntype: article\nowner: viewer\n---\n# Enriched\n\nBody.",
+    );
+    await handleVaultCurate({
+      slug: "vault-enrich",
+      owner: "viewer",
+      vault: "Enrich Vault",
+    });
+
+    const result = await handleVaultPages({
+      owner: "viewer",
+      vault: "Enrich Vault",
+    });
+    expect(result.pages).toHaveLength(1);
+    const entry = result.pages[0];
+    expect(entry.slug).toBe("vault-enrich");
+    expect(entry.title).toBe("Enriched");
+    expect(entry.summary).toBe("A summary");
+    expect(entry.tags).toEqual(["alpha", "beta"]);
+    expect(entry.confidence).toBe(0.9);
+    expect(entry.type).toBe("article");
+    expect(entry.owner).toBe("viewer");
   });
 });
 

@@ -29,6 +29,67 @@ async function readSlug(req: Request): Promise<string | null> {
 }
 
 /**
+ * GET /api/vaults/[id]/pages — list enriched page entries in a vault.
+ *
+ * Returns `{ pages: VaultPageEntry[] }` with title, summary, tags, etc.
+ * Auth-gated to the vault owner.
+ */
+export async function GET(_req: Request, { params }: Params) {
+  const { id } = await params;
+  const auth = await authorizeOwner(id);
+  if (auth.error) return auth.error;
+
+  const vault = await getVault(id);
+  if (!vault) {
+    return NextResponse.json({ error: "Vault not found." }, { status: 404 });
+  }
+
+  // Resolve enriched metadata for each slug via the page-metadata index
+  const { getPageIndex } = await import("@/lib/page-index");
+  const metaIndex = await getPageIndex();
+
+  const pages = await Promise.all(
+    vault.slugs.map(async (slug) => {
+      // Fast path: page-metadata index hit
+      if (metaIndex) {
+        const m = metaIndex[slug];
+        if (m) {
+          return {
+            slug: m.slug,
+            title: m.title,
+            ...(m.summary ? { summary: m.summary } : {}),
+            ...(m.tags && m.tags.length > 0 ? { tags: m.tags } : {}),
+            ...(m.confidence !== undefined ? { confidence: m.confidence } : {}),
+            ...(m.updated ? { updated: m.updated } : {}),
+            ...(m.type ? { type: m.type } : {}),
+            ...(m.owner ? { owner: m.owner } : {}),
+          };
+        }
+      }
+      // Slow fallback: read page frontmatter directly
+      const page = await readWikiPageWithFrontmatter(slug);
+      if (page) {
+        const fm = page.frontmatter;
+        return {
+          slug,
+          title: typeof fm.title === "string" && fm.title ? fm.title : slug,
+          ...(typeof fm.summary === "string" && fm.summary ? { summary: fm.summary } : {}),
+          ...(Array.isArray(fm.tags) && fm.tags.length > 0 ? { tags: fm.tags as string[] } : {}),
+          ...(typeof fm.confidence === "number" ? { confidence: fm.confidence } : {}),
+          ...(typeof fm.updated === "string" && fm.updated ? { updated: fm.updated } : {}),
+          ...(typeof fm.type === "string" && fm.type ? { type: fm.type } : {}),
+          ...(typeof fm.owner === "string" && fm.owner ? { owner: fm.owner } : {}),
+        };
+      }
+      // Page no longer exists
+      return { slug, title: slug };
+    }),
+  );
+
+  return NextResponse.json({ pages });
+}
+
+/**
  * POST /api/vaults/[id]/pages { slug } — add a page reference to a vault.
  *
  * v1 (public vaults): only a readable PUBLIC commons page can be referenced
