@@ -15,8 +15,9 @@ import {
   deriveTitleFromContent,
   collectTagVocabulary,
   computeConfidence,
-  tokenizeSourceImages,
-  restoreImageTokens,
+  collectGalleryImages,
+  stripImageMarkdown,
+  appendFigures,
   mergeSourceEntry,
 } from "../ingest";
 import { slugify } from "../slugify";
@@ -3471,50 +3472,54 @@ describe("ingest attribution", () => {
   });
 });
 
-describe("tokenizeSourceImages / restoreImageTokens", () => {
-  it("round-trips content images through tokens", () => {
-    const src = "Intro.\n\n![a chart](assets/p/chart.png)\n\nbody.";
-    const { text, refs } = tokenizeSourceImages(src);
-    expect(text).toContain("[[IMG:1]]");
-    expect(text).not.toContain("chart.png");
-    expect(refs).toEqual([{ alt: "a chart", ref: "assets/p/chart.png" }]);
-    expect(restoreImageTokens(text, refs)).toContain(
-      "![a chart](assets/p/chart.png)",
-    );
+describe("collectGalleryImages / stripImageMarkdown / appendFigures", () => {
+  it("collects re-hosted (local) images only — never hotlinks", () => {
+    const src =
+      "Intro.\n\n![a chart](assets/p/chart.png)\n\n![remote](https://x.com/fig.png)\n\nbody.";
+    // The failed-download remote URL is excluded (no hotlink/tracking on view).
+    expect(collectGalleryImages(src)).toEqual([
+      { alt: "a chart", ref: "assets/p/chart.png" },
+    ]);
   });
 
-  it("strips decorative images (logo/icon) — never tokenized", () => {
-    const { text, refs } = tokenizeSourceImages(
-      "![site logo](assets/p/logo.png)\n\n![diagram](https://x.com/fig.png)",
-    );
-    expect(refs).toEqual([{ alt: "diagram", ref: "https://x.com/fig.png" }]);
-    expect(text).not.toContain("logo.png");
-    expect(text).toContain("[[IMG:1]]");
+  it("drops decorative images (logo/icon)", () => {
+    expect(
+      collectGalleryImages(
+        "![site logo](assets/p/logo.png)\n\n![diagram](assets/p/fig.png)",
+      ),
+    ).toEqual([{ alt: "diagram", ref: "assets/p/fig.png" }]);
   });
 
-  it("drops omitted and out-of-range tokens on restore", () => {
-    const refs = [{ alt: "a", ref: "assets/p/a.png" }];
-    // Token 1 kept inline, token 2 hallucinated → dropped; an unreferenced image filtered.
-    expect(restoreImageTokens("x [[IMG:1]] y [[IMG:2]] z", refs)).toBe(
-      "x ![a](assets/p/a.png) y  z",
-    );
-  });
-
-  it("dedups a repeated ref to one entry, reusing its token", () => {
-    const { text, refs } = tokenizeSourceImages(
-      "![x](assets/p/a.png)\n\nmid\n\n![x again](assets/p/a.png)",
-    );
-    expect(refs).toEqual([{ alt: "x", ref: "assets/p/a.png" }]); // one entry
-    expect((text.match(/\[\[IMG:1\]\]/g) ?? []).length).toBe(2); // both reuse token 1
-  });
-
-  it("caps the number of tokenized images", () => {
-    const imgs = Array.from(
+  it("dedups a repeated ref and caps at MAX_APPENDED_IMAGES", () => {
+    expect(
+      collectGalleryImages("![x](assets/p/a.png)\n\n![x again](assets/p/a.png)"),
+    ).toEqual([{ alt: "x", ref: "assets/p/a.png" }]);
+    const many = Array.from(
       { length: 20 },
       (_, i) => `![fig${i}](assets/p/f${i}.png)`,
     ).join("\n\n");
-    const { refs } = tokenizeSourceImages(imgs);
-    expect(refs.length).toBe(12); // MAX_APPENDED_IMAGES
+    expect(collectGalleryImages(many).length).toBe(12); // MAX_APPENDED_IMAGES
+  });
+
+  it("stripImageMarkdown removes all image syntax (body goes image-free to the LLM)", () => {
+    const out = stripImageMarkdown("a ![x](assets/p/a.png) b ![y](https://z/c.png) c");
+    expect(out).not.toMatch(/!\[/);
+    expect(out).toContain("a ");
+    expect(out).toContain(" c");
+  });
+
+  it("appendFigures adds a trailing ## Figures gallery (no-op when empty)", () => {
+    const body = "# Title\n\nProse.";
+    expect(appendFigures(body, [])).toBe(body);
+    const withFigs = appendFigures(body, [
+      { alt: "a", ref: "assets/p/a.png" },
+      { alt: "b", ref: "assets/p/b.png" },
+    ]);
+    expect(withFigs).toContain("## Figures");
+    expect(withFigs).toContain("![a](assets/p/a.png)");
+    expect(withFigs).toContain("![b](assets/p/b.png)");
+    // Gallery is at the END, after the prose body.
+    expect(withFigs.indexOf("## Figures")).toBeGreaterThan(withFigs.indexOf("Prose."));
   });
 });
 

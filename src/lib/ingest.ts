@@ -548,65 +548,52 @@ function generateFallbackPage(title: string, content: string): string {
 // Image preservation
 // ---------------------------------------------------------------------------
 
-/**
-/** An image ref captured from the source for token-based inline placement. */
+/** A re-hosted source image captured for the trailing Figures gallery. */
 interface SourceImageRef {
   alt: string;
   ref: string;
 }
 
-/** Image refs we strip outright (decorative/branding/UI — never content). */
+/** Image refs we drop outright (decorative/branding/UI — never content). */
 const DECORATIVE_IMAGE_RE = /(logo|icon|avatar|sprite|favicon|emoji|banner)/i;
 
 /**
- * Replace the source's image refs with short `[[IMG:n]]` placeholder tokens at
- * their original positions, so the synthesis LLM can keep the genuine ones by
- * placing the same token inline where it now belongs (and omit the rest) — the
- * LLM reliably preserves a tiny token but mangles long `assets/<slug>/x.png`
- * paths. Decorative/branding images are removed outright (never tokenized).
- * Returns the tokenized text plus the ordered ref map for {@link restoreImageTokens}.
+ * Collect the RE-HOSTED source images for a trailing `## Figures` gallery. Only
+ * local `assets/…` refs are kept (never a hotlinked `http(s)` URL — a failed
+ * download that kept its original URL is excluded so a page never re-fetches a
+ * third-party image on view, which would be a tracking/exfil vector). Decorative
+ * images are dropped, duplicates collapsed, and the list capped at
+ * {@link MAX_APPENDED_IMAGES}. Run on the post-`downloadImages` content.
  */
-export function tokenizeSourceImages(content: string): {
-  text: string;
-  refs: SourceImageRef[];
-} {
-  const refs: SourceImageRef[] = [];
-  const tokenByRef = new Map<string, number>(); // dedup: same ref → same token
-  const re = /!\[([^\]]*)\]\(((?:assets\/|https?:\/\/)[^)\s]+)\)/g;
-  const text = content.replace(re, (_whole, alt: string, ref: string) => {
-    if (DECORATIVE_IMAGE_RE.test(ref) || DECORATIVE_IMAGE_RE.test(alt)) {
-      return ""; // strip decorative images so the LLM never sees them
-    }
-    const existing = tokenByRef.get(ref);
-    if (existing) return `\n\n[[IMG:${existing}]]\n\n`; // reuse — don't spend a cap slot
-    if (refs.length >= MAX_APPENDED_IMAGES) return ""; // past the cap → drop (don't leak a raw ref)
-    refs.push({ alt, ref });
-    tokenByRef.set(ref, refs.length);
-    return `\n\n[[IMG:${refs.length}]]\n\n`;
-  });
-  return { text, refs };
+export function collectGalleryImages(content: string): SourceImageRef[] {
+  const images: SourceImageRef[] = [];
+  const seen = new Set<string>();
+  for (const m of content.matchAll(/!\[([^\]]*)\]\(([^)\s]+)\)/g)) {
+    const alt = m[1];
+    const ref = m[2];
+    // Re-hosted only — exclude hotlinks (failed downloads keep their URL).
+    if (!ref.startsWith("assets/") && !ref.startsWith("raw/assets/")) continue;
+    if (DECORATIVE_IMAGE_RE.test(ref) || DECORATIVE_IMAGE_RE.test(alt)) continue;
+    if (seen.has(ref)) continue;
+    seen.add(ref);
+    if (images.length >= MAX_APPENDED_IMAGES) break;
+    images.push({ alt, ref });
+  }
+  return images;
 }
 
-/**
- * Substitute the real image refs back for the `[[IMG:n]]` tokens the LLM kept.
- * Tokens the LLM omitted are absent (those images are filtered out); tokens with
- * an out-of-range/invalid `n` (hallucinated) are dropped.
- */
-export function restoreImageTokens(body: string, refs: SourceImageRef[]): string {
-  const kept = new Set<number>();
-  const out = body.replace(/\[\[IMG:(\d+)\]\]/g, (_whole, n: string) => {
-    const idx = Number(n) - 1;
-    const img = refs[idx];
-    if (!img) return "";
-    kept.add(idx);
-    return `![${img.alt}](${img.ref})`;
-  });
-  // Observability: a sudden "kept 0/N" signals a prompt/truncation regression
-  // silently dropping real figures (which otherwise leaves no trace).
-  if (refs.length > 0) {
-    logger.debug("ingest", `inline images: kept ${kept.size}/${refs.length}`);
-  }
-  return out;
+/** Strip all markdown image syntax so the synthesis LLM gets image-free text
+ *  (images live in the trailing gallery, not inline in the body). */
+export function stripImageMarkdown(content: string): string {
+  return content.replace(/!\[[^\]]*\]\([^)]*\)/g, "");
+}
+
+/** Append a `## Figures` gallery of the re-hosted images to a synthesized body
+ *  (no-op when there are none). */
+export function appendFigures(body: string, images: SourceImageRef[]): string {
+  if (images.length === 0) return body;
+  const figs = images.map((i) => `![${i.alt}](${i.ref})`).join("\n\n");
+  return `${body.trimEnd()}\n\n## Figures\n\n${figs}\n`;
 }
 
 // ---------------------------------------------------------------------------
@@ -795,8 +782,6 @@ Then, on the following lines, the wiki article. Include:
   click away ("View raw"), so do NOT try to reproduce it. Invent nothing not
   supported by the source.
 
-Images: the source may contain placeholder tokens like \`[[IMG:1]]\`. KEEP the ones that are genuine content — diagrams, figures, charts, screenshots that illustrate the topic — by writing the SAME token on its own line at the most relevant point in the article (next to the text it illustrates). Omit any token whose image is clearly decorative/branding/UI. Never invent tokens or change their numbers; output each kept token verbatim.
-
 Diagrams: when the concept has a clear STRUCTURE (a flow, pipeline, architecture, hierarchy, sequence, or relationship), you MAY include ONE concise Mermaid diagram in a fenced \`\`\`mermaid code block (e.g. flowchart LR, graph TD, sequenceDiagram); it renders as a diagram. Use it only where it genuinely clarifies, base it strictly on the source, and keep node labels short. Most pages need none.
 
 Write a focused, distilled page, not a transcript of the source. Output the CONCEPT, ALIASES, and TAGS lines, then pure markdown, and nothing else. Do not wrap in code fences.`;
@@ -814,8 +799,6 @@ const MAP_SYSTEM_PROMPT = `You are a wiki editor distilling ONE part of a long s
 From THIS part of the source, capture the substantive material a reader needs: the explanations, definitions, mechanisms, claims, examples, names, and numbers actually present. Be FAITHFUL — preserve concrete specifics exactly; do not generalize them away, and invent nothing not in this part.
 
 Write mostly in concise prose. Use a bullet only for genuinely list-like material — do not turn every sentence into a bullet. Omit boilerplate, marketing, repetition, and tangents. Do NOT add a title, a "Summary", or section headings — output only the distilled notes for this part.
-
-Images: the source may contain placeholder tokens like \`[[IMG:1]]\`. Keep genuine content images (diagrams, figures, charts, screenshots) by writing the SAME token on its own line where relevant; omit decorative/branding/UI ones. Never invent tokens or change their numbers.
 
 Output pure markdown and nothing else. Do not wrap in code fences.`;
 
@@ -836,8 +819,6 @@ ALIASES: <comma-separated alternative names / synonyms for the concept, or "none
 TAGS: <3-6 lowercase, hyphenated topic tags, comma-separated>
 
 Then the article: one \`# Title\` (the canonical concept), then EXACTLY ONE of each \`## Summary\`, \`## Key Points\`, \`## Concepts\`, \`## Details\`. Reorganise the merged notes into these sections — never emit a section twice or an "(additional)" variant. Prefer readable prose; use bullets only where the material is genuinely list-like. The \`## Details\` section should carry the substance in prose and lists, not a flat dump of every bullet.
-
-Images: the notes may contain placeholder tokens like \`[[IMG:1]]\`. Keep each genuine-content token on its own line at the most relevant point; never invent tokens or change their numbers; output each kept token verbatim.
 
 Diagrams: when the concept has a clear STRUCTURE (a flow, pipeline, architecture, hierarchy, sequence, or relationship), you MAY include ONE concise Mermaid diagram in a fenced \`\`\`mermaid code block (e.g. flowchart LR, graph TD, sequenceDiagram). Use it only where it genuinely clarifies, base it strictly on the notes, and keep node labels short. Most pages need none.
 
@@ -1293,6 +1274,71 @@ async function attachIngestTrigger(
 }
 
 /**
+ * Synthesize the wiki body from IMAGE-FREE source text: a single LLM call for
+ * short content, MAP/REDUCE for long content (parallel map in bounded-concurrency
+ * batches → merge), or a deterministic fallback page when there's no LLM key.
+ * Returns the raw synthesized body (still carrying the leading CONCEPT marker on
+ * the LLM path); the caller strips that and appends the Figures gallery.
+ */
+async function synthesizeBody(title: string, content: string): Promise<string> {
+  if (!hasLLMKey()) {
+    // Derived title so a title-less paste doesn't emit an empty `# ` H1.
+    return generateFallbackPage(title, content);
+  }
+  const systemPrompt = await buildIngestSystemPrompt();
+  const chunks = chunkText(content, MAX_LLM_INPUT_CHARS);
+  // Larger output budget so the ## Details section can preserve substantive
+  // source content instead of being truncated.
+  const llmOptions = { maxOutputTokens: INGEST_MAX_OUTPUT_TOKENS };
+
+  if (chunks.length === 1) {
+    return callLLM(systemPrompt, chunks[0], llmOptions);
+  }
+
+  // Long content — MAP/REDUCE. Distil each chunk straight from the SOURCE (in
+  // bounded-concurrency batches), then merge the partials into one article.
+  // Mapping from source keeps coverage faithful and stops cross-chunk drift;
+  // the parallel map keeps a long transcript well under the request budget.
+  const mapOptions = { maxOutputTokens: INGEST_MAP_MAX_OUTPUT_TOKENS };
+  const partials: string[] = [];
+  for (let i = 0; i < chunks.length; i += INGEST_MAP_CONCURRENCY) {
+    const batch = chunks.slice(i, i + INGEST_MAP_CONCURRENCY);
+    const mapped = await Promise.all(
+      batch.map(async (chunk, j) => {
+        const chunkIndex = i + j + 1;
+        try {
+          return await callLLM(
+            MAP_SYSTEM_PROMPT,
+            `Part ${chunkIndex} of ${chunks.length} of the source:\n\n${chunk}`,
+            mapOptions,
+          );
+        } catch (err) {
+          logger.warn(
+            "ingest",
+            `map chunk ${chunkIndex}/${chunks.length} failed, skipping:`,
+            err,
+          );
+          return "";
+        }
+      }),
+    );
+    partials.push(...mapped);
+  }
+
+  const notes = partials
+    .map((p, i) => ({ part: i + 1, text: p.trim() }))
+    .filter((p) => p.text)
+    .map((p) => `# Part ${p.part}\n\n${p.text}`)
+    .join("\n\n");
+  if (!notes) {
+    // Every map call came back blank — surface a real failure rather than
+    // reducing nothing into a hallucinated page.
+    throw new Error("synthesis produced no content from the source");
+  }
+  return callLLM(REDUCE_SYSTEM_PROMPT, notes, llmOptions);
+}
+
+/**
  * Ingest a source document into the wiki: synthesize the page (LLM) and write it
  * directly. There is no preview/commit two-step — every ingest runs synthesis
  * and writes.
@@ -1373,72 +1419,14 @@ export async function ingest(
   if (prebuiltContent) {
     // Image ingest: skip the LLM, write the already-final body as-is.
     wikiContent = prebuiltContent;
-  } else if (hasLLMKey()) {
-    const systemPrompt = await buildIngestSystemPrompt();
-    // Swap source images for [[IMG:n]] tokens so the LLM can place the relevant
-    // ones inline (and omit decorative ones); refs are restored after synthesis.
-    const { text: llmInput, refs: imageRefs } = tokenizeSourceImages(content);
-    const chunks = chunkText(llmInput, MAX_LLM_INPUT_CHARS);
-
-    // Larger output budget so the ## Details section can preserve substantive
-    // source content instead of being truncated.
-    const llmOptions = { maxOutputTokens: INGEST_MAX_OUTPUT_TOKENS };
-
-    if (chunks.length === 1) {
-      // Short content — single LLM call (no behaviour change)
-      wikiContent = await callLLM(systemPrompt, chunks[0], llmOptions);
-    } else {
-      // Long content — MAP/REDUCE. Distil each chunk straight from the SOURCE
-      // (in bounded-concurrency batches), then merge the partials into one
-      // article. Mapping from source keeps coverage faithful and stops the
-      // cross-chunk drift a sequential refine caused; merging collapses the
-      // parts into a single set of sections (no "(additional)" pileup); and the
-      // parallel map keeps a long transcript well under the request budget that
-      // sequential synthesis blew past.
-      const mapOptions = { maxOutputTokens: INGEST_MAP_MAX_OUTPUT_TOKENS };
-      const partials: string[] = [];
-      for (let i = 0; i < chunks.length; i += INGEST_MAP_CONCURRENCY) {
-        const batch = chunks.slice(i, i + INGEST_MAP_CONCURRENCY);
-        const mapped = await Promise.all(
-          batch.map(async (chunk, j) => {
-            const chunkIndex = i + j + 1;
-            try {
-              return await callLLM(
-                MAP_SYSTEM_PROMPT,
-                `Part ${chunkIndex} of ${chunks.length} of the source:\n\n${chunk}`,
-                mapOptions,
-              );
-            } catch (err) {
-              logger.warn(
-                "ingest",
-                `map chunk ${chunkIndex}/${chunks.length} failed, skipping:`,
-                err,
-              );
-              return "";
-            }
-          }),
-        );
-        partials.push(...mapped);
-      }
-
-      const notes = partials
-        .map((p, i) => ({ part: i + 1, text: p.trim() }))
-        .filter((p) => p.text)
-        .map((p) => `# Part ${p.part}\n\n${p.text}`)
-        .join("\n\n");
-      if (!notes) {
-        // Every map call came back blank — surface a real failure rather than
-        // reducing nothing into a hallucinated page.
-        throw new Error("synthesis produced no content from the source");
-      }
-      wikiContent = await callLLM(REDUCE_SYSTEM_PROMPT, notes, llmOptions);
-    }
-
-    // Restore the kept [[IMG:n]] tokens to real refs (omitted ones are dropped).
-    wikiContent = restoreImageTokens(wikiContent, imageRefs);
   } else {
-    // Use the derived title so a title-less paste doesn't emit an empty `# ` H1.
-    wikiContent = generateFallbackPage(effectiveTitle, content);
+    // Source images go in a trailing `## Figures` gallery, not inline: collect
+    // the re-hosted ones, then feed the synthesizer/fallback IMAGE-FREE text so
+    // the body stays clean prose (better for index/query) with no inline images.
+    const galleryImages = collectGalleryImages(content);
+    const cleanContent = stripImageMarkdown(content);
+    wikiContent = await synthesizeBody(effectiveTitle, cleanContent);
+    wikiContent = appendFigures(wikiContent, galleryImages);
   }
 
   // Pull the leading `CONCEPT:` / `ALIASES:` header lines the synthesis prompt
@@ -1480,8 +1468,9 @@ export async function ingest(
     }
   }
 
-  // Images are placed inline during synthesis via [[IMG:n]] tokens (see
-  // tokenizeSourceImages / restoreImageTokens) — no trailing dump.
+  // Re-hosted source images are collected into a trailing `## Figures` gallery
+  // (see collectGalleryImages / appendFigures) — the synthesized body is
+  // image-free prose.
 
   // A prebuilt body (image path) carries no CONCEPT marker, so the canonical
   // slug would otherwise stay the source-TITLE slug. Re-derive slug + title from
