@@ -92,6 +92,7 @@ import { belongsInCommons } from "./lib/commons";
 import { reconcileFromTalk, type ReconcileFromTalkResult } from "./lib/reconcile";
 import { buildWikiGraph, type GraphNode, type GraphEdge } from "./lib/graph-build";
 import { mergePages, type MergePagesResult } from "./lib/merge";
+import { logger } from "./lib/logger";
 import type { TalkThread, TalkComment } from "./lib/types";
 
 // ---------------------------------------------------------------------------
@@ -373,6 +374,7 @@ export async function handleIngestUrl(args: {
   tags?: string[] | undefined;
   owner?: string;
   triggeredBy?: string;
+  vaultId?: string;
 }): Promise<{
   slug: string;
   title: string;
@@ -398,12 +400,17 @@ export async function handleIngestUrl(args: {
     ? extractSummary(page.body)
     : `Ingested from ${args.url}`;
 
-  return {
+  const response = {
     slug: result.primarySlug,
     title,
     summary,
     sourceUrl: args.url,
   };
+  if (args.vaultId) {
+    try { await addToVault(args.vaultId, result.primarySlug); }
+    catch (err) { logger.warn("mcp", `vault filing failed: ${(err as Error).message}`); }
+  }
+  return response;
 }
 
 // ---------------------------------------------------------------------------
@@ -483,6 +490,7 @@ export async function handleIngestText(args: {
   tags?: string[] | undefined;
   owner?: string;
   triggeredBy?: string;
+  vaultId?: string;
 }): Promise<{
   slug: string;
   title: string;
@@ -509,12 +517,17 @@ export async function handleIngestText(args: {
     ? extractSummary(page.body)
     : `Ingested from text input`;
 
-  return {
+  const response = {
     slug: result.primarySlug,
     title: pageTitle,
     summary,
     sourceUrl: "",
   };
+  if (args.vaultId) {
+    try { await addToVault(args.vaultId, result.primarySlug); }
+    catch (err) { logger.warn("mcp", `vault filing failed: ${(err as Error).message}`); }
+  }
+  return response;
 }
 
 // ---------------------------------------------------------------------------
@@ -1793,6 +1806,7 @@ export function createMcpServer(): McpServer {
         .describe("Optional tags to apply to the created page"),
       owner: z.string().optional().describe("Owner handle — the accountable principal for the resulting page. Sets frontmatter owner for tenant model."),
       triggeredBy: z.string().optional().describe("Handle of the user or agent that triggered this ingest (for provenance tracking)"),
+      vaultId: z.string().optional().describe("Optional vault ID — if provided, the ingested page is automatically curated into this vault"),
     },
     annotations: {
       readOnlyHint: false,
@@ -1885,6 +1899,7 @@ export function createMcpServer(): McpServer {
         .describe("Optional tags to apply to the created page"),
       owner: z.string().optional().describe("Owner handle — the accountable principal for the resulting page. Sets frontmatter owner for tenant model."),
       triggeredBy: z.string().optional().describe("Handle of the user or agent that triggered this ingest (for provenance tracking)"),
+      vaultId: z.string().optional().describe("Optional vault ID — if provided, the ingested page is automatically curated into this vault"),
     },
     annotations: {
       readOnlyHint: false,
