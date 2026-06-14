@@ -2,19 +2,24 @@
  * Server-side baking of `yoyo-illustration` directives. The slides/HTML LLM
  * emits a placeholder — a ` ```yoyo-illustration ` fence in markdown, or a
  * `<figure class="yoyo-illustration" data-scene="…">` in HTML — and here we
- * replace each with a real image reference. The `fetcher` (always
- * `generateYoyoIllustration`) generates the scene once, stores it in R2, and
- * returns its `/api/assets/…` URL, so the baked answer renders for every viewer
- * (including anonymous shares) with no per-view fetch. Generation is paid +
- * cached server-side, so only directives actually present are filled, bounded to
- * a few per document.
+ * replace each with a real image reference. The `fetcher` generates each scene
+ * once, stores it in R2, and returns a servable image reference — an
+ * `/api/assets/…` URL for slides/markdown (`generateYoyoIllustration`), or a
+ * self-contained `data:` URI for the HTML artifact
+ * (`generateYoyoIllustrationDataUri`, whose sandboxed iframe can't load a
+ * same-origin URL) — so the baked answer renders for every viewer (including
+ * anonymous shares) with no per-view fetch. Generation is paid + cached
+ * server-side, so only directives actually present are filled, bounded to a few
+ * per document.
  */
 
 /** Max illustrations filled per document (cost/latency guard). */
 export const MAX_ILLUSTRATIONS = 3;
 
-/** Generate a scene's illustration, returning its servable URL (or null).
- *  Injectable for tests; in production this is `generateYoyoIllustration`. */
+/** Generate a scene's illustration, returning a servable image reference — an
+ *  `/api/assets/…` URL or a self-contained `data:` URI — or null. Injectable for
+ *  tests; in production it's `generateYoyoIllustration` (slides) or
+ *  `generateYoyoIllustrationDataUri` (HTML). */
 export type IllustrateFetcher = (
   scene: string,
   lang: string,
@@ -56,16 +61,24 @@ export interface IllustrationRenderOptions {
 }
 
 /**
- * Replace up to {@link MAX_ILLUSTRATIONS} `yoyo-illustration` figures in an HTML
- * string with the generated image (parallel). A figure whose scene can't be
- * generated is dropped (default) or left in place (`onMissing: "keep"`).
+ * Replace up to {@link MAX_ILLUSTRATIONS} *unbaked* `yoyo-illustration` figures
+ * (those carrying a `data-scene`) in an HTML string with the generated image
+ * (parallel). An already-baked figure (an `<img>`, no `data-scene`) is left
+ * untouched, so re-baking the same content is idempotent. A figure whose scene
+ * can't be generated is dropped (default) or left in place (`onMissing: "keep"`).
  */
 export async function renderYoyoIllustrationsInHtml(
   html: string,
   fetcher: IllustrateFetcher,
   { onMissing = "drop" }: IllustrationRenderOptions = {},
 ): Promise<string> {
-  const matches = [...html.matchAll(FIGURE_RE)].slice(0, MAX_ILLUSTRATIONS);
+  // Only act on figures that still carry a scene to generate. A baked figure
+  // (no `data-scene`, just an `<img>`) must pass through untouched — otherwise a
+  // second bake (e.g. save-time after query-time) would match it, find no scene,
+  // and drop the already-generated image.
+  const matches = [...html.matchAll(FIGURE_RE)]
+    .filter((m) => attr(m[0], "data-scene"))
+    .slice(0, MAX_ILLUSTRATIONS);
   if (matches.length === 0) return html;
 
   const filled = await Promise.all(

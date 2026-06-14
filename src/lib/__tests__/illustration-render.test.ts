@@ -75,6 +75,22 @@ describe("renderYoyoIllustrationsInHtml", () => {
     });
     expect(out).toBe(html);
   });
+
+  it("is idempotent — an already-baked figure (no data-scene) is left untouched", async () => {
+    // Regression: query()-time baking produces `<figure ...><img ...></figure>`
+    // (no data-scene). The save-time re-bake must NOT match it, find no scene,
+    // and drop the already-generated image. A baked figure passes through, and
+    // the fetcher isn't even called.
+    const baked =
+      '<figure class="yoyo-illustration"><img src="data:image/jpeg;base64,AAAA" alt="x" style="max-width:100%;height:auto" /></figure>';
+    let calls = 0;
+    const out = await renderYoyoIllustrationsInHtml(baked, async () => {
+      calls++;
+      return "data:image/jpeg;base64,NEW";
+    });
+    expect(out).toBe(baked);
+    expect(calls).toBe(0);
+  });
 });
 
 const mdFence = (scene = "yoyo carrying a box") =>
