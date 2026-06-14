@@ -45,11 +45,12 @@ function deriveSourceType(url: string, _text: string): "x-mention" | "url" | "te
  *   - Default (per-agent token, e.g. openclaw): the page is scoped
  *     (`type: agent-knowledge`, owned by the agent) and appended to the agent's
  *     learnings — surfaces under the agent profile / `agent:` scope only.
- *   - `asOwner: true` (system token only): the page is ingested as the agent's
- *     **human owner's own content** — a normal public page owned/authored by the
- *     owner, in their `/u/<handle>` + the commons, NOT agent knowledge. This is
- *     the @yoyoevolve "save this to my wiki" reply flow: the actor (a registered
- *     user) replied, so the saved article is theirs, not the agent's.
+ *   - `asOwner: true` (system token OR per-agent token): the page is ingested
+ *     as the agent's **human owner's own content** — a normal public page
+ *     owned/authored by the owner, in their `/u/<handle>` + the commons, NOT
+ *     agent knowledge. For the system token this is the @yoyoevolve "save this
+ *     to my wiki" reply flow; for per-agent tokens this is the deliberate
+ *     agent→commons publish path (the owner is resolved from the agent record).
  */
 export async function POST(req: Request, { params }: RouteParams) {
   try {
@@ -64,10 +65,10 @@ export async function POST(req: Request, { params }: RouteParams) {
         { status: 401 },
       );
     }
-    // Resolved only on the system-token path; carries the agent's human owner so
-    // `asOwner` ingests can attribute the page to them.
+    // Resolved when needed: system-token path always, per-agent-token path when
+    // `asOwner` is requested. Carries the agent's human owner so `asOwner`
+    // ingests can attribute the page to them.
     let agentRecord: Awaited<ReturnType<typeof getAgent>> | null = null;
-    let isSystem = false;
     const tokenAgentId = await verifyAgentToken(bearer);
     if (tokenAgentId) {
       // Per-agent token: can only ingest into its own agent.
@@ -78,7 +79,6 @@ export async function POST(req: Request, { params }: RouteParams) {
         );
       }
     } else if (getServicePrincipal(req)) {
-      isSystem = true;
       // System token: trusted to target any agent, but it must exist — this is
       // the "registered user only" gate for the @yoyoevolve loop.
       try {
@@ -128,15 +128,26 @@ export async function POST(req: Request, { params }: RouteParams) {
       );
     }
 
-    // `asOwner` ingests into the human owner's own content. It requires the
-    // system token (which resolved the owner) — an agent token must never be
-    // able to write to its owner's public space.
+    // `asOwner` ingests into the human owner's own content. On the system-token
+    // path the agent record is already resolved; on the per-agent-token path we
+    // resolve it now so the owner is available for attribution.
     const asOwner = body.asOwner === true;
-    if (asOwner && !isSystem) {
-      return NextResponse.json(
-        { error: "asOwner ingestion requires the system token." },
-        { status: 403 },
-      );
+    if (asOwner && !agentRecord) {
+      try {
+        agentRecord = await getAgent(id);
+      } catch (err) {
+        if (err instanceof Error && err.message.includes("Invalid agent ID")) {
+          agentRecord = null;
+        } else {
+          throw err;
+        }
+      }
+      if (!agentRecord?.owner) {
+        return NextResponse.json(
+          { error: "Agent has no registered owner; cannot ingest asOwner." },
+          { status: 403 },
+        );
+      }
     }
 
     let opts: IngestOptions;

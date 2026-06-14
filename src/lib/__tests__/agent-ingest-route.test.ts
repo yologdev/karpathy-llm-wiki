@@ -241,9 +241,29 @@ describe("POST /api/agents/[id]/ingest", () => {
       expect(opts).toMatchObject({ sourceType: "text" });
     });
 
-    it("asOwner is rejected (403) for a per-agent token — agents can't write to the owner's space", async () => {
+    it("asOwner: per-agent token resolves the agent's human owner and creates a public page", async () => {
       mockedVerify.mockResolvedValue("alice--yoyo"); // per-agent token, matches path
       mockedServicePrincipal.mockReturnValue(null);
+      mockedGetAgent.mockResolvedValue({ id: "alice--yoyo", owner: "alice" } as never);
+
+      const res = await POST(
+        req({ url: "https://example.com", asOwner: true }, "alice--yoyo.s"),
+        { params },
+      );
+      expect(res.status).toBe(200);
+      // Owner-attributed, normal page — NO agent-knowledge scope.
+      const opts = mockedIngestUrl.mock.calls[0][1];
+      expect(opts).toMatchObject({ author: "alice", owner: "alice", triggeredBy: "alice", sourceType: "url" });
+      expect(opts).not.toHaveProperty("pageType");
+      // Owner content is not appended to the agent's learnings.
+      expect(mockedAddLearning).not.toHaveBeenCalled();
+    });
+
+    it("asOwner: per-agent token is rejected (403) when the agent has no registered owner", async () => {
+      mockedVerify.mockResolvedValue("alice--yoyo"); // per-agent token, matches path
+      mockedServicePrincipal.mockReturnValue(null);
+      // Agent exists but has no owner field
+      mockedGetAgent.mockResolvedValue({ id: "alice--yoyo" } as never);
 
       const res = await POST(
         req({ url: "https://example.com", asOwner: true }, "alice--yoyo.s"),
