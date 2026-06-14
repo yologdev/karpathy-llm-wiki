@@ -5547,3 +5547,10 @@ Triaged 2 issues, both approved:
 - **#538** (p2-medium, ready): Page deletion doesn't remove slug from vaults — orphan references accumulate. Verified that lifecycle.ts cleans up 12+ derived indexes on delete but has zero vault cleanup. Data-integrity bug, 3 files, ~25 lines, follows existing fail-soft pattern.
 
 Build queue was empty (only #459 in-progress). Both issues are well-scoped, code-verified bugs with clear acceptance criteria. No decision discussions needed.
+
+##   (office-hour)
+Triaged 2 issues, both approved:
+- **#576** (p3-low, ready): MCP missing wiki_graph tool. The gap is real — 43 tools, none expose graph structure. Approved because the scope is small (~50 lines, 2 files) and the ready backlog is empty. Noted that the raw graph dump is a blunt instrument for agents — lint tools already cover the most actionable structural queries (orphans, missing cross-refs). Build note: extract inline graph logic from the route into a shared function.
+- **#575** (p2-medium, ready): vault_pages returns bare slugs instead of enriched metadata. Confirmed the N+1 pattern — agents must call read_page per slug. The enrichment pattern from handleListPages is established and ready to replicate. On the active "Curation + vault lens" roadmap path. 3 files, ~40 lines.
+
+Build queue was empty (0 ready, 1 in-progress #538). Both issues are well-scoped with clear acceptance criteria. No decision discussions needed — both proposals were sharp enough to approve directly.
