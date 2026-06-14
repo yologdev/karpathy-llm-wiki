@@ -1500,6 +1500,50 @@ describe("ingest_text", () => {
       _resetConfigCache();
     }
   });
+
+  it("attributes author from owner instead of defaulting to system", async () => {
+    const savedKey = process.env.ANTHROPIC_API_KEY;
+    delete process.env.ANTHROPIC_API_KEY;
+    _resetConfigCache();
+    try {
+      const result = await handleIngestText({
+        content: "Author attribution test content for MCP ingest handlers.",
+        title: "Author Attribution Test",
+        owner: "agent-contributor",
+      });
+
+      expect(result.slug).toBeTruthy();
+      const page = await handleReadPage({ slug: result.slug });
+      expect(page.frontmatter.authors).toContain("agent-contributor");
+      expect(page.frontmatter.authors).not.toContain("system");
+    } finally {
+      if (savedKey !== undefined) {
+        process.env.ANTHROPIC_API_KEY = savedKey;
+      }
+      _resetConfigCache();
+    }
+  });
+
+  it("falls back to system when owner is not provided", async () => {
+    const savedKey = process.env.ANTHROPIC_API_KEY;
+    delete process.env.ANTHROPIC_API_KEY;
+    _resetConfigCache();
+    try {
+      const result = await handleIngestText({
+        content: "Fallback author test — no owner provided to MCP handler.",
+        title: "Fallback Author Test",
+      });
+
+      expect(result.slug).toBeTruthy();
+      const page = await handleReadPage({ slug: result.slug });
+      expect(page.frontmatter.authors).toContain("system");
+    } finally {
+      if (savedKey !== undefined) {
+        process.env.ANTHROPIC_API_KEY = savedKey;
+      }
+      _resetConfigCache();
+    }
+  });
 });
 
 // ---------------------------------------------------------------------------

@@ -389,7 +389,7 @@ export async function handleIngestUrl(args: {
 
   const result: IngestResult = await ingestUrl(args.url, {
     ...(args.tags && args.tags.length > 0 ? { tags: args.tags } : {}),
-    ...(args.owner ? { owner: args.owner } : {}),
+    ...(args.owner ? { owner: args.owner, author: args.owner } : {}),
     ...(args.triggeredBy ? { triggeredBy: args.triggeredBy } : {}),
   });
 
@@ -466,7 +466,7 @@ export async function handleBatchIngest(args: {
     try {
       const result: IngestResult = await ingestUrl(url, {
         ...(tags && tags.length > 0 ? { tags } : {}),
-        ...(owner ? { owner } : {}),
+        ...(owner ? { owner, author: owner } : {}),
         ...(triggeredBy ? { triggeredBy } : {}),
       });
       results.push({ url, slug: result.primarySlug });
@@ -506,7 +506,7 @@ export async function handleIngestText(args: {
   const result: IngestResult = await ingest(title, args.content, {
     ...(args.tags && args.tags.length > 0 ? { tags: args.tags } : {}),
     sourceType: "text",
-    ...(args.owner ? { owner: args.owner } : {}),
+    ...(args.owner ? { owner: args.owner, author: args.owner } : {}),
     ...(args.triggeredBy ? { triggeredBy: args.triggeredBy } : {}),
   });
 
@@ -561,6 +561,7 @@ export async function handleIngestXMention(args: {
   const result: IngestResult = await ingestXMention(
     args.url.trim(),
     args.triggered_by.trim(),
+    { author: args.triggered_by.trim(), owner: args.triggered_by.trim() },
   );
 
   // Read the written page to extract title and summary for the response
@@ -605,7 +606,7 @@ export async function handleIngestPdf(args: {
     {
       ...(args.title ? { title: args.title } : {}),
       ...(args.tags && args.tags.length > 0 ? { tags: args.tags } : {}),
-      ...(args.owner ? { owner: args.owner } : {}),
+      ...(args.owner ? { owner: args.owner, author: args.owner } : {}),
       ...(args.triggeredBy ? { triggeredBy: args.triggeredBy } : {}),
     },
   );
@@ -649,7 +650,7 @@ export async function handleIngestImage(args: {
   const result = await ingestImage(
     { imageUrl: args.url.trim() },
     {
-      ...(args.owner ? { owner: args.owner } : {}),
+      ...(args.owner ? { owner: args.owner, author: args.owner } : {}),
       ...(args.prompt ? { title: args.prompt } : {}),
       ...(args.triggeredBy ? { triggeredBy: args.triggeredBy } : {}),
     },
