@@ -9,6 +9,7 @@ import { readStagedBytes, readStagedText, deleteStaged } from "@/lib/ingest-stag
 import { agentIdFor, DEFAULT_AGENT_NAME } from "@/lib/agents";
 import { getErrorMessage } from "@/lib/errors";
 import { logger } from "@/lib/logger";
+import { addToVault } from "@/lib/vault";
 
 /**
  * POST /api/tasks/run — execute one agent task.
@@ -150,6 +151,16 @@ export async function POST(req: Request) {
         slug: result.primarySlug,
       });
     }
+
+    // Auto-file into vault if requested (fail-soft: never fail the ingest).
+    if (task.vaultId) {
+      try {
+        await addToVault(task.vaultId, result.primarySlug);
+      } catch (err) {
+        logger.warn("tasks", `vault filing failed for vault="${task.vaultId}" slug="${result.primarySlug}": ${(err as Error).message}`);
+      }
+    }
+
     return NextResponse.json({ ok: true, slug: result.primarySlug });
   } catch (err) {
     const message = getErrorMessage(err);

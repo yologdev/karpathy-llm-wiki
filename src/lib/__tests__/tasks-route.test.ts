@@ -16,6 +16,9 @@ vi.mock("@/lib/ingest-staging", () => ({
   readStagedText: vi.fn(async () => "staged pasted text"),
   deleteStaged: vi.fn(async () => {}),
 }));
+vi.mock("@/lib/vault", () => ({
+  addToVault: vi.fn(async () => {}),
+}));
 
 import { getServicePrincipal } from "@/lib/auth";
 import { reconcileFromTalk } from "@/lib/reconcile";
@@ -36,6 +39,9 @@ const mockedUpdateJob = vi.mocked(updateIngestJob);
 const mockedReadStagedBytes = vi.mocked(readStagedBytes);
 const mockedReadStagedText = vi.mocked(readStagedText);
 const mockedDeleteStaged = vi.mocked(deleteStaged);
+
+import { addToVault } from "@/lib/vault";
+const mockedAddToVault = vi.mocked(addToVault);
 
 async function run(body: unknown) {
   const { POST } = await import("@/app/api/tasks/run/route");
@@ -308,5 +314,30 @@ describe("POST /api/tasks/run", () => {
 
     mockedReconcile.mockRejectedValueOnce(new Error("LLM timeout"));
     expect((await run({ kind: "reconcile", slug: "x", threadIndex: 0 })).status).toBe(500);
+  });
+
+  it("files into vault when ingest task carries vaultId", async () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    mockedIngestUrl.mockResolvedValue({ primarySlug: "page-a" } as any);
+    const res = await run({
+      kind: "ingest",
+      url: "https://example.com",
+      owner: "alice",
+      vaultId: "alice--my-vault",
+    });
+    expect(res.status).toBe(200);
+    expect(mockedAddToVault).toHaveBeenCalledWith("alice--my-vault", "page-a");
+  });
+
+  it("does not call addToVault when no vaultId on ingest task", async () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    mockedIngestUrl.mockResolvedValue({ primarySlug: "page-b" } as any);
+    const res = await run({
+      kind: "ingest",
+      url: "https://example.com",
+      owner: "alice",
+    });
+    expect(res.status).toBe(200);
+    expect(mockedAddToVault).not.toHaveBeenCalled();
   });
 });
