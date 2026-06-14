@@ -105,7 +105,7 @@ afterEach(async () => {
 });
 
 describe("mergePages", () => {
-  it("folds bodies, unions provenance, aliases + supersedes, and deletes the absorbed page", async () => {
+  it("folds bodies, unions provenance + aliases, and deletes the absorbed page", async () => {
     await seedPage("agent-harness", {
       title: "Agent Harness",
       created: "2026-02-01",
@@ -117,7 +117,9 @@ describe("mergePages", () => {
       sources: [src("https://example.com/article")],
     });
 
-    const result = await mergePages("harness-ai-agents", "agent-harness", {
+    const result = await mergePages({
+      from: "harness-ai-agents",
+      into: "agent-harness",
       actor: "alice",
     });
 
@@ -133,7 +135,7 @@ describe("mergePages", () => {
     expect(into).not.toBeNull();
     expect(into!.body).toContain("Folded body covering both sources.");
 
-    // Provenance unioned; from's title + slug recorded as aliases; supersedes set.
+    // Provenance unioned; from's title + slug recorded as aliases of the survivor.
     const aliases = into!.frontmatter.aliases as string[];
     expect(aliases).toContain("Harness (AI agents)");
     expect(aliases).toContain("harness-ai-agents"); // slug alias powers the redirect
@@ -158,7 +160,9 @@ describe("mergePages", () => {
       body: "# Other\n\nSee the [harness](harness-ai-agents.md) page.",
     });
 
-    const result = await mergePages("harness-ai-agents", "agent-harness", {
+    const result = await mergePages({
+      from: "harness-ai-agents",
+      into: "agent-harness",
       actor: "alice",
     });
 
@@ -179,7 +183,9 @@ describe("mergePages", () => {
     // `index[fromSlug]` fast path rather than the full-scan fallback.
     await rebuildBacklinkIndex();
 
-    const result = await mergePages("harness-ai-agents", "agent-harness", {
+    const result = await mergePages({
+      from: "harness-ai-agents",
+      into: "agent-harness",
       actor: "alice",
     });
 
@@ -202,7 +208,9 @@ describe("mergePages", () => {
       "DISPUTED: yes\n\n# Agent Harness\n\nSources disagree on the definition.",
     );
 
-    const result = await mergePages("harness-ai-agents", "agent-harness", {
+    const result = await mergePages({
+      from: "harness-ai-agents",
+      into: "agent-harness",
       actor: "alice",
     });
 
@@ -223,7 +231,7 @@ describe("mergePages", () => {
       body: "# Harness (AI agents)\n\nContext window management.",
     });
 
-    await mergePages("harness-ai-agents", "agent-harness", { actor: "alice" });
+    await mergePages({ from: "harness-ai-agents", into: "agent-harness", actor: "alice" });
 
     const into = await readWikiPageWithFrontmatter("agent-harness");
     expect(into!.body).toContain("The harness loop.");
@@ -233,11 +241,11 @@ describe("mergePages", () => {
 
   it("rejects merging a page into itself and a missing page", async () => {
     await seedPage("agent-harness", { title: "Agent Harness" });
-    await expect(mergePages("agent-harness", "agent-harness")).rejects.toThrow(
+    await expect(mergePages({ from: "agent-harness", into: "agent-harness" })).rejects.toThrow(
       /into itself/,
     );
     await expect(
-      mergePages("ghost", "agent-harness", { actor: "alice" }),
+      mergePages({ from: "ghost", into: "agent-harness", actor: "alice" }),
     ).rejects.toThrow(/not found/);
   });
 
@@ -245,13 +253,13 @@ describe("mergePages", () => {
     await seedPage("deck", { title: "Deck", type: "slides" });
     await seedPage("note", { title: "Note" });
     await expect(
-      mergePages("note", "deck", { actor: "alice" }),
+      mergePages({ from: "note", into: "deck", actor: "alice" }),
     ).rejects.toThrow(/artifact/);
 
     await seedPage("public-pg", { title: "Public Pg" });
     await seedPage("private-pg", { title: "Private Pg", visibility: "private" });
     await expect(
-      mergePages("public-pg", "private-pg", { actor: "alice" }),
+      mergePages({ from: "public-pg", into: "private-pg", actor: "alice" }),
     ).rejects.toThrow(/private/);
   });
 
@@ -259,11 +267,11 @@ describe("mergePages", () => {
     await seedPage("alice-pg", { title: "Alice Pg", owner: "alice" });
     await seedPage("bob-pg", { title: "Bob Pg", owner: "bob" });
     await expect(
-      mergePages("bob-pg", "alice-pg", { actor: "alice" }),
+      mergePages({ from: "bob-pg", into: "alice-pg", actor: "alice" }),
     ).rejects.toThrow(/same owner/);
     // An admin caller bypasses the owner guard AND unions both pages'
     // contributors/authors (deduped) onto the survivor.
-    const result = await mergePages("bob-pg", "alice-pg", { admin: true });
+    const result = await mergePages({ from: "bob-pg", into: "alice-pg", bypassOwnerCheck: true });
     expect(result.intoSlug).toBe("alice-pg");
     const into = await readWikiPageWithFrontmatter("alice-pg");
     expect(into!.frontmatter.contributors as string[]).toEqual(

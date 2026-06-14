@@ -354,11 +354,13 @@ export async function handleMergePages(args: {
   into: string;
   author?: string;
 }): Promise<MergePagesResult> {
-  // MCP is deployment-trusted (stdio-only) → act as an admin caller so the merge
-  // isn't blocked by the same-human-owner guard.
-  return mergePages(args.from, args.into, {
+  // MCP is deployment-trusted (stdio-only) → bypass the same-human-owner guard
+  // so the merge isn't blocked.
+  return mergePages({
+    from: args.from,
+    into: args.into,
     actor: args.author ?? "system",
-    admin: true,
+    bypassOwnerCheck: true,
   });
 }
 

@@ -34,19 +34,29 @@ import { writeWikiPageWithSideEffects, deleteWikiPage } from "./lifecycle";
 import { getBacklinkIndex } from "./backlink-index";
 import { escapeRegex } from "./links";
 
-export interface MergePagesOptions {
+export interface MergePagesArgs {
+  /** Slug of the page to absorb — deleted after the merge. */
+  from: string;
+  /** Slug of the surviving canonical page. */
+  into: string;
   /** Actor performing the merge (handle) — for the same-owner guard + attribution. */
   actor?: string;
-  /** An admin / service caller bypasses the same-human-owner guard. */
-  admin?: boolean;
+  /**
+   * Bypass the same-human-owner guard. Set ONLY by deployment-trusted callers
+   * (MCP stdio / a service principal). Actor-scoped callers (e.g. a dedup
+   * cleanup) should pass `actor` and leave this false, so a cross-owner merge is
+   * refused rather than silently allowed.
+   */
+  bypassOwnerCheck?: boolean;
 }
 
 export interface MergePagesResult {
   fromSlug: string;
   intoSlug: string;
-  /** True if the fold surfaced a contradiction (page left flagged `disputed`). */
+  /** True if the merged page is left flagged `disputed` — either input was, or
+   *  the fold surfaced a contradiction. */
   disputed: boolean;
-  /** Source pages whose `[..](<from>.md)` links were re-pointed to `into`. */
+  /** Other pages whose `[..](<from>.md)` links were re-pointed to `into`. */
   repointedBacklinksFrom: string[];
 }
 
@@ -55,6 +65,13 @@ const asString = (v: unknown): string | undefined =>
 
 const asStringArray = (v: unknown): string[] =>
   Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : [];
+
+/** A frontmatter `sources` value as a `parseSources` input — its serialized
+ *  (string) form, or a hand-authored YAML list (string[]); anything else → none. */
+const asSourcesInput = (
+  v: string | string[] | number | boolean | undefined,
+): string | string[] | undefined =>
+  typeof v === "string" || Array.isArray(v) ? v : undefined;
 
 /** Case-insensitive union of string lists, preserving first-seen order. */
 function unionStrings(...lists: string[][]): string[] {
@@ -127,16 +144,18 @@ async function repointBacklinks(
 }
 
 /**
- * Merge `fromSlug` into `intoSlug`: fold the bodies, union provenance, re-point
+ * Merge `from` into `into`: fold the bodies, union provenance, re-point
  * backlinks, then delete `from`. `into` survives as the canonical page. Throws
  * on an invalid merge (same page, missing side, artifact target, public→private,
- * or a cross-owner merge without `admin`).
+ * or a cross-owner merge without `bypassOwnerCheck`). Takes a single named
+ * object so the two slugs can't be silently swapped at a call site.
  */
-export async function mergePages(
-  fromSlug: string,
-  intoSlug: string,
-  opts: MergePagesOptions = {},
-): Promise<MergePagesResult> {
+export async function mergePages({
+  from: fromSlug,
+  into: intoSlug,
+  actor,
+  bypassOwnerCheck = false,
+}: MergePagesArgs): Promise<MergePagesResult> {
   if (fromSlug === intoSlug) {
     throw new Error("cannot merge a page into itself");
   }
@@ -153,14 +172,14 @@ export async function mergePages(
       `cannot merge into artifact page "${intoSlug}" (type=${intoType})`,
     );
   }
-  // Guard: same human owner unless an admin/service caller.
+  // Guard: same human owner unless a deployment-trusted caller opted out.
   if (
-    !opts.admin &&
-    (!sameHumanOwner(opts.actor, from.frontmatter.owner) ||
-      !sameHumanOwner(opts.actor, into.frontmatter.owner))
+    !bypassOwnerCheck &&
+    (!sameHumanOwner(actor, from.frontmatter.owner) ||
+      !sameHumanOwner(actor, into.frontmatter.owner))
   ) {
     throw new Error(
-      `merge requires the same owner for "${fromSlug}" and "${intoSlug}" (or an admin caller)`,
+      `merge requires the same owner for "${fromSlug}" and "${intoSlug}" (or a trusted caller)`,
     );
   }
   // Guard: never pull a public page into a private one (yanks it from commons).
@@ -192,16 +211,8 @@ export async function mergePages(
 
   // 2. Build the merged frontmatter from `into`, unioning provenance.
   const fm: Frontmatter = { ...into.frontmatter };
-  let sources = parseSources(
-    typeof into.frontmatter.sources === "string"
-      ? into.frontmatter.sources
-      : undefined,
-  );
-  for (const s of parseSources(
-    typeof from.frontmatter.sources === "string"
-      ? from.frontmatter.sources
-      : undefined,
-  )) {
+  let sources = parseSources(asSourcesInput(into.frontmatter.sources));
+  for (const s of parseSources(asSourcesInput(from.frontmatter.sources))) {
     sources = mergeSourceEntry(sources, s);
   }
   fm.sources = serializeSources(sources);
@@ -240,7 +251,7 @@ export async function mergePages(
   const repointedBacklinksFrom = await repointBacklinks(
     fromSlug,
     intoSlug,
-    opts.actor,
+    actor,
   );
 
   // 4. Write the survivor. Defensive: if the folded body itself references the
@@ -258,7 +269,7 @@ export async function mergePages(
     summary,
     logOp: "edit",
     crossRefSource: null,
-    author: opts.actor,
+    author: actor,
   });
 
   // 5. Delete the absorbed page (hard delete — its revisions + discussions go

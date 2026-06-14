@@ -1303,7 +1303,7 @@ describe("delete_page", () => {
 // ---------------------------------------------------------------------------
 
 describe("merge_pages", () => {
-  it("merges one page into another, recording an alias + supersedes, and deletes the absorbed page", async () => {
+  it("merges one page into another, recording a slug alias, and deletes the absorbed page", async () => {
     await handleCreatePage({
       slug: "concept-a",
       content: "# Concept A\n\nThe harness loop.",
@@ -1325,7 +1325,7 @@ describe("merge_pages", () => {
       intoSlug: "concept-a",
     });
 
-    // Absorbed page is gone; the survivor points back at it (alias + supersedes).
+    // Absorbed page is gone; the survivor records its slug as an alias.
     await expect(handleReadPage({ slug: "concept-a-dup" })).rejects.toThrow(
       "Page not found",
     );
