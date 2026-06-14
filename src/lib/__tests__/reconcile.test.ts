@@ -137,6 +137,44 @@ describe("reconcileFromTalk", () => {
     expect(mockedCallLLM).not.toHaveBeenCalled();
   });
 
+  it("CLEARS disputed when the reconcile resolves the contradiction (closes the loop)", async () => {
+    await seedPage("settled", "Older text with a contradiction.", {
+      disputed: true,
+    });
+    await createThread("settled", "Sources disagree", "frank", "please reconcile");
+    // A clean revision with NO DISPUTED marker → contradiction resolved.
+    mockedCallLLM.mockResolvedValue(
+      "# settled\n\nReconciled: the dates agree once normalized.",
+    );
+
+    const result = await reconcileFromTalk("settled", 0, { author: "frank--yoyo" });
+
+    expect(result.disputed).toBe(false);
+    const page = await readWikiPageWithFrontmatter("settled");
+    expect(page!.frontmatter.disputed).toBe(false); // CLEARED (was true)
+    const thread = await getThread("settled", 0);
+    expect(thread!.status).toBe("resolved");
+    expect(
+      thread!.comments[thread!.comments.length - 1].body.toLowerCase(),
+    ).toContain("cleared");
+  });
+
+  it("clears disputed even when the body needs no change (write-gate covers the flag flip)", async () => {
+    const body = "Already consistent prose, nothing to edit.";
+    await seedPage("flagonly", body, { disputed: true });
+    await createThread("flagonly", "Sources disagree", "gina", "reconcile pls");
+    // The LLM returns the SAME body, no DISPUTED marker → no content change,
+    // verdict resolved → the flag must still flip to false.
+    mockedCallLLM.mockResolvedValue(`# flagonly\n\n${body}`);
+
+    const result = await reconcileFromTalk("flagonly", 0, { author: "gina--yoyo" });
+
+    expect(result.changed).toBe(false);
+    expect(result.disputed).toBe(false);
+    const page = await readWikiPageWithFrontmatter("flagonly");
+    expect(page!.frontmatter.disputed).toBe(false); // cleared despite no body change
+  });
+
   it("throws on a missing page (→ poison/422 at the route)", async () => {
     await expect(reconcileFromTalk("nope", 0)).rejects.toThrow(/not found/i);
   });

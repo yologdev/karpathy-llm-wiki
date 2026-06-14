@@ -10,6 +10,7 @@ import {
   type Frontmatter,
 } from "./wiki";
 import { buildCorpusStats, bm25Score, tokenize } from "./bm25";
+import { ensureReconciliationThread } from "./talk";
 import { callLLM, hasLLMKey } from "./llm";
 import { fetchUrlContent, fetchImageBytes, storeImageBytes, pdfToText } from "./fetch";
 import { describeImage } from "./vision";
@@ -1824,6 +1825,15 @@ export async function ingest(
     typeof frontmatter.source_url === "string" ? frontmatter.source_url : undefined,
     hash,
   );
+
+  // When this ingest left the page disputed (a source contradicts it), open a
+  // reconciliation discussion thread so the dispute is actionable — by a human,
+  // by "ask yoyo", or by the maintenance scan. Idempotent (skips if one's open)
+  // + fail-soft. Authored by the (human/system) actor so the scan, which only
+  // acts on threads whose latest comment is human-side, will pick it up.
+  if (frontmatter.disputed === true) {
+    await ensureReconciliationThread(slug, actor);
+  }
 
   const result: IngestResult = {
     rawPath,

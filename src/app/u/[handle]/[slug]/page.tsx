@@ -11,6 +11,7 @@ import { getPrincipal } from "@/lib/auth";
 import { canReadFrontmatter } from "@/lib/authz";
 import { belongsInCommons } from "@/lib/commons";
 import { ArticleView } from "@/components/ArticleView";
+import { listThreads } from "@/lib/talk";
 
 interface WikiPageProps {
   params: Promise<{ handle: string; slug: string }>;
@@ -141,12 +142,17 @@ export default async function WikiPageView({ params }: WikiPageProps) {
 
   // Private, readable page → render with the real principal (so its backlinks
   // include the viewer's own private pages).
+  // Only let the `disputed` banner claim "a reconciliation is open" when one is.
+  const hasOpenReconciliation =
+    page.frontmatter.disputed === true &&
+    (await listThreads(slug)).some((t) => t.status === "open");
   return (
     <ArticleView
       page={page}
       slug={slug}
       pageTenant={pageTenant}
       principal={principal}
+      hasOpenReconciliation={hasOpenReconciliation}
     />
   );
 }

@@ -10,6 +10,7 @@ import {
 import { commonsPath } from "@/lib/links";
 import { belongsInCommons } from "@/lib/commons";
 import { commonsRedirectForMissing } from "@/lib/page-redirect";
+import { listThreads } from "@/lib/talk";
 import { ArticleView } from "@/components/ArticleView";
 
 interface PublicWikiPageProps {
@@ -127,7 +128,17 @@ export default async function PublicWikiPage({
       ? page.frontmatter.owner
       : undefined,
   );
+  // Only let the `disputed` banner claim "a reconciliation is open" when one is.
+  const hasOpenReconciliation =
+    page.frontmatter.disputed === true &&
+    (await listThreads(slug)).some((t) => t.status === "open");
   return (
-    <ArticleView page={page} slug={slug} pageTenant={pageTenant} principal={null} />
+    <ArticleView
+      page={page}
+      slug={slug}
+      pageTenant={pageTenant}
+      principal={null}
+      hasOpenReconciliation={hasOpenReconciliation}
+    />
   );
 }

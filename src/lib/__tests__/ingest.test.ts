@@ -588,6 +588,16 @@ describe("ingest — Phase 1 frontmatter fields", () => {
     // the preserved disputed=true flag caps it at 0.5.
     expect(page!.frontmatter.confidence).toBe(0.5);
 
+    // (A) The disputed page got an OPEN reconciliation thread so the dispute is
+    // actionable (human / ask-yoyo / maintenance scan).
+    const { listThreads, RECONCILE_THREAD_TITLE } = await import("../talk");
+    const threads = await listThreads("phase1-reingest");
+    expect(
+      threads.some(
+        (t) => t.status === "open" && t.title === RECONCILE_THREAD_TITLE,
+      ),
+    ).toBe(true);
+
     // expiry reset to ~90 days from now (not the old 2024-09-01)
     const expiry = page!.frontmatter.expiry as string;
     const expiryDate = new Date(expiry);

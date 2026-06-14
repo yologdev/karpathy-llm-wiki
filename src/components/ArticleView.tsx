@@ -116,6 +116,12 @@ interface ArticleViewProps {
    * real principal from the auth-gated private route.
    */
   principal: Principal | null;
+  /**
+   * Whether an open reconciliation thread actually exists — so the `disputed`
+   * banner only claims one when true. Computed in the route (the share view
+   * omits it → defaults false). Optional/defaults false.
+   */
+  hasOpenReconciliation?: boolean;
 }
 
 /**
@@ -130,6 +136,7 @@ export async function ArticleView({
   slug,
   pageTenant,
   principal,
+  hasOpenReconciliation = false,
 }: ArticleViewProps) {
   // Slug→tenant map + commons slug set so in-content links and backlinks resolve
   // to each target's canonical URL: PUBLIC targets to the global `/wiki/<slug>`,
@@ -375,8 +382,12 @@ export async function ArticleView({
           >
             <span className="fresh warn" style={{ marginTop: 6 }} />
             <span>
-              This page is <strong>disputed</strong> and low-confidence. A
-              reconciliation is open on the discussion. Read with care.
+              This page is <strong>disputed</strong> and low-confidence — its
+              sources disagree.
+              {hasOpenReconciliation
+                ? " A reconciliation is open on the discussion."
+                : ""}{" "}
+              Read with care.
             </span>
           </div>
         )}

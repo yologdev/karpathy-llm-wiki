@@ -8,6 +8,8 @@ import {
   listThreads,
   getThread,
   createThread,
+  ensureReconciliationThread,
+  RECONCILE_THREAD_TITLE,
   addComment,
   resolveThread,
   deleteDiscussions,
@@ -434,5 +436,41 @@ describe("talk page data layer", () => {
       expect(stats.has("excluded")).toBe(false);
       expect(stats.get("included")).toEqual({ total: 1, open: 1 });
     });
+  });
+});
+
+describe("ensureReconciliationThread", () => {
+  it("opens a reconciliation thread authored by the human/system actor", async () => {
+    await ensureReconciliationThread("p", "alice", "merged in q");
+    const threads = await listThreads("p");
+    expect(threads).toHaveLength(1);
+    expect(threads[0].title).toBe(RECONCILE_THREAD_TITLE);
+    expect(threads[0].status).toBe("open");
+    // Authored by the actor (NOT the agent) so the maintenance scan acts on it.
+    expect(threads[0].comments[0].author).toBe("alice");
+    expect(threads[0].comments[0].body).toContain("merged in q");
+  });
+
+  it("is idempotent — no second thread while one is already open", async () => {
+    await ensureReconciliationThread("p", "alice");
+    await ensureReconciliationThread("p", "alice");
+    expect(
+      (await listThreads("p")).filter((t) => t.title === RECONCILE_THREAD_TITLE),
+    ).toHaveLength(1);
+  });
+
+  it("opens a fresh one once the prior reconciliation thread is resolved", async () => {
+    await ensureReconciliationThread("p", "alice");
+    await resolveThread("p", 0, "resolved");
+    await ensureReconciliationThread("p", "alice");
+    const open = (await listThreads("p")).filter(
+      (t) => t.title === RECONCILE_THREAD_TITLE && t.status === "open",
+    );
+    expect(open).toHaveLength(1);
+  });
+
+  it("defaults a blank author to 'system' (still non-agent → scan-actionable)", async () => {
+    await ensureReconciliationThread("p", "");
+    expect((await listThreads("p"))[0].comments[0].author).toBe("system");
   });
 });

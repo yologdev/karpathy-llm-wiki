@@ -33,9 +33,9 @@ Rules:
 - Apply corrections and incorporate well-supported additions; keep the existing section structure (## Summary, ## Key Points, ## Concepts, ## Details) and any image markdown.
 - Only change what the discussion justifies. Do NOT invent facts not supported by the page or the discussion, and do NOT remove substantive existing content unless the discussion shows it is wrong.
 - Ignore off-topic chatter, opinions without support, and questions that don't imply a change.
-- If the discussion raises a CONTRADICTION you cannot resolve from the available information, do not silently pick a side: keep both positions (attributing each) and begin your ENTIRE output with a single line, exactly:
+- The page may ALREADY be flagged disputed from an earlier unresolved contradiction. Judge the WHOLE revised page: if it STILL contains an unresolved contradiction (raised in this discussion, or already present), do not silently pick a side — keep both positions (attributing each) and begin your ENTIRE output with a single line, exactly:
 DISPUTED: yes
-  Otherwise do not emit a DISPUTED line.
+  If NO unresolved contradiction remains, omit the DISPUTED line (this clears the disputed flag).
 
 Output the optional DISPUTED line, then the full revised page as pure markdown, and nothing else. Do not wrap in code fences.`;
 
@@ -95,23 +95,31 @@ export async function reconcileFromTalk(
   // Strip any echoed CONCEPT:/ALIASES: synthesis headers.
   const { body: newBody } = parseConceptMarker(afterDisputed);
   const changed = newBody.trim() !== page.body.trim();
+  const wasDisputed = page.frontmatter.disputed === true;
 
-  if (changed || disputed) {
+  // Write when the body changed OR the disputed flag must flip. Reflecting the
+  // LLM's page-wide verdict means a reconcile that RESOLVES the contradiction
+  // CLEARS `disputed` — even with no body change — closing the dispute loop
+  // (the old code only escalated, so the banner stuck forever).
+  if (changed || wasDisputed !== disputed) {
     const fm: Frontmatter = { ...page.frontmatter };
     fm.updated = new Date().toISOString().slice(0, 10);
-    if (disputed) fm.disputed = true; // escalate only
-    const summary = extractSummary(newBody.replace(/^#\s+.+$/m, "").trim());
+    fm.disputed = disputed;
+    const finalBody = changed ? newBody : page.body;
+    const summary = extractSummary(finalBody.replace(/^#\s+.+$/m, "").trim());
 
     await writeWikiPageWithSideEffects({
       slug,
       title: page.title,
-      content: serializeFrontmatter(fm, changed ? newBody : page.body),
+      content: serializeFrontmatter(fm, finalBody),
       summary,
       logOp: "edit",
       crossRefSource: null, // a reconcile isn't a new source for cross-ref
       author,
       logDetails: () =>
-        `reconciled from discussion thread ${threadIndex}${disputed ? " (disputed)" : ""}`,
+        `reconciled from discussion thread ${threadIndex}${
+          disputed ? " (disputed)" : wasDisputed ? " (dispute resolved)" : ""
+        }`,
     });
   }
 
@@ -119,9 +127,11 @@ export async function reconcileFromTalk(
   // then resolve unless it ended disputed (leave it open for a human to weigh in).
   const reply = disputed
     ? "I reviewed this but found an unresolved contradiction — I've flagged the page as **disputed** and kept both views. Leaving this open for a human to settle."
-    : changed
-      ? "I've updated the page to address this. Thanks for flagging it."
-      : "I reviewed this but didn't find a change the page needed. Reopen with more detail if you disagree.";
+    : wasDisputed
+      ? "I reconciled the contradiction — the page reads consistently now, so I've cleared the **disputed** flag."
+      : changed
+        ? "I've updated the page to address this. Thanks for flagging it."
+        : "I reviewed this but didn't find a change the page needed. Reopen with more detail if you disagree.";
   try {
     await addComment(slug, threadIndex, author, reply);
     await resolveThread(slug, threadIndex, disputed ? "open" : "resolved");

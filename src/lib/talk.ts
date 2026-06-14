@@ -185,6 +185,45 @@ export async function createThread(
   });
 }
 
+/** Title of the auto-opened reconciliation thread — also its idempotency key. */
+export const RECONCILE_THREAD_TITLE = "Sources disagree — reconciliation needed";
+
+/**
+ * Open a reconciliation discussion thread for a page just flagged `disputed`
+ * (a source contradicts it), UNLESS an open one already exists — idempotent
+ * across re-ingests, keyed on {@link RECONCILE_THREAD_TITLE}. Authored by
+ * `author` (the ingest actor — a human or "system", never the agent) so the
+ * thread's latest comment is human-side and the maintenance scan + "ask yoyo"
+ * will act on it. Fail-soft: a thread-open failure never breaks the caller.
+ */
+export async function ensureReconciliationThread(
+  pageSlug: string,
+  author: string,
+  detail?: string,
+): Promise<void> {
+  try {
+    const threads = await listThreads(pageSlug);
+    if (
+      threads.some(
+        (t) => t.status === "open" && t.title === RECONCILE_THREAD_TITLE,
+      )
+    ) {
+      return; // a reconciliation is already open — don't duplicate
+    }
+    const body =
+      `An ingested source contradicts this page${detail ? ` (${detail})` : ""}, ` +
+      `so it's flagged **disputed** with both views kept. Please reconcile the ` +
+      `contradiction — edit the page, or ask yoyo to take a pass.`;
+    await createThread(pageSlug, RECONCILE_THREAD_TITLE, author || "system", body);
+  } catch (err) {
+    logger.warn(
+      "talk",
+      `failed to open reconciliation thread for "${pageSlug}"`,
+      err,
+    );
+  }
+}
+
 /**
  * Add a comment to an existing thread.
  * Returns the newly created TalkComment.
