@@ -9,6 +9,7 @@ import {
   getThread,
   createThread,
   ensureReconciliationThread,
+  hasOpenThread,
   RECONCILE_THREAD_TITLE,
   addComment,
   resolveThread,
@@ -472,5 +473,26 @@ describe("ensureReconciliationThread", () => {
   it("defaults a blank author to 'system' (still non-agent → scan-actionable)", async () => {
     await ensureReconciliationThread("p", "");
     expect((await listThreads("p"))[0].comments[0].author).toBe("system");
+  });
+
+  it("coerces an agent-handle actor to 'system' so the scan can act on it", async () => {
+    // An agent self-ingest (author === the agent's own handle) or an autonomous
+    // `yoyo` staleness re-ingest must NOT leave the thread's latest comment
+    // agent-side — the maintenance scan only acts on human-side latest comments.
+    await ensureReconciliationThread("p", "alice--yoyo");
+    expect((await listThreads("p"))[0].comments[0].author).toBe("system");
+
+    await ensureReconciliationThread("q", "yoyo");
+    expect((await listThreads("q"))[0].comments[0].author).toBe("system");
+  });
+});
+
+describe("hasOpenThread", () => {
+  it("returns true only while an open thread exists", async () => {
+    expect(await hasOpenThread("p")).toBe(false); // no discuss file yet
+    await createThread("p", "An issue", "bob", "something is off");
+    expect(await hasOpenThread("p")).toBe(true);
+    await resolveThread("p", 0, "resolved");
+    expect(await hasOpenThread("p")).toBe(false); // all threads closed
   });
 });

@@ -12,6 +12,7 @@ import { getStorage } from "./storage";
 import { getDataDir } from "./paths";
 import { withFileLock } from "./lock";
 import { isEnoent } from "./errors";
+import { isAgentHandle } from "./agent-handle";
 import { logger } from "./logger";
 import type { TalkThread, TalkComment } from "./types";
 
@@ -191,10 +192,12 @@ export const RECONCILE_THREAD_TITLE = "Sources disagree — reconciliation neede
 /**
  * Open a reconciliation discussion thread for a page just flagged `disputed`
  * (a source contradicts it), UNLESS an open one already exists — idempotent
- * across re-ingests, keyed on {@link RECONCILE_THREAD_TITLE}. Authored by
- * `author` (the ingest actor — a human or "system", never the agent) so the
- * thread's latest comment is human-side and the maintenance scan + "ask yoyo"
- * will act on it. Fail-soft: a thread-open failure never breaks the caller.
+ * across re-ingests, keyed on {@link RECONCILE_THREAD_TITLE}. The first comment
+ * is authored by a NON-agent: `author` if it's a human/system handle, else
+ * coerced to "system" (an agent-handle actor — e.g. a `yoyo` staleness
+ * re-ingest — would otherwise make the thread invisible to the maintenance scan,
+ * which only acts on threads whose latest comment is human-side). Fail-soft: a
+ * thread-open failure never breaks the caller.
  */
 export async function ensureReconciliationThread(
   pageSlug: string,
@@ -210,17 +213,33 @@ export async function ensureReconciliationThread(
     ) {
       return; // a reconciliation is already open — don't duplicate
     }
+    // Keep the latest comment human-side so the scan + "ask yoyo" can act on it.
+    const safeAuthor = !author || isAgentHandle(author) ? "system" : author;
     const body =
       `An ingested source contradicts this page${detail ? ` (${detail})` : ""}, ` +
       `so it's flagged **disputed** with both views kept. Please reconcile the ` +
       `contradiction — edit the page, or ask yoyo to take a pass.`;
-    await createThread(pageSlug, RECONCILE_THREAD_TITLE, author || "system", body);
+    await createThread(pageSlug, RECONCILE_THREAD_TITLE, safeAuthor, body);
   } catch (err) {
     logger.warn(
       "talk",
       `failed to open reconciliation thread for "${pageSlug}"`,
       err,
     );
+  }
+}
+
+/**
+ * True iff `pageSlug` has at least one OPEN discussion thread. Fail-soft: a
+ * discuss-read error (corrupt file, storage hiccup) logs and returns `false`,
+ * so a page render that calls this only to word a banner never crashes.
+ */
+export async function hasOpenThread(pageSlug: string): Promise<boolean> {
+  try {
+    return (await listThreads(pageSlug)).some((t) => t.status === "open");
+  } catch (err) {
+    logger.warn("talk", `open-thread check failed for "${pageSlug}"`, err);
+    return false;
   }
 }
 

@@ -117,9 +117,10 @@ interface ArticleViewProps {
    */
   principal: Principal | null;
   /**
-   * Whether an open reconciliation thread actually exists — so the `disputed`
-   * banner only claims one when true. Computed in the route (the share view
-   * omits it → defaults false). Optional/defaults false.
+   * Whether an open discussion thread actually exists — so the `disputed` banner
+   * only claims "a reconciliation is open" when true. Computed by both read
+   * routes (`/wiki/<slug>`, `/u/<handle>/<slug>`); optional with a safe `false`
+   * default so a caller that hasn't computed it can't make the banner over-claim.
    */
   hasOpenReconciliation?: boolean;
 }

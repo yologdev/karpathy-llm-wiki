@@ -1829,8 +1829,8 @@ export async function ingest(
   // When this ingest left the page disputed (a source contradicts it), open a
   // reconciliation discussion thread so the dispute is actionable — by a human,
   // by "ask yoyo", or by the maintenance scan. Idempotent (skips if one's open)
-  // + fail-soft. Authored by the (human/system) actor so the scan, which only
-  // acts on threads whose latest comment is human-side, will pick it up.
+  // + fail-soft; `ensureReconciliationThread` keeps the thread's author non-agent
+  // (coercing an agent actor to "system") so the scan can pick it up.
   if (frontmatter.disputed === true) {
     await ensureReconciliationThread(slug, actor);
   }

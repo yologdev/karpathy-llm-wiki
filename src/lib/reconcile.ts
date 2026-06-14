@@ -3,13 +3,16 @@
  * "agents maintain, humans discuss" loop (B2b). A reader opens a talk thread
  * ("this claim is wrong", "these two pages are the same"), an agent (yoyo) reads
  * the page + the thread and revises the page to address the valid points,
- * flagging `disputed` when it can't resolve a contradiction. Triggered async via
+ * flagging `disputed` when it can't resolve a contradiction (and clearing it
+ * when it does). Triggered async via
  * the task queue (`/api/tasks/run` → here), never blocking the human's request.
  *
- * Reuses the ingest reconcile primitives (`parseDisputedMarker`,
- * `parseConceptMarker`, `extractSummary`) and the unified write path
+ * Reuses the ingest reconcile primitives (`parseConceptMarker`,
+ * `extractSummary`) and the unified write path
  * (`writeWikiPageWithSideEffects`), so this stays consistent with how pages are
- * synthesized and how `disputed`/revisions/log all behave.
+ * synthesized and how `disputed`/revisions/log all behave. The `DISPUTED:`
+ * verdict is parsed by the local tri-state `parseDisputedVerdict` (omit →
+ * leave the flag unchanged) rather than ingest's binary `parseDisputedMarker`.
  */
 
 import {
@@ -18,7 +21,7 @@ import {
   serializeFrontmatter,
   type Frontmatter,
 } from "./wiki";
-import { extractSummary, parseDisputedMarker, parseConceptMarker } from "./ingest";
+import { extractSummary, parseConceptMarker } from "./ingest";
 import { callLLM, hasLLMKey } from "./llm";
 import { INGEST_MAX_OUTPUT_TOKENS } from "./constants";
 import { getThread, addComment, resolveThread } from "./talk";
@@ -33,9 +36,10 @@ Rules:
 - Apply corrections and incorporate well-supported additions; keep the existing section structure (## Summary, ## Key Points, ## Concepts, ## Details) and any image markdown.
 - Only change what the discussion justifies. Do NOT invent facts not supported by the page or the discussion, and do NOT remove substantive existing content unless the discussion shows it is wrong.
 - Ignore off-topic chatter, opinions without support, and questions that don't imply a change.
-- The page may ALREADY be flagged disputed from an earlier unresolved contradiction. Judge the WHOLE revised page: if it STILL contains an unresolved contradiction (raised in this discussion, or already present), do not silently pick a side — keep both positions (attributing each) and begin your ENTIRE output with a single line, exactly:
-DISPUTED: yes
-  If NO unresolved contradiction remains, omit the DISPUTED line (this clears the disputed flag).
+- The page may ALREADY be flagged disputed from an earlier unresolved contradiction. Judge the WHOLE revised page and begin your ENTIRE output with ONE verdict line:
+    DISPUTED: yes   — an unresolved contradiction remains (raised here, or already present); keep both positions, attributing each.
+    DISPUTED: no    — none remains / you resolved it (this clears the flag).
+  Only if you are genuinely unsure, omit the line entirely — the current flag is then left unchanged.
 
 Output the optional DISPUTED line, then the full revised page as pure markdown, and nothing else. Do not wrap in code fences.`;
 
@@ -43,15 +47,39 @@ export interface ReconcileFromTalkResult {
   slug: string;
   /** True when the page body actually changed. */
   changed: boolean;
-  /** True when the reconcile surfaced an unresolved contradiction. */
+  /** The page's `disputed` flag AFTER reconciling (set / cleared / preserved). */
   disputed: boolean;
+}
+
+/**
+ * Parse the leading `DISPUTED: yes|no` verdict line (trailing rationale on the
+ * line is tolerated, so "DISPUTED: yes — still conflicts" still reads as `yes`).
+ * Returns the verdict — `true` (keep/flag), `false` (resolved/clear), or `null`
+ * when no verdict line is present (→ leave the existing flag unchanged) — plus
+ * the body with that line stripped. Requiring an explicit `no` to clear keeps a
+ * malformed/forgotten marker from silently downgrading a genuine dispute.
+ */
+function parseDisputedVerdict(raw: string): {
+  verdict: boolean | null;
+  body: string;
+} {
+  const m = raw.match(
+    /^﻿?\s*DISPUTED:[ \t]*(yes|true|no|false)\b[^\n]*(?:\r?\n|$)/i,
+  );
+  if (!m) return { verdict: null, body: raw };
+  return {
+    verdict: /^(yes|true)$/i.test(m[1]),
+    body: raw.slice(m[0].length).replace(/^\s+/, ""),
+  };
 }
 
 /**
  * Reconcile `slug` against discussion thread `threadIndex`: read both, LLM-revise
  * the page to address the readers' valid points, write via the unified pipeline
- * (escalating `disputed`), then post a yoyo reply summarizing what changed and
- * resolve the thread (left open + `disputed` when unresolved).
+ * (setting `disputed` to the page-wide verdict — flag when a contradiction
+ * remains, CLEAR when resolved, leave unchanged when the LLM gives no verdict),
+ * then post a yoyo reply summarizing what changed and resolve the thread (left
+ * open + `disputed` when a contradiction remains).
  *
  * Idempotent and fail-soft: a missing page/thread or an empty LLM response makes
  * no change (the page is never blanked). Safe to re-run (queue redelivery).
@@ -91,17 +119,20 @@ export async function reconcileFromTalk(
     return { slug, changed: false, disputed: false };
   }
 
-  const { disputed, body: afterDisputed } = parseDisputedMarker(out);
+  const { verdict, body: afterDisputed } = parseDisputedVerdict(out);
   // Strip any echoed CONCEPT:/ALIASES: synthesis headers.
   const { body: newBody } = parseConceptMarker(afterDisputed);
   const changed = newBody.trim() !== page.body.trim();
   const wasDisputed = page.frontmatter.disputed === true;
+  // Tri-state: an explicit verdict sets the flag; a SILENT response leaves it
+  // unchanged. Requiring an explicit "no" to clear means a malformed/forgotten
+  // marker can't silently downgrade a genuine dispute.
+  const disputed = verdict ?? wasDisputed;
 
-  // Write when the body changed OR the disputed flag must flip. Reflecting the
-  // LLM's page-wide verdict means a reconcile that RESOLVES the contradiction
-  // CLEARS `disputed` — even with no body change — closing the dispute loop
+  // Write when the body changed OR the disputed flag must flip — so a reconcile
+  // that RESOLVES the contradiction clears the banner even with no body change
   // (the old code only escalated, so the banner stuck forever).
-  if (changed || wasDisputed !== disputed) {
+  if (changed || disputed !== wasDisputed) {
     const fm: Frontmatter = { ...page.frontmatter };
     fm.updated = new Date().toISOString().slice(0, 10);
     fm.disputed = disputed;
@@ -121,6 +152,15 @@ export async function reconcileFromTalk(
           disputed ? " (disputed)" : wasDisputed ? " (dispute resolved)" : ""
         }`,
     });
+
+    // Clearing a human-visible dispute is a high-consequence downgrade — log it
+    // so a wrong-clear (an LLM mis-verdict) is auditable, not silent.
+    if (wasDisputed && !disputed) {
+      logger.info(
+        "reconcile",
+        `cleared disputed on "${slug}" (thread ${threadIndex}) — reconcile reports no remaining contradiction`,
+      );
+    }
   }
 
   // Reply in the thread (must precede resolve — resolved threads reject comments),
