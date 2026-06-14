@@ -2,9 +2,7 @@
 
 import { Alert } from "@/components/Alert";
 import { IngestSuccess } from "@/components/IngestSuccess";
-import { IngestReview } from "@/components/IngestReview";
 import { IngestStepper } from "@/components/IngestStepper";
-import { IngestSynthesis } from "@/components/IngestSynthesis";
 import { RecentIngests } from "@/components/RecentIngests";
 import { Icon } from "@/components/folio/icons";
 import { useIngest, isUrlMode, type Mode } from "@/hooks/useIngest";
@@ -48,7 +46,6 @@ export default function IngestPage() {
     loading,
     error,
     result,
-    preview,
     switchMode,
     setTitle,
     setContent,
@@ -58,11 +55,9 @@ export default function IngestPage() {
     setPdfUrl,
     setPdfFile,
     handleSourceSubmit,
-    handleApprove,
     handleImageIngest,
     handlePdfIngest,
     reset,
-    cancelReview,
   } = useIngest();
 
   // Success keeps its own full-page layout.
@@ -76,16 +71,7 @@ export default function IngestPage() {
     );
   }
 
-  const currentStep: 1 | 2 | 3 =
-    stage === "review" ? 3 : stage === "synthesis" || stage === "queued" ? 2 : 1;
-  const sourceLabel =
-    mode === "text"
-      ? title.trim() || "your text"
-      : mode === "image"
-        ? imageFile?.name || imageUrl.trim() || "your image"
-        : mode === "pdf"
-          ? pdfFile?.name || pdfUrl.trim() || "your PDF"
-          : url.trim() || "your source";
+  const currentStep: 1 | 2 = stage === "queued" ? 2 : 1;
 
   return (
     <main
@@ -119,19 +105,17 @@ export default function IngestPage() {
 
       <IngestStepper current={currentStep} />
 
-      {/* Step 2: synthesis */}
-      {stage === "synthesis" && <IngestSynthesis sourceLabel={sourceLabel} />}
-
-      {/* Step 2 (async): a slow source (YouTube) was queued for background work. */}
+      {/* Step 2: the ingest was queued — yoyo builds the page in the background. */}
       {stage === "queued" && (
         <div style={{ marginTop: 28 }}>
           <p style={{ fontSize: 18, fontWeight: 600, color: "var(--ink)", margin: 0 }}>
-            Ingestion job sent.
+            Processing your source…
           </p>
           <p style={{ marginTop: 8, color: "var(--muted)", maxWidth: "48ch" }}>
-            Your page is being built in the background — this can take a minute
-            for a long video. It&apos;ll appear here when it&apos;s ready. You can
-            leave this page; the outcome shows under <strong>Recent ingests</strong>.
+            yoyo is synthesizing your page in the background — this can take a
+            minute for a long source. It&apos;ll appear here when it&apos;s ready.
+            You can leave this page; the outcome shows under{" "}
+            <strong>Recent ingests</strong>.
           </p>
           {error && (
             <Alert variant="error" className="mt-4">
@@ -139,17 +123,6 @@ export default function IngestPage() {
             </Alert>
           )}
         </div>
-      )}
-
-      {/* Step 3: review */}
-      {stage === "review" && preview && (
-        <IngestReview
-          preview={preview}
-          loading={loading}
-          onApprove={handleApprove}
-          onCancel={cancelReview}
-          error={error}
-        />
       )}
 
       {/* Step 1: source */}

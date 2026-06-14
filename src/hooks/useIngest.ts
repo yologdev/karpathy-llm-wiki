@@ -1,13 +1,11 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import type { PreviewData } from "@/components/IngestReview";
-import type { IngestPreviewMeta } from "@/lib/types";
 import { rememberRecentJob } from "@/lib/recent-ingests";
 
 export type Mode = "url" | "pdf" | "xpost" | "youtube" | "text" | "image" | "batch";
-/** `queued` = an async job (YouTube) was accepted; the page polls its status. */
-export type Stage = "form" | "synthesis" | "review" | "success" | "queued";
+/** All ingests are async now: submit → `queued` (poll the job) → `success`. */
+export type Stage = "form" | "queued" | "success";
 
 /** Modes whose source is a single URL (routed through the same /api/ingest URL
  *  path — the backend auto-detects X posts and YouTube videos by their URL). */
@@ -16,18 +14,23 @@ export function isUrlMode(m: Mode): boolean {
 }
 
 export interface IngestResponse {
-  rawPath: string;
-  primarySlug: string;
-  relatedUpdated: string[];
-  wikiPages: string[];
-  indexUpdated: boolean;
-  previewContent?: string;
-  preview?: IngestPreviewMeta;
-  sourceContent?: string;
+  rawPath?: string;
+  primarySlug?: string;
+  relatedUpdated?: string[];
+  wikiPages?: string[];
+  indexUpdated?: boolean;
   error?: string;
-  /** Async path (YouTube): the ingest was queued; poll `/api/ingest/status`. */
+  /** Every ingest is queued; the page polls `/api/ingest/status/<jobId>`. */
   queued?: boolean;
   jobId?: string;
+  /** Present on the off-Workers inline fallback (dev/tests). */
+  slug?: string;
+}
+
+/** The resolved page once an async job completes. */
+export interface IngestSuccess {
+  primarySlug: string;
+  relatedUpdated: string[];
 }
 
 export interface UseIngestReturn {
@@ -43,8 +46,7 @@ export interface UseIngestReturn {
   pdfFile: File | null;
   loading: boolean;
   error: string | null;
-  result: IngestResponse | null;
-  preview: PreviewData | null;
+  result: IngestSuccess | null;
   // Actions
   switchMode: (m: Mode) => void;
   setTitle: (v: string) => void;
@@ -55,11 +57,9 @@ export interface UseIngestReturn {
   setPdfUrl: (v: string) => void;
   setPdfFile: (f: File | null) => void;
   handleSourceSubmit: (e: React.FormEvent) => void;
-  handleApprove: (editedContent?: string) => void;
   handleImageIngest: (e: React.FormEvent) => void;
   handlePdfIngest: (e: React.FormEvent) => void;
   reset: () => void;
-  cancelReview: () => void;
 }
 
 /**
@@ -105,8 +105,7 @@ export function useIngest(): UseIngestReturn {
   const [pdfFile, setPdfFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [result, setResult] = useState<IngestResponse | null>(null);
-  const [preview, setPreview] = useState<PreviewData | null>(null);
+  const [result, setResult] = useState<IngestSuccess | null>(null);
 
   // Poll handle for an async (queued) ingest; cleared on terminal state/unmount.
   const pollRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -127,13 +126,7 @@ export function useIngest(): UseIngestReturn {
         if (res.ok) {
           const data = await res.json();
           if (data.status === "done" && data.slug) {
-            setResult({
-              rawPath: "",
-              primarySlug: data.slug,
-              relatedUpdated: [],
-              wikiPages: [],
-              indexUpdated: true,
-            });
+            setResult({ primarySlug: data.slug, relatedUpdated: [] });
             setStage("success");
             return;
           }
@@ -179,9 +172,23 @@ export function useIngest(): UseIngestReturn {
   }
 
   /**
-   * Step 1 → 2 → 3: synthesize the source (preview, no write), show the
-   * synthesis animation while it runs, then land on the review step.
+   * Handle the `{queued, jobId}` response shared by every submit path: remember
+   * the job, switch to the processing view, and start polling. Returns false (so
+   * the caller can surface an error) when the response wasn't a queued job.
    */
+  function onQueued(data: IngestResponse): boolean {
+    if (data.queued && data.jobId) {
+      rememberRecentJob(data.jobId);
+      // Inline fallback (dev/tests) returns the slug immediately, but the poll
+      // path resolves it uniformly — just start polling.
+      setStage("queued");
+      startPolling(data.jobId);
+      return true;
+    }
+    return false;
+  }
+
+  /** URL / text submit → queue the ingest → poll the job. */
   async function handleSourceSubmit(e: React.FormEvent) {
     e.preventDefault();
     const validationError = validateIngestInput(mode, title, content, url);
@@ -192,13 +199,12 @@ export function useIngest(): UseIngestReturn {
 
     setLoading(true);
     setError(null);
-    setStage("synthesis");
 
     try {
       const usesUrl = isUrlMode(mode);
       const body = usesUrl
-        ? { url: url.trim(), preview: true }
-        : { title, content, preview: true };
+        ? { url: url.trim() }
+        : { title, content };
 
       const res = await fetch("/api/ingest", {
         method: "POST",
@@ -213,28 +219,10 @@ export function useIngest(): UseIngestReturn {
         setStage("form");
         return;
       }
-
-      // Async path (YouTube): the ingest was queued — remember it and poll the
-      // job status instead of showing a synchronous preview/review.
-      if (data.queued && data.jobId) {
-        rememberRecentJob(data.jobId);
-        setStage("queued");
-        startPolling(data.jobId);
-        return;
+      if (!onQueued(data)) {
+        setError("Unexpected response — the ingest was not queued.");
+        setStage("form");
       }
-
-      setPreview({
-        slug: data.primarySlug,
-        previewContent: data.previewContent ?? "",
-        relatedPages: data.relatedUpdated ?? [],
-        // Prefer the synthesized title (the concept) so a title-less paste
-        // shows the derived name on the review card and commits with it.
-        title: data.preview?.title ?? (usesUrl ? data.primarySlug : title),
-        content: usesUrl ? "" : content,
-        url: usesUrl ? url.trim() : undefined,
-        meta: data.preview,
-      });
-      setStage("review");
     } catch {
       setError("Network error — could not reach the server");
       setStage("form");
@@ -243,68 +231,7 @@ export function useIngest(): UseIngestReturn {
     }
   }
 
-  /**
-   * Step 3: publish — commit the reviewed draft. `editedContent` (when the user
-   * edited the draft in the review step) is published instead of the original
-   * synthesized body.
-   */
-  async function handleApprove(editedContent?: string) {
-    if (!preview) return;
-
-    // An edit was passed but it's blank — surface it instead of silently
-    // publishing the original AI draft (the opposite of the user's intent).
-    if (editedContent !== undefined && !editedContent.trim()) {
-      setError("The draft is empty — add content or discard to cancel.");
-      return;
-    }
-
-    setLoading(true);
-    setError(null);
-
-    const generated = editedContent ?? preview.previewContent;
-    // The synthesized tags shown in the review card live only in the preview
-    // meta; forward them on commit so the published page keeps them (the
-    // commit-from-preview path skips the LLM and re-derives nothing).
-    const tags = preview.meta?.tags;
-
-    try {
-      const body = preview.url
-        ? { url: preview.url, generatedContent: generated, ...(tags?.length ? { tags } : {}) }
-        : {
-            title: preview.title,
-            content: preview.content,
-            generatedContent: generated,
-            ...(tags?.length ? { tags } : {}),
-            // Preserve PDF/image provenance through the text commit path.
-            ...(preview.sourceType ? { sourceType: preview.sourceType } : {}),
-            ...(preview.sourceUrl ? { sourceUrl: preview.sourceUrl } : {}),
-          };
-
-      const res = await fetch("/api/ingest", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-
-      const data: IngestResponse = await res.json();
-
-      if (!res.ok) {
-        setError(data.error || "Something went wrong");
-        return;
-      }
-
-      setResult(data);
-      setStage("success");
-    } catch {
-      setError("Network error — could not reach the server");
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  /** Image ingest: store image + describe via vision model, then REVIEW before
-   *  publishing. The preview returns the body (image + description) as
-   *  sourceContent so approve commits via the shared text path. */
+  /** Image ingest: POST (URL JSON or upload multipart) → queue → poll. */
   async function handleImageIngest(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
@@ -324,7 +251,6 @@ export function useIngest(): UseIngestReturn {
 
     setLoading(true);
     setResult(null);
-    setStage("synthesis");
 
     try {
       let res: Response;
@@ -332,7 +258,6 @@ export function useIngest(): UseIngestReturn {
         const fd = new FormData();
         fd.append("file", imageFile);
         if (title.trim()) fd.append("title", title.trim());
-        fd.append("preview", "true");
         res = await fetch("/api/ingest/image", { method: "POST", body: fd });
       } else {
         res = await fetch("/api/ingest/image", {
@@ -341,7 +266,6 @@ export function useIngest(): UseIngestReturn {
           body: JSON.stringify({
             imageUrl: imageUrl.trim(),
             title: title.trim() || undefined,
-            preview: true,
           }),
         });
       }
@@ -352,19 +276,10 @@ export function useIngest(): UseIngestReturn {
         setStage("form");
         return;
       }
-      setPreview({
-        slug: data.primarySlug,
-        previewContent: data.previewContent ?? "",
-        relatedPages: data.relatedUpdated ?? [],
-        title: data.preview?.title ?? title,
-        content: data.sourceContent ?? "",
-        url: undefined,
-        sourceType: "image",
-        // Real source URL only when ingesting by URL (uploads have none).
-        sourceUrl: imageFile ? undefined : imageUrl.trim() || undefined,
-        meta: data.preview,
-      });
-      setStage("review");
+      if (!onQueued(data)) {
+        setError("Unexpected response — the ingest was not queued.");
+        setStage("form");
+      }
     } catch {
       setError("Network error — could not reach the server");
       setStage("form");
@@ -373,9 +288,7 @@ export function useIngest(): UseIngestReturn {
     }
   }
 
-  /** PDF ingest: extract text, synthesize, then REVIEW before publishing. The
-   *  preview returns the extracted text as sourceContent so approve commits via
-   *  the shared text path (no re-fetch / re-extract). */
+  /** PDF ingest: POST (URL JSON or upload multipart) → queue → poll. */
   async function handlePdfIngest(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
@@ -395,7 +308,6 @@ export function useIngest(): UseIngestReturn {
 
     setLoading(true);
     setResult(null);
-    setStage("synthesis");
 
     try {
       let res: Response;
@@ -403,7 +315,6 @@ export function useIngest(): UseIngestReturn {
         const fd = new FormData();
         fd.append("file", pdfFile);
         if (title.trim()) fd.append("title", title.trim());
-        fd.append("preview", "true");
         res = await fetch("/api/ingest/pdf", { method: "POST", body: fd });
       } else {
         res = await fetch("/api/ingest/pdf", {
@@ -412,7 +323,6 @@ export function useIngest(): UseIngestReturn {
           body: JSON.stringify({
             pdfUrl: pdfUrl.trim(),
             title: title.trim() || undefined,
-            preview: true,
           }),
         });
       }
@@ -423,19 +333,10 @@ export function useIngest(): UseIngestReturn {
         setStage("form");
         return;
       }
-      setPreview({
-        slug: data.primarySlug,
-        previewContent: data.previewContent ?? "",
-        relatedPages: data.relatedUpdated ?? [],
-        title: data.preview?.title ?? title,
-        content: data.sourceContent ?? "",
-        url: undefined,
-        sourceType: "pdf",
-        // Real source URL only when ingesting by URL (uploads have none).
-        sourceUrl: pdfFile ? undefined : pdfUrl.trim() || undefined,
-        meta: data.preview,
-      });
-      setStage("review");
+      if (!onQueued(data)) {
+        setError("Unexpected response — the ingest was not queued.");
+        setStage("form");
+      }
     } catch {
       setError("Network error — could not reach the server");
       setStage("form");
@@ -455,14 +356,6 @@ export function useIngest(): UseIngestReturn {
     setPdfFile(null);
     setError(null);
     setResult(null);
-    setPreview(null);
-    setStage("form");
-  }
-
-  /** Discard the reviewed draft and return to the source step. */
-  function cancelReview() {
-    setPreview(null);
-    setError(null);
     setStage("form");
   }
 
@@ -479,7 +372,6 @@ export function useIngest(): UseIngestReturn {
     loading,
     error,
     result,
-    preview,
     switchMode,
     setTitle,
     setContent,
@@ -489,10 +381,8 @@ export function useIngest(): UseIngestReturn {
     setPdfUrl,
     setPdfFile,
     handleSourceSubmit,
-    handleApprove,
     handleImageIngest,
     handlePdfIngest,
     reset,
-    cancelReview,
   };
 }

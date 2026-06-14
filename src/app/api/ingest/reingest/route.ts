@@ -13,23 +13,11 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Sign in required." }, { status: 401 });
     }
     const body = await request.json();
-    const { slug, preview, generatedContent } = body;
+    const { slug } = body;
 
     if (!slug || typeof slug !== "string" || slug.trim().length === 0) {
       return NextResponse.json(
         { error: "slug is required and must be a non-empty string" },
-        { status: 400 },
-      );
-    }
-    if (preview !== undefined && typeof preview !== "boolean") {
-      return NextResponse.json(
-        { error: "preview must be a boolean if provided" },
-        { status: 400 },
-      );
-    }
-    if (generatedContent !== undefined && typeof generatedContent !== "string") {
-      return NextResponse.json(
-        { error: "generatedContent must be a string if provided" },
         { status: 400 },
       );
     }
@@ -69,13 +57,10 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Re-synthesize directly (admin/low-traffic — kept synchronous).
     const result = await reingest(trimmedSlug, {
       author: principal.handle,
       triggeredBy: principal.handle,
-      // `preview: true` synthesizes the draft without writing (review step);
-      // `generatedContent` commits the reviewed draft.
-      ...(preview === true ? { preview: true } : {}),
-      ...(typeof generatedContent === "string" ? { generatedContent } : {}),
     });
     return NextResponse.json(result);
   } catch (error) {

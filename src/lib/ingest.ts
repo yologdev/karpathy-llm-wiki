@@ -5,7 +5,6 @@ import {
   readWikiPageWithFrontmatter,
   serializeFrontmatter,
   listWikiPages,
-  findRelatedPages,
   type Frontmatter,
 } from "./wiki";
 import { callLLM, hasLLMKey } from "./llm";
@@ -13,7 +12,7 @@ import { fetchUrlContent, downloadImages, fetchImageBytes, storeImageBytes, pdfT
 import { describeImage } from "./vision";
 import { isYouTubeUrl, fetchYouTubeContent } from "./youtube";
 import { isXPostUrl, fetchXPostContent } from "./x-post";
-import type { IngestResult, IngestPreviewMeta, SourceEntry } from "./types";
+import type { IngestResult, SourceEntry } from "./types";
 import {
   serializeSources,
   parseSources,
@@ -119,7 +118,6 @@ import {
   updateSourceIndexForPage,
 } from "./source-index";
 import { contentHash, searchByVector, hasEmbeddingSupport } from "./embeddings";
-import { canReadEntry } from "./authz";
 import { getStorage } from "./storage";
 import { logger } from "./logger";
 
@@ -212,9 +210,8 @@ export async function ingestUrl(
   options?: IngestOptions,
 ): Promise<IngestResult> {
   // Dedup: if this URL is already a canonical page, attach the triggerer and
-  // skip the fetch + LLM + embedding entirely. Not for preview / commit-from-
-  // preview (those are explicit content workflows).
-  if (!options?.preview && !options?.generatedContent) {
+  // skip the fetch + LLM + embedding entirely.
+  {
     const dupSlug = await resolveSourceUrl(url);
     if (dupSlug) {
       const result = await attachIngestTrigger(dupSlug, {
@@ -253,7 +250,7 @@ export async function ingestUrl(
  * Provisional title for a title-less pasted-text ingest: the first markdown H1,
  * else the first non-empty line (leading heading/list markers stripped), capped.
  * Returns `""` only when the content has no usable line. The synthesis CONCEPT
- * (or, on commit-from-preview, the body H1) overrides this for the final title.
+ * (or, for a prebuilt body, the body H1) overrides this for the final title.
  */
 export function deriveTitleFromContent(content: string): string {
   const h1 = content.match(/^#\s+(.+?)\s*$/m)?.[1]?.trim();
@@ -314,7 +311,7 @@ export async function ingestImage(
   const { imageUrl, bytes: uploadedBytes, filename: uploadName } = input;
 
   // Dedup by URL first — cheapest path (no fetch, no vision, no LLM).
-  if (imageUrl && !options?.preview && !options?.generatedContent) {
+  if (imageUrl) {
     const dupSlug = await resolveSourceUrl(imageUrl);
     if (dupSlug) {
       const result = await attachIngestTrigger(dupSlug, {
@@ -361,17 +358,15 @@ export async function ingestImage(
   const body =
     `# ${title}\n\n![${title}](${localPath})` + (vision ? `\n\n${vision.text}` : "");
 
-  // generatedContent writes `body` as-is (skip the wiki-editor LLM) while still
-  // reusing frontmatter, dedup, embedding, cross-refs, and the ledger.
-  const result = await ingest(title, body, {
+  // `prebuiltContent` writes `body` as-is (skip the wiki-editor LLM) while still
+  // reusing frontmatter, dedup, embedding, cross-refs, and the ledger — the
+  // image body (embed + vision text) is already final and small.
+  return ingest(title, body, {
     ...options,
-    generatedContent: body,
+    prebuiltContent: body,
     sourceUrl: imageUrl ?? "upload",
     sourceType: "image",
   });
-  // On preview, return the body as sourceContent so the client can commit it via
-  // the text path on approve (the image asset is already stored above).
-  return options?.preview ? { ...result, sourceContent: body } : result;
 }
 
 /**
@@ -388,7 +383,7 @@ export async function ingestPdf(
   if ("pdfUrl" in input) {
     const url = input.pdfUrl;
     // Dedup check
-    if (!options?.preview && !options?.generatedContent) {
+    {
       const dupSlug = await resolveSourceUrl(url);
       if (dupSlug) {
         const result = await attachIngestTrigger(dupSlug, {
@@ -402,14 +397,11 @@ export async function ingestPdf(
     }
     // fetchUrlContent now handles application/pdf natively
     const { title, content } = await fetchUrlContent(url);
-    const result = await ingest(options?.title ?? title, content, {
+    return ingest(options?.title ?? title, content, {
       ...options,
       sourceUrl: url,
       sourceType: "pdf",
     });
-    // On preview, return the extracted text so the client can replay it to the
-    // text commit path on approve (no re-fetch / re-extract needed).
-    return options?.preview ? { ...result, sourceContent: content } : result;
   }
 
   // Upload path: extract text from bytes directly
@@ -441,11 +433,10 @@ export async function ingestPdf(
   const title =
     options?.title || derivedTitle || filename.replace(/\.pdf$/i, "") || "PDF Document";
 
-  const result = await ingest(title, content, {
+  return ingest(title, content, {
     ...options,
     sourceType: "pdf",
   });
-  return options?.preview ? { ...result, sourceContent: content } : result;
 }
 
 /**
@@ -462,10 +453,6 @@ export async function reingest(
     author?: string;
     owner?: string;
     triggeredBy?: string;
-    /** Synthesize and return the draft WITHOUT writing (for a review step). */
-    preview?: boolean;
-    /** Commit a reviewed draft (skips the LLM, writes this body as-is). */
-    generatedContent?: string;
   },
 ): Promise<IngestResult> {
   const page = await readWikiPageWithFrontmatter(slug);
@@ -891,8 +878,8 @@ Output the optional DISPUTED line, then pure markdown, and nothing else. Do not 
  * expansions) so future sources under those names also converge.
  *
  * Returns `concept: ""` (and no aliases) when the marker is absent — the
- * deterministic fallback page, a commit-from-preview body (already stripped),
- * older pages, or test mocks — so callers keep the title-derived slug unchanged.
+ * deterministic fallback page, a prebuilt image body (no marker), older pages,
+ * or test mocks — so callers keep the title-derived slug unchanged.
  * The `ALIASES` line is optional even when `CONCEPT` is present.
  */
 export function parseConceptMarker(raw: string): {
@@ -1128,20 +1115,15 @@ ${vocab.join(", ")}`;
 // Ingest options
 // ---------------------------------------------------------------------------
 
-/** Options for the two-phase ingest workflow. */
+/** Options for the ingest pipeline. */
 export interface IngestOptions {
   /**
-   * When `true`, run the LLM and return the generated wiki content without
-   * writing anything to disk. The caller can display this for human review
-   * before committing.
+   * INTERNAL: a fully-built page body to write as-is, skipping the wiki-editor
+   * LLM. Used only by `ingestImage()` — the image body (embed + vision text) is
+   * already final and small, so re-synthesizing it would be wasteful and lossy.
+   * Not exposed to API/UI callers (there is no preview/commit two-step).
    */
-  preview?: boolean;
-  /**
-   * Pre-generated wiki content from a prior preview call. When provided the
-   * LLM is skipped entirely and this content is written to disk as-is. This
-   * avoids paying for the LLM call twice (once for preview, once for commit).
-   */
-  generatedContent?: string;
+  prebuiltContent?: string;
   /**
    * Original source URL. Set automatically by `ingestUrl()` so the URL is
    * persisted in the wiki page's frontmatter as `source_url`.
@@ -1318,20 +1300,10 @@ async function attachIngestTrigger(
 }
 
 /**
- * Ingest a source document into the wiki.
- *
- * Supports a two-phase preview workflow:
- *
- * 1. **Preview** (`options.preview = true`): run the LLM to generate wiki
- *    content and identify related pages, but do NOT write anything to disk.
- *    Returns the result with `previewContent` populated.
- *
- * 2. **Commit from preview** (`options.generatedContent` set): skip the LLM,
- *    use the pre-generated content and write everything to disk. This is the
- *    "approve" step after a human reviews the preview.
- *
- * 3. **Direct ingest** (no options / defaults): the original single-step
- *    behaviour — call the LLM and write immediately. Fully backward-compatible.
+ * Ingest a source document into the wiki: synthesize the page (LLM) and write it
+ * directly. There is no preview/commit two-step — every ingest runs synthesis
+ * and writes. `options.prebuiltContent` (image path only) skips the LLM and
+ * writes the supplied body as-is.
  */
 export async function ingest(
   title: string,
@@ -1363,8 +1335,7 @@ export async function ingest(
   // when one is derived; otherwise stays the (derived) source title.
   let pageTitle = effectiveTitle;
 
-  const isPreview = options?.preview === true;
-  const preGeneratedContent = options?.generatedContent;
+  const prebuiltContent = options?.prebuiltContent;
 
   // Acting identity + owner come from the authenticated session (set by the
   // route), never from client input. Fall back to "system" for legacy/bootstrap.
@@ -1376,18 +1347,16 @@ export async function ingest(
   // Download any images referenced in the source to local storage and rewrite
   // their markdown refs to `assets/<slug>/...`. Centralized here (not in
   // ingestUrl) so URL, pasted-text, agent, and X ingests all capture images.
-  // Skipped when committing pre-generated content (commit-from-preview or the
-  // image-ingest body): those already ran image capture / carry local refs, so
-  // re-downloading would refetch every image needlessly.
-  if (!preGeneratedContent) {
+  // Skipped for a prebuilt body (the image-ingest path): it already ran image
+  // capture / carries local refs, so re-downloading would refetch needlessly.
+  if (!prebuiltContent) {
     content = await downloadImages(content, slug, getRawDir());
   }
 
   // Dedup by content: if identical content was already ingested (any slug),
-  // attach the triggerer and skip the LLM + embedding. Not for preview /
-  // commit-from-preview.
+  // attach the triggerer and skip the LLM + embedding.
   const hash = contentHash(content);
-  if (!isPreview && !preGeneratedContent) {
+  if (!prebuiltContent) {
     const dupSlug = await resolveContentHash(hash);
     if (dupSlug) {
       const result = await attachIngestTrigger(dupSlug, {
@@ -1400,11 +1369,11 @@ export async function ingest(
     }
   }
 
-  // 1. Generate wiki page content (or use pre-generated from preview)
+  // 1. Generate wiki page content (or use a prebuilt body — image path)
   let wikiContent: string;
-  if (preGeneratedContent) {
-    // Commit-from-preview: skip the LLM, use the content the user approved
-    wikiContent = preGeneratedContent;
+  if (prebuiltContent) {
+    // Image ingest: skip the LLM, write the already-final body as-is.
+    wikiContent = prebuiltContent;
   } else if (hasLLMKey()) {
     const systemPrompt = await buildIngestSystemPrompt();
     // Swap source images for [[IMG:n]] tokens so the LLM can place the relevant
@@ -1474,8 +1443,8 @@ export async function ingest(
   }
 
   // Pull the leading `CONCEPT:` / `ALIASES:` header lines the synthesis prompt
-  // asks for (and strip them from the body so they never leak into the page or
-  // preview). Absent for the fallback page / commit-from-preview / test mocks →
+  // asks for (and strip them from the body so they never leak into the page).
+  // Absent for the fallback page / a prebuilt image body / test mocks →
   // concept "" and no aliases.
   const {
     concept,
@@ -1485,14 +1454,13 @@ export async function ingest(
   } = parseConceptMarker(wikiContent);
   wikiContent = conceptStrippedBody;
 
-  // Direct ingest path only: converge onto the content-derived concept slug so
-  // re-ingests of the same concept (under any headline) land on one page. The
-  // preview→commit path keeps the title-derived slug (commit carries no marker)
-  // — preview/commit slug consistency is handled separately.
+  // Converge onto the content-derived concept slug so re-ingests of the same
+  // concept (under any headline) land on one page. A prebuilt image body carries
+  // no CONCEPT marker, so this is naturally skipped for it.
   // `pinSlug` (re-ingest) keeps the page on its known slug, so skip concept-slug
   // convergence — but still adopt the concept as the title and record aliases.
   let conceptAliases: string[] = [];
-  if (!isPreview && !preGeneratedContent && concept) {
+  if (!prebuiltContent && concept) {
     if (options?.pinSlug) {
       pageTitle = concept;
       conceptAliases = conceptSynonyms;
@@ -1516,23 +1484,17 @@ export async function ingest(
   // Images are placed inline during synthesis via [[IMG:n]] tokens (see
   // tokenizeSourceImages / restoreImageTokens) — no trailing dump.
 
-  // Commit-from-preview carries no CONCEPT marker (preview stripped it), so the
-  // canonical slug would otherwise stay the source-TITLE slug even though the
-  // page H1 shows the synthesized concept — e.g. "Agentic systems" published at
-  // /wiki/building-effective-ai-agents. Re-derive slug + title from the body's
-  // first H1 so they match what the reader sees. Only when the concept slug is
-  // FREE — never clobber a different existing page (same-URL re-ingest already
-  // deduped before synthesis).
-  if (!isPreview && preGeneratedContent) {
+  // A prebuilt body (image path) carries no CONCEPT marker, so the canonical
+  // slug would otherwise stay the source-TITLE slug. Re-derive slug + title from
+  // the body's first H1 so they match what the reader sees, only when the H1
+  // slug is FREE — never clobber a different existing page.
+  if (prebuiltContent) {
     const h1 = wikiContent.match(/^#\s+(.+?)\s*$/m)?.[1]?.trim();
     if (options?.pinSlug) {
-      // Re-ingest (commit-from-preview): keep the page on its pinned slug — a
-      // user-edited H1 must never fork it — but let the TITLE follow the H1.
+      // Pinned: keep the page on its slug, but let the TITLE follow the H1.
       if (h1) {
         pageTitle = h1;
       } else {
-        // No H1 in the reviewed draft — preserve the EXISTING page's title
-        // rather than overwriting it with the re-fetched source <title>.
         const existingPage = await readWikiPageWithFrontmatter(slug);
         const existingTitle = existingPage?.body
           ?.match(/^#\s+(.+?)\s*$/m)?.[1]
@@ -1559,8 +1521,7 @@ export async function ingest(
   // (private = owner-only). If the resolved slug landed on someone else's
   // private page — via the concept resolver, an alias, or a slug collision —
   // FORK to a fresh slug so the ingest produces the actor's OWN page and never
-  // writes to (or leaks the slug of) the private one. Runs BEFORE the preview
-  // return too, so a non-owner's preview can't read back the private slug.
+  // writes to (or leaks the slug of) the private one.
   const resolvedExisting = await readWikiPageWithFrontmatter(slug);
   if (
     resolvedExisting &&
@@ -1570,101 +1531,7 @@ export async function ingest(
     slug = await findFreeSlug(slug);
   }
 
-  // --- Preview mode: return the generated content without writing ---
-  if (isPreview) {
-    // Identify which related pages would be updated — read-gated to the actor
-    // so a private page the actor can't read never leaks (title/summary/slug)
-    // into the preview's cross-ref set.
-    const reader = owner ? { handle: owner } : null;
-    const existingEntries = (await listWikiPages()).filter((e) =>
-      canReadEntry(e, reader),
-    );
-    const relatedSlugs = await findRelatedPages(slug, content, existingEntries);
-
-    // Would publishing merge into an existing commons page, or create a fresh
-    // one? Resolve the same source-URL / content-hash dedup the commit path
-    // uses, but read-only. Read-gated via `existingEntries` so a private page
-    // the actor can't see is treated as "new" (it would fork on publish).
-    let dupSlug = options?.sourceUrl
-      ? await resolveSourceUrl(options.sourceUrl)
-      : null;
-    if (!dupSlug) dupSlug = await resolveContentHash(hash);
-    const existingEntry = dupSlug
-      ? existingEntries.find((e) => e.slug === dupSlug)
-      : undefined;
-
-    // Mirror the commit path's metadata as far as is knowable pre-synthesis, so
-    // the review card matches publish for the common case. Review-by always
-    // resets to now + 90 days. Confidence uses the SAME heuristic over the
-    // prospective source set and the EXISTING disputed flag — it can still
-    // diverge only if the reconcile step newly escalates the page to `disputed`
-    // (which caps the committed value at 0.5); the preview can't anticipate that
-    // LLM outcome.
-    const reviewExpiry = new Date();
-    reviewExpiry.setDate(reviewExpiry.getDate() + 90);
-    const reviewBy = reviewExpiry.toISOString().slice(0, 10);
-    const previewSourceType =
-      options?.sourceType ?? (options?.sourceUrl ? "url" : "text");
-    const previewEntry = buildSourceEntry(
-      options?.sourceUrl ?? "text-paste",
-      previewSourceType,
-      options?.triggeredBy,
-    );
-    let previewSources: SourceEntry[] = [previewEntry];
-    let previewDisputed = false;
-    // Read the existing page by the RESOLVED slug — the same way the commit path
-    // finds what it merges into. (The dedup `existingEntry` only resolves on a
-    // URL/content/concept hit, so a same-slug re-ingest with a new URL would
-    // otherwise miss the existing sources and under-report confidence.)
-    const ex = await readWikiPageWithFrontmatter(slug);
-    if (ex) {
-      const exSources = ex.frontmatter.sources;
-      previewSources = mergeSourceEntry(
-        parseSources(
-          typeof exSources === "string"
-            ? exSources
-            : Array.isArray(exSources)
-              ? exSources
-              : undefined,
-        ),
-        previewEntry,
-      );
-      previewDisputed = ex.frontmatter.disputed === true;
-    }
-    const confidence = computeConfidence(previewSources, previewDisputed);
-
-    // Synthesized tags + any existing/caller tags. The reviewer sees these in
-    // the card and (via the commit-from-preview path) they're sent back as
-    // options.tags on approve, so the published page keeps them.
-    const tags = normalizeTags(
-      [...(existingEntry?.tags ?? []), ...(options?.tags ?? []), ...conceptTags],
-      Infinity, // canonicalize + dedupe; the per-synthesis cap was applied above
-    );
-
-    const previewMeta: IngestPreviewMeta = {
-      title: concept || pageTitle || title || slug,
-      summary,
-      tags,
-      owner: owner ?? "",
-      confidence,
-      reviewBy,
-      deduped: !!existingEntry,
-      ...(existingEntry ? { existingTitle: existingEntry.title } : {}),
-    };
-
-    return {
-      rawPath: "",
-      primarySlug: slug,
-      relatedUpdated: relatedSlugs,
-      wikiPages: [slug, ...relatedSlugs],
-      indexUpdated: false,
-      previewContent: wikiContent,
-      preview: previewMeta,
-      ...(options?.sourceUrl ? { sourceUrl: options.sourceUrl } : {}),
-    };
-  }
-
-  // --- Normal commit path (direct ingest or commit-from-preview) ---
+  // --- Write path ---
 
   // 3. Save raw source
   const rawPath = await saveRawSource(slug, content);
@@ -1723,7 +1590,7 @@ export async function ingest(
   const sourceEntry = buildSourceEntry(sourceUrl, sourceType, options?.triggeredBy, rawId);
   frontmatter.sources = serializeSources([sourceEntry]);
 
-  // Tags: synthesized (conceptTags, empty on commit-from-preview/fallback) plus
+  // Tags: synthesized (conceptTags, empty for a prebuilt body/fallback) plus
   // any caller-supplied tags — normalized to the canonical form so caller tags
   // dedupe against synthesized ones. Merged with existing tags below for re-ingests.
   const newTags = normalizeTags([...(options?.tags ?? []), ...conceptTags], Infinity);
@@ -1830,10 +1697,9 @@ export async function ingest(
   // an EXISTING page, fold the existing body and the new article into one
   // canonical page instead of overwriting — and escalate to `disputed` if the
   // new source contradicts what's there. Skipped without an LLM key (fall back
-  // to the prior overwrite behaviour) and for commit-from-preview (the user
-  // already approved a body). The page summary is computed from the raw source,
-  // so it is unaffected.
-  if (existing && hasLLMKey() && !preGeneratedContent) {
+  // to the prior overwrite behaviour) and for a prebuilt image body (already
+  // final). The page summary is computed from the raw source, so it is unaffected.
+  if (existing && hasLLMKey() && !prebuiltContent) {
     try {
       // Reconcile against the frontmatter-STRIPPED body (existing.content still
       // carries the YAML block; existing.body is the markdown) so page metadata

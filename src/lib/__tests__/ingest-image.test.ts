@@ -3,7 +3,7 @@ import fs from "fs/promises";
 import os from "os";
 import path from "path";
 
-// LLM off — ingestImage uses generatedContent so the LLM is skipped anyway.
+// LLM off — ingestImage writes a prebuilt body so the LLM is skipped anyway.
 vi.mock("../llm", () => ({ hasLLMKey: vi.fn(() => false), callLLM: vi.fn() }));
 // Vision is mocked (no Workers AI binding in tests).
 vi.mock("../vision", () => ({ describeImage: vi.fn() }));

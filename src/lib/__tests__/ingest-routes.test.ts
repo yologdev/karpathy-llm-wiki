@@ -8,6 +8,15 @@ vi.mock("@/lib/ingest", () => ({
   ingest: vi.fn(),
   ingestUrl: vi.fn(),
   reingest: vi.fn(),
+  // Real-ish derivation: first non-empty line, capped — enough for the route's
+  // display-title fallback.
+  deriveTitleFromContent: (c: string) =>
+    (c.split("\n").find((l) => l.trim()) ?? "").trim().slice(0, 120),
+}));
+
+// Staging is exercised only for oversized pasted text; default the helper.
+vi.mock("@/lib/ingest-staging", () => ({
+  stageText: vi.fn(async () => "raw/uploads/job/text.md"),
 }));
 
 vi.mock("@/lib/wiki", () => ({
@@ -76,6 +85,11 @@ beforeEach(() => {
   mockedReadWikiPage.mockReset();
   mockedGetPrincipal.mockResolvedValue({ id: "test-user", handle: "test-user" });
   mockedGetServicePrincipal.mockReturnValue(null);
+  // Default to the OFF-WORKERS (queue-absent) path so tests that assert
+  // ingestUrl/ingest were called exercise the inline fallback. Tests that assert
+  // the queued `{queued,jobId}` response set this to `true` explicitly.
+  mockedEnqueue.mockReset();
+  mockedEnqueue.mockResolvedValue(false);
 });
 
 const fakeResult: IngestResult = {
@@ -90,7 +104,25 @@ const fakeResult: IngestResult = {
 // POST /api/ingest — error → HTTP status mapping
 // ===========================================================================
 describe("POST /api/ingest — text title optional", () => {
-  it("accepts a text ingest with no title (derived from content)", async () => {
+  it("queues a text ingest with no title (enqueues content inline, returns jobId)", async () => {
+    mockedEnqueue.mockResolvedValue(true);
+    const res = await POST(
+      makeRequest("http://localhost/api/ingest", { content: "Some pasted content." }),
+    );
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(data.queued).toBe(true);
+    expect(typeof data.jobId).toBe("string");
+    // Small content rides inline in the queue message (no title supplied).
+    expect(mockedEnqueue).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: "ingest", content: "Some pasted content." }),
+    );
+    // The queue handles it — the route never calls ingest() synchronously.
+    expect(mockedIngest).not.toHaveBeenCalled();
+  });
+
+  it("runs the text ingest inline when the queue is unavailable (off-Workers)", async () => {
+    mockedEnqueue.mockResolvedValue(false);
     mockedIngest.mockResolvedValue(fakeResult);
     const res = await POST(
       makeRequest("http://localhost/api/ingest", { content: "Some pasted content." }),
@@ -101,6 +133,7 @@ describe("POST /api/ingest — text title optional", () => {
       "Some pasted content.",
       expect.anything(),
     );
+    expect((await res.json()).queued).toBe(true);
   });
 
   it("still requires content", async () => {
@@ -117,7 +150,6 @@ describe("POST /api/ingest — YouTube goes async (queued)", () => {
     const res = await POST(
       makeRequest("http://localhost/api/ingest", {
         url: "https://youtu.be/dQw4w9WgXcQ",
-        preview: true,
       }),
     );
     expect(res.status).toBe(200);
@@ -143,12 +175,19 @@ describe("POST /api/ingest — YouTube goes async (queued)", () => {
     );
     expect(res.status).toBe(200);
     expect(mockedIngestUrl).toHaveBeenCalled();
-    expect((await res.json()).primarySlug).toBe("test-page");
+    const data = await res.json();
+    // Inline fallback resolves the job and reports the slug; the poll-based
+    // client flow still completes uniformly.
+    expect(data.queued).toBe(true);
+    expect(data.slug).toBe("test-page");
   });
 });
 
 describe("POST /api/ingest — error status mapping", () => {
   it("maps a ClientInputError (e.g. deleted/private X post) to 400 + the message", async () => {
+    // Off-Workers (queue absent): the route runs ingestUrl inline, so its error
+    // surfaces with the same status mapping as before.
+    mockedEnqueue.mockResolvedValue(false);
     mockedIngestUrl.mockRejectedValue(
       new ClientInputError("That X post couldn't be read — it may be deleted, private, or from a protected account."),
     );
@@ -160,6 +199,7 @@ describe("POST /api/ingest — error status mapping", () => {
   });
 
   it("maps an unexpected error to 500", async () => {
+    mockedEnqueue.mockResolvedValue(false);
     mockedIngestUrl.mockRejectedValue(new Error("boom"));
     const res = await POST(
       makeRequest("http://localhost/api/ingest", { url: "https://x.com/u/status/2" }),
@@ -533,15 +573,21 @@ describe("POST /api/ingest/batch — async (queue) mode", () => {
     expect(await res.json()).toMatchObject({ queued: 2, total: 3, failed: 1 });
   });
 
-  it("503s when the queue is unavailable (nothing enqueued)", async () => {
+  it("runs URLs inline when the queue is unavailable (off-Workers)", async () => {
     mockedEnqueue.mockResolvedValue(false);
+    mockedIngestUrl.mockResolvedValue(fakeResult);
     const res = await POST_BATCH(
       makeRequest("http://localhost:3000/api/ingest/batch", {
         urls: ["https://example.com/a"],
-        async: true,
       }),
     );
-    expect(res.status).toBe(503);
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(data.mode).toBe("inline");
+    expect(data.results).toEqual([
+      { index: 0, url: "https://example.com/a", success: true, slug: "test-page" },
+    ]);
+    expect(mockedIngestUrl).toHaveBeenCalled();
   });
 
   it("still validates URLs before enqueuing", async () => {
@@ -560,6 +606,8 @@ describe("POST /api/ingest/batch — service token auth", () => {
   it("accepts a valid service token when Clerk session is absent", async () => {
     mockedGetPrincipal.mockResolvedValue(null);
     mockedGetServicePrincipal.mockReturnValue({ id: "service:yopedia", handle: "yopedia" });
+    // Off-Workers (queue absent) → inline path runs ingestUrl with attribution.
+    mockedEnqueue.mockResolvedValue(false);
     mockedIngestUrl.mockResolvedValue(fakeResult);
 
     const res = await POST_BATCH(
@@ -568,13 +616,6 @@ describe("POST /api/ingest/batch — service token auth", () => {
       }, "valid-service-token"),
     );
     expect(res.status).toBe(200);
-
-    // Consume the stream to trigger ingestUrl calls
-    const reader = res.body!.getReader();
-    while (true) {
-      const { done } = await reader.read();
-      if (done) break;
-    }
 
     expect(mockedIngestUrl).toHaveBeenCalledWith(
       "https://example.com/page",
@@ -611,6 +652,7 @@ describe("POST /api/ingest/batch — service token auth", () => {
   it("prefers Clerk session when both are available", async () => {
     mockedGetPrincipal.mockResolvedValue({ id: "clerk-user", handle: "alice" });
     mockedGetServicePrincipal.mockReturnValue({ id: "service:yopedia", handle: "yopedia" });
+    mockedEnqueue.mockResolvedValue(false);
     mockedIngestUrl.mockResolvedValue(fakeResult);
 
     const res = await POST_BATCH(
@@ -619,13 +661,6 @@ describe("POST /api/ingest/batch — service token auth", () => {
       }, "valid-service-token"),
     );
     expect(res.status).toBe(200);
-
-    // Consume the stream
-    const reader = res.body!.getReader();
-    while (true) {
-      const { done } = await reader.read();
-      if (done) break;
-    }
 
     // Clerk principal wins
     expect(mockedIngestUrl).toHaveBeenCalledWith(
@@ -636,9 +671,9 @@ describe("POST /api/ingest/batch — service token auth", () => {
 });
 
 // ===========================================================================
-// POST /api/ingest/reingest — preview / commit passthrough
+// POST /api/ingest/reingest — direct re-synthesis (no preview/commit two-step)
 // ===========================================================================
-describe("POST /api/ingest/reingest — preview/commit", () => {
+describe("POST /api/ingest/reingest — direct re-synthesis", () => {
   const fakeResult: IngestResult = {
     rawPath: "",
     primarySlug: "p",
@@ -658,40 +693,26 @@ describe("POST /api/ingest/reingest — preview/commit", () => {
     mockedReingest.mockResolvedValue(fakeResult);
   });
 
-  it("forwards preview:true to reingest (review step, no write)", async () => {
+  it("re-synthesizes directly (no preview/generatedContent options)", async () => {
     const res = await POST_REINGEST(
-      makeRequest("http://localhost/api/ingest/reingest", { slug: "p", preview: true }),
+      makeRequest("http://localhost/api/ingest/reingest", { slug: "p" }),
     );
     expect(res.status).toBe(200);
     expect(mockedReingest).toHaveBeenCalledWith(
       "p",
-      expect.objectContaining({ preview: true }),
+      expect.objectContaining({ author: "yuanhao", triggeredBy: "yuanhao" }),
     );
+    // The two-step options are gone: the call carries only attribution.
+    const opts = mockedReingest.mock.calls[0][1]!;
+    expect(opts).not.toHaveProperty("preview");
+    expect(opts).not.toHaveProperty("generatedContent");
   });
 
-  it("forwards generatedContent to reingest (commit the reviewed draft)", async () => {
+  it("requires a non-empty slug", async () => {
     const res = await POST_REINGEST(
-      makeRequest("http://localhost/api/ingest/reingest", {
-        slug: "p",
-        generatedContent: "# Edited\n\nApproved body.",
-      }),
+      makeRequest("http://localhost/api/ingest/reingest", { slug: "" }),
     );
-    expect(res.status).toBe(200);
-    expect(mockedReingest).toHaveBeenCalledWith(
-      "p",
-      expect.objectContaining({ generatedContent: "# Edited\n\nApproved body." }),
-    );
-  });
-
-  it("rejects a non-boolean preview and a non-string generatedContent", async () => {
-    const r1 = await POST_REINGEST(
-      makeRequest("http://localhost/api/ingest/reingest", { slug: "p", preview: "yes" }),
-    );
-    expect(r1.status).toBe(400);
-    const r2 = await POST_REINGEST(
-      makeRequest("http://localhost/api/ingest/reingest", { slug: "p", generatedContent: 5 }),
-    );
-    expect(r2.status).toBe(400);
+    expect(res.status).toBe(400);
     expect(mockedReingest).not.toHaveBeenCalled();
   });
 });

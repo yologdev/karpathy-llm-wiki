@@ -77,6 +77,48 @@ describe("parseTask", () => {
     expect(parseTask({ kind: "ingest" })).toBeNull();
   });
 
+  it("accepts an ingest task with only a staged descriptor (no url/content)", () => {
+    expect(
+      parseTask({
+        kind: "ingest",
+        staged: { key: "raw/uploads/job/document.pdf", kind: "pdf", filename: "doc.pdf" },
+        jobId: "j1",
+      }),
+    ).toMatchObject({
+      kind: "ingest",
+      staged: { key: "raw/uploads/job/document.pdf", kind: "pdf", filename: "doc.pdf" },
+      jobId: "j1",
+    });
+    // text staged kind is also valid (oversized paste).
+    expect(
+      parseTask({ kind: "ingest", staged: { key: "raw/uploads/j/text.md", kind: "text" } }),
+    ).toMatchObject({ kind: "ingest", staged: { key: "raw/uploads/j/text.md", kind: "text" } });
+  });
+
+  it("rejects a malformed staged descriptor", () => {
+    // Empty key, bad kind, or non-object → staged dropped; with no url/content → null.
+    expect(parseTask({ kind: "ingest", staged: { key: "", kind: "pdf" } })).toBeNull();
+    expect(parseTask({ kind: "ingest", staged: { key: "k", kind: "video" } })).toBeNull();
+    expect(parseTask({ kind: "ingest", staged: "nope" })).toBeNull();
+    // A bad staged but a valid url still parses (staged simply dropped).
+    expect(
+      parseTask({ kind: "ingest", url: "https://x.com", staged: { key: "", kind: "pdf" } }),
+    ).toMatchObject({ kind: "ingest", url: "https://x.com" });
+  });
+
+  it("preserves a source discriminator for URL-based pdf/image", () => {
+    expect(
+      parseTask({ kind: "ingest", url: "https://x/a.pdf", source: "pdf" }),
+    ).toMatchObject({ kind: "ingest", url: "https://x/a.pdf", source: "pdf" });
+    expect(
+      parseTask({ kind: "ingest", url: "https://x/a.png", source: "image" }),
+    ).toMatchObject({ kind: "ingest", url: "https://x/a.png", source: "image" });
+    // An unknown source value is dropped, not preserved.
+    expect(parseTask({ kind: "ingest", url: "https://x.com", source: "audio" })).not.toHaveProperty(
+      "source",
+    );
+  });
+
   it("preserves a jobId on an ingest task (async status tracking)", () => {
     expect(
       parseTask({ kind: "ingest", url: "https://youtu.be/x", jobId: "job-1" }),

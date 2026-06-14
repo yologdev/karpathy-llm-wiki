@@ -1,11 +1,10 @@
 import { Icon } from "@/components/folio/icons";
 
-/** The 3-step ingest indicator: SOURCE → SYNTHESIS → REVIEW. */
-export function IngestStepper({ current }: { current: 1 | 2 | 3 }) {
+/** The 2-step ingest indicator: SOURCE → PROCESSING. */
+export function IngestStepper({ current }: { current: 1 | 2 }) {
   const steps = [
     { n: 1, label: "source" },
-    { n: 2, label: "synthesis" },
-    { n: 3, label: "review" },
+    { n: 2, label: "processing" },
   ] as const;
 
   return (
@@ -13,7 +12,7 @@ export function IngestStepper({ current }: { current: 1 | 2 | 3 }) {
       className="row"
       style={{ gap: 0, flexWrap: "wrap", margin: "30px 0 26px" }}
       role="group"
-      aria-label={`Ingest step ${current} of 3`}
+      aria-label={`Ingest step ${current} of 2`}
     >
       {steps.map((s, i) => {
         const done = s.n < current;

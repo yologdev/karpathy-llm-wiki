@@ -2,12 +2,18 @@ import { NextRequest, NextResponse } from "next/server";
 import { ingest, ingestUrl } from "@/lib/ingest";
 import type { IngestOptions } from "@/lib/ingest";
 import { isUrl } from "@/lib/fetch";
-import { isYouTubeUrl } from "@/lib/youtube";
-import { enqueueTask } from "@/lib/tasks";
-import { createIngestJob, updateIngestJob } from "@/lib/ingest-jobs";
+import { type Task } from "@/lib/tasks";
+import { createIngestJob } from "@/lib/ingest-jobs";
+import { enqueueOrInline } from "@/lib/ingest-async";
+import { stageText } from "@/lib/ingest-staging";
 import { getPrincipal, getServicePrincipal } from "@/lib/auth";
 import { ClientInputError, getErrorMessage } from "@/lib/errors";
+import { deriveTitleFromContent } from "@/lib/ingest";
 import { logger } from "@/lib/logger";
+
+/** Pasted text larger than this is staged to R2 rather than carried inline in
+ *  the queue message (Cloudflare Queues cap a message at 128 KB). */
+const MAX_INLINE_CONTENT_CHARS = 96000;
 
 export async function POST(request: NextRequest) {
   try {
@@ -22,7 +28,7 @@ export async function POST(request: NextRequest) {
 
     const body = await request.json();
 
-    const { url, title, content, preview, generatedContent, triggeredBy, tags, sourceUrl, sourceType } = body;
+    const { url, title, content, triggeredBy, tags, sourceUrl, sourceType } = body;
 
     // Validate triggeredBy if provided
     if (triggeredBy !== undefined && typeof triggeredBy !== "string") {
@@ -32,8 +38,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Validate sourceType if provided (preserves provenance when the
-    // PDF/image review flow commits the approved body via this text path).
+    // Validate sourceType if provided.
     const VALID_SOURCE_TYPES = ["url", "text", "x-mention", "image", "pdf", "youtube"];
     if (sourceType !== undefined && !VALID_SOURCE_TYPES.includes(sourceType)) {
       return NextResponse.json(
@@ -61,14 +66,9 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Build ingest options from the request body
+    // Build ingest options from the request body (used only on the inline
+    // off-Workers fallback; the queue carries its own minimal fields).
     const options: IngestOptions = {};
-    if (preview === true) {
-      options.preview = true;
-    }
-    if (typeof generatedContent === "string" && generatedContent.length > 0) {
-      options.generatedContent = generatedContent;
-    }
     if (typeof triggeredBy === "string" && triggeredBy.length > 0) {
       options.triggeredBy = triggeredBy;
     }
@@ -87,60 +87,29 @@ export async function POST(request: NextRequest) {
     options.owner = principal.handle;
     options.triggeredBy = principal.handle;
 
-    // URL path takes precedence
+    const tagsForTask =
+      options.tags && options.tags.length > 0 ? { tags: options.tags } : {};
+
+    // ----- URL path (takes precedence) -----
     if (url && typeof url === "string" && isUrl(url.trim())) {
       const trimmedUrl = url.trim();
-
-      // YouTube transcripts are long → synchronous synthesis exceeds the Worker
-      // request budget. Enqueue the ingest and let the task-consumer process it;
-      // the client polls the job status (queued → done/failed).
-      if (isYouTubeUrl(trimmedUrl)) {
-        const jobId = crypto.randomUUID();
-        await createIngestJob({
-          jobId,
+      const jobId = crypto.randomUUID();
+      await createIngestJob({ jobId, url: trimmedUrl, owner: principal.handle });
+      return await enqueueOrInline(
+        jobId,
+        {
+          kind: "ingest",
           url: trimmedUrl,
-          owner: principal.handle,
-        });
-        let enqueued: boolean;
-        try {
-          enqueued = await enqueueTask({
-            kind: "ingest",
-            url: trimmedUrl,
-            owner: options.owner,
-            author: options.author,
-            ...(options.tags && options.tags.length > 0
-              ? { tags: options.tags }
-              : {}),
-            jobId,
-          });
-        } catch (e) {
-          // Enqueue threw after the job was created → it would be orphaned at
-          // "queued"; mark it failed so it can't show "working…" forever.
-          await updateIngestJob(jobId, {
-            status: "failed",
-            error: getErrorMessage(e),
-          }).catch(() => {});
-          throw e; // surfaces as a 500 to the submitter
-        }
-        if (enqueued) {
-          return NextResponse.json({ queued: true, jobId });
-        }
-        // Off-Workers (local dev / tests): no queue — run it inline and mark the
-        // job done so the same client flow still resolves.
-        const result = await ingestUrl(trimmedUrl, options);
-        await updateIngestJob(jobId, {
-          status: "done",
-          slug: result.primarySlug,
-        });
-        return NextResponse.json(result);
-      }
-
-      const result = await ingestUrl(trimmedUrl, options);
-      return NextResponse.json(result);
+          owner: options.owner,
+          author: options.author,
+          ...tagsForTask,
+          jobId,
+        },
+        () => ingestUrl(trimmedUrl, options),
+      );
     }
 
-    // Text path: content is required; title is OPTIONAL — when omitted, ingest()
-    // derives it from the content (or the synthesized concept).
+    // ----- Text path: content required; title optional -----
     if (
       !content ||
       typeof content !== "string" ||
@@ -158,13 +127,43 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const result = await ingest(
-      typeof title === "string" ? title.trim() : "",
-      content.trim(),
-      options,
-    );
+    const trimmedContent = content.trim();
+    const trimmedTitle = typeof title === "string" ? title.trim() : "";
+    // Display title for the recent-ingests list (best-effort): given title, else
+    // a title derived from the content.
+    const displayTitle = trimmedTitle || deriveTitleFromContent(trimmedContent) || "Untitled";
 
-    return NextResponse.json(result);
+    const jobId = crypto.randomUUID();
+    await createIngestJob({ jobId, owner: principal.handle, title: displayTitle });
+
+    // Small enough to ride inline in the queue message; otherwise stage to R2.
+    let task: Task;
+    if (trimmedContent.length <= MAX_INLINE_CONTENT_CHARS) {
+      task = {
+        kind: "ingest",
+        ...(trimmedTitle ? { title: trimmedTitle } : {}),
+        content: trimmedContent,
+        owner: options.owner,
+        author: options.author,
+        ...tagsForTask,
+        jobId,
+      };
+    } else {
+      const key = await stageText(jobId, trimmedContent);
+      task = {
+        kind: "ingest",
+        ...(trimmedTitle ? { title: trimmedTitle } : {}),
+        owner: options.owner,
+        author: options.author,
+        ...tagsForTask,
+        jobId,
+        staged: { key, kind: "text" },
+      };
+    }
+
+    return await enqueueOrInline(jobId, task, () =>
+      ingest(trimmedTitle, trimmedContent, options),
+    );
   } catch (error) {
     const msg = getErrorMessage(error);
     // Bad-input failures (e.g. a deleted/private X post, an unsafe URL) are

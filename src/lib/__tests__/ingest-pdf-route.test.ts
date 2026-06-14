@@ -5,11 +5,24 @@ vi.mock("@/lib/auth", () => ({
   getServicePrincipal: vi.fn(() => null),
 }));
 vi.mock("@/lib/ingest", () => ({ ingestPdf: vi.fn() }));
+// Queue absent (off-Workers) → every request runs ingestPdf inline. The other
+// helpers are stubbed so the route never touches real storage in tests.
+vi.mock("@/lib/tasks", () => ({ enqueueTask: vi.fn(async () => false) }));
+vi.mock("@/lib/ingest-jobs", () => ({
+  createIngestJob: vi.fn(async () => ({})),
+  updateIngestJob: vi.fn(async () => ({})),
+}));
+vi.mock("@/lib/ingest-staging", () => ({
+  stageBytes: vi.fn(async () => "raw/uploads/job/document.pdf"),
+}));
 
 import { getPrincipal, getServicePrincipal } from "@/lib/auth";
 import { ingestPdf } from "@/lib/ingest";
+import { enqueueTask } from "@/lib/tasks";
 import { ClientInputError } from "@/lib/errors";
 import { POST } from "@/app/api/ingest/pdf/route";
+
+const mockedEnqueue = vi.mocked(enqueueTask);
 
 const mockedPrincipal = vi.mocked(getPrincipal);
 const mockedServicePrincipal = vi.mocked(getServicePrincipal);
@@ -27,6 +40,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   mockedPrincipal.mockResolvedValue({ handle: "alice", id: "alice" } as never);
   mockedIngestPdf.mockResolvedValue({ primarySlug: "doc", wikiPages: ["doc"] } as never);
+  mockedEnqueue.mockResolvedValue(false); // off-Workers → inline
 });
 
 describe("POST /api/ingest/pdf", () => {
@@ -122,5 +136,41 @@ describe("POST /api/ingest/pdf", () => {
       { pdfUrl: "https://example.com/doc.pdf" },
       expect.objectContaining({ owner: "alice", author: "alice" }),
     );
+  });
+
+  it("queues a URL PDF as a source:pdf task (on Workers) and returns jobId", async () => {
+    mockedEnqueue.mockResolvedValue(true);
+    const res = await POST(jsonReq({ pdfUrl: "https://example.com/doc.pdf" }) as never);
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(data.queued).toBe(true);
+    expect(typeof data.jobId).toBe("string");
+    expect(mockedEnqueue).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: "ingest",
+        url: "https://example.com/doc.pdf",
+        source: "pdf",
+      }),
+    );
+    expect(mockedIngestPdf).not.toHaveBeenCalled();
+  });
+
+  it("stages an uploaded PDF to R2 and enqueues a staged task", async () => {
+    mockedEnqueue.mockResolvedValue(true);
+    const file = new File(["fake-pdf-bytes"], "report.pdf", { type: "application/pdf" });
+    const form = new FormData();
+    form.append("file", file);
+    const req = new Request("http://localhost/api/ingest/pdf", { method: "POST", body: form });
+
+    const res = await POST(req as never);
+    expect(res.status).toBe(200);
+    expect((await res.json()).queued).toBe(true);
+    expect(mockedEnqueue).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: "ingest",
+        staged: expect.objectContaining({ kind: "pdf", filename: "report.pdf" }),
+      }),
+    );
+    expect(mockedIngestPdf).not.toHaveBeenCalled();
   });
 });

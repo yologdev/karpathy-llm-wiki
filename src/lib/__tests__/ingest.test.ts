@@ -178,14 +178,15 @@ describe("ingest — title derivation", () => {
     }
   });
 
-  it("commit-from-preview for a title-less paste stays on the concept slug (no fork)", async () => {
+  it("a title-less paste derives its slug from the synthesized CONCEPT (no fork)", async () => {
     mockedHasLLMKey.mockReturnValue(true);
     try {
-      // Commit a reviewed draft (generatedContent) with no title — the body H1
-      // drives the slug, not the empty/derived title.
-      const result = await ingest("", "some pasted content here.", {
-        generatedContent: "# Topic X\n\n## Summary\n\nApproved body.",
-      });
+      // No preview/commit two-step anymore: synthesis runs and the CONCEPT marker
+      // drives the slug for a title-less paste.
+      mockedCallLLM.mockResolvedValue(
+        "CONCEPT: Topic X\nALIASES: none\n\n# Topic X\n\n## Summary\n\nSynthesized body.",
+      );
+      const result = await ingest("", "some pasted content here.", {});
       expect(result.primarySlug).toBe("topic-x");
       expect(await readWikiPageWithFrontmatter("topic-x")).not.toBeNull();
     } finally {
@@ -382,12 +383,12 @@ describe("ingest — auto tags", () => {
     mockedCallLLM.mockReset();
   });
 
-  it("keeps caller tags on the commit-from-preview path (generatedContent skips the LLM)", async () => {
-    // The web flow: handleApprove forwards the preview's tags as options.tags
-    // and sends generatedContent, which short-circuits the LLM — so the only
-    // way tags survive is the options.tags merge (conceptTags is empty here).
+  it("keeps caller-supplied tags when the synthesis emits no TAGS line", async () => {
+    // Caller tags (e.g. the /ingest form) must survive even when the synthesized
+    // body carries no TAGS marker — the only path to the page is the options.tags
+    // merge (conceptTags is empty here).
+    mockedCallLLM.mockResolvedValue("# Reviewed Page\n\n## Summary\n\nSynthesized body.");
     const result = await ingest("Reviewed Page", "original source text", {
-      generatedContent: "# Reviewed Page\n\n## Summary\n\nApproved body.",
       tags: ["ml", "nlp"],
     });
     const page = await readWikiPageWithFrontmatter(result.primarySlug);
@@ -833,26 +834,6 @@ describe("ingest — structured sources[] provenance", () => {
     expect(sources[1].url).toBe("https://example.com/b");
     // Corroboration: a 2nd distinct source URL raises confidence (0.6 → 0.65).
     expect(page!.frontmatter.confidence).toBe(0.65);
-  });
-
-  it("preview confidence matches what the commit writes (corroborating re-ingest)", async () => {
-    // Existing page with one URL source.
-    await ingest("Preview Conf", "First content. Details.", {
-      sourceUrl: "https://example.com/a",
-    });
-
-    // Preview a re-ingest that adds a 2nd distinct URL.
-    const preview = await ingest("Preview Conf", "Second content. More.", {
-      sourceUrl: "https://example.com/b",
-      preview: true,
-    });
-    // Commit the same re-ingest (no preview) and assert the page matches the card.
-    await ingest("Preview Conf", "Second content. More.", {
-      sourceUrl: "https://example.com/b",
-    });
-    const page = await readWikiPageWithFrontmatter("preview-conf");
-    expect(preview.preview!.confidence).toBe(0.65);
-    expect(page!.frontmatter.confidence).toBe(preview.preview!.confidence);
   });
 
   it("re-ingest with same URL updates fetched date instead of duplicating", async () => {
@@ -2459,26 +2440,24 @@ describe("ingest — private-page convergence guard", () => {
     expect(Number((await readWikiPageWithFrontmatter("transformer"))!.frontmatter.source_count)).toBe(2);
   });
 
-  it("does NOT leak a private page's slug via PREVIEW (forks before returning)", async () => {
+  it("does NOT write into a private page bob doesn't own — forks to his own slug", async () => {
     await seedPrivate("transformer", "alice", "Alice's private notes on transformers.");
     mockedCallLLM.mockResolvedValue(
-      "CONCEPT: Transformer\nALIASES: none\n\n# Transformer\n\n## Summary\n\nBob preview.",
+      "CONCEPT: Transformer\nALIASES: none\n\n# Transformer\n\n## Summary\n\nBob's page.",
     );
 
-    // Bob previews under a title that resolves (via the alias index) to alice's
-    // private slug "transformer". The fork guard must run BEFORE the preview
-    // return, so the private slug never comes back.
+    // Bob ingests under a title that resolves (via the alias index) to alice's
+    // private slug "transformer". The fork guard forks to a fresh slug, so the
+    // private page is never written to and its slug never comes back.
     const result = await ingest("Transformer", "Bob's distinct source text.", {
       owner: "bob",
       author: "bob",
-      preview: true,
     });
 
-    expect(result.previewContent).toBeDefined();
     expect(result.primarySlug).not.toBe("transformer");
     expect(result.wikiPages).not.toContain("transformer");
     expect(result.relatedUpdated).not.toContain("transformer");
-    // Nothing was written (preview): alice's page still has one source.
+    // Alice's private page is untouched — still one source.
     expect(
       Number((await readWikiPageWithFrontmatter("transformer"))!.frontmatter.source_count),
     ).toBe(1);
@@ -3087,7 +3066,7 @@ describe("reingest", () => {
     }
   });
 
-  it("preview re-synthesizes a draft WITHOUT writing the page", async () => {
+  it("re-synthesizes the page in place — a renamed concept doesn't fork the slug", async () => {
     mockedHasLLMKey.mockReturnValue(true);
     const originalFetch = global.fetch;
     try {
@@ -3102,116 +3081,21 @@ describe("reingest", () => {
         text: () =>
           Promise.resolve("<html><head><title>Doc</title></head><body><p>fresh</p></body></html>"),
       });
-      mockedCallLLM.mockResolvedValue("CONCEPT: Topic\n\n# Topic\n\n## Summary\n\nv2 PREVIEW.");
+      // The re-synthesis renames the concept; pinSlug keeps it on "topic".
+      mockedCallLLM.mockResolvedValue(
+        "CONCEPT: Renamed Topic\n\n# Renamed Topic\n\n## Summary\n\nv2 body.",
+      );
 
-      const result = await reingest("topic", { preview: true });
-      expect(result.previewContent).toContain("v2 PREVIEW");
-      expect(result.indexUpdated).toBe(false);
-      // The stored page is untouched — still v1.
-      const page = await readWikiPageWithFrontmatter("topic");
-      expect(page!.content).toContain("v1 body");
-      expect(page!.content).not.toContain("v2 PREVIEW");
-    } finally {
-      global.fetch = originalFetch;
-      mockedHasLLMKey.mockReturnValue(false);
-      mockedCallLLM.mockReset();
-    }
-  });
-
-  it("commits a reviewed draft in place — an edited H1 doesn't fork the slug", async () => {
-    mockedHasLLMKey.mockReturnValue(true);
-    const originalFetch = global.fetch;
-    try {
-      mockedCallLLM.mockResolvedValue("CONCEPT: Topic\n\n# Topic\n\n## Summary\n\nv1.");
-      await ingest("Topic", "seed", { sourceUrl: "https://example.com/doc" });
-
-      global.fetch = vi.fn().mockResolvedValue({
-        ok: true,
-        status: 200,
-        headers: new Map([["content-type", "text/html"]]) as unknown as Headers,
-        body: null,
-        text: () =>
-          Promise.resolve("<html><head><title>Doc</title></head><body><p>fresh</p></body></html>"),
-      });
-
-      // Commit the reviewed draft with an edited H1 (different name).
-      const result = await reingest("topic", {
-        generatedContent: "# Renamed Topic\n\n## Summary\n\nEdited body.",
-      });
+      const result = await reingest("topic");
 
       expect(result.primarySlug).toBe("topic"); // pinned — no fork to renamed-topic
       expect(await readWikiPageWithFrontmatter("renamed-topic")).toBeNull();
       const page = await readWikiPageWithFrontmatter("topic");
-      expect(page!.content).toContain("Edited body.");
-      // The title follows the edited H1.
+      // Written in place: the page now carries the v2 body (reconciled with v1).
+      expect(page!.content).toContain("v2 body");
+      // The title follows the new concept.
       const entries = await listWikiPages();
       expect(entries.find((e) => e.slug === "topic")!.title).toBe("Renamed Topic");
-    } finally {
-      global.fetch = originalFetch;
-      mockedHasLLMKey.mockReturnValue(false);
-      mockedCallLLM.mockReset();
-    }
-  });
-
-  it("commit with NO H1 in the draft preserves the existing title (not the source <title>)", async () => {
-    mockedHasLLMKey.mockReturnValue(true);
-    const originalFetch = global.fetch;
-    try {
-      mockedCallLLM.mockResolvedValue("CONCEPT: Topic\n\n# Topic\n\n## Summary\n\nv1.");
-      await ingest("Topic", "seed", { sourceUrl: "https://example.com/doc" });
-
-      // The re-fetch returns a junk <title> ("Something Went Wrong").
-      global.fetch = vi.fn().mockResolvedValue({
-        ok: true,
-        status: 200,
-        headers: new Map([["content-type", "text/html"]]) as unknown as Headers,
-        body: null,
-        text: () =>
-          Promise.resolve(
-            "<html><head><title>Something Went Wrong</title></head><body><p>x</p></body></html>",
-          ),
-      });
-
-      // Reviewed draft has NO H1 — title must NOT become the junk source title.
-      await reingest("topic", { generatedContent: "## Summary\n\nBody without a heading." });
-
-      const entries = await listWikiPages();
-      expect(entries.find((e) => e.slug === "topic")!.title).toBe("Topic");
-    } finally {
-      global.fetch = originalFetch;
-      mockedHasLLMKey.mockReturnValue(false);
-      mockedCallLLM.mockReset();
-    }
-  });
-
-  it("a pinned commit never clobbers a DIFFERENT existing page even if the edited H1 collides", async () => {
-    mockedHasLLMKey.mockReturnValue(true);
-    const originalFetch = global.fetch;
-    try {
-      mockedCallLLM.mockResolvedValue("CONCEPT: Topic\n\n# Topic\n\n## Summary\n\nv1.");
-      await ingest("Topic", "seed", { sourceUrl: "https://example.com/doc" });
-      // A separate, pre-existing page the edited H1 would slugify onto.
-      mockedCallLLM.mockResolvedValue("CONCEPT: Other Page\n\n# Other Page\n\n## Summary\n\nOriginal other.");
-      await ingest("Other Page", "other seed");
-
-      global.fetch = vi.fn().mockResolvedValue({
-        ok: true,
-        status: 200,
-        headers: new Map([["content-type", "text/html"]]) as unknown as Headers,
-        body: null,
-        text: () =>
-          Promise.resolve("<html><head><title>Doc</title></head><body><p>x</p></body></html>"),
-      });
-
-      // Re-ingest "topic" with an H1 that collides with the "other-page" slug.
-      const result = await reingest("topic", {
-        generatedContent: "# Other Page\n\n## Summary\n\nTopic's new body.",
-      });
-
-      expect(result.primarySlug).toBe("topic"); // stayed pinned
-      const other = await readWikiPageWithFrontmatter("other-page");
-      expect(other!.content).toContain("Original other."); // untouched
-      expect(other!.content).not.toContain("Topic's new body.");
     } finally {
       global.fetch = originalFetch;
       mockedHasLLMKey.mockReturnValue(false);

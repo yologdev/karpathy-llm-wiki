@@ -2,9 +2,10 @@ import { NextResponse } from "next/server";
 import { getServicePrincipal } from "@/lib/auth";
 import { parseTask } from "@/lib/tasks";
 import { reconcileFromTalk } from "@/lib/reconcile";
-import { ingest, ingestUrl, reingest } from "@/lib/ingest";
+import { ingest, ingestUrl, ingestPdf, ingestImage, reingest } from "@/lib/ingest";
 import { fixLintIssue } from "@/lib/lint-fix";
 import { updateIngestJob } from "@/lib/ingest-jobs";
+import { readStagedBytes, readStagedText, deleteStaged } from "@/lib/ingest-staging";
 import { agentIdFor, DEFAULT_AGENT_NAME } from "@/lib/agents";
 import { getErrorMessage } from "@/lib/errors";
 import { logger } from "@/lib/logger";
@@ -98,9 +99,47 @@ export async function POST(req: Request) {
     };
     // For a tracked async job, record progress so the UI can poll the outcome.
     if (task.jobId) await updateIngestJob(task.jobId, { status: "processing" });
-    const result = task.url
-      ? await ingestUrl(task.url, opts)
-      : await ingest(task.title?.trim() || "Untitled", task.content ?? "", opts);
+
+    // Route to the right ingest path:
+    //  - staged: uploaded bytes/text in R2 (delete the blob after, best-effort);
+    //  - source pdf/image with a url: the URL PDF/image path (not generic);
+    //  - url: generic URL; content: pasted text.
+    let result;
+    if (task.staged) {
+      const { key, kind, filename, contentType } = task.staged;
+      try {
+        if (kind === "pdf") {
+          const bytes = await readStagedBytes(key);
+          result = await ingestPdf(
+            { bytes, filename: filename || "document.pdf" },
+            opts,
+          );
+        } else if (kind === "image") {
+          const bytes = await readStagedBytes(key);
+          result = await ingestImage(
+            { bytes, filename: filename || "image", contentType },
+            opts,
+          );
+        } else {
+          // kind === "text"
+          const text = await readStagedText(key);
+          result = await ingest(task.title?.trim() || "Untitled", text, opts);
+        }
+      } finally {
+        // R2 has no TTL — drop the staged blob whether the ingest succeeded or
+        // threw. Best-effort: deleteStaged never throws.
+        await deleteStaged(key);
+      }
+    } else if (task.source === "pdf" && task.url) {
+      result = await ingestPdf({ pdfUrl: task.url }, opts);
+    } else if (task.source === "image" && task.url) {
+      result = await ingestImage({ imageUrl: task.url }, opts);
+    } else if (task.url) {
+      result = await ingestUrl(task.url, opts);
+    } else {
+      result = await ingest(task.title?.trim() || "Untitled", task.content ?? "", opts);
+    }
+
     if (task.jobId) {
       await updateIngestJob(task.jobId, {
         status: "done",

@@ -7,6 +7,15 @@ import { MAX_BATCH_URLS } from "@/lib/constants";
 import { getErrorMessage } from "@/lib/errors";
 import { logger } from "@/lib/logger";
 
+/** A batch URL that couldn't be enqueued (queue absent) and was run inline. */
+interface InlineResult {
+  index: number;
+  url: string;
+  success: boolean;
+  slug?: string;
+  error?: string;
+}
+
 export async function POST(request: NextRequest) {
   try {
     const principal = (await getPrincipal()) ?? getServicePrincipal(request);
@@ -60,50 +69,12 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // --- Async mode: enqueue one ingest task per URL, return immediately ---
-    // Opt-in via `async: true`. The queue (Cloudflare Queues) processes them in
-    // the background — decoupled, retryable, rate-limited — so a big batch
-    // doesn't hold the request open or hammer the LLM. Interactive batches keep
-    // the streaming path below (the default).
-    if (body.async === true) {
-      let queued = 0;
-      let failed = 0;
-      for (let i = 0; i < urls.length; i++) {
-        // Per-URL try/catch: a single send() rejection (backpressure, etc.)
-        // must not abort the batch after partial enqueue — count it and report
-        // honest totals rather than 500-ing with work already queued.
-        try {
-          const ok = await enqueueTask({
-            kind: "ingest",
-            url: (urls[i] as string).trim(),
-            owner: principal.handle,
-            author: principal.handle,
-            ...(Array.isArray(tags) && tags.length > 0 ? { tags } : {}),
-          });
-          if (ok) queued++;
-          else failed++;
-        } catch (err) {
-          logger.warn("ingest", `batch async enqueue failed for ${urls[i]}`, err);
-          failed++;
-        }
-      }
-      if (queued === 0) {
-        // Nothing made it onto the queue (unavailable, or every send rejected).
-        return NextResponse.json(
-          { error: "Task queue unavailable — try the synchronous batch instead." },
-          { status: 503 },
-        );
-      }
-      return NextResponse.json({
-        mode: "async",
-        queued,
-        total: urls.length,
-        ...(failed > 0 ? { failed } : {}),
-      });
-    }
-
-    // --- Stream NDJSON results as each URL completes (default) -----------
-    const encoder = new TextEncoder();
+    // --- Async by default: enqueue one ingest task per URL, return at once ----
+    // The queue (Cloudflare Queues) processes them in the background — decoupled,
+    // retryable, rate-limited — so a big batch never holds the request open or
+    // hammers the LLM. Off-Workers (local dev / tests) the queue is absent, so
+    // each URL runs inline and its result is reported — mirroring the per-source
+    // inline fallback the single-ingest routes use.
     const ingestOptions = {
       ...(Array.isArray(tags) && tags.length > 0 ? { tags } : {}),
       author: principal.handle,
@@ -111,37 +82,65 @@ export async function POST(request: NextRequest) {
       triggeredBy: principal.handle,
     };
 
-    const stream = new ReadableStream({
-      async start(controller) {
-        for (let i = 0; i < urls.length; i++) {
-          const url = (urls[i] as string).trim();
-          let line: string;
+    let queued = 0;
+    let failed = 0;
+    const inlineResults: InlineResult[] = [];
+    for (let i = 0; i < urls.length; i++) {
+      const url = (urls[i] as string).trim();
+      // Per-URL try/catch: a single send() rejection (backpressure, etc.) must
+      // not abort the batch after partial enqueue — count it and report honest
+      // totals rather than 500-ing with work already queued.
+      let ok: boolean;
+      try {
+        ok = await enqueueTask({
+          kind: "ingest",
+          url,
+          owner: principal.handle,
+          author: principal.handle,
+          ...(Array.isArray(tags) && tags.length > 0 ? { tags } : {}),
+        });
+      } catch (err) {
+        logger.warn("ingest", `batch enqueue failed for ${url}`, err);
+        failed++;
+        continue;
+      }
+      if (ok) {
+        queued++;
+        continue;
+      }
+      // Queue unavailable (off-Workers) — run this URL inline.
+      try {
+        const result = await ingestUrl(url, ingestOptions);
+        inlineResults.push({ index: i, url, success: true, slug: result.primarySlug });
+      } catch (err) {
+        inlineResults.push({
+          index: i,
+          url,
+          success: false,
+          error: getErrorMessage(err, "Unknown error"),
+        });
+      }
+    }
 
-          try {
-            const result = await ingestUrl(url, ingestOptions);
-            line = JSON.stringify({ index: i, url, success: true, result });
-          } catch (err) {
-            const message = getErrorMessage(err, "Unknown error");
-            line = JSON.stringify({
-              index: i,
-              url,
-              success: false,
-              error: message,
-            });
-          }
-
-          controller.enqueue(encoder.encode(line + "\n"));
-        }
-
-        controller.close();
-      },
-    });
-
-    return new Response(stream, {
-      headers: {
-        "Content-Type": "application/x-ndjson",
-        "Transfer-Encoding": "chunked",
-      },
+    if (inlineResults.length > 0) {
+      // Off-Workers path: report each URL's inline outcome.
+      return NextResponse.json({
+        mode: "inline",
+        total: urls.length,
+        results: inlineResults,
+      });
+    }
+    if (queued === 0) {
+      return NextResponse.json(
+        { error: "Task queue unavailable and no URLs could be ingested." },
+        { status: 503 },
+      );
+    }
+    return NextResponse.json({
+      mode: "async",
+      queued,
+      total: urls.length,
+      ...(failed > 0 ? { failed } : {}),
     });
   } catch (error) {
     logger.error("ingest", "Batch ingest error", error);

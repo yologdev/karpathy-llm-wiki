@@ -45,8 +45,9 @@ export function effectiveStatus(
 
 export interface IngestJob {
   jobId: string;
-  /** The source URL being ingested. */
-  url: string;
+  /** The source URL being ingested. Absent for non-URL sources (pasted text,
+   *  uploaded PDF/image) — those show only the `title`. */
+  url?: string;
   /** Handle of the user who triggered it — only they may read the status. */
   owner: string;
   status: IngestJobStatus;
@@ -71,14 +72,15 @@ function relPathFor(jobId: string): string {
 /** Create a job in the `queued` state. */
 export async function createIngestJob(input: {
   jobId: string;
-  url: string;
+  /** Optional — non-URL sources (pasted text, uploaded PDF/image) have none. */
+  url?: string;
   owner: string;
   title?: string;
 }): Promise<IngestJob> {
   const now = new Date().toISOString();
   const job: IngestJob = {
     jobId: input.jobId,
-    url: input.url,
+    ...(input.url ? { url: input.url } : {}),
     owner: input.owner,
     title: input.title,
     status: "queued",

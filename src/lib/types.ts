@@ -30,31 +30,6 @@ export interface IndexEntry {
   visibility?: string;
 }
 
-/**
- * Structured metadata accompanying a `preview: true` ingest, so the review step
- * can render a page card (title / summary / tags / confidence / review-by) and
- * tell the user whether publishing will create a fresh page or merge into one
- * that already lives in the commons — all without writing anything.
- */
-export interface IngestPreviewMeta {
-  /** The synthesized page title (from the CONCEPT marker, else the source title). */
-  title: string;
-  /** A short summary drawn from the raw source. */
-  summary: string;
-  /** Tags that would be applied (existing tags on a merge ∪ any supplied). */
-  tags: string[];
-  /** Owner handle this ingest would be attributed to. */
-  owner: string;
-  /** Confidence 0–1 the published page would carry. */
-  confidence: number;
-  /** Review-by date (YYYY-MM-DD) the published page would carry. */
-  reviewBy: string;
-  /** True if publishing would merge into an existing commons page (vs create new). */
-  deduped: boolean;
-  /** Title of the existing page a publish would merge into, when `deduped`. */
-  existingTitle?: string;
-}
-
 /** Result returned after ingesting a source document. */
 export interface IngestResult {
   rawPath: string;
@@ -68,19 +43,6 @@ export interface IngestResult {
    */
   wikiPages: string[];
   indexUpdated: boolean;
-  /**
-   * When `preview: true`, contains the generated wiki markdown that would be
-   * written to disk. Absent during a normal (non-preview) ingest.
-   */
-  previewContent?: string;
-  /** Structured page metadata for the review step. Present only when `preview: true`. */
-  preview?: IngestPreviewMeta;
-  /**
-   * The raw source text used for synthesis. Returned on `preview: true` for the
-   * PDF/image paths (where the server extracted it) so the client can replay it
-   * to the text commit path on approve — no re-extraction / re-vision needed.
-   */
-  sourceContent?: string;
   /** The original source URL, if the ingest was URL-based. */
   sourceUrl?: string;
   /**
