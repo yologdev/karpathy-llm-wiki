@@ -41,6 +41,7 @@ import {
   handleVaultUncurate,
   handleListVaults,
   handleVaultPages,
+  handleWikiGraph,
   createMcpServer,
 } from "../../mcp";
 import { vaultIdFor, listVaults, getVault } from "../vault";
@@ -3545,6 +3546,56 @@ describe("visibility enforcement", () => {
     const slugs = results.map((r) => r.slug);
     expect(slugs).toContain("public-page");
     expect(slugs).not.toContain("secret-page");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// wiki_graph
+// ---------------------------------------------------------------------------
+
+describe("wiki_graph", () => {
+  it("returns nodes and edges for commons pages", async () => {
+    await writeTestPage(
+      "graph-a",
+      "---\ntitle: Graph A\ntags: [alpha]\n---\n# Graph A\n\nSee [Graph B](graph-b.md).",
+    );
+    await writeTestPage(
+      "graph-b",
+      "---\ntitle: Graph B\ntags: [beta, gamma]\n---\n# Graph B\n\nStands alone.",
+    );
+    await writeIndex([
+      { title: "Graph A", slug: "graph-a", summary: "First graph page" },
+      { title: "Graph B", slug: "graph-b", summary: "Second graph page" },
+    ]);
+
+    const result = await handleWikiGraph({});
+
+    // Should have both nodes
+    expect(result.nodes.length).toBeGreaterThanOrEqual(2);
+    const nodeA = result.nodes.find((n) => n.id === "graph-a");
+    const nodeB = result.nodes.find((n) => n.id === "graph-b");
+    expect(nodeA).toBeDefined();
+    expect(nodeB).toBeDefined();
+    expect(nodeA!.label).toBe("Graph A");
+    expect(nodeA!.tags).toEqual(["alpha"]);
+    expect(nodeB!.label).toBe("Graph B");
+    expect(nodeB!.tags).toEqual(["beta", "gamma"]);
+
+    // Should have an edge from graph-a → graph-b
+    const edge = result.edges.find(
+      (e) => e.source === "graph-a" && e.target === "graph-b",
+    );
+    expect(edge).toBeDefined();
+
+    // linkCount should be computed (inbound + outbound)
+    expect(nodeA!.linkCount).toBeGreaterThanOrEqual(1);
+    expect(nodeB!.linkCount).toBeGreaterThanOrEqual(1);
+  });
+
+  it("returns empty nodes/edges when no pages exist", async () => {
+    const result = await handleWikiGraph({});
+    expect(result.nodes).toEqual([]);
+    expect(result.edges).toEqual([]);
   });
 });
 

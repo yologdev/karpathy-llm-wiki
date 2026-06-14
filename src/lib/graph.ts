@@ -1,13 +1,10 @@
 /**
  * Community detection for the wiki graph using label propagation.
  *
- * Label propagation is a simple, zero-dependency algorithm:
- * 1. Assign each node a unique label (its index).
- * 2. Iterate: for each node (deterministic order by ID), adopt the most
- *    common label among its neighbors. Ties break by smallest label.
- * 3. Repeat until convergence or max iterations.
- *
- * Deterministic ordering (sorted by node ID) avoids jarring color changes
+ * Label propagation iterates until convergence or a fixed cap. Each node
+ * adopts the most common label among its neighbors, breaking ties by
+ * smallest label value. This keeps the algorithm deterministic (no random
+ * shuffle) so the graph visualization produces stable cluster assignments
  * on page refresh.
  */
 

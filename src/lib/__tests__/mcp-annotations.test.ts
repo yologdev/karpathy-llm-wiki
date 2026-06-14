@@ -26,8 +26,8 @@ describe("MCP tool annotations", () => {
   const server = createMcpServer();
   const tools = getRegisteredTools(server);
 
-  it("registers exactly 43 tools", () => {
-    expect(Object.keys(tools)).toHaveLength(43);
+  it("registers exactly 44 tools", () => {
+    expect(Object.keys(tools)).toHaveLength(44);
   });
 
   it("every tool has explicit destructiveHint and idempotentHint", () => {

@@ -39,6 +39,7 @@
  *   revert_revision    — Revert a wiki page to a previous revision
  *   list_contributors  — List all contributors with trust scores
  *   get_contributor    — Get a specific contributor's trust profile
+ *   wiki_graph         — Get the wiki knowledge graph (nodes and edges)
  *   vault_curate       — Curate a commons page into one of a user's named vaults
  *   vault_uncurate     — Remove a curated page from one of a user's named vaults
  *   vault_create       — Create a new named vault for a user
@@ -88,6 +89,7 @@ import { vaultIdFor, getVault, createVault, renameVault, deleteVault, addToVault
 import type { Vault } from "./lib/vault";
 import { belongsInCommons } from "./lib/commons";
 import { reconcileFromTalk, type ReconcileFromTalkResult } from "./lib/reconcile";
+import { buildWikiGraph, type GraphNode, type GraphEdge } from "./lib/graph-build";
 import type { TalkThread, TalkComment } from "./lib/types";
 
 // ---------------------------------------------------------------------------
@@ -864,6 +866,17 @@ export async function handleGetContributor(args: {
     throw new Error(`No activity found for contributor: ${args.handle}`);
   }
   return profile;
+}
+
+// ---------------------------------------------------------------------------
+// Graph handler
+// ---------------------------------------------------------------------------
+
+export async function handleWikiGraph(args: {
+  scope?: string | undefined;
+}): Promise<{ nodes: GraphNode[]; edges: GraphEdge[] }> {
+  const { nodes, edges } = await buildWikiGraph(args.scope ?? null, null);
+  return { nodes, edges };
 }
 
 // ---------------------------------------------------------------------------
@@ -2969,6 +2982,52 @@ export function createMcpServer(): McpServer {
   }, async (args) => {
     try {
       const result = await handleGetContributor(args);
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: JSON.stringify(result, null, 2),
+          },
+        ],
+      };
+    } catch (err) {
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: (err as Error).message,
+          },
+        ],
+        isError: true,
+      };
+    }
+  });
+
+  // wiki_graph — Get the wiki knowledge graph (nodes and edges)
+  server.registerTool("wiki_graph", {
+    description:
+      "Return the wiki knowledge graph as nodes and edges. Each page is a node (slug, label, tags, " +
+      "linkCount) and each cross-reference link is an edge (source, target). Useful for understanding " +
+      "how concepts are connected, finding clusters, discovering poorly-linked pages, or navigating " +
+      "neighborhoods without reading full page bodies. Unscoped returns the commons graph; use " +
+      "'vault:<id>' for vault-scoped graphs.",
+    inputSchema: {
+      scope: z
+        .string()
+        .optional()
+        .describe(
+          "Optional scope filter. Omit for the commons graph. Use 'vault:<id>' for vault-scoped.",
+        ),
+    },
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+  }, async (args) => {
+    try {
+      const result = await handleWikiGraph(args);
       return {
         content: [
           {
