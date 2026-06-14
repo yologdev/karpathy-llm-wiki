@@ -982,9 +982,10 @@ async function findMergeCandidates(
 /**
  * Ask the LLM which (if any) candidate page is the SAME concept as the new page.
  * Returns the chosen slug — validated to be one we actually offered (a
- * hallucination guard; longest match wins so a slug that's a substring of
- * another can't shadow it) — or `null` (→ fork). Conservative: no LLM key, an
- * empty / "none" answer, an unrecognized slug, or an LLM error all yield `null`.
+ * hallucination guard), matched as a whole TOKEN, never a loose substring, so
+ * the "none" sentinel or a short slug inside a word can't trigger a merge; if
+ * the answer names several candidates, the longest wins. Returns `null` (→ fork)
+ * on no LLM key, an empty / "none" / unrecognized answer, or an LLM error.
  */
 async function adjudicateMerge(
   concept: string,
@@ -1008,9 +1009,14 @@ async function adjudicateMerge(
     logger.warn("ingest", "merge adjudication failed; forking to a new page", err);
     return null;
   }
-  const answer = out.trim().toLowerCase();
+  // Match whole tokens (slugs keep hyphens, so "transformer" and
+  // "transformer-architecture" are distinct tokens) — never a loose substring,
+  // which could match the "none" sentinel or a short slug inside a word.
+  const answerTokens = new Set(
+    out.trim().toLowerCase().split(/[^a-z0-9-]+/).filter(Boolean),
+  );
   const matches = candidates
-    .filter((c) => answer.includes(c.slug.toLowerCase()))
+    .filter((c) => answerTokens.has(c.slug.toLowerCase()))
     .sort((a, b) => b.slug.length - a.slug.length);
   return matches[0]?.slug ?? null;
 }
@@ -1026,8 +1032,8 @@ async function adjudicateMerge(
  *   3. Adjudicated merge — retrieve nearby existing pages (embedding similarity,
  *      or a title+summary BM25 fallback) and let the LLM decide which, if any,
  *      is the SAME concept. Scoped to the SAME owner + scope, never an artifact /
- *      agent-knowledge page, so a fuzzy match can't cross silos or corrupt an
- *      artifact's markup.
+ *      agent-scoped (`agent-*`) page, so a fuzzy match can't cross silos or
+ *      corrupt an artifact's markup.
  *
  * `embedBody` is the synthesized page body used for retrieval + adjudication.
  * Returns the candidate concept slug unchanged when no confident match is found
@@ -1059,30 +1065,40 @@ async function resolveConceptSlug(
   // 3. Adjudicated merge (the robust catch for LLM concept-wording drift across
   //    sources). Retrieve nearby existing pages, keep only same-owner/same-scope
   //    non-artifact candidates, then let the LLM decide which — if any — is the
-  //    same concept.
-  const candidates: { slug: string; title: string; snippet: string }[] = [];
-  for (const hitSlug of await findMergeCandidates(concept, embedBody)) {
-    if (candidates.length >= MAX_MERGE_CANDIDATES) break;
-    if (hitSlug === candidateSlug) continue;
-    const page = await readWikiPageWithFrontmatter(hitSlug);
-    if (!page) continue;
-    const hitType =
-      typeof page.frontmatter.type === "string" ? page.frontmatter.type : "";
-    // Never fold into an artifact (slides/html) or an agent-knowledge page; only
-    // within the same owner's silo + same scope. Conservative: err toward fork.
-    if (isArtifactType(hitType) || isAgentScopedType(hitType)) continue;
-    if ((page.frontmatter.owner ?? "system") !== owner) continue;
-    if (hitType !== (pageType ?? "")) continue;
-    candidates.push({
-      slug: hitSlug,
-      title: page.title,
-      snippet: page.body.replace(/\s+/g, " ").trim().slice(0, 240),
-    });
-  }
-  if (candidates.length > 0) {
-    const chosen = await adjudicateMerge(concept, embedBody, candidates);
-    // Re-read post-adjudication (defensive: fork if it vanished concurrently).
-    if (chosen && (await readWikiPageWithFrontmatter(chosen))) return chosen;
+  //    same concept. Wrapped fail-soft: dedup is advisory, so ANY retrieval /
+  //    read / adjudication error forks a new page rather than breaking the ingest
+  //    (this path now runs on every ingest, incl. the embeddings-off BM25 case).
+  try {
+    const candidates: { slug: string; title: string; snippet: string }[] = [];
+    for (const hitSlug of await findMergeCandidates(concept, embedBody)) {
+      if (candidates.length >= MAX_MERGE_CANDIDATES) break;
+      if (hitSlug === candidateSlug) continue;
+      const page = await readWikiPageWithFrontmatter(hitSlug);
+      if (!page) continue;
+      const hitType =
+        typeof page.frontmatter.type === "string" ? page.frontmatter.type : "";
+      // Never fold into an artifact (slides/html) or an agent-scoped (`agent-*`)
+      // page; only within the same owner's silo + same scope. Err toward fork.
+      if (isArtifactType(hitType) || isAgentScopedType(hitType)) continue;
+      if ((page.frontmatter.owner ?? "system") !== owner) continue;
+      if (hitType !== (pageType ?? "")) continue;
+      candidates.push({
+        slug: hitSlug,
+        title: page.title,
+        snippet: page.body.replace(/\s+/g, " ").trim().slice(0, 240),
+      });
+    }
+    if (candidates.length > 0) {
+      const chosen = await adjudicateMerge(concept, embedBody, candidates);
+      // Re-read post-adjudication (defensive: fork if it vanished concurrently).
+      if (chosen && (await readWikiPageWithFrontmatter(chosen))) return chosen;
+    }
+  } catch (err) {
+    logger.warn(
+      "ingest",
+      "concept-merge resolution failed; forking to a new page",
+      err,
+    );
   }
 
   // 4. No confident match — fork onto the candidate concept slug.

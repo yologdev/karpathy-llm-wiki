@@ -2112,17 +2112,14 @@ describe("ingest — concept-slug convergence", () => {
 });
 
 // ---------------------------------------------------------------------------
-// ingest — semantic concept resolver (layer 3: embedding nearest-page merge)
+// ingest — concept resolver (layer 3: retrieve candidates + LLM-adjudicate merge)
 // ---------------------------------------------------------------------------
 
-describe("ingest — semantic concept resolver", () => {
+describe("ingest — concept resolver (adjudicated merge)", () => {
   beforeEach(() => {
     resetSourceIndex();
     resetAliasIndex();
     mockedHasLLMKey.mockReturnValue(true);
-    // Each ingest's synthesis reports a concept derived from the source body, so
-    // two differently-worded sources get DIFFERENT concept slugs — only the
-    // embedding step can merge them.
     mockedCallLLM.mockImplementation(async (system: string, user: string) => {
       // The adjudicator (distinct system prompt) decides merges; by default it
       // confirms a merge into "alpha-thing" whenever that candidate is offered.
@@ -2186,6 +2183,34 @@ describe("ingest — semantic concept resolver", () => {
 
     const slugs = (await listWikiPages()).map((p) => p.slug).sort();
     expect(slugs).toEqual(["alpha-thing", "beta-thing"]);
+    // Cost invariant: nothing cleared the floor → the adjudicator never ran.
+    expect(
+      mockedCallLLM.mock.calls.filter((c) => c[0].includes("decide whether")),
+    ).toHaveLength(0);
+  });
+
+  it("never folds into an artifact / agent-scoped candidate even at the same scope", async () => {
+    mockedHasEmbeddingSupport.mockReturnValue(true);
+    mockedSearchByVector.mockResolvedValue([{ slug: "alpha-thing", score: 0.95 }]);
+
+    // Both pages are agent-knowledge + same owner, so the scope-EQUALITY check
+    // passes; only the artifact/agent-scoped guard can prevent the fold here.
+    await ingest("Alpha Source", "First source, alpha topic. Details here.", {
+      pageType: "agent-knowledge",
+      owner: "alice",
+      author: "alice",
+    });
+    const result = await ingest("Beta Source", "Second source, beta wording. More.", {
+      pageType: "agent-knowledge",
+      owner: "alice",
+      author: "alice",
+    });
+
+    expect(result.primarySlug).toBe("beta-thing"); // forked, not merged
+    // The guard drops the candidate BEFORE adjudication — so it never even ran.
+    expect(
+      mockedCallLLM.mock.calls.filter((c) => c[0].includes("decide whether")),
+    ).toHaveLength(0);
   });
 
   it("forks when the adjudicator judges the candidate a DIFFERENT concept", async () => {
