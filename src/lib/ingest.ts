@@ -358,15 +358,15 @@ export async function ingestImage(
   const body =
     `# ${title}\n\n![${title}](${localPath})` + (vision ? `\n\n${vision.text}` : "");
 
-  // `prebuiltContent` writes `body` as-is (skip the wiki-editor LLM) while still
-  // reusing frontmatter, dedup, embedding, cross-refs, and the ledger — the
-  // image body (embed + vision text) is already final and small.
-  return ingest(title, body, {
-    ...options,
-    prebuiltContent: body,
-    sourceUrl: imageUrl ?? "upload",
-    sourceType: "image",
-  });
+  // The image body (embed + vision text) is already final, so pass it as the
+  // internal `prebuiltContent` to write it as-is (skip the wiki-editor LLM) while
+  // still reusing frontmatter, dedup, embedding, cross-refs, and the ledger.
+  return ingest(
+    title,
+    body,
+    { ...options, sourceUrl: imageUrl ?? "upload", sourceType: "image" },
+    { prebuiltContent: body },
+  );
 }
 
 /**
@@ -1118,13 +1118,6 @@ ${vocab.join(", ")}`;
 /** Options for the ingest pipeline. */
 export interface IngestOptions {
   /**
-   * INTERNAL: a fully-built page body to write as-is, skipping the wiki-editor
-   * LLM. Used only by `ingestImage()` — the image body (embed + vision text) is
-   * already final and small, so re-synthesizing it would be wasteful and lossy.
-   * Not exposed to API/UI callers (there is no preview/commit two-step).
-   */
-  prebuiltContent?: string;
-  /**
    * Original source URL. Set automatically by `ingestUrl()` so the URL is
    * persisted in the wiki page's frontmatter as `source_url`.
    */
@@ -1302,13 +1295,19 @@ async function attachIngestTrigger(
 /**
  * Ingest a source document into the wiki: synthesize the page (LLM) and write it
  * directly. There is no preview/commit two-step — every ingest runs synthesis
- * and writes. `options.prebuiltContent` (image path only) skips the LLM and
- * writes the supplied body as-is.
+ * and writes.
+ *
+ * `internal.prebuiltContent` skips the LLM and writes the supplied body as-is.
+ * It's a 4th INTERNAL parameter (not part of the public `IngestOptions`, which
+ * routes import) precisely so an API/UI caller can never set a "write this body
+ * verbatim" payload. The sole caller is `ingestImage()` — the image body (embed
+ * + vision text) is already final, so re-synthesizing it would be wasteful.
  */
 export async function ingest(
   title: string,
   content: string,
   options?: IngestOptions,
+  internal?: { prebuiltContent?: string },
 ): Promise<IngestResult> {
   const startedAt = new Date().toISOString();
   // Title is optional for pasted text — derive a provisional one from the
@@ -1335,7 +1334,7 @@ export async function ingest(
   // when one is derived; otherwise stays the (derived) source title.
   let pageTitle = effectiveTitle;
 
-  const prebuiltContent = options?.prebuiltContent;
+  const prebuiltContent = internal?.prebuiltContent;
 
   // Acting identity + owner come from the authenticated session (set by the
   // route), never from client input. Fall back to "system" for legacy/bootstrap.

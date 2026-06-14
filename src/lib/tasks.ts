@@ -31,8 +31,10 @@ export type Task =
       requestedBy?: string;
     }
   | {
-      /** Async ingestion — every interactive/API ingest now flows through the
-       *  queue. One of `url`, `content`, or `staged` must be set. */
+      /** Async ingestion. Every interactive/API ingest dispatches through this
+       *  Task type (enqueued on Workers; run inline off-Workers via
+       *  `enqueueOrInline`). Exactly ONE source: `url`, `content`, or `staged`
+       *  (re-ingest is the exception — it runs synchronously, never enqueued). */
       kind: "ingest";
       url?: string;
       title?: string;
@@ -184,6 +186,11 @@ export function parseTask(body: unknown): Task | null {
       const source =
         t.source === "pdf" || t.source === "image" ? t.source : undefined;
       if (!hasUrl && !hasContent && !staged) return null; // need a source
+      // Reject incoherent combinations so the consumer's branch-order precedence
+      // is an ENFORCED invariant, not a silent "first match wins". `staged` is
+      // exclusive (it's its own source); `source` only qualifies a `url`.
+      if (staged && (hasUrl || hasContent)) return null;
+      if (source && !hasUrl) return null;
       const tags =
         Array.isArray(t.tags) && t.tags.every((x) => typeof x === "string")
           ? (t.tags as string[])

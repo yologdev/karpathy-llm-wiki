@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { ingest, ingestUrl } from "@/lib/ingest";
+import { ingest, ingestUrl, deriveTitleFromContent } from "@/lib/ingest";
 import type { IngestOptions } from "@/lib/ingest";
 import { isUrl } from "@/lib/fetch";
 import { type Task } from "@/lib/tasks";
@@ -8,11 +8,12 @@ import { enqueueOrInline } from "@/lib/ingest-async";
 import { stageText } from "@/lib/ingest-staging";
 import { getPrincipal, getServicePrincipal } from "@/lib/auth";
 import { ClientInputError, getErrorMessage } from "@/lib/errors";
-import { deriveTitleFromContent } from "@/lib/ingest";
 import { logger } from "@/lib/logger";
 
 /** Pasted text larger than this is staged to R2 rather than carried inline in
- *  the queue message (Cloudflare Queues cap a message at 128 KB). */
+ *  the queue message (Cloudflare Queues cap a message at 128 KB). 96000 chars
+ *  leaves headroom under the cap for the task envelope and multibyte (UTF-8)
+ *  characters — this repo is CJK-heavy, so don't raise it toward 128k blindly. */
 const MAX_INLINE_CONTENT_CHARS = 96000;
 
 export async function POST(request: NextRequest) {

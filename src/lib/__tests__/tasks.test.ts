@@ -106,6 +106,19 @@ describe("parseTask", () => {
     ).toMatchObject({ kind: "ingest", url: "https://x.com" });
   });
 
+  it("rejects incoherent source combinations (enforced invariant, not branch-order)", () => {
+    // `staged` is exclusive — it's its own source; pairing it with url/content is
+    // ambiguous (the consumer would silently prefer staged).
+    expect(
+      parseTask({ kind: "ingest", url: "https://x", staged: { key: "raw/uploads/j/d.pdf", kind: "pdf" } }),
+    ).toBeNull();
+    expect(
+      parseTask({ kind: "ingest", content: "hi", staged: { key: "raw/uploads/j/t.md", kind: "text" } }),
+    ).toBeNull();
+    // `source` only qualifies a url — a source with no url is inert/incoherent.
+    expect(parseTask({ kind: "ingest", content: "hi", source: "pdf" })).toBeNull();
+  });
+
   it("preserves a source discriminator for URL-based pdf/image", () => {
     expect(
       parseTask({ kind: "ingest", url: "https://x/a.pdf", source: "pdf" }),
