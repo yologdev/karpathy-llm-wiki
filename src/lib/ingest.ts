@@ -11,7 +11,7 @@ import {
 } from "./wiki";
 import { buildCorpusStats, bm25Score, tokenize } from "./bm25";
 import { callLLM, hasLLMKey } from "./llm";
-import { fetchUrlContent, downloadImages, fetchImageBytes, storeImageBytes, pdfToText } from "./fetch";
+import { fetchUrlContent, fetchImageBytes, storeImageBytes, pdfToText } from "./fetch";
 import { describeImage } from "./vision";
 import { isYouTubeUrl, fetchYouTubeContent } from "./youtube";
 import { isXPostUrl, fetchXPostContent } from "./x-post";
@@ -104,7 +104,6 @@ import {
   INGEST_MAX_OUTPUT_TOKENS,
   INGEST_MAP_MAX_OUTPUT_TOKENS,
   INGEST_MAP_CONCURRENCY,
-  MAX_APPENDED_IMAGES,
   MAX_CONTENT_LENGTH,
   MAX_PDF_SIZE,
   MAX_AUTO_TAGS,
@@ -113,7 +112,6 @@ import {
 import { ClientInputError } from "./errors";
 import { slugify } from "./slugify";
 import { loadPageConventions } from "./schema";
-import { getRawDir } from "./config";
 import { resolveAlias } from "./alias-index";
 import {
   resolveSourceUrl,
@@ -244,8 +242,6 @@ export async function ingestUrl(
   }
 
   const { title, content } = await fetchUrlContent(url);
-  // Image downloading is centralized in ingest() so every path (url, text,
-  // agent, X) captures embedded images uniformly.
   return ingest(title, content, { ...options, sourceUrl: url });
 }
 
@@ -493,8 +489,7 @@ export async function reingest(
     });
   }
 
-  const { title, content: rawContent } = await fetchUrlContent(sourceUrl);
-  const content = await downloadImages(rawContent, slug, getRawDir());
+  const { title, content } = await fetchUrlContent(sourceUrl);
   return ingest(title, content, { sourceUrl, pinSlug: slug, ...opts });
 }
 
@@ -548,55 +543,15 @@ function generateFallbackPage(title: string, content: string): string {
 }
 
 // ---------------------------------------------------------------------------
-// Image preservation
+// Image handling
 // ---------------------------------------------------------------------------
 
-/** A re-hosted source image captured for the trailing Figures gallery. */
-interface SourceImageRef {
-  alt: string;
-  ref: string;
-}
-
-/** Image refs we drop outright (decorative/branding/UI — never content). */
-const DECORATIVE_IMAGE_RE = /(logo|icon|avatar|sprite|favicon|emoji|banner)/i;
-
-/**
- * Collect the RE-HOSTED source images for a trailing `## Figures` gallery. Only
- * local `assets/…` (or `raw/assets/…`) refs are kept — never a hotlinked
- * `http(s)` URL: a failed download that kept its original URL is excluded so a
- * page never re-fetches a third-party image on view (a tracking/exfil vector).
- * Decorative images are dropped, duplicates collapsed, and the list capped at
- * {@link MAX_APPENDED_IMAGES}. Run on the post-`downloadImages` content.
- */
-export function collectGalleryImages(content: string): SourceImageRef[] {
-  const images: SourceImageRef[] = [];
-  const seen = new Set<string>();
-  for (const m of content.matchAll(/!\[([^\]]*)\]\(([^)\s]+)\)/g)) {
-    const alt = m[1];
-    const ref = m[2];
-    // Re-hosted only — exclude hotlinks (failed downloads keep their URL).
-    if (!ref.startsWith("assets/") && !ref.startsWith("raw/assets/")) continue;
-    if (DECORATIVE_IMAGE_RE.test(ref) || DECORATIVE_IMAGE_RE.test(alt)) continue;
-    if (seen.has(ref)) continue;
-    seen.add(ref);
-    if (images.length >= MAX_APPENDED_IMAGES) break;
-    images.push({ alt, ref });
-  }
-  return images;
-}
-
-/** Strip all markdown image syntax so the synthesis LLM gets image-free text
- *  (images live in the trailing gallery, not inline in the body). */
+/** Strip all markdown image syntax so the synthesis LLM gets image-free text.
+ *  Source images are DROPPED from ingested pages — no inline images, no
+ *  `## Figures` gallery, and no re-hosting to R2 (clean prose for index/query,
+ *  and less storage). Single-image ingests (`ingestImage`) are unaffected. */
 export function stripImageMarkdown(content: string): string {
   return content.replace(/!\[[^\]]*\]\([^)]*\)/g, "");
-}
-
-/** Append a `## Figures` gallery of the re-hosted images to a synthesized body
- *  (no-op when there are none). */
-export function appendFigures(body: string, images: SourceImageRef[]): string {
-  if (images.length === 0) return body;
-  const figs = images.map((i) => `![${i.alt}](${i.ref})`).join("\n\n");
-  return `${body.trimEnd()}\n\n## Figures\n\n${figs}\n`;
 }
 
 // ---------------------------------------------------------------------------
@@ -1388,8 +1343,7 @@ async function attachIngestTrigger(
  * short content, MAP/REDUCE for long content (parallel map in bounded-concurrency
  * batches → merge), or a deterministic fallback page when there's no LLM key.
  * Returns the raw synthesized body (still carrying the leading CONCEPT marker on
- * the LLM path); the caller appends the Figures gallery and strips that marker
- * (order-independent — the marker leads, the gallery trails).
+ * the LLM path); the caller strips that marker.
  */
 async function synthesizeBody(title: string, content: string): Promise<string> {
   if (!hasLLMKey()) {
@@ -1500,15 +1454,6 @@ export async function ingest(
   const actor = options?.author?.trim() || "system";
   const owner = options?.owner?.trim() || actor;
 
-  // Download any images referenced in the source to local storage and rewrite
-  // their markdown refs to `assets/<slug>/...`. Centralized here (not in
-  // ingestUrl) so URL, pasted-text, agent, and X ingests all capture images.
-  // Skipped for a prebuilt body (the image-ingest path): it already ran image
-  // capture / carries local refs, so re-downloading would refetch needlessly.
-  if (!prebuiltContent) {
-    content = await downloadImages(content, slug, getRawDir());
-  }
-
   // Dedup by content: if identical content was already ingested (any slug),
   // attach the triggerer and skip the LLM + embedding.
   const hash = contentHash(content);
@@ -1531,23 +1476,11 @@ export async function ingest(
     // Image ingest: skip the LLM, write the already-final body as-is.
     wikiContent = prebuiltContent;
   } else {
-    // Source images go in a trailing `## Figures` gallery, not inline: collect
-    // the re-hosted ones, then feed the synthesizer/fallback IMAGE-FREE text so
-    // the body stays clean prose (better for index/query) with no inline images.
-    const galleryImages = collectGalleryImages(content);
-    // Observability tripwire: a sudden "0 of N" signals a regression upstream
-    // (e.g. downloadImages stopped re-hosting → all refs stay hotlinks → the
-    // re-hosted-only filter drops everything) that would otherwise vanish silently.
-    const sourceImageCount = (content.match(/!\[[^\]]*\]\([^)]*\)/g) ?? []).length;
-    if (sourceImageCount > 0) {
-      logger.debug(
-        "ingest",
-        `figures: kept ${galleryImages.length} of ${sourceImageCount} source image(s)`,
-      );
-    }
+    // Source images are dropped — strip them so the synthesizer gets image-free
+    // text and the body is clean prose (no inline images, no `## Figures`
+    // gallery, no re-hosting).
     const cleanContent = stripImageMarkdown(content);
     wikiContent = await synthesizeBody(effectiveTitle, cleanContent);
-    wikiContent = appendFigures(wikiContent, galleryImages);
   }
 
   // Pull the leading `CONCEPT:` / `ALIASES:` header lines the synthesis prompt
@@ -1588,10 +1521,6 @@ export async function ingest(
       }
     }
   }
-
-  // Re-hosted source images are collected into a trailing `## Figures` gallery
-  // (see collectGalleryImages / appendFigures) — the synthesized body is
-  // image-free prose.
 
   // A prebuilt body (image path) carries no CONCEPT marker, so the canonical
   // slug would otherwise stay the source-TITLE slug. Re-derive slug + title from

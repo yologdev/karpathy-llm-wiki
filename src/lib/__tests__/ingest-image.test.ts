@@ -129,10 +129,10 @@ describe("ingestImage", () => {
   });
 });
 
-describe("source images → bottom Figures gallery (ingest, LLM path)", () => {
-  it("appends re-hosted source images as a ## Figures gallery; body stays image-free", async () => {
+describe("source images → dropped (ingest, LLM path)", () => {
+  it("drops source images: body is image-free with no ## Figures; raw keeps the original refs", async () => {
     mockedHasLLMKey.mockReturnValue(true);
-    // The synthesizer is fed image-free text and returns clean prose (no tokens).
+    // The synthesizer is fed image-free text and returns clean prose.
     mockedCallLLM.mockResolvedValue(
       "# Doc\n\n## Summary\n\nDistilled.\n\n## Details\n\nMore.",
     );
@@ -144,40 +144,17 @@ describe("source images → bottom Figures gallery (ingest, LLM path)", () => {
     );
 
     const page = await readWikiPageWithFrontmatter(result.primarySlug);
-    // The image lives in the trailing gallery, not inline in the prose body.
-    expect(page!.content).toContain("## Figures");
-    expect(page!.content).toContain("![a chart](assets/doc/chart.png)");
-    expect(page!.content).not.toContain("[[IMG:");
-    expect(page!.content.indexOf("## Figures")).toBeGreaterThan(
-      page!.content.indexOf("## Details"),
-    );
+    // No gallery, and no image anywhere in the page body.
+    expect(page!.content).not.toContain("## Figures");
+    expect(page!.content).not.toContain("chart.png");
 
-    // Invariant: the RAW source keeps the original refs — only the synthesis
-    // INPUT is image-stripped, never `content` (which feeds saveRawSource + hash).
+    // Invariant: the RAW source is untouched — it keeps the original image ref.
     const rawId = parseSources(page!.frontmatter.sources as string)[0]?.raw_id;
     const raw = await readRawSourceById(result.primarySlug, rawId!);
     expect(raw.content).toContain("![a chart](assets/doc/chart.png)");
   });
 
-  it("drops decorative images (logo) — not added to the gallery", async () => {
-    mockedHasLLMKey.mockReturnValue(true);
-    mockedCallLLM.mockResolvedValue("# Doc\n\n## Summary\n\nText.");
-
-    const result = await ingest(
-      "Doc Logo",
-      "Intro.\n\n![site logo](assets/doc/logo.png)\n\nbody.",
-      { author: "alice", owner: "alice" },
-    );
-
-    const page = await readWikiPageWithFrontmatter(result.primarySlug);
-    expect(page!.content).not.toContain("logo.png");
-    // The only image was decorative → no gallery section at all.
-    expect(page!.content).not.toContain("## Figures");
-  });
-
-  it("no-LLM-key fallback: image appears once, in the gallery (not inline twice)", async () => {
-    // The fallback path is also fed image-free text, then the gallery is
-    // appended — so the image renders exactly once, under ## Figures.
+  it("no-LLM-key fallback also drops images (no gallery, body image-free)", async () => {
     mockedHasLLMKey.mockReturnValue(false);
 
     const result = await ingest(
@@ -187,11 +164,9 @@ describe("source images → bottom Figures gallery (ingest, LLM path)", () => {
     );
 
     const page = await readWikiPageWithFrontmatter(result.primarySlug);
-    expect(page!.content).toContain("## Figures");
-    expect((page!.content.match(/!\[a chart\]\(assets\/doc\/chart\.png\)/g) ?? []).length).toBe(1);
-    expect(page!.content.indexOf("## Figures")).toBeGreaterThan(
-      page!.content.indexOf("Some prose."),
-    );
+    expect(page!.content).not.toContain("## Figures");
+    expect(page!.content).not.toContain("chart.png");
+    expect(page!.content).toContain("Some prose.");
   });
 });
 

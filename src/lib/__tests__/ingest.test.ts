@@ -15,9 +15,7 @@ import {
   deriveTitleFromContent,
   collectTagVocabulary,
   computeConfidence,
-  collectGalleryImages,
   stripImageMarkdown,
-  appendFigures,
   mergeSourceEntry,
 } from "../ingest";
 import { slugify } from "../slugify";
@@ -3567,54 +3565,14 @@ describe("ingest attribution", () => {
   });
 });
 
-describe("collectGalleryImages / stripImageMarkdown / appendFigures", () => {
-  it("collects re-hosted (local) images only — never hotlinks", () => {
-    const src =
-      "Intro.\n\n![a chart](assets/p/chart.png)\n\n![remote](https://x.com/fig.png)\n\nbody.";
-    // The failed-download remote URL is excluded (no hotlink/tracking on view).
-    expect(collectGalleryImages(src)).toEqual([
-      { alt: "a chart", ref: "assets/p/chart.png" },
-    ]);
-  });
-
-  it("drops decorative images (logo/icon)", () => {
-    expect(
-      collectGalleryImages(
-        "![site logo](assets/p/logo.png)\n\n![diagram](assets/p/fig.png)",
-      ),
-    ).toEqual([{ alt: "diagram", ref: "assets/p/fig.png" }]);
-  });
-
-  it("dedups a repeated ref and caps at MAX_APPENDED_IMAGES", () => {
-    expect(
-      collectGalleryImages("![x](assets/p/a.png)\n\n![x again](assets/p/a.png)"),
-    ).toEqual([{ alt: "x", ref: "assets/p/a.png" }]);
-    const many = Array.from(
-      { length: 20 },
-      (_, i) => `![fig${i}](assets/p/f${i}.png)`,
-    ).join("\n\n");
-    expect(collectGalleryImages(many).length).toBe(12); // MAX_APPENDED_IMAGES
-  });
-
-  it("stripImageMarkdown removes all image syntax (body goes image-free to the LLM)", () => {
-    const out = stripImageMarkdown("a ![x](assets/p/a.png) b ![y](https://z/c.png) c");
+describe("stripImageMarkdown", () => {
+  it("removes all image syntax (ingested bodies go image-free — no gallery)", () => {
+    const out = stripImageMarkdown(
+      "a ![x](assets/p/a.png) b ![y](https://z/c.png) c",
+    );
     expect(out).not.toMatch(/!\[/);
     expect(out).toContain("a ");
     expect(out).toContain(" c");
-  });
-
-  it("appendFigures adds a trailing ## Figures gallery (no-op when empty)", () => {
-    const body = "# Title\n\nProse.";
-    expect(appendFigures(body, [])).toBe(body);
-    const withFigs = appendFigures(body, [
-      { alt: "a", ref: "assets/p/a.png" },
-      { alt: "b", ref: "assets/p/b.png" },
-    ]);
-    expect(withFigs).toContain("## Figures");
-    expect(withFigs).toContain("![a](assets/p/a.png)");
-    expect(withFigs).toContain("![b](assets/p/b.png)");
-    // Gallery is at the END, after the prose body.
-    expect(withFigs.indexOf("## Figures")).toBeGreaterThan(withFigs.indexOf("Prose."));
   });
 });
 
