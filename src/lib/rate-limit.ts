@@ -1,6 +1,6 @@
 /**
  * Coarse per-key rate limiting for the abuse/cost-sensitive public surfaces
- * (remote MCP, illustration generation). Backed by the existing `YOPEDIA_CONFIG`
+ * (remote MCP). Backed by the existing `YOPEDIA_CONFIG`
  * KV — no new infra. It's a **fixed-window counter**, so it's eventually
  * consistent and approximate (a burst may let a few extra through); that's fine
  * for a cost guard, it is NOT a precise quota. **Fail-open**: when there's no KV
@@ -27,8 +27,6 @@ export interface RateLimitRule {
 export const RATE_LIMITS = {
   /** Remote MCP: 1 unit per POST (batches are already capped at 20). */
   mcp: { limit: 60, windowSec: 60 } as RateLimitRule,
-  /** Illustration generation (paid image API; most repeats are cached reads). */
-  illustrate: { limit: 30, windowSec: 60 } as RateLimitRule,
 };
 
 /** The KV-backed store, or null outside an OpenNext Cloudflare request. */

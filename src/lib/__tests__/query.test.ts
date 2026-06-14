@@ -846,6 +846,38 @@ describe("query", () => {
     expect(prompt).toContain("[P 5](p5.md)");
     expect(prompt).not.toMatch(/more pages not listed/);
   });
+
+  it("bakes yoyo-illustration directives out of a slides answer (server-side, at /query)", async () => {
+    // The single generation point: query() bakes slides/HTML answers. With no
+    // XAI_API_KEY here, generation returns null and the directive is dropped —
+    // proving the bake ran for format=slides (no leftover fence reaches the client).
+    mockedHasLLMKey.mockReturnValue(true);
+    mockedCallLLM.mockResolvedValue(
+      "# Deck\n\n```yoyo-illustration\nyoyo waving hello\n```\n",
+    );
+    await writeWikiPage("alpha", "# Alpha\n\nAlpha content.");
+    await updateIndex([{ slug: "alpha", title: "Alpha", summary: "Alpha page" }]);
+
+    const result = await query("make slides about alpha", "slides");
+
+    expect(result.answer).not.toContain("yoyo-illustration");
+    expect(result.answer).not.toContain("yoyo waving hello");
+  });
+
+  it("does not bake prose answers (illustrations only apply to slides/HTML)", async () => {
+    // Prose isn't an illustration format, so query() skips the bake entirely — a
+    // (contrived) directive in a prose answer passes through untouched.
+    mockedHasLLMKey.mockReturnValue(true);
+    mockedCallLLM.mockResolvedValue(
+      "Prose answer.\n\n```yoyo-illustration\nyoyo waving hello\n```\n",
+    );
+    await writeWikiPage("alpha", "# Alpha\n\nAlpha content.");
+    await updateIndex([{ slug: "alpha", title: "Alpha", summary: "Alpha page" }]);
+
+    const result = await query("tell me about alpha", "prose");
+
+    expect(result.answer).toContain("```yoyo-illustration");
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -1007,13 +1039,14 @@ describe("saveAnswerToWiki", () => {
     expect(entry!.type).toBe("slides");
   });
 
-  it("bakes illustration directives at save time, keeping unfillable ones and leaving mermaid alone", async () => {
+  it("bakes illustration directives at save time, dropping unfillable ones and leaving mermaid alone", async () => {
     await ensureDirectories();
     // No XAI_API_KEY in the test env → generation returns null, so the bake runs
-    // in the save path but each directive is *kept* (onMissing: "keep"), not
-    // stripped. This proves: (1) baking is wired before the write, (2) a
-    // transient/no-key failure never drops the directive from the stored page,
-    // and (3) mermaid (free, client-rendered) is untouched by baking.
+    // in the save path and the directive is *dropped* (onMissing defaults to
+    // "drop"): with no per-view fallback, a clean page beats a broken directive
+    // baked in. This proves: (1) baking is wired before the write, (2) an
+    // unfillable directive is removed (not left as a literal fence), and (3)
+    // mermaid (free, client-rendered) is untouched by baking.
     await saveAnswerToWiki(
       "Baked Deck",
       [
@@ -1031,9 +1064,9 @@ describe("saveAnswerToWiki", () => {
 
     const page = await readWikiPage("baked-deck");
     expect(page).not.toBeNull();
-    // Directive preserved for on-demand fallback (not silently dropped)...
-    expect(page!.content).toContain("```yoyo-illustration");
-    expect(page!.content).toContain("yoyo holding a lantern");
+    // The unfillable directive is dropped — no literal fence or scene text left...
+    expect(page!.content).not.toContain("```yoyo-illustration");
+    expect(page!.content).not.toContain("yoyo holding a lantern");
     // ...and the mermaid block is left exactly as written.
     expect(page!.content).toContain("flowchart LR; A-->B");
   });

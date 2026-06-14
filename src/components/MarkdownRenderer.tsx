@@ -5,7 +5,6 @@ import remarkGfm from "remark-gfm";
 import { slugify } from "@/lib/slugify";
 import { resolveSlugPath, type SlugTenantMap } from "@/lib/links";
 import { Mermaid } from "@/components/Mermaid";
-import { YoyoIllustration } from "@/components/YoyoIllustration";
 
 /**
  * A fenced ` ```<lang> ` block arrives as a `<code class="language-<lang>">`
@@ -173,8 +172,8 @@ export function MarkdownRenderer({
           pre: ({ children, ...props }) => {
             const chart = fencedCode(children, "mermaid");
             if (chart !== null) return <Mermaid chart={chart} />;
-            const scene = fencedCode(children, "yoyo-illustration");
-            if (scene !== null) return <YoyoIllustration scene={scene} />;
+            // `yoyo-illustration` fences are baked into image refs server-side
+            // (at /query); a stray unbaked fence just renders as a code block.
             return <pre {...props}>{children}</pre>;
           },
           img: ({ src, alt, ...props }) => {

@@ -1,7 +1,5 @@
 import { describe, it, expect } from "vitest";
 import {
-  htmlHasYoyoIllustration,
-  markdownHasYoyoIllustration,
   renderYoyoIllustrationsInHtml,
   renderYoyoIllustrationsInMarkdown,
   MAX_ILLUSTRATIONS,
@@ -9,17 +7,6 @@ import {
 
 const fig = (attrs = 'data-scene="s"') =>
   `<figure class="yoyo-illustration" ${attrs}></figure>`;
-
-describe("htmlHasYoyoIllustration", () => {
-  it("detects a yoyo-illustration figure", () => {
-    expect(htmlHasYoyoIllustration(fig())).toBe(true);
-    expect(htmlHasYoyoIllustration('<figure class="x yoyo-illustration y">')).toBe(true);
-  });
-  it("is false otherwise", () => {
-    expect(htmlHasYoyoIllustration("<figure><img></figure>")).toBe(false);
-    expect(htmlHasYoyoIllustration("<p>yoyo-illustration</p>")).toBe(false);
-  });
-});
 
 describe("renderYoyoIllustrationsInHtml", () => {
   it("returns html unchanged and never fetches when there's no directive", async () => {
@@ -93,16 +80,6 @@ describe("renderYoyoIllustrationsInHtml", () => {
 const mdFence = (scene = "yoyo carrying a box") =>
   "```yoyo-illustration\n" + scene + "\n```";
 
-describe("markdownHasYoyoIllustration", () => {
-  it("detects a yoyo-illustration fence", () => {
-    expect(markdownHasYoyoIllustration(mdFence())).toBe(true);
-  });
-  it("is false otherwise", () => {
-    expect(markdownHasYoyoIllustration("```mermaid\ngraph TD\n```")).toBe(false);
-    expect(markdownHasYoyoIllustration("a yoyo-illustration in prose")).toBe(false);
-  });
-});
-
 describe("renderYoyoIllustrationsInMarkdown", () => {
   it("returns markdown unchanged and never fetches with no directive", async () => {
     let calls = 0;
@@ -115,12 +92,14 @@ describe("renderYoyoIllustrationsInMarkdown", () => {
     expect(calls).toBe(0);
   });
 
-  it("bakes the fence into a markdown image", async () => {
+  it("bakes the fence into a markdown image (slides embed the asset URL)", async () => {
     const out = await renderYoyoIllustrationsInMarkdown(
       mdFence("yoyo holding a map"),
-      async () => "data:image/jpeg;base64,AAAA",
+      async () => "/api/assets/illustrations/abc123.jpg",
     );
-    expect(out).toBe("![yoyo holding a map](data:image/jpeg;base64,AAAA)");
+    expect(out).toBe(
+      "![yoyo holding a map](/api/assets/illustrations/abc123.jpg)",
+    );
   });
 
   it("passes the trimmed scene to the fetcher", async () => {

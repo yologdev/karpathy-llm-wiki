@@ -532,6 +532,16 @@ body {
   max-width: 100%;
 }
 
+/* Slides: cap an image (e.g. a baked yoyo illustration) so it sits INSIDE the
+   slide card instead of ballooning its height — keeping slides a consistent
+   size. Scoped to .slide-content (SlidePreview) so article-body images are
+   untouched. height:auto + max-height preserves the image's aspect ratio. */
+.slide-content img {
+  display: block;
+  max-height: 12rem;
+  margin: 0.75rem auto;
+}
+
 /* ---------------------------------------------------------------------------
    Legacy mono section label. No component consumers remain (all screens use
    .fmark) — retained only for backward compat with any external/markdown HTML.

@@ -303,9 +303,19 @@ export async function query(
       format,
     );
 
-    const answer = await callLLM(systemPrompt, question, {
+    const raw = await callLLM(systemPrompt, question, {
       maxOutputTokens: QUERY_MAX_OUTPUT_TOKENS,
     });
+
+    // Bake yoyo illustrations into slides/HTML answers now, server-side: each
+    // scene is generated once, stored in R2, and the directive is replaced with
+    // its `/api/assets/…` URL. This is the single generation point — every
+    // viewer (including anonymous shares) then loads the finished image by URL
+    // with no per-view fetch. Prose/table carry no directives, so they skip it.
+    const answer =
+      format === "slides" || format === "html"
+        ? await bakeYoyoIllustrations(raw, format === "html")
+        : raw;
 
     // All slugs in the wiki are valid citation targets
     const allSlugs = entries.map((e) => e.slug);
@@ -354,12 +364,12 @@ export async function saveAnswerToWiki(
   // the commons/search corpus); plain markdown is a system-owned commons page.
   const isArtifact = contentType !== "markdown";
 
-  // Bake any `yoyo-illustration` directives into the content now (generate the
-  // image server-side, embed the data URI) so the SAVED artifact is permanent
-  // and self-contained — every viewer, including anonymous shares, sees it with
-  // no per-view fetch or auth. Mermaid stays client-rendered (it's free). A
-  // directive whose image can't be generated is left in place for on-demand
-  // fallback. No-op when there are no directives. (Slides bake as markdown.)
+  // Bake illustrations as an idempotent safety net. Answers from `query()`
+  // already have their `yoyo-illustration` directives baked into `/api/assets/…`
+  // refs (a no-op here), but a directly-supplied/edited body might still carry
+  // one — generate it server-side, store it in R2, embed the URL. A directive
+  // that can't be generated is dropped. No-op when there are none. Mermaid stays
+  // client-rendered (it's free). (Slides bake as markdown.)
   const content = await bakeYoyoIllustrations(rawContent, isHtml);
 
   // Body, by type:

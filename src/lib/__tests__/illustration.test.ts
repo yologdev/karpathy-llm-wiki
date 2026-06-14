@@ -1,5 +1,14 @@
-import { describe, it, expect, vi, afterEach } from "vitest";
-import { _internal } from "../illustration";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import fs from "fs/promises";
+import os from "os";
+import path from "path";
+import {
+  _internal,
+  generateYoyoIllustration,
+  generateYoyoIllustrationDataUri,
+} from "../illustration";
+import { getStorage, _resetStorage } from "../storage";
+import { rawRelPath } from "../wiki";
 import { SLIDES_FORMAT_INSTRUCTION, HTML_FORMAT_INSTRUCTION } from "../query";
 
 describe("buildIllustrationPrompt", () => {
@@ -78,5 +87,83 @@ describe("callGrok request format", () => {
       async () => new Response("bad request", { status: 400 }),
     );
     await expect(_internal.callGrok("x", "k")).resolves.toBeNull();
+  });
+});
+
+describe("generateYoyoIllustration (R2 asset cache)", () => {
+  let tmpDir: string;
+  const saved: Record<string, string | undefined> = {};
+
+  beforeEach(async () => {
+    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "illustration-"));
+    for (const k of ["DATA_DIR", "WIKI_DIR", "RAW_DIR", "XAI_API_KEY"]) {
+      saved[k] = process.env[k];
+    }
+    process.env.DATA_DIR = tmpDir;
+    process.env.WIKI_DIR = path.join(tmpDir, "wiki");
+    process.env.RAW_DIR = path.join(tmpDir, "raw");
+    process.env.XAI_API_KEY = "test-key";
+    _resetStorage(); // re-root storage at this test's fresh tmpDir
+  });
+
+  afterEach(async () => {
+    vi.unstubAllGlobals();
+    for (const k of ["DATA_DIR", "WIKI_DIR", "RAW_DIR", "XAI_API_KEY"]) {
+      if (saved[k] === undefined) delete process.env[k];
+      else process.env[k] = saved[k];
+    }
+    _resetStorage();
+    await fs.rm(tmpDir, { recursive: true, force: true });
+  });
+
+  // Stub Grok's image-edits endpoint to return a tiny jpeg (base64 "QUJD" =
+  // bytes "ABC"). Returns a counter so a test can assert how often Grok was hit.
+  function stubGrok(): () => number {
+    let calls = 0;
+    vi.stubGlobal("fetch", async () => {
+      calls++;
+      return new Response(JSON.stringify({ data: [{ b64_json: "QUJD" }] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    });
+    return () => calls;
+  }
+
+  it("generates on a miss, stores the asset in R2, returns its /api/assets URL", async () => {
+    const grokCalls = stubGrok();
+    const url = await generateYoyoIllustration("yoyo sorting boxes", "English");
+
+    const key = _internal.cacheKeyFor("yoyo sorting boxes", "English");
+    expect(url).toBe(`/api/assets/illustrations/${key}.jpg`);
+    expect(grokCalls()).toBe(1);
+
+    // The bytes ("ABC") landed at the raw asset path the /api/assets route serves.
+    const stored = await getStorage().readAsset(
+      rawRelPath(`assets/illustrations/${key}.jpg`),
+    );
+    expect(new Uint8Array(stored)).toEqual(new Uint8Array([0x41, 0x42, 0x43]));
+  });
+
+  it("is a cache hit on a repeat scene — no second Grok call", async () => {
+    const grokCalls = stubGrok();
+    const a = await generateYoyoIllustration("same scene");
+    const b = await generateYoyoIllustration("same scene");
+    expect(a).not.toBeNull();
+    expect(b).toBe(a);
+    // The second call short-circuits on the asset's existence (stat), not Grok.
+    expect(grokCalls()).toBe(1);
+  });
+
+  it("returns null when XAI_API_KEY is unset and the scene isn't cached", async () => {
+    delete process.env.XAI_API_KEY;
+    expect(await generateYoyoIllustration("unkeyed scene")).toBeNull();
+  });
+
+  it("data-URI variant inlines the stored bytes (for the sandboxed HTML iframe)", async () => {
+    stubGrok();
+    const dataUri = await generateYoyoIllustrationDataUri("html scene");
+    // bytes "ABC" re-encoded back to base64 "QUJD".
+    expect(dataUri).toBe("data:image/jpeg;base64,QUJD");
   });
 });

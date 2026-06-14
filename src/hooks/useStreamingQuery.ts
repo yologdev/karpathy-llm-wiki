@@ -97,6 +97,28 @@ export function useStreamingQuery(
       onSubmitStartRef.current?.();
 
       try {
+        // Slides/HTML are baked server-side (each illustration generated once →
+        // stored in R2), so they're produced COMPLETE by the non-streaming
+        // /api/query — the full answer must exist before its image can be baked
+        // in, so there's no token streaming for these; the loading spinner
+        // covers the wait. Prose/table (no illustrations) stream as usual.
+        if (format === "slides" || format === "html") {
+          const res = await fetch("/api/query", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ question: trimmed, format, scope: effectiveScope }),
+            signal: controller.signal,
+          });
+          const data = await res.json().catch(() => null);
+          if (!res.ok || !data) {
+            setError(data?.error ?? `Request failed (${res.status})`);
+            return;
+          }
+          setResult(data);
+          onCompleteRef.current?.(trimmed, data.answer, data.sources, format);
+          return;
+        }
+
         // Try the streaming endpoint first
         const res = await fetch("/api/query/stream", {
           method: "POST",

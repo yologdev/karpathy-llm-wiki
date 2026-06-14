@@ -10,10 +10,6 @@ import {
   HTML_HEIGHT_MESSAGE_KEY,
 } from "@/lib/html";
 import { htmlHasMermaid, renderMermaidInHtml } from "@/lib/mermaid";
-import {
-  htmlHasYoyoIllustration,
-  renderYoyoIllustrationsInHtml,
-} from "@/lib/illustration-render";
 import { logger } from "@/lib/logger";
 
 /**
@@ -72,10 +68,11 @@ export function HtmlPreview({
   }, [needsChart, chartLib]);
 
   // Transform the model HTML in the parent app before it reaches the iframe:
-  // (1) Mermaid `<pre class="mermaid">` → inline SVG, (2) `yoyo-illustration`
-  // figures → generated data-URI images. Both keep the iframe self-contained
-  // (static SVG / `data:` image — no library injection, no CSP exception, no
-  // network). Starts from the raw html and swaps in the transformed version.
+  // Mermaid `<pre class="mermaid">` → inline SVG, keeping the iframe
+  // self-contained (static SVG — no library injection, no network). yoyo
+  // illustrations are already baked into self-contained `data:` <img> refs
+  // server-side (at /query), so there's nothing to fill in here. Starts from the
+  // raw html and swaps in the transformed version.
   const [renderedHtml, setRenderedHtml] = useState(html);
   useEffect(() => {
     let cancelled = false;
@@ -87,13 +84,6 @@ export function HtmlPreview({
           out = await renderMermaidInHtml(out);
         } catch (err) {
           logger.warn("html", "mermaid render failed; showing source", err);
-        }
-      }
-      if (htmlHasYoyoIllustration(out)) {
-        try {
-          out = await renderYoyoIllustrationsInHtml(out);
-        } catch (err) {
-          logger.warn("html", "yoyo illustration render failed", err);
         }
       }
       if (!cancelled && out !== html) setRenderedHtml(out);

@@ -1,4 +1,5 @@
 import { getStorage } from "./storage";
+import { rawRelPath } from "./wiki";
 import { isEnoent } from "./errors";
 import { logger } from "./logger";
 import { YOYO_REFERENCE_PNG_BASE64 } from "./vendor/yoyo-reference.generated";
@@ -49,17 +50,26 @@ function cacheKeyFor(scene: string, lang: string): string {
   );
 }
 
-function relPathFor(key: string): string {
-  return `illustrations/${key}.txt`;
+/** R2 asset ref a generated scene is stored + referenced under (markdown/URL
+ *  facing); `rawRelPath` maps it to the underlying storage key. */
+function assetRefFor(key: string): string {
+  return `assets/illustrations/${key}.jpg`;
 }
 
-async function readCache(key: string): Promise<string | null> {
-  try {
-    return await getStorage().readFile(relPathFor(key));
-  } catch (err) {
-    if (isEnoent(err)) return null;
-    throw err;
-  }
+/** Public, no-auth URL the answer embeds — served by `/api/assets/[...path]`
+ *  (immutable cache). Matches `resolveImageSrc` for `assets/…` refs. */
+function assetUrlFor(key: string): string {
+  return `/api/assets/illustrations/${key}.jpg`;
+}
+
+/** Decode a `data:image/…;base64,<b64>` URI to its raw bytes for asset storage. */
+function bytesFromDataUri(dataUri: string): ArrayBuffer {
+  const comma = dataUri.indexOf(",");
+  const b64 = comma >= 0 ? dataUri.slice(comma + 1) : dataUri;
+  const bin = atob(b64);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return bytes.buffer;
 }
 
 /** Call Grok's image-edits endpoint with the brand reference → a jpeg data URI.
@@ -114,24 +124,44 @@ async function callGrok(prompt: string, key: string): Promise<string | null> {
   return null;
 }
 
+/** Encode raw image bytes as a `data:image/jpeg` URI — for the self-contained
+ *  HTML-iframe path (see {@link generateYoyoIllustrationDataUri}). */
+function dataUriFromBytes(bytes: ArrayBuffer): string {
+  const buf = new Uint8Array(bytes);
+  let bin = "";
+  for (let i = 0; i < buf.length; i++) bin += String.fromCharCode(buf[i]);
+  return `data:image/jpeg;base64,${btoa(bin)}`;
+}
+
 /**
- * Generate (or return a cached) yoyo illustration for a scene, as a jpeg data
- * URI. Returns `null` when there's no `XAI_API_KEY` or generation fails — the
- * caller renders the answer without the illustration.
+ * Ensure a scene's illustration exists in R2, generating + storing it on a miss.
+ * The scene-hash is the cache: a repeat scene is a metadata `stat` (no Grok
+ * call, no spend). Returns the cache key + storage key, or `null` when there's
+ * no `XAI_API_KEY` or generation/storage fails. Shared by both entry points
+ * below (URL for slides, data URI for HTML).
  */
-export async function generateYoyoIllustration(
+async function ensureIllustrationAsset(
   scene: string,
-  lang = "English",
-): Promise<string | null> {
+  lang: string,
+): Promise<{ key: string; storageKey: string } | null> {
   const trimmed = scene.trim();
   if (!trimmed) return null;
 
   const key = cacheKeyFor(trimmed, lang);
-  const cached = await readCache(key).catch((err) => {
-    logger.warn("illustration", "illustration cache read failed", err);
-    return null;
-  });
-  if (cached) return cached;
+  const storageKey = rawRelPath(assetRefFor(key));
+
+  // Cache hit: the asset already exists → no Grok call. `stat` fetches only
+  // metadata (cheaper than reading bytes). A genuine miss falls through to
+  // generate; a real storage error logs but still falls through (degrade to a
+  // regen attempt, never hard-fail).
+  try {
+    await getStorage().stat(storageKey);
+    return { key, storageKey };
+  } catch (err) {
+    if (!isEnoent(err)) {
+      logger.warn("illustration", "illustration cache stat failed", err);
+    }
+  }
 
   const apiKey = process.env.XAI_API_KEY;
   if (!apiKey) return null;
@@ -145,32 +175,86 @@ export async function generateYoyoIllustration(
   }
   if (!dataUri) return null;
 
-  await getStorage()
-    .writeFile(relPathFor(key), dataUri)
-    .catch((err) => logger.warn("illustration", "illustration cache write failed", err));
-  return dataUri;
+  // Store the bytes as a reusable R2 asset. A write failure returns `null` (drop
+  // the illustration) rather than referencing an asset that would 404 — the next
+  // request for this scene retries the generation.
+  try {
+    await getStorage().writeAsset(storageKey, bytesFromDataUri(dataUri));
+  } catch (err) {
+    logger.warn("illustration", "illustration asset write failed", err);
+    return null;
+  }
+  return { key, storageKey };
 }
 
 /**
- * Bake any `yoyo-illustration` directives in a saved answer into the content
- * itself — generating each image server-side (cache-first) and embedding the
- * `data:` URI — so the stored artifact is self-contained: it renders for every
- * viewer (including anonymous shares) with no per-view fetch or auth. Called at
- * save time. Generation failures leave the directive in place (`onMissing:
- * "keep"`) so a transient hiccup never permanently strips it. Returns the
- * content unchanged when it carries no directives; a missing API key (or any
- * generation failure) likewise leaves every directive in place via that same
- * `onMissing: "keep"`.
+ * Generate (or return a cached) yoyo illustration and return its **servable
+ * `/api/assets/…` URL** — for slides/markdown, rendered in the main document
+ * where a same-origin URL loads normally. Returns `null` on failure (the caller
+ * renders without the illustration). Called server-side at answer generation
+ * time (`query()`), so every viewer — including anonymous shares — loads the
+ * finished image by URL with no per-view fetch.
+ */
+export async function generateYoyoIllustration(
+  scene: string,
+  lang = "English",
+): Promise<string | null> {
+  const asset = await ensureIllustrationAsset(scene, lang);
+  return asset ? assetUrlFor(asset.key) : null;
+}
+
+/**
+ * Same generation, returned as a self-contained `data:` URI — for the **HTML
+ * artifact**, which renders in a sandboxed iframe with an opaque origin. Its CSP
+ * (`img-src data:`) can't load a same-origin `/api/assets` URL (`'self'` never
+ * matches an opaque origin), so the image is inlined. The bytes still live in R2
+ * (shared scene-hash cache → no per-view Grok); this reads them back. Returns
+ * `null` on failure.
+ */
+export async function generateYoyoIllustrationDataUri(
+  scene: string,
+  lang = "English",
+): Promise<string | null> {
+  const asset = await ensureIllustrationAsset(scene, lang);
+  if (!asset) return null;
+  try {
+    return dataUriFromBytes(await getStorage().readAsset(asset.storageKey));
+  } catch (err) {
+    logger.warn("illustration", "illustration asset read failed", err);
+    return null;
+  }
+}
+
+/**
+ * Bake every `yoyo-illustration` directive in an answer into a real image
+ * reference — generating each scene server-side (cache-first), storing it in R2.
+ * Slides embed the `/api/assets/…` URL; the HTML artifact embeds a self-contained
+ * `data:` URI (its sandboxed iframe can't load a same-origin URL). Called at
+ * answer generation time (`query()`) and, idempotently, at save time. A directive
+ * whose image can't be generated is **dropped** (the default `onMissing`): with
+ * no per-view fallback to retry it, a clean answer with no illustration beats a
+ * broken placeholder baked into a saved page. Returns the content unchanged when
+ * it carries no directives. Mermaid stays client-rendered (it's free).
  */
 export async function bakeYoyoIllustrations(
   content: string,
   isHtml: boolean,
 ): Promise<string> {
-  const fetcher = (scene: string, lang: string) =>
-    generateYoyoIllustration(scene, lang);
   return isHtml
-    ? renderYoyoIllustrationsInHtml(content, fetcher, { onMissing: "keep" })
-    : renderYoyoIllustrationsInMarkdown(content, fetcher, { onMissing: "keep" });
+    ? renderYoyoIllustrationsInHtml(content, (scene, lang) =>
+        generateYoyoIllustrationDataUri(scene, lang),
+      )
+    : renderYoyoIllustrationsInMarkdown(content, (scene, lang) =>
+        generateYoyoIllustration(scene, lang),
+      );
 }
 
-export const _internal = { buildIllustrationPrompt, cacheKeyFor, callGrok };
+export const _internal = {
+  buildIllustrationPrompt,
+  cacheKeyFor,
+  callGrok,
+  assetRefFor,
+  assetUrlFor,
+  bytesFromDataUri,
+  dataUriFromBytes,
+};
