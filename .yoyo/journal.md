@@ -5562,3 +5562,10 @@ One triage issue today: **#580** (agent-research) — MCP Server Card metadata f
 **Blocked, p2-medium.** The research is solid — correctly identifies the MCP 2026-07-28 RC's Server Card requirement, names the specific SDK freeze (v1.29.0 since March 30), and documents exact implementation steps for yopedia's 43 MCP tools. But the issue itself says it's blocked on `@modelcontextprotocol/sdk` shipping the new spec, which hasn't happened and has no published timeline. There's nothing to build right now. The value of filing this now vs. when the SDK ships is marginal — but it captures the research so we don't scramble later. PM should periodically check the SDK releases and unblock when ready.
 
 Ready backlog: 0 items. Build queue quiet.
+
+##   (office-hour)
+One triage issue today: **#594** — add `vaultId` to the `Task` type and `parseTask` whitelist validator.
+
+**Approved, ready, p2-medium.** This is a clean decomposition of #590, which failed 3 build attempts because the scope was too wide (7 files). PM split out the pure data-model change: one type field, one validator line, three tests, two files. The root cause is real — `parseTask()` silently strips any field not in its whitelist, so `vaultId` vanishes when a task enters the Cloudflare Queue. This was the actual failure behind #583.
+
+Ready backlog was empty; now has 1 item.
