@@ -6,6 +6,7 @@ import {
   _internal,
   generateYoyoIllustration,
   generateYoyoIllustrationDataUri,
+  bakeYoyoIllustrations,
 } from "../illustration";
 import { getStorage, _resetStorage } from "../storage";
 import { rawRelPath } from "../wiki";
@@ -108,6 +109,7 @@ describe("generateYoyoIllustration (R2 asset cache)", () => {
 
   afterEach(async () => {
     vi.unstubAllGlobals();
+    vi.restoreAllMocks(); // restore any storage spies (write-failure test)
     for (const k of ["DATA_DIR", "WIKI_DIR", "RAW_DIR", "XAI_API_KEY"]) {
       if (saved[k] === undefined) delete process.env[k];
       else process.env[k] = saved[k];
@@ -165,5 +167,45 @@ describe("generateYoyoIllustration (R2 asset cache)", () => {
     const dataUri = await generateYoyoIllustrationDataUri("html scene");
     // bytes "ABC" re-encoded back to base64 "QUJD".
     expect(dataUri).toBe("data:image/jpeg;base64,QUJD");
+  });
+
+  it("data-URI variant is a cache hit on a repeat scene — no second Grok call", async () => {
+    const grokCalls = stubGrok();
+    const a = await generateYoyoIllustrationDataUri("repeat html scene");
+    const b = await generateYoyoIllustrationDataUri("repeat html scene");
+    expect(a).not.toBeNull();
+    expect(b).toBe(a);
+    // Same stat short-circuit as the URL path — the HTML view never re-hits Grok.
+    expect(grokCalls()).toBe(1);
+  });
+
+  it("returns null when storing the asset fails (drops it rather than referencing a 404)", async () => {
+    stubGrok();
+    vi.spyOn(getStorage(), "writeAsset").mockRejectedValueOnce(
+      new Error("disk full"),
+    );
+    expect(await generateYoyoIllustration("write-fail scene")).toBeNull();
+  });
+
+  it("bakeYoyoIllustrations pairs each format with the right reference (HTML→data URI, slides→/api/assets URL)", async () => {
+    // The load-bearing CSP invariant: HTML (sandboxed, opaque origin) must get a
+    // self-contained data: URI, while slides (main document) get the asset URL.
+    // A future swap of the two fetchers would ship broken iframe images — lock it.
+    stubGrok();
+
+    const html = await bakeYoyoIllustrations(
+      '<figure class="yoyo-illustration" data-scene="a robot"></figure>',
+      true,
+    );
+    expect(html).toContain('<img src="data:image/jpeg;base64,QUJD"');
+    expect(html).not.toContain("/api/assets");
+
+    const md = await bakeYoyoIllustrations(
+      "```yoyo-illustration\na fish\n```",
+      false,
+    );
+    const key = _internal.cacheKeyFor("a fish", "English");
+    expect(md).toBe(`![a fish](/api/assets/illustrations/${key}.jpg)`);
+    expect(md).not.toContain("data:");
   });
 });

@@ -57,9 +57,10 @@ function assetRefFor(key: string): string {
 }
 
 /** Public, no-auth URL the answer embeds — served by `/api/assets/[...path]`
- *  (immutable cache). Matches `resolveImageSrc` for `assets/…` refs. */
+ *  (immutable cache). Derived from the asset ref so the stored path and the
+ *  embedded URL can't drift; mirrors `resolveImageSrc`'s `assets/…`→`/api/assets/…`. */
 function assetUrlFor(key: string): string {
-  return `/api/assets/illustrations/${key}.jpg`;
+  return `/api/assets/${assetRefFor(key).slice("assets/".length)}`;
 }
 
 /** Decode a `data:image/…;base64,<b64>` URI to its raw bytes for asset storage. */
@@ -241,7 +242,10 @@ export async function bakeYoyoIllustrations(
   isHtml: boolean,
 ): Promise<string> {
   return isHtml
-    ? renderYoyoIllustrationsInHtml(content, (scene, lang) =>
+    ? // HTML → a self-contained `data:` URI: the sandboxed iframe's opaque
+      // origin can't load a same-origin `/api/assets` URL, so do NOT swap in the
+      // URL fetcher (`generateYoyoIllustration`) here.
+      renderYoyoIllustrationsInHtml(content, (scene, lang) =>
         generateYoyoIllustrationDataUri(scene, lang),
       )
     : renderYoyoIllustrationsInMarkdown(content, (scene, lang) =>

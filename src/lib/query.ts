@@ -386,8 +386,8 @@ export async function saveAnswerToWiki(
       : content;
 
   // Summary comes from plain text: tag-stripped for HTML; for markdown/slides,
-  // heading-stripped — and with baked illustration images dropped so a giant
-  // `data:` URI never leaks into the summary/index.
+  // heading-stripped — and with baked illustration images stripped so an image
+  // ref (an `/api/assets` URL, or a `data:` URI) never leaks into the summary/index.
   const plainContent = isHtml
     ? htmlToPlainText(html)
     : content
