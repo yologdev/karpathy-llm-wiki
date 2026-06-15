@@ -22,6 +22,7 @@ vi.mock("@/mcp", () => ({
   handleReingest: vi.fn(),
   handleCreatePage: vi.fn(async () => ({ slug: "x", title: "X", created: true })),
   handleSaveQueryAnswer: vi.fn(),
+  handleMaintenanceScan: vi.fn(async () => ({ tasks: [] })),
 }));
 
 import { verifyAgentToken, getAgent } from "@/lib/agents";
@@ -59,6 +60,14 @@ describe("POST /api/mcp — auth resolution", () => {
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.result.tools.length).toBeGreaterThan(0);
+  });
+
+  it("maintenance_scan appears in the tool list", async () => {
+    const res = await POST(post({ id: 1, method: "tools/list" }));
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    const toolNames = body.result.tools.map((t: { name: string }) => t.name);
+    expect(toolNames).toContain("maintenance_scan");
   });
 
   it("401s a presented-but-invalid token (not a silent downgrade to anon)", async () => {

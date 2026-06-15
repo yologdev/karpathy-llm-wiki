@@ -50,6 +50,7 @@
     "vault_rename",
     "vault_delete",
     "list_vaults",
-    "vault_pages"
+    "vault_pages",
+    "maintenance_scan"
   ]
 }

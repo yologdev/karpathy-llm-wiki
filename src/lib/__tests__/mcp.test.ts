@@ -43,6 +43,7 @@ import {
   handleListVaults,
   handleVaultPages,
   handleWikiGraph,
+  handleMaintenanceScan,
   createMcpServer,
 } from "../../mcp";
 import { vaultIdFor, listVaults, getVault } from "../vault";
@@ -4017,6 +4018,49 @@ describe("revert_revision", () => {
     await expect(
       handleRevertRevision({ slug: "test-page", timestamp: 0 }),
     ).rejects.toThrow("timestamp must be a positive number");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// maintenance_scan
+// ---------------------------------------------------------------------------
+
+describe("maintenance_scan", () => {
+  it("returns tasks with default cap", async () => {
+    // Create an orphan page (on disk, not in index) so the scan has something to find
+    await writeTestPage(
+      "orphan-maint",
+      "---\ntags: [test]\n---\n# Orphan Maintenance\n\nThis page has real content that is long enough to not be empty.",
+    );
+    await writeIndex([]); // empty index → orphan-maint is an orphan
+
+    const result = await handleMaintenanceScan({});
+    expect(result).toHaveProperty("tasks");
+    expect(Array.isArray(result.tasks)).toBe(true);
+    // Should find at least the orphan page
+    expect(result.tasks.length).toBeGreaterThanOrEqual(1);
+    expect(result.tasks.length).toBeLessThanOrEqual(10); // default cap
+
+    // Each task has the required fields
+    for (const task of result.tasks) {
+      expect(task).toHaveProperty("kind");
+      expect(task).toHaveProperty("op");
+      expect(task).toHaveProperty("slug");
+    }
+  });
+
+  it("respects a custom cap", async () => {
+    // Create multiple orphan pages
+    for (let i = 0; i < 5; i++) {
+      await writeTestPage(
+        `orphan-cap-${i}`,
+        `---\ntags: [test]\n---\n# Orphan Cap ${i}\n\nThis page has real content that is long enough to not be empty.`,
+      );
+    }
+    await writeIndex([]); // none in index → all orphans
+
+    const result = await handleMaintenanceScan({ cap: 3 });
+    expect(result.tasks.length).toBeLessThanOrEqual(3);
   });
 });
 

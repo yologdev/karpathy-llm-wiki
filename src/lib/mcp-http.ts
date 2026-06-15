@@ -29,6 +29,7 @@ import {
   handleReingest,
   handleCreatePage,
   handleSaveQueryAnswer,
+  handleMaintenanceScan,
 } from "@/mcp";
 import { readWikiPageWithFrontmatter } from "@/lib/wiki";
 import { canWriteFrontmatter } from "@/lib/authz";
@@ -258,6 +259,19 @@ export const MCP_TOOLS: ToolDef[] = [
       }
       return handleReingest({ slug });
     },
+  },
+  {
+    name: "maintenance_scan",
+    description:
+      "Scan the wiki for maintenance tasks (disputed pages, expired sources, orphans, broken links). Read-only — returns candidates; does not enqueue or execute work.",
+    inputSchema: schema({
+      cap: { type: "number", description: "Max tasks to return (default 10)" },
+    }),
+    write: false,
+    run: (a) =>
+      handleMaintenanceScan(
+        a as Parameters<typeof handleMaintenanceScan>[0],
+      ),
   },
 ];
 

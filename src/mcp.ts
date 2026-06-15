@@ -48,6 +48,7 @@
  *   vault_delete       — Delete a vault
  *   list_vaults        — List all named vaults for a user
  *   vault_pages        — List enriched page entries curated into a named vault
+ *   maintenance_scan   — Scan the wiki for maintenance tasks (read-only health check)
  *
  * Usage:
  *   pnpm mcp          # starts the stdio server
@@ -92,6 +93,7 @@ import { belongsInCommons } from "./lib/commons";
 import { reconcileFromTalk, type ReconcileFromTalkResult } from "./lib/reconcile";
 import { buildWikiGraph, type GraphNode, type GraphEdge } from "./lib/graph-build";
 import { mergePages, type MergePagesResult } from "./lib/merge";
+import { scanForMaintenance } from "./lib/maintenance";
 import { logger } from "./lib/logger";
 import type { TalkThread, TalkComment } from "./lib/types";
 
@@ -1276,6 +1278,18 @@ export async function handleReingest(args: {
     throw new Error("slug is required");
   }
   return reingest(args.slug);
+}
+
+// ---------------------------------------------------------------------------
+// Maintenance scan handler
+// ---------------------------------------------------------------------------
+
+export async function handleMaintenanceScan(args: {
+  cap?: number | undefined;
+}): Promise<{ tasks: Awaited<ReturnType<typeof scanForMaintenance>> }> {
+  const cap = args.cap ?? 10;
+  const tasks = await scanForMaintenance(cap);
+  return { tasks };
 }
 
 // ---------------------------------------------------------------------------
@@ -3405,6 +3419,46 @@ export function createMcpServer(): McpServer {
   }, async (args) => {
     try {
       const result = await handleVaultDelete(args);
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: JSON.stringify(result, null, 2),
+          },
+        ],
+      };
+    } catch (err) {
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: (err as Error).message,
+          },
+        ],
+        isError: true,
+      };
+    }
+  });
+
+  // maintenance_scan — Scan for wiki maintenance tasks (read-only health check)
+  server.registerTool("maintenance_scan", {
+    description:
+      "Scan the wiki for maintenance tasks — disputed pages needing reconciliation, expired pages needing reingest, orphan/stale entries, broken links, and more. Returns candidate tasks the agent can act on using existing tools. Does NOT enqueue or execute any work.",
+    inputSchema: {
+      cap: z
+        .number()
+        .optional()
+        .describe("Maximum number of tasks to return (default: 10)"),
+    },
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+  }, async (args) => {
+    try {
+      const result = await handleMaintenanceScan(args);
       return {
         content: [
           {
