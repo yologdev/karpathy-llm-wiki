@@ -116,4 +116,60 @@ describe("getPrincipal", () => {
     } as never);
     expect(await getPrincipal()).toEqual({ id: "user_3", handle: "user_3" });
   });
+
+  it("prefers the username even when an X account is also connected", async () => {
+    // The whole point of requiring a username: it's the stable /u/<handle>
+    // basis and must win over a connected X handle (guards a reordering).
+    mockedAuth.mockResolvedValue({ userId: "user_4" } as never);
+    mockedCurrentUser.mockResolvedValue({
+      username: "jane",
+      externalAccounts: [{ provider: "oauth_x", username: "xjane" }],
+    } as never);
+    expect(await getPrincipal()).toEqual({ id: "user_4", handle: "jane" });
+  });
+
+  it("matches an oauth_twitter provider, not just oauth_x", async () => {
+    mockedAuth.mockResolvedValue({ userId: "user_5" } as never);
+    mockedCurrentUser.mockResolvedValue({
+      username: null,
+      externalAccounts: [{ provider: "oauth_twitter", username: "tjane" }],
+    } as never);
+    expect(await getPrincipal()).toEqual({ id: "user_5", handle: "tjane" });
+  });
+
+  it("does not treat a non-X provider's handle as the user handle", async () => {
+    // The provider regex is anchored so e.g. Google never leaks its handle.
+    mockedAuth.mockResolvedValue({ userId: "user_6" } as never);
+    mockedCurrentUser.mockResolvedValue({
+      username: null,
+      externalAccounts: [{ provider: "oauth_google", username: "gjane" }],
+    } as never);
+    expect(await getPrincipal()).toEqual({ id: "user_6", handle: "user_6" });
+  });
+
+  it("picks the X account among several external accounts", async () => {
+    mockedAuth.mockResolvedValue({ userId: "user_7" } as never);
+    mockedCurrentUser.mockResolvedValue({
+      username: null,
+      externalAccounts: [
+        { provider: "oauth_google", username: "gjane" },
+        { provider: "oauth_x", username: "xjane" },
+      ],
+    } as never);
+    expect(await getPrincipal()).toEqual({ id: "user_7", handle: "xjane" });
+  });
+
+  it("falls back to the user id when a connected X account has no username", async () => {
+    mockedAuth.mockResolvedValue({ userId: "user_8" } as never);
+    mockedCurrentUser.mockResolvedValue({
+      username: null,
+      externalAccounts: [{ provider: "oauth_x", username: null }],
+    } as never);
+    expect(await getPrincipal()).toEqual({ id: "user_8", handle: "user_8" });
+  });
+
+  it("returns null (fails closed) when Clerk throws outside a request context", async () => {
+    mockedAuth.mockRejectedValue(new Error("no request context"));
+    expect(await getPrincipal()).toBeNull();
+  });
 });

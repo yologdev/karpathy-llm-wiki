@@ -5,16 +5,19 @@
 // The unauthenticated-write hole is closed in middleware (any /api write needs
 // a session). This module resolves *who* the signed-in user is, for write
 // attribution (`owner`/`authors`) — the route never trusts a client-supplied
-// author. The principal handle is the Clerk username (required at sign-up, so
-// it's the stable basis for /u/<handle> URLs); for legacy X-only accounts that
-// never set a username it falls back to the connected Twitter/X handle.
+// author. The principal handle is the Clerk username when set (the email/waitlist
+// sign-up flow is configured to require one, so it's the stable basis for
+// /u/<handle> URLs); it falls back to a connected Twitter/X handle, then the
+// user id, for accounts that lack one (legacy X-only, or if the dashboard
+// requirement is relaxed).
 
 import { auth, currentUser } from "@clerk/nextjs/server";
 
 export interface Principal {
   /** Stable Clerk user id (never changes). */
   id: string;
-  /** Twitter/X handle (falls back to Clerk username, then the user id). */
+  /** URL/display handle: the Clerk username when set, else a connected
+   *  Twitter/X handle, else the user id. */
   handle: string;
 }
 
@@ -25,10 +28,13 @@ interface ExternalAccountLike {
 }
 
 /**
- * Resolve a user's handle, or null. Prefers the Clerk `username` (required at
- * sign-up, so present for everyone who joined via the waitlist/email flow);
- * falls back to a connected Twitter/X account's handle for legacy X-only
- * accounts that predate the username requirement.
+ * Resolve a user's handle, or null. Prefers the Clerk `username` (the
+ * email/waitlist sign-up flow is configured to require one, so it's the stable
+ * `/u/<handle>` basis); falls back to a connected Twitter/X account's handle —
+ * e.g. for legacy X-only accounts that predate the username requirement, or if
+ * that dashboard requirement is ever relaxed — and ultimately to the user id in
+ * `getPrincipal`. The fallbacks are why this stays defensive rather than
+ * assuming a username is always present.
  */
 function resolveHandle(user: {
   username?: string | null;

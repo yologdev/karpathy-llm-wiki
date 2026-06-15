@@ -11,9 +11,9 @@ export const metadata: Metadata = {
  *
  * Registration is gated in Clerk (waitlist sign-up mode, set in the Clerk
  * dashboard), so a brand-new visitor can't create an account directly: they
- * leave an email here, and the site owner approves them from the dashboard
- * (which sends an invitation email to finish sign-up). Reading the commons
- * stays fully public — this only gates *joining*.
+ * leave an email here, then get approved out-of-band in Clerk (the dashboard's
+ * waitlist, which emails an invite to finish sign-up). Reading the commons stays
+ * fully public — this only gates *joining*.
  *
  * The optional catch-all segment (`[[...waitlist]]`) lets Clerk's `<Waitlist />`
  * own any sub-routes of its flow without a 404 (per Clerk's Next.js setup).
