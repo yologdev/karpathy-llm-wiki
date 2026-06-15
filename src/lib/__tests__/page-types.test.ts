@@ -28,6 +28,7 @@ function entry(over: Partial<IndexEntry>): IndexEntry {
     slug: over.slug ?? "s",
     title: over.title ?? "T",
     summary: over.summary ?? "",
+    owner: "alice", // a human owner by default; override to test the filter
     ...over,
   };
 }
@@ -51,6 +52,40 @@ describe("selectFeaturedArtifacts", () => {
     ]);
     expect(out.map((p) => p.slug)).toEqual(["pub", "default"]);
     expect(out.some((p) => p.slug === "secret")).toBe(false);
+  });
+
+  it("never leaks a private artifact even when it's newest and over the limit", () => {
+    // The private artifacts are the NEWEST and the list overflows `limit`. A
+    // filter-AFTER-slice refactor would take them into the cut, then drop them —
+    // leaving the gallery short or empty. The filter must precede the slice, so
+    // the result is exactly the public set, no private leak.
+    const pages = [
+      ...Array.from({ length: 6 }, (_, i) =>
+        entry({
+          slug: `priv${i}`,
+          type: "html",
+          visibility: "private",
+          updated: `2026-09-1${i}`,
+        }),
+      ),
+      ...Array.from({ length: 3 }, (_, i) =>
+        entry({ slug: `pub${i}`, type: "html", updated: `2026-01-1${i}` }),
+      ),
+    ];
+    const out = selectFeaturedArtifacts(pages, 4);
+    expect(out.some((p) => p.slug.startsWith("priv"))).toBe(false);
+    expect(out.map((p) => p.slug)).toEqual(["pub2", "pub1", "pub0"]);
+  });
+
+  it("features only HUMAN-made artifacts — excludes agents, automation, unattributed", () => {
+    const out = selectFeaturedArtifacts([
+      entry({ slug: "human", type: "html", owner: "alice" }),
+      entry({ slug: "agent", type: "html", owner: "alice--yoyo" }),
+      entry({ slug: "bare-agent", type: "html", owner: "yoyo" }),
+      entry({ slug: "system", type: "html", owner: "system" }),
+      entry({ slug: "anon", type: "html", owner: undefined }),
+    ]);
+    expect(out.map((p) => p.slug)).toEqual(["human"]);
   });
 
   it("sorts newest-updated first", () => {

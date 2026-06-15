@@ -7,6 +7,7 @@ import { Avatar, Mark } from "@/components/folio/primitives";
 import { listCommonsPages } from "@/lib/commons";
 import { listWikiPages } from "@/lib/wiki";
 import { selectFeaturedArtifacts } from "@/lib/page-types";
+import { logger } from "@/lib/logger";
 import { listContributors } from "@/lib/contributors";
 import { getContributorIndex } from "@/lib/contributor-index";
 import { getTrail } from "@/lib/trail";
@@ -37,8 +38,14 @@ export default async function Home() {
     // the public set when the index is empty).
     listCommonsPages(),
     // All pages (incl. artifacts, which the commons excludes) for the featured
-    // gallery — O(1) via the page index, same anonymous fast-path.
-    listWikiPages(),
+    // gallery — O(1) via the page index; returns ALL pages (no principal),
+    // privacy is filtered below in selectFeaturedArtifacts. The gallery is a
+    // non-essential enhancement (hidden when empty), so a read failure here
+    // degrades to "no gallery" rather than 500ing the whole homepage.
+    listWikiPages().catch((err) => {
+      logger.error("home", "featured-artifacts list failed; hiding gallery", err);
+      return [];
+    }),
     listContributors(null),
     getTrail(10, null),
   ]);

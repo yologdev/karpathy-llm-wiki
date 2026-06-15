@@ -6,15 +6,15 @@ import { isAgentHandle } from "@/lib/agent-handle";
 import { Avatar, Mark } from "@/components/folio/primitives";
 
 /**
- * Homepage gallery of recent PUBLIC artifacts — the rendered, shareable pages
- * (`type:"html"`/`"slides"`) people build from the commons. Boxed Folio cards in
- * a responsive grid: the same card language as the profile artifacts
- * ({@link "./ProfileBlogIndex"}), but with owner attribution (the homepage mixes
+ * Homepage gallery of recent PUBLIC, human-made artifacts — the rendered,
+ * shareable pages (`type:"html"`/`"slides"`) people build from the commons.
+ * Boxed Folio cards in a responsive grid: the same card language as the profile
+ * artifacts (`ProfileBlogIndex`), but with owner attribution (the homepage mixes
  * authors) and a correct HTML/SLIDES badge.
  *
- * Presentational only. The homepage selects + supplies the pages and is
- * responsible for the public-only filter — a private artifact must never reach
- * this anonymous, cacheable surface.
+ * Presentational only — it renders whatever pages it's given. The homepage's
+ * `selectFeaturedArtifacts` does the public-only + human-made selection, so a
+ * private artifact never reaches this anonymous, cacheable surface.
  */
 function ArtifactCard({ page }: { page: IndexEntry }) {
   const rel = page.updated ? formatRelativeTime(page.updated) : null;
