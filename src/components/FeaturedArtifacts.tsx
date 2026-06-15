@@ -1,7 +1,7 @@
 import Link from "next/link";
 import type { IndexEntry } from "@/lib/types";
 import { formatRelativeTime } from "@/lib/format";
-import { wikiUrlFor } from "@/lib/share-url";
+import { sharePath, ownerToTenant } from "@/lib/links";
 import { isAgentHandle } from "@/lib/agent-handle";
 import { Avatar, Mark } from "@/components/folio/primitives";
 
@@ -25,7 +25,9 @@ function ArtifactCard({ page }: { page: IndexEntry }) {
 
   return (
     <Link
-      href={wikiUrlFor(page.slug, page)}
+      // Open the artifact in the chrome-less full-screen share view (its content
+      // fills the viewport), not the wiki-chromed owner page.
+      href={sharePath(ownerToTenant(page.owner), page.slug)}
       className="stack group rounded-[14px] border border-[color:var(--rule)] hover:border-accent/40 transition-colors"
       style={{
         gap: 9,

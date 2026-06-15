@@ -1,7 +1,7 @@
 import Link from "next/link";
 import type { IndexEntry } from "@/lib/types";
 import { formatRelativeTime } from "@/lib/format";
-import { commonsPath, pagePath, ownerToTenant } from "@/lib/links";
+import { commonsPath, pagePath, sharePath, ownerToTenant } from "@/lib/links";
 import { isArtifactType } from "@/lib/page-types";
 
 /**
@@ -20,12 +20,12 @@ function ProfileCard({
 }) {
   const rel = page.updated ? formatRelativeTime(page.updated) : null;
   const open = discussion?.open ?? 0;
-  // Artifacts (and private/agent pages) have no global URL → owner-scoped
-  // /u/<tenant>/<slug>; only public commons pages link to /wiki/<slug>.
-  const href =
-    page.visibility !== "private" &&
-    !page.type?.startsWith("agent-") &&
-    !isArtifactType(page.type)
+  // Open an artifact in the chrome-less full-screen share view (its rendered
+  // content fills the viewport), not the wiki-chromed owner page. Non-artifacts:
+  // a public commons page → /wiki/<slug>, else the owner-scoped /u/<tenant>/<slug>.
+  const href = isArtifactType(page.type)
+    ? sharePath(ownerToTenant(page.owner), page.slug)
+    : page.visibility !== "private" && !page.type?.startsWith("agent-")
       ? commonsPath(page.slug)
       : pagePath(ownerToTenant(page.owner), page.slug);
 

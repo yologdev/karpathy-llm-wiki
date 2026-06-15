@@ -108,6 +108,18 @@ export function editPath(tenant: string, slug: string): string {
   return `/u/${tenant}/${slug}/edit`;
 }
 
+/**
+ * Full-screen SHARE URL `/share/<tenant>/<slug>` — the chrome-less, immersive
+ * view of a page (`SiteChrome` renders `/share/*` bare). Used to "open" an
+ * artifact so its rendered content fills the viewport, rather than the
+ * wiki-chromed `/u/<tenant>/<slug>`. Same `(tenant, slug)` addressing and raw
+ * slug as {@link pagePath}; the share route read-gates identically, so a private
+ * page's share URL is only viewable by its owner (a non-owner gets the same 404).
+ */
+export function sharePath(tenant: string, slug: string): string {
+  return `/share/${tenant}/${slug}`;
+}
+
 /** Canonical raw-source URL `/u/<tenant>/raw/<slug>`. */
 export function rawPath(tenant: string, slug: string): string {
   return `/u/${tenant}/raw/${slug}`;

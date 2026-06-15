@@ -9,6 +9,7 @@ import {
   pagePath,
   editPath,
   rawPath,
+  sharePath,
   resolveSlugPath,
   profileHref,
 } from "../links";
@@ -152,6 +153,14 @@ describe("canonical URL builders", () => {
     expect(commonsPath("retrieval-augmented-generation")).toBe(
       "/wiki/retrieval-augmented-generation",
     );
+  });
+
+  it("builds the full-screen share path /share/<tenant>/<slug>", () => {
+    expect(sharePath("yuanhao", "billionaire-math")).toBe(
+      "/share/yuanhao/billionaire-math",
+    );
+    // Raw slug (incl. Unicode), like pagePath — the route + browser encode it.
+    expect(sharePath("yuanhao", "math-解释")).toBe("/share/yuanhao/math-解释");
   });
 
   it("builds the profile URL /u/<handle>, percent-encoding unsafe handles", () => {
