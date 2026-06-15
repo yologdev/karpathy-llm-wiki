@@ -187,3 +187,61 @@ export async function removeFromVault(
     slugs: v.slugs.filter((s) => s !== slug),
   }));
 }
+
+/**
+ * Discover every tenant that has a `vaults:<tenant>` index by scanning
+ * the `.indexes/` directory for matching filenames. Returns tenant strings.
+ * Fail-soft: returns an empty array on any error (e.g. R2/KV backend where
+ * indexes aren't stored as files).
+ */
+async function discoverVaultTenants(): Promise<string[]> {
+  try {
+    const files = await getStorage().listFiles(".indexes/");
+    const prefix = "vaults:";
+    const suffix = ".json";
+    return files
+      .filter((f) => !f.isDirectory && f.name.startsWith(prefix) && f.name.endsWith(suffix))
+      .map((f) => f.name.slice(prefix.length, -suffix.length));
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Remove a slug from **every** vault across all known tenants. Called during
+ * page deletion so curated references don't become orphan ghost entries.
+ *
+ * Discovers vault tenants by scanning the storage index directory, and also
+ * accepts explicit `ownerHints` (e.g. the deleted page's owner, which may no
+ * longer appear in any index). Fail-soft: logs warnings on errors and never
+ * throws.
+ */
+export async function removeSlugFromAllVaults(
+  slug: string,
+  ownerHints?: string[],
+): Promise<void> {
+  // Collect tenants from the storage scan + owner hints.
+  const tenants = new Set<string>();
+  for (const t of await discoverVaultTenants()) tenants.add(t);
+  for (const o of ownerHints ?? []) {
+    if (o) tenants.add(tenantForOwner(o));
+  }
+
+  for (const tenant of tenants) {
+    try {
+      const idx = await getStorage().getIndex<Vault[]>(vaultsKey(tenant));
+      const vaults = Array.isArray(idx) ? idx : [];
+      for (const v of vaults) {
+        if (v.slugs.includes(slug)) {
+          await removeFromVault(v.id, slug);
+        }
+      }
+    } catch (err) {
+      logger.warn(
+        "vault",
+        `vault cleanup skipped for tenant "${tenant}" on slug "${slug}":`,
+        err,
+      );
+    }
+  }
+}

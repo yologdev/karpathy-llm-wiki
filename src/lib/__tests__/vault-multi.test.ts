@@ -12,11 +12,16 @@ import {
   vaultsContaining,
   addToVault,
   removeFromVault,
+  removeSlugFromAllVaults,
   renameVault,
   deleteVault,
 } from "../vault";
 import { _resetStorage } from "../storage";
 import { _resetLocks } from "../lock";
+import { ensureDirectories, writeWikiPage } from "../wiki";
+import { updateIndex } from "../wiki";
+import { deleteWikiPage } from "../lifecycle";
+import { serializeFrontmatter } from "../frontmatter";
 
 let tmpDir: string;
 const saved: Record<string, string | undefined> = {};
@@ -100,5 +105,59 @@ describe("multi-vault model", () => {
     expect(await listVaults("bob")).toHaveLength(1);
     expect((await listVaults("alice"))[0].id).toBe("alice--ml");
     expect((await listVaults("bob"))[0].id).toBe("bob--ml");
+  });
+
+  it("removeSlugFromAllVaults strips the slug from vaults across owners", async () => {
+    const va = await createVault("alice", "ML");
+    const vb = await createVault("bob", "Reading");
+    await addToVault(va.id, "transformers");
+    await addToVault(va.id, "attention");
+    await addToVault(vb.id, "transformers");
+
+    // Both vaults contain "transformers" before removal
+    expect(await vaultSlugs(va.id)).toContain("transformers");
+    expect(await vaultSlugs(vb.id)).toContain("transformers");
+
+    await removeSlugFromAllVaults("transformers", ["alice", "bob"]);
+
+    // "transformers" is gone from both vaults
+    expect(await vaultSlugs(va.id)).toEqual(["attention"]);
+    expect(await vaultSlugs(vb.id)).toEqual([]);
+    // "attention" is untouched
+    expect(await vaultsContaining("alice", "attention")).toEqual([va.id]);
+  });
+
+  it("page deletion via lifecycle removes slug from all vaults", async () => {
+    // Set up wiki infrastructure
+    await ensureDirectories();
+
+    // Create a wiki page with owner frontmatter
+    const content = serializeFrontmatter(
+      { title: "Transformers", owner: "alice" },
+      "# Transformers\n\nContent about transformers.\n",
+    );
+    await writeWikiPage("transformers", content);
+    await updateIndex([
+      { title: "Transformers", slug: "transformers", summary: "About transformers" },
+    ]);
+
+    // Create vaults for two different owners and curate the page
+    const va = await createVault("alice", "ML");
+    const vb = await createVault("bob", "Reading");
+    await addToVault(va.id, "transformers");
+    await addToVault(vb.id, "transformers");
+
+    // Confirm both vaults contain the slug
+    expect(await vaultSlugs(va.id)).toContain("transformers");
+    expect(await vaultSlugs(vb.id)).toContain("transformers");
+
+    // Delete the page via the lifecycle pipeline
+    await deleteWikiPage("transformers");
+
+    // Verify the slug is removed from both vaults
+    expect(await vaultSlugs(va.id)).not.toContain("transformers");
+    expect(await vaultSlugs(vb.id)).not.toContain("transformers");
+    expect(await vaultsContaining("alice", "transformers")).toEqual([]);
+    expect(await vaultsContaining("bob", "transformers")).toEqual([]);
   });
 });

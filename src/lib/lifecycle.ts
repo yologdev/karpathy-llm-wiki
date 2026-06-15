@@ -31,6 +31,7 @@ import { syncBacklinksForPage, removeBacklinksForSlug } from "./backlink-index";
 import { recordEditForAuthor } from "./contributor-index";
 import { pushRecentEvent, removeRecentForSlug } from "./recent-index";
 import { isAgentHandle, removeSlugFromAgentPages } from "./agents";
+import { removeSlugFromAllVaults } from "./vault";
 import { normalizeActor } from "./agent-handle";
 import { parseFrontmatter } from "./frontmatter";
 import { parseSources, newestSourceType } from "./sources";
@@ -555,6 +556,22 @@ async function runPageLifecycleOp(
       await removeSlugFromAgentPages(slug);
     } catch (err) {
       logger.warn("agents", `agent page cleanup skipped for "${slug}":`, err);
+    }
+  }
+
+  // 3f. Vault membership cleanup — remove the deleted slug from every vault
+  //     that curated it, so `vaultSlugs()` / `vaultsContaining()` never return
+  //     ghost references. The function discovers vault tenants from storage and
+  //     also accepts owner hints for the deleted page (already absent from the
+  //     index). Delete-only; fail-soft.
+  if (op.kind === "delete") {
+    try {
+      await removeSlugFromAllVaults(
+        slug,
+        deletedOwner ? [deletedOwner] : undefined,
+      );
+    } catch (err) {
+      logger.warn("vault", `vault cleanup skipped for "${slug}":`, err);
     }
   }
 
