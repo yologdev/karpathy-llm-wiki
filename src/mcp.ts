@@ -1783,6 +1783,7 @@ export function createMcpServer(): McpServer {
     inputSchema: {
       from: z.string().describe("Slug of the page to absorb (will be deleted)"),
       into: z.string().describe("Slug of the surviving canonical page"),
+      author: z.string().optional().describe("Author handle for merge attribution"),
     },
     annotations: {
       readOnlyHint: false,

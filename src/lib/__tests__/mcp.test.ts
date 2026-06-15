@@ -1331,6 +1331,31 @@ describe("merge_pages", () => {
     expect(into!.frontmatter.aliases as string[]).toContain("concept-a-dup");
   });
 
+  it("attributes merge to the given author, not 'system'", async () => {
+    await handleCreatePage({
+      slug: "merge-auth-a",
+      content: "# Auth A\n\nFirst body.",
+      owner: "tester",
+    });
+    await handleCreatePage({
+      slug: "merge-auth-b",
+      content: "# Auth B\n\nSecond body.",
+      owner: "tester",
+    });
+
+    await handleMergePages({
+      from: "merge-auth-b",
+      into: "merge-auth-a",
+      author: "agent-merger",
+    });
+
+    // The survivor's revision should be attributed to "agent-merger"
+    const revisions = await handleListRevisions({ slug: "merge-auth-a" });
+    expect(revisions.revisions.length).toBeGreaterThanOrEqual(1);
+    const mergeRevision = revisions.revisions[revisions.revisions.length - 1];
+    expect(mergeRevision.author).toBe("agent-merger");
+  });
+
   it("throws when merging a page into itself", async () => {
     await handleCreatePage({ slug: "solo", content: "# Solo\n\nBody." });
     await expect(
