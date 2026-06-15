@@ -203,11 +203,17 @@ describe("Chart.js injection", () => {
   });
 
   it("usesViewportUnits ignores vh-like runs inside inlined data: URIs", () => {
-    // A baked illustration's base64 contains vh-like substrings at /,+ bounds
-    // (e.g. real payloads like "+C7vh7U/Gn"); these must NOT read as app-style.
+    // A baked illustration's base64 contains digit-led vh runs at /,+ bounds
+    // (e.g. the real payload fragment "/7VH/"); those must NOT read as app-style.
     expect(
       usesViewportUnits(
         '<img src="data:image/jpeg;base64,/9j/4AAQ/100vh/SkZJRg==">',
+      ),
+    ).toBe(false);
+    // The url(data:…) background form is stripped at its ")" terminator too.
+    expect(
+      usesViewportUnits(
+        '<div style="background:url(data:image/svg+xml;base64,Zm9v/100vh)"></div>',
       ),
     ).toBe(false);
     // …but a genuine viewport unit in CSS still counts, even alongside an image.
