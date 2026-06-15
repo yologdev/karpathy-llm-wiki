@@ -2,8 +2,11 @@ import Link from "next/link";
 import { OnboardingWizard } from "@/components/OnboardingWizard";
 import { HomeAsk } from "@/components/HomeAsk";
 import { Trail } from "@/components/Trail";
+import { FeaturedArtifacts } from "@/components/FeaturedArtifacts";
 import { Avatar, Mark } from "@/components/folio/primitives";
 import { listCommonsPages } from "@/lib/commons";
+import { listWikiPages } from "@/lib/wiki";
+import { selectFeaturedArtifacts } from "@/lib/page-types";
 import { listContributors } from "@/lib/contributors";
 import { getContributorIndex } from "@/lib/contributor-index";
 import { getTrail } from "@/lib/trail";
@@ -29,10 +32,13 @@ export default async function Home() {
   // init on cold starts, and makes listContributors/getTrail take their O(1)
   // anonymous index fast-path for EVERY visitor (a signed-in principal would
   // force the slow per-page scan here).
-  const [commonsPages, contributors, trail] = await Promise.all([
+  const [commonsPages, allPages, contributors, trail] = await Promise.all([
     // Read the public commons from the commons index (falls back to deriving
     // the public set when the index is empty).
     listCommonsPages(),
+    // All pages (incl. artifacts, which the commons excludes) for the featured
+    // gallery — O(1) via the page index, same anonymous fast-path.
+    listWikiPages(),
     listContributors(null),
     getTrail(10, null),
   ]);
@@ -40,6 +46,12 @@ export default async function Home() {
   // listCommonsPages already excludes private + agent-scoped pages.
   const pages = commonsPages;
   const pageCount = pages.length;
+
+  // Featured artifacts: recent PUBLIC html/slides pages — the visual, shareable
+  // outputs people build from the commons. Artifacts live outside the commons
+  // (owner-scoped), so we read them from the full page list. The helper keeps
+  // ONLY non-private artifacts (this homepage renders anonymously and is cached).
+  const artifacts = selectFeaturedArtifacts(allPages);
   const sourceCount = pages.reduce((n, p) => n + (p.sourceCount ?? 0), 0);
   const topContributors = contributors.slice(0, 5);
 
@@ -293,6 +305,31 @@ export default async function Home() {
               </div>
             </aside>
           </section>
+
+          {/* Featured artifacts — the visual, shareable pages people render from
+              the commons. Hidden when there are none yet. */}
+          {artifacts.length > 0 && (
+            <section className="shell" style={{ marginTop: 96, marginBottom: 40 }}>
+              <div style={{ marginBottom: 20 }}>
+                <p className="fmark" style={{ marginBottom: 8 }}>
+                  artifacts
+                </p>
+                <p
+                  style={{
+                    margin: 0,
+                    fontSize: 14,
+                    color: "var(--muted)",
+                    maxWidth: "58ch",
+                    lineHeight: 1.55,
+                  }}
+                >
+                  Visual pages — explainers, decks, essays — rendered from a
+                  question and shared.
+                </p>
+              </div>
+              <FeaturedArtifacts pages={artifacts} />
+            </section>
+          )}
         </>
       )}
     </div>

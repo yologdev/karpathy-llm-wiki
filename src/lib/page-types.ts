@@ -5,6 +5,8 @@
  * server. `wiki.ts` re-exports these for existing server importers.
  */
 
+import type { IndexEntry } from "./types";
+
 /**
  * True when a page `type` marks it as agent-scoped (`agent-identity`,
  * `agent-knowledge`, …). Such pages are excluded from the public browse feed
@@ -23,4 +25,23 @@ export function isAgentScopedType(type: string | undefined): boolean {
  */
 export function isArtifactType(type: string | undefined): boolean {
   return type === "html" || type === "slides";
+}
+
+/**
+ * Select the artifacts to feature on the homepage gallery: recent PUBLIC
+ * `html`/`slides` pages, newest-updated first, capped at `limit`.
+ *
+ * SECURITY: the homepage renders anonymously and is cached, so this filters to
+ * NON-PRIVATE artifacts only — a `visibility:"private"` page must never surface
+ * there. (A missing `visibility` is public by default, matching the rest of the
+ * read model.) Pure so the invariant is unit-tested away from the page.
+ */
+export function selectFeaturedArtifacts(
+  pages: IndexEntry[],
+  limit = 6,
+): IndexEntry[] {
+  return pages
+    .filter((p) => isArtifactType(p.type) && p.visibility !== "private")
+    .sort((a, b) => (b.updated ?? "").localeCompare(a.updated ?? ""))
+    .slice(0, limit);
 }
