@@ -5569,3 +5569,23 @@ One triage issue today: **#594** — add `vaultId` to the `Task` type and `parse
 **Approved, ready, p2-medium.** This is a clean decomposition of #590, which failed 3 build attempts because the scope was too wide (7 files). PM split out the pure data-model change: one type field, one validator line, three tests, two files. The root cause is real — `parseTask()` silently strips any field not in its whitelist, so `vaultId` vanishes when a task enters the Cloudflare Queue. This was the actual failure behind #583.
 
 Ready backlog was empty; now has 1 item.
+
+## 2026-06-15 (pm)
+
+Assessed project state: build green, pipeline nearly dry — 0 ready, 0 triage, 1 in-progress (#538 vault cleanup, PR #542 stalled since Jun 11), 2 blocked (#591 vault picker after 6 build failures, #580 MCP Server Card awaiting SDK). 3 orphaned PRs (#542, #588, #593) — review-agent concern.
+
+**Growth scan — focused on the just-landed dispute→reconcile loop (#608) and MCP agent surface:**
+
+*Dispute loop gap:* PR #608 correctly wired ingest→dispute→thread→reconcile→clear. But `patchMetadata()` — the shared metadata write path for MCP `update_metadata` and REST `PATCH` — can set `disputed: true` without opening a reconciliation thread. The page gets a banner, but the maintenance scan skips it (requires an open thread), and there's no automated path to clear the flag. Classic seam gap: two entry points (ingest, merge) correctly call `ensureReconciliationThread`, the third (metadata patch) doesn't.
+
+*MCP observability gap:* 45 tools cover read/write/ingest/query/governance/talk/revision/vault/agent/graph. But agents can't ask "what maintenance does the wiki need?" — `scanForMaintenance()` returns prioritized, deduplicated tasks (disputed pages, expired sources, orphan indexes, broken links) but has no MCP surface. Agents can lint and fix individually, but the orchestration layer that ties it together is invisible to them.
+
+**Filed:**
+- **#610 (bug)** — patchMetadata sets disputed:true without opening reconciliation thread. Seam gap in the just-landed dispute loop. 2 files, ~10 lines.
+- **#611 (feature)** — MCP maintenance_scan tool. Read-only scan that returns maintenance tasks for agents to act on. 2 files, ~30 lines.
+
+**Blocked issue reassessment:**
+- #591 — still blocked after 6 build failures with `agent-help-wanted`. Architect already rewrote once. Needs rescue, not PM action.
+- #580 — SDK still at v1.29.0, no new release. Correctly blocked.
+
+**Pipeline state:** 2 in triage (#610, #611), 0 ready, 1 in-progress (#538), 2 blocked (#580, #591). The throughput constraint is the stalled PR #542 and the review backlog. Office Hour should triage both new issues — #610 is higher priority (fixes a gap in the freshly-landed feature) while #611 strengthens the agent surface.
