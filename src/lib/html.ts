@@ -57,14 +57,20 @@ const SANDBOX_CSP =
  * injected after this and overrides it freely; the predefined component classes
  * (`.lead`, `.callout`, `.grid`/`.card`, `.stat`, `.badge`, `.tabs`, `figure`)
  * are documented in the HTML format prompt so answers can opt into them.
+ *
+ * Content width is one shared token, `--measure`: the `.doc`/`main`/`article`
+ * wrappers AND the body column (centered for document-style docs in
+ * `sandboxHead`) AND the `.yoyo-illustration` figure all use it, so prose and the
+ * full-width hand-drawn illustrations land on the SAME centered edges regardless
+ * of whether the model wrapped its content.
  */
 const BASE_STYLE = `<style>
-:root{color-scheme:light dark;--paper:#fbfaf6;--paper-2:#f4f1e9;--ink:#1b1a16;--ink-2:#423f38;--muted:#756f62;--rule:#e2ddd0;--accent:#4d6bfe;--accent-soft:#e7ebff;--radius:12px;--head:"Iowan Old Style","Palatino Linotype",Palatino,Georgia,ui-serif,serif}
+:root{color-scheme:light dark;--paper:#fbfaf6;--paper-2:#f4f1e9;--ink:#1b1a16;--ink-2:#423f38;--muted:#756f62;--rule:#e2ddd0;--accent:#4d6bfe;--accent-soft:#e7ebff;--radius:12px;--measure:46rem;--head:"Iowan Old Style","Palatino Linotype",Palatino,Georgia,ui-serif,serif}
 @media (prefers-color-scheme:dark){:root{--paper:#14130f;--paper-2:#1c1b16;--ink:#efebdf;--ink-2:#c7c2b4;--muted:#948e7f;--rule:#2b281f;--accent:#90a4ff;--accent-soft:#20233a}}
 *{box-sizing:border-box}
 html{-webkit-text-size-adjust:100%}
 body{margin:0;background:var(--paper);color:var(--ink);font:17px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;padding:clamp(20px,5vw,56px) clamp(18px,5vw,28px)}
-.doc,main,article{max-width:46rem;margin:0 auto}
+.doc,main,article{max-width:var(--measure);margin:0 auto}
 h1,h2,h3,h4{font-family:var(--head);line-height:1.2;font-weight:600;margin:1.8em 0 .5em}
 h1{font-size:clamp(2rem,5vw,2.7rem);margin-top:0;letter-spacing:-.01em}
 h2{font-size:1.6rem;padding-top:.5em;border-top:1px solid var(--rule)}
@@ -92,7 +98,7 @@ tr:hover td{background:var(--paper-2)}
 .stat .num{font-family:var(--head);font-size:2.1rem;font-weight:700;color:var(--ink);line-height:1}
 .stat .label{font-size:.8rem;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)}
 .badge{display:inline-block;font-size:.78rem;font-weight:600;padding:2px 9px;border-radius:999px;background:var(--accent-soft);color:var(--accent);border:1px solid var(--rule)}
-figure{margin:1.6em 0}figure>figcaption{font-size:.85rem;color:var(--muted);margin-top:.5em;text-align:center}
+figure{margin:1.6em 0}figure.yoyo-illustration{max-width:var(--measure);margin-left:auto;margin-right:auto;text-align:center}figure>figcaption{font-size:.85rem;color:var(--muted);margin-top:.5em;text-align:center}
 .chart{position:relative;height:340px}
 details{border:1px solid var(--rule);border-radius:var(--radius);padding:0 16px;margin:1em 0;background:var(--paper-2)}
 details[open]{padding-bottom:8px}
@@ -177,10 +183,20 @@ function sandboxHead(
     ? `<style>html{scrollbar-width:none;-ms-overflow-style:none}` +
       `html::-webkit-scrollbar,body::-webkit-scrollbar{width:0;height:0;display:none}</style>`
     : "";
+  // Document-style artifacts (blog-post HTML, no viewport/app layout) are
+  // centered in a column of the shared `--measure`, so prose and the full-width
+  // yoyo illustrations land on the SAME aligned edges instead of sprawling
+  // edge-to-edge on a wide viewport (the iframe is full-bleed). This applies
+  // even when the model didn't wrap its content in `<main>`/`.doc`. App-style
+  // (100vh) layouts manage their own full-bleed width, so they're left alone.
+  const centerColumn = usesViewportUnits(html)
+    ? ""
+    : `<style>html{background:var(--paper)}body{max-width:var(--measure);margin-inline:auto}</style>`;
   return (
     `<meta http-equiv="Content-Security-Policy" content="${SANDBOX_CSP}">` +
     `<base target="_blank">` +
     BASE_STYLE +
+    centerColumn +
     hideBar +
     chartLib +
     BASE_SCRIPT
