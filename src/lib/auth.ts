@@ -12,6 +12,7 @@
 // requirement is relaxed).
 
 import { auth, currentUser } from "@clerk/nextjs/server";
+import { unstable_rethrow } from "next/navigation";
 import { logger } from "./logger";
 
 export interface Principal {
@@ -58,7 +59,9 @@ function resolveHandle(user: {
  * failure) yields `null` (anonymous / least privilege) rather than throwing, and
  * the failure is logged so the downgrade isn't silent: `warn` for an `auth()`
  * throw (ambiguous — no context, or a secret-key mismatch) and `error` for a
- * `currentUser()` backend failure (unambiguous). See the body.
+ * `currentUser()` backend failure (unambiguous). Next's own control-flow errors
+ * (e.g. the dynamic-rendering bailout) are re-thrown, not treated as auth
+ * failures. See the body.
  */
 export async function getPrincipal(): Promise<Principal | null> {
   // getPrincipal is only ever called from request-scoped routes / server
@@ -70,16 +73,20 @@ export async function getPrincipal(): Promise<Principal | null> {
   try {
     ({ userId } = await auth());
   } catch (err) {
-    // auth() only reads the request context (no backend call). It throws with
-    // no request context (expected OUTSIDE a request — unit tests, build/SSG —
-    // but NOT at runtime here) OR on a CLERK_SECRET_KEY signature mismatch
-    // (rotated/misconfigured key) in a real request. Can't cleanly tell the two
+    // Let Next's framework control-flow errors propagate untouched — chiefly the
+    // "dynamic server usage" bailout thrown when a statically-probed route reads
+    // headers() via auth(). Swallowing it would BOTH mislabel a normal build
+    // event as an auth failure AND muddy Next's dynamic-render detection.
+    unstable_rethrow(err);
+    // A genuine auth() throw. auth() only reads the request context — no backend
+    // call, per Clerk's server auth() contract — so this is either no request
+    // context (a non-request scope) or a CLERK_SECRET_KEY signature mismatch
+    // (rotated/misconfigured key) in a live request. Can't cleanly tell them
     // apart, so log at `warn`: suppressed at the test default (level=error) yet
-    // visible in production (level=warn), where a throw here means the misconfig.
-    // Fail closed regardless.
+    // visible in production (level=warn). Fail closed regardless.
     logger.warn(
       "auth",
-      "auth() threw resolving the principal — no request context (tests/build) or a CLERK_SECRET_KEY mismatch in a live request; treating as anonymous",
+      "auth() threw resolving the principal — no request context or a CLERK_SECRET_KEY mismatch in a live request; treating as anonymous",
       err,
     );
     return null;
@@ -90,6 +97,7 @@ export async function getPrincipal(): Promise<Principal | null> {
   try {
     user = await currentUser();
   } catch (err) {
+    unstable_rethrow(err); // propagate Next control-flow bailouts, not auth errors
     // We KNOW this user is signed in (auth() returned a userId), but we can't
     // resolve them — a genuine Clerk backend error (outage, bad secret, clock
     // skew). Fail closed (anonymous) so a transient blip can't 500 every caller,
