@@ -59,10 +59,12 @@ const SANDBOX_CSP =
  * are documented in the HTML format prompt so answers can opt into them.
  *
  * Content width is one shared token, `--measure`: the `.doc`/`main`/`article`
- * wrappers AND the body column (centered for document-style docs in
- * `sandboxHead`) AND the `.yoyo-illustration` figure all use it, so prose and the
- * full-width hand-drawn illustrations land on the SAME centered edges regardless
- * of whether the model wrapped its content.
+ * wrappers, the body column (centered for document-style docs in `sandboxHead`),
+ * and the `.yoyo-illustration` figure all use it, so prose and the measure-width
+ * hand-drawn illustrations land on the SAME centered edges. For document-style
+ * docs the body column supplies that alignment even when the model didn't wrap
+ * its content; app-style (viewport-unit) layouts are left full-bleed and manage
+ * their own width.
  */
 const BASE_STYLE = `<style>
 :root{color-scheme:light dark;--paper:#fbfaf6;--paper-2:#f4f1e9;--ink:#1b1a16;--ink-2:#423f38;--muted:#756f62;--rule:#e2ddd0;--accent:#4d6bfe;--accent-soft:#e7ebff;--radius:12px;--measure:46rem;--head:"Iowan Old Style","Palatino Linotype",Palatino,Georgia,ui-serif,serif}
@@ -184,11 +186,13 @@ function sandboxHead(
       `html::-webkit-scrollbar,body::-webkit-scrollbar{width:0;height:0;display:none}</style>`
     : "";
   // Document-style artifacts (blog-post HTML, no viewport/app layout) are
-  // centered in a column of the shared `--measure`, so prose and the full-width
-  // yoyo illustrations land on the SAME aligned edges instead of sprawling
-  // edge-to-edge on a wide viewport (the iframe is full-bleed). This applies
-  // even when the model didn't wrap its content in `<main>`/`.doc`. App-style
-  // (100vh) layouts manage their own full-bleed width, so they're left alone.
+  // centered in a column of the shared `--measure`, so prose and the
+  // measure-width yoyo illustrations land on the SAME aligned edges instead of
+  // sprawling edge-to-edge on a wide viewport (the iframe is full-bleed). This
+  // applies even when the model didn't wrap its content in `<main>`/`.doc`. We
+  // also paint `html` with `--paper` so the gutters beside the narrowed body
+  // column show the page background, not the bare iframe. App-style (100vh)
+  // layouts manage their own full-bleed width, so they're left alone.
   const centerColumn = usesViewportUnits(html)
     ? ""
     : `<style>html{background:var(--paper)}body{max-width:var(--measure);margin-inline:auto}</style>`;
