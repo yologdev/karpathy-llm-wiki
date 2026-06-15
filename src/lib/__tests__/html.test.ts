@@ -154,7 +154,7 @@ describe("composeSrcDoc", () => {
     // The shared measure token is defined, and the body is capped + centered to
     // it — so even un-wrapped content (no <main>/.doc) sits in a column whose
     // edges match the full-width yoyo illustrations.
-    expect(out).toContain("--measure:46rem");
+    expect(out).toContain("--measure:50rem");
     expect(out).toContain("body{max-width:var(--measure);margin-inline:auto}");
     // All three consumers share the token: the body column, the wrapper, and
     // the illustration figure — so they align whether or not content is wrapped.
@@ -181,7 +181,17 @@ describe("composeSrcDoc", () => {
     expect(out).not.toContain("body{max-width:var(--measure)");
     // The shared token + illustration cap still ship (harmless, and bound any
     // illustration an app-style doc happens to use).
-    expect(out).toContain("--measure:46rem");
+    expect(out).toContain("--measure:50rem");
+  });
+
+  it("still centers a document that inlines base64 illustrations (data: URI isn't app-style)", () => {
+    // Regression: a baked illustration's base64 payload contains vh-like runs
+    // that must NOT flip the doc to app-style and skip the centered column.
+    const out = composeSrcDoc(
+      '<main><p>article</p><figure class="yoyo-illustration">' +
+        '<img src="data:image/jpeg;base64,/9j/4AAQ/100vh/SkZJRg=="></figure></main>',
+    );
+    expect(out).toContain("body{max-width:var(--measure);margin-inline:auto}");
   });
 });
 
@@ -190,6 +200,22 @@ describe("Chart.js injection", () => {
     expect(usesViewportUnits("<div style='height:100vh'></div>")).toBe(true);
     expect(usesViewportUnits("<style>.h{min-height:100dvh}</style>")).toBe(true);
     expect(usesViewportUnits("<p>just prose, padding: 12px</p>")).toBe(false);
+  });
+
+  it("usesViewportUnits ignores vh-like runs inside inlined data: URIs", () => {
+    // A baked illustration's base64 contains vh-like substrings at /,+ bounds
+    // (e.g. real payloads like "+C7vh7U/Gn"); these must NOT read as app-style.
+    expect(
+      usesViewportUnits(
+        '<img src="data:image/jpeg;base64,/9j/4AAQ/100vh/SkZJRg==">',
+      ),
+    ).toBe(false);
+    // …but a genuine viewport unit in CSS still counts, even alongside an image.
+    expect(
+      usesViewportUnits(
+        '<style>.hero{height:100vh}</style><img src="data:image/png;base64,iVBOR100vh">',
+      ),
+    ).toBe(true);
   });
 
   it("drops cross-reference markdown leaked after </html>", () => {

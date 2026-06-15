@@ -67,7 +67,7 @@ const SANDBOX_CSP =
  * their own width.
  */
 const BASE_STYLE = `<style>
-:root{color-scheme:light dark;--paper:#fbfaf6;--paper-2:#f4f1e9;--ink:#1b1a16;--ink-2:#423f38;--muted:#756f62;--rule:#e2ddd0;--accent:#4d6bfe;--accent-soft:#e7ebff;--radius:12px;--measure:46rem;--head:"Iowan Old Style","Palatino Linotype",Palatino,Georgia,ui-serif,serif}
+:root{color-scheme:light dark;--paper:#fbfaf6;--paper-2:#f4f1e9;--ink:#1b1a16;--ink-2:#423f38;--muted:#756f62;--rule:#e2ddd0;--accent:#4d6bfe;--accent-soft:#e7ebff;--radius:12px;--measure:50rem;--head:"Iowan Old Style","Palatino Linotype",Palatino,Georgia,ui-serif,serif}
 @media (prefers-color-scheme:dark){:root{--paper:#14130f;--paper-2:#1c1b16;--ink:#efebdf;--ink-2:#c7c2b4;--muted:#948e7f;--rule:#2b281f;--accent:#90a4ff;--accent-soft:#20233a}}
 *{box-sizing:border-box}
 html{-webkit-text-size-adjust:100%}
@@ -156,10 +156,18 @@ export function usesChartLib(html: string): boolean {
  * Does the artifact lay itself out against the viewport (`100vh`/`100dvh`/etc.)?
  * Such "app-style" documents define their own full-screen scroll viewport, so an
  * auto-sizing iframe feedback-loops them to absurd heights. We instead give them
- * a fixed-height frame and let them scroll inside it (see `HtmlPreview`).
+ * a fixed-height frame and let them scroll inside it (see `HtmlPreview`), and we
+ * skip the centered content column (see `sandboxHead`).
+ *
+ * Inlined `data:` URIs are stripped FIRST: a baked yoyo illustration is a large
+ * base64 image (`<img src="data:image/jpeg;base64,…">`) whose payload
+ * coincidentally contains `<digits>vh`-style runs at `/`/`+` boundaries, which
+ * would false-positive this check and wrongly flag a normal document as
+ * app-style. Real viewport units live in CSS/inline styles, never in image data.
  */
 export function usesViewportUnits(html: string): boolean {
-  return /\b\d+(?:\.\d+)?(?:vh|dvh|svh|lvh)\b/i.test(html ?? "");
+  const code = (html ?? "").replace(/\bdata:[^"')\s]+/gi, "");
+  return /\b\d+(?:\.\d+)?(?:vh|dvh|svh|lvh)\b/i.test(code);
 }
 
 /**
