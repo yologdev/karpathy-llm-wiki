@@ -596,6 +596,7 @@ export async function handleIngestPdf(args: {
   tags?: string[] | undefined;
   owner?: string;
   triggeredBy?: string;
+  vaultId?: string;
 }): Promise<{
   slug: string;
   title: string;
@@ -625,6 +626,10 @@ export async function handleIngestPdf(args: {
     ? extractSummary(page.body)
     : `Ingested PDF from ${args.pdf_url}`;
 
+  if (args.vaultId) {
+    try { await addToVault(args.vaultId, result.primarySlug); }
+    catch (err) { logger.warn("mcp", `vault filing failed: ${(err as Error).message}`); }
+  }
   return {
     slug: result.primarySlug,
     title: pageTitle,
@@ -642,6 +647,7 @@ export async function handleIngestImage(args: {
   owner?: string;
   prompt?: string;
   triggeredBy?: string;
+  vaultId?: string;
 }): Promise<{
   slug: string;
   title: string;
@@ -669,6 +675,10 @@ export async function handleIngestImage(args: {
     ? extractSummary(page.body)
     : `Ingested image from ${args.url}`;
 
+  if (args.vaultId) {
+    try { await addToVault(args.vaultId, result.primarySlug); }
+    catch (err) { logger.warn("mcp", `vault filing failed: ${(err as Error).message}`); }
+  }
   return {
     slug: result.primarySlug,
     title: pageTitle,
@@ -2009,6 +2019,7 @@ export function createMcpServer(): McpServer {
         .describe("Optional tags to apply to the created page"),
       owner: z.string().optional().describe("Owner handle — the accountable principal for the resulting page. Sets frontmatter owner for tenant model."),
       triggeredBy: z.string().optional().describe("Handle of the user or agent that triggered this ingest (for provenance tracking)"),
+      vaultId: z.string().optional().describe("Optional vault ID — if provided, the ingested page is automatically curated into this vault"),
     },
     annotations: {
       readOnlyHint: false,
@@ -2054,6 +2065,7 @@ export function createMcpServer(): McpServer {
         .optional()
         .describe("Optional guidance for the vision model analysis — used as the page title hint"),
       triggeredBy: z.string().optional().describe("Handle of the user or agent that triggered this ingest (for provenance tracking)"),
+      vaultId: z.string().optional().describe("Optional vault ID — if provided, the ingested page is automatically curated into this vault"),
     },
     annotations: {
       readOnlyHint: false,

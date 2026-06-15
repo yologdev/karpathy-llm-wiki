@@ -1662,6 +1662,30 @@ describe("ingest_pdf", () => {
       _resetConfigCache();
     }
   });
+
+  it("files the ingested page into the provided vault", async () => {
+    const savedKey = process.env.ANTHROPIC_API_KEY;
+    delete process.env.ANTHROPIC_API_KEY;
+    _resetConfigCache();
+    try {
+      await createVault("tester", "pdf-vault");
+      const vid = vaultIdFor("tester", "pdf-vault");
+      const result = await handleIngestPdf({
+        pdf_url: "https://example.com/vault-doc.pdf",
+        owner: "tester",
+        vaultId: vid,
+      });
+      expect(result.slug).toBeTruthy();
+      const vault = await getVault(vid);
+      expect(vault).toBeTruthy();
+      expect(vault!.slugs).toContain(result.slug);
+    } finally {
+      if (savedKey !== undefined) {
+        process.env.ANTHROPIC_API_KEY = savedKey;
+      }
+      _resetConfigCache();
+    }
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -1728,6 +1752,30 @@ describe("ingest_image", () => {
         ? page.frontmatter.sources
         : "";
       expect(sources).toContain("bob");
+    } finally {
+      if (savedKey !== undefined) {
+        process.env.ANTHROPIC_API_KEY = savedKey;
+      }
+      _resetConfigCache();
+    }
+  });
+
+  it("files the ingested page into the provided vault", async () => {
+    const savedKey = process.env.ANTHROPIC_API_KEY;
+    delete process.env.ANTHROPIC_API_KEY;
+    _resetConfigCache();
+    try {
+      await createVault("tester", "img-vault");
+      const vid = vaultIdFor("tester", "img-vault");
+      const result = await handleIngestImage({
+        url: "https://example.com/vault-photo.png",
+        owner: "tester",
+        vaultId: vid,
+      });
+      expect(result.slug).toBeTruthy();
+      const vault = await getVault(vid);
+      expect(vault).toBeTruthy();
+      expect(vault!.slugs).toContain(result.slug);
     } finally {
       if (savedKey !== undefined) {
         process.env.ANTHROPIC_API_KEY = savedKey;
