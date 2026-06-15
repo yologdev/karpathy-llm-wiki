@@ -46,7 +46,7 @@ import {
   handleMaintenanceScan,
   createMcpServer,
 } from "../../mcp";
-import { vaultIdFor, listVaults, getVault } from "../vault";
+import { vaultIdFor, listVaults, getVault, createVault } from "../vault";
 import { readWikiPageWithFrontmatter } from "../wiki";
 import { _resetStorage } from "../storage";
 import { _resetConfigCache } from "../config";
@@ -1433,6 +1433,30 @@ describe("batch_ingest_urls", () => {
     expect(result.succeeded).toBe(0);
     expect(result.failed).toBe(0);
     expect(result.results).toEqual([]);
+  });
+
+  it("files each successfully ingested page into the provided vault", async () => {
+    const savedKey = process.env.ANTHROPIC_API_KEY;
+    delete process.env.ANTHROPIC_API_KEY;
+    _resetConfigCache();
+    try {
+      await createVault("tester", "batch-vault");
+      const vid = vaultIdFor("tester", "batch-vault");
+      const result = await handleBatchIngest({
+        urls: ["https://example.com/page-a", "https://example.com/page-b"],
+        vaultId: vid,
+      });
+      expect(result.succeeded).toBe(2);
+      const vault = await getVault(vid);
+      for (const r of result.results) {
+        expect(vault?.slugs).toContain(r.slug);
+      }
+    } finally {
+      if (savedKey !== undefined) {
+        process.env.ANTHROPIC_API_KEY = savedKey;
+      }
+      _resetConfigCache();
+    }
   });
 });
 

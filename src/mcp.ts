@@ -430,6 +430,7 @@ export async function handleBatchIngest(args: {
   tags?: string[] | undefined;
   owner?: string;
   triggeredBy?: string;
+  vaultId?: string;
 }): Promise<{
   total: number;
   succeeded: number;
@@ -473,6 +474,10 @@ export async function handleBatchIngest(args: {
       });
       results.push({ url, slug: result.primarySlug });
       succeeded++;
+      if (args.vaultId) {
+        try { await addToVault(args.vaultId, result.primarySlug); }
+        catch (vErr) { logger.warn("mcp", `vault filing failed for ${url}: ${(vErr as Error).message}`); }
+      }
     } catch (err) {
       results.push({ url, error: getErrorMessage(err) });
       failed++;
@@ -1867,6 +1872,7 @@ export function createMcpServer(): McpServer {
         .describe("Optional tags to apply to all created pages"),
       owner: z.string().optional().describe("Owner handle — the accountable principal for all resulting pages. Sets frontmatter owner for tenant model."),
       triggeredBy: z.string().optional().describe("Handle of the user or agent that triggered this batch ingest (for provenance tracking)"),
+      vaultId: z.string().optional().describe("Optional vault ID — if provided, each successfully ingested page is automatically curated into this vault"),
     },
     annotations: {
       readOnlyHint: false,
