@@ -53,30 +53,62 @@ function resolveHandle(user: {
  * Resolve the current authenticated principal, or `null` when signed out.
  * Safe to call in route handlers and server components (the request context is
  * populated by `clerkMiddleware`).
+ *
+ * Always fails CLOSED — any uncertainty (no request context, or a Clerk backend
+ * failure) yields `null` (anonymous / least privilege) rather than throwing. A
+ * backend failure for a known-signed-in user is logged (it isn't the benign
+ * no-context case); see the body.
  */
 export async function getPrincipal(): Promise<Principal | null> {
+  // Two Clerk calls with DIFFERENT failure meanings, so they get separate
+  // catches (a single broad catch would conflate them and either spam logs on
+  // the common no-context case or stay silent on real outages):
+  //
+  //   auth()        — reads the request context only, no backend call. A throw
+  //                   here means there IS no request context (unit tests,
+  //                   build/SSG, any non-request scope) → anonymous, expected,
+  //                   not worth logging.
+  //   currentUser() — hits Clerk's backend. Reached only AFTER auth() gave us a
+  //                   userId, so a throw here is a genuine error (Clerk outage,
+  //                   bad CLERK_SECRET_KEY, clock skew), NOT a missing context.
+  let userId: string | null;
   try {
-    const { userId } = await auth();
-    if (!userId) return null;
-    const user = await currentUser();
-    const handle = resolveHandle(user);
-    if (!handle) {
-      // A signed-in user with NO username and NO linked X handle falls back to
-      // the raw Clerk id as their handle (ugly /u/<id> URLs + odd attribution).
-      // This should never happen under correct config — it signals the Clerk
-      // "require username at sign-up" setting is off (this flow depends on it).
-      // Don't fail silently: surface it so the misconfig is visible, not buried.
-      logger.warn(
-        "auth",
-        `user ${userId} resolved to no handle (no username, no linked X account) — using the user id; is Clerk's "require username" setting on?`,
-      );
-    }
-    return { id: userId, handle: handle ?? userId };
+    ({ userId } = await auth());
   } catch {
-    // No Clerk request context (e.g. unit tests, non-request scope) → treat as
-    // anonymous. Fail closed: callers get least privilege, never an exception.
+    return null; // no request context → anonymous (expected; don't log)
+  }
+  if (!userId) return null;
+
+  let user: Awaited<ReturnType<typeof currentUser>>;
+  try {
+    user = await currentUser();
+  } catch (err) {
+    // We KNOW this user is signed in (auth() returned a userId), but we can't
+    // resolve them. Fail closed (anonymous) so a transient blip can't 500 every
+    // caller — but do NOT do it silently: this downgrade surfaces downstream as
+    // spurious 401s on writes and hidden private pages on reads, so a real Clerk
+    // outage/misconfig must leave a trace instead of being invisible.
+    logger.error(
+      "auth",
+      `currentUser() failed for signed-in user ${userId} — treating as anonymous; sign-in-gated writes will 401 and private reads 404 until this clears`,
+      err,
+    );
     return null;
   }
+
+  const handle = resolveHandle(user);
+  if (!handle) {
+    // A signed-in user with NO username and NO linked X handle falls back to
+    // the raw Clerk id as their handle (ugly /u/<id> URLs + odd attribution).
+    // This should never happen under correct config — it signals the Clerk
+    // "require username at sign-up" setting is off (this flow depends on it).
+    // Don't fail silently: surface it so the misconfig is visible, not buried.
+    logger.warn(
+      "auth",
+      `user ${userId} resolved to no handle (no username, no linked X account) — using the user id; is Clerk's "require username" setting on?`,
+    );
+  }
+  return { id: userId, handle: handle ?? userId };
 }
 
 // ---------------------------------------------------------------------------

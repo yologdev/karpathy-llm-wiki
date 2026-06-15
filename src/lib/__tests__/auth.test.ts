@@ -168,8 +168,16 @@ describe("getPrincipal", () => {
     expect(await getPrincipal()).toEqual({ id: "user_8", handle: "user_8" });
   });
 
-  it("returns null (fails closed) when Clerk throws outside a request context", async () => {
+  it("returns null (fails closed) when auth() throws — no request context", async () => {
     mockedAuth.mockRejectedValue(new Error("no request context"));
+    expect(await getPrincipal()).toBeNull();
+  });
+
+  it("returns null (fails closed) when currentUser() throws for a signed-in user", async () => {
+    // auth() gave us a userId, so this is a real Clerk backend error (outage /
+    // bad secret key), not a missing context — still anonymous, but logged.
+    mockedAuth.mockResolvedValue({ userId: "user_9" } as never);
+    mockedCurrentUser.mockRejectedValue(new Error("clerk backend 503"));
     expect(await getPrincipal()).toBeNull();
   });
 });
