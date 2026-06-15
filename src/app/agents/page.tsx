@@ -7,7 +7,8 @@ import { AgentManager } from "@/components/AgentManager";
 /**
  * `/agents` — the signed-in user's agent management surface: list their agents
  * with inline edit / token / delete, plus a create form. A top-level page (moved
- * off `/vault`). Signed-out visitors see only a sign-in prompt — no data fetched.
+ * off `/vault`). Signed-out visitors see a sign-in prompt plus a waitlist link
+ * — no data fetched.
  */
 export default async function AgentsPage() {
   const principal = await getPrincipal();

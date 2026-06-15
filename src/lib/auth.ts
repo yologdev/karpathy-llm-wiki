@@ -12,6 +12,7 @@
 // requirement is relaxed).
 
 import { auth, currentUser } from "@clerk/nextjs/server";
+import { logger } from "./logger";
 
 export interface Principal {
   /** Stable Clerk user id (never changes). */
@@ -58,7 +59,19 @@ export async function getPrincipal(): Promise<Principal | null> {
     const { userId } = await auth();
     if (!userId) return null;
     const user = await currentUser();
-    return { id: userId, handle: resolveHandle(user) ?? userId };
+    const handle = resolveHandle(user);
+    if (!handle) {
+      // A signed-in user with NO username and NO linked X handle falls back to
+      // the raw Clerk id as their handle (ugly /u/<id> URLs + odd attribution).
+      // This should never happen under correct config — it signals the Clerk
+      // "require username at sign-up" setting is off (this flow depends on it).
+      // Don't fail silently: surface it so the misconfig is visible, not buried.
+      logger.warn(
+        "auth",
+        `user ${userId} resolved to no handle (no username, no linked X account) — using the user id; is Clerk's "require username" setting on?`,
+      );
+    }
+    return { id: userId, handle: handle ?? userId };
   } catch {
     // No Clerk request context (e.g. unit tests, non-request scope) → treat as
     // anonymous. Fail closed: callers get least privilege, never an exception.

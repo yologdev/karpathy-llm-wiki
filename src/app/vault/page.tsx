@@ -7,8 +7,8 @@ import { VaultManager } from "@/components/VaultManager";
 /**
  * `/vault` — the signed-in user's vault management surface: a list of their
  * named vaults (each a curated reference lens over the commons) with create /
- * rename / delete / view. Agents live on the top-level `/agents`. Signed-out visitors
- * see only a sign-in prompt — no data is fetched or leaked.
+ * rename / delete / view. Agents live on the top-level `/agents`. Signed-out
+ * visitors see a sign-in prompt plus a waitlist link — no data is fetched or leaked.
  */
 export default async function VaultPage() {
   const principal = await getPrincipal();
