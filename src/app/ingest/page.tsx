@@ -3,6 +3,7 @@
 import { Alert } from "@/components/Alert";
 import { IngestSuccess } from "@/components/IngestSuccess";
 import { IngestStepper } from "@/components/IngestStepper";
+import { IngestVaultPicker } from "@/components/IngestVaultPicker";
 import { RecentIngests } from "@/components/RecentIngests";
 import { Icon } from "@/components/folio/icons";
 import { useIngest, isUrlMode, type Mode } from "@/hooks/useIngest";
@@ -43,6 +44,7 @@ export default function IngestPage() {
     imageFile,
     pdfUrl,
     pdfFile,
+    vaultId,
     loading,
     error,
     result,
@@ -54,6 +56,7 @@ export default function IngestPage() {
     setImageFile,
     setPdfUrl,
     setPdfFile,
+    setVaultId,
     handleSourceSubmit,
     handleImageIngest,
     handlePdfIngest,
@@ -153,6 +156,8 @@ export default function IngestPage() {
               );
             })}
           </div>
+
+          <IngestVaultPicker value={vaultId} onChange={setVaultId} />
 
           {/* URL / X post / YouTube: one inline input + Ingest button */}
           {isUrlMode(mode) && (

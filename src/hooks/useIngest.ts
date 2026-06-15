@@ -44,6 +44,7 @@ export interface UseIngestReturn {
   imageFile: File | null;
   pdfUrl: string;
   pdfFile: File | null;
+  vaultId: string | null;
   loading: boolean;
   error: string | null;
   result: IngestSuccess | null;
@@ -56,6 +57,7 @@ export interface UseIngestReturn {
   setImageFile: (f: File | null) => void;
   setPdfUrl: (v: string) => void;
   setPdfFile: (f: File | null) => void;
+  setVaultId: (v: string | null) => void;
   handleSourceSubmit: (e: React.FormEvent) => void;
   handleImageIngest: (e: React.FormEvent) => void;
   handlePdfIngest: (e: React.FormEvent) => void;
@@ -103,6 +105,7 @@ export function useIngest(): UseIngestReturn {
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [pdfUrl, setPdfUrl] = useState("");
   const [pdfFile, setPdfFile] = useState<File | null>(null);
+  const [vaultId, setVaultId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<IngestSuccess | null>(null);
@@ -202,9 +205,10 @@ export function useIngest(): UseIngestReturn {
 
     try {
       const usesUrl = isUrlMode(mode);
-      const body = usesUrl
+      const body: Record<string, unknown> = usesUrl
         ? { url: url.trim() }
         : { title, content };
+      if (vaultId) body.vaultId = vaultId;
 
       const res = await fetch("/api/ingest", {
         method: "POST",
@@ -354,6 +358,7 @@ export function useIngest(): UseIngestReturn {
     setImageFile(null);
     setPdfUrl("");
     setPdfFile(null);
+    setVaultId(null);
     setError(null);
     setResult(null);
     setStage("form");
@@ -369,6 +374,7 @@ export function useIngest(): UseIngestReturn {
     imageFile,
     pdfUrl,
     pdfFile,
+    vaultId,
     loading,
     error,
     result,
@@ -380,6 +386,7 @@ export function useIngest(): UseIngestReturn {
     setImageFile,
     setPdfUrl,
     setPdfFile,
+    setVaultId,
     handleSourceSubmit,
     handleImageIngest,
     handlePdfIngest,
