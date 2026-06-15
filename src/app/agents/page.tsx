@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { SignInButton } from "@clerk/nextjs";
 import { getPrincipal } from "@/lib/auth";
 import { listAgentsForOwner } from "@/lib/agents";
@@ -42,6 +43,13 @@ export default async function AgentsPage() {
           <SignInButton mode="modal">
             <button className="btn primary">Sign in to view your agents</button>
           </SignInButton>
+          <p style={{ marginTop: 14, fontSize: 13, color: "var(--faint)" }}>
+            No account yet?{" "}
+            <Link href="/waitlist" className="underline">
+              Join the waitlist
+            </Link>
+            .
+          </p>
         </section>
       </div>
     );

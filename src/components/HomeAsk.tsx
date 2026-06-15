@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useUser, useClerk, SignInButton } from "@clerk/nextjs";
 import { useStreamingQuery } from "@/hooks/useStreamingQuery";
@@ -238,7 +239,11 @@ export function HomeAsk() {
 
       {!isSignedIn && !demo && !demoLoading && !demoError && (
         <p className="mt-2 text-xs text-muted">
-          Try a sample question for a taste — sign in to ask your own.
+          Try a sample question for a taste —{" "}
+          <Link href="/waitlist" className="underline hover:text-foreground">
+            join the waitlist
+          </Link>{" "}
+          to ask your own.
         </p>
       )}
 
@@ -263,13 +268,14 @@ export function HomeAsk() {
             readOnly
           />
           {!demoStreaming && (
-            <button
-              type="button"
-              onClick={() => openSignIn()}
-              className="mt-4 rounded-lg bg-accent px-5 py-2 text-sm font-medium text-accent-foreground hover:bg-accent-hover transition-colors"
+            // The demo is the new-visitor funnel; invite-only means the next
+            // step is the waitlist, not a sign-in they can't complete yet.
+            <Link
+              href="/waitlist"
+              className="mt-4 inline-block rounded-lg bg-accent px-5 py-2 text-sm font-medium text-accent-foreground hover:bg-accent-hover transition-colors"
             >
-              Sign in to ask your own →
-            </button>
+              Join the waitlist to ask your own →
+            </Link>
           )}
         </div>
       )}

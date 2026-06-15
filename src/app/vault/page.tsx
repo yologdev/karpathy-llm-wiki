@@ -44,6 +44,13 @@ export default async function VaultPage() {
           <SignInButton mode="modal">
             <button className="btn primary">Sign in to view your vaults</button>
           </SignInButton>
+          <p style={{ marginTop: 14, fontSize: 13, color: "var(--faint)" }}>
+            No account yet?{" "}
+            <Link href="/waitlist" className="underline">
+              Join the waitlist
+            </Link>
+            .
+          </p>
         </section>
       </div>
     );

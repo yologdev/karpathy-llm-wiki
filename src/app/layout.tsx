@@ -79,7 +79,10 @@ export default function RootLayout({
         <script dangerouslySetInnerHTML={{ __html: themeScript }} />
       </head>
       <body className="min-h-screen antialiased flex flex-col">
-        <ClerkProvider>
+        {/* `waitlistUrl` makes Clerk's sign-in modal route new sign-ups to our
+            /waitlist page while the app is in waitlist (invite-only) sign-up
+            mode — gating registration only; reading the commons stays public. */}
+        <ClerkProvider waitlistUrl="/waitlist">
           <ClientProviders>
             <EnsureYoyo />
             <SiteChrome nav={<NavHeader />} footer={<Footer />}>

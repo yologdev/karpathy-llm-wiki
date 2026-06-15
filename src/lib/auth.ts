@@ -5,7 +5,9 @@
 // The unauthenticated-write hole is closed in middleware (any /api write needs
 // a session). This module resolves *who* the signed-in user is, for write
 // attribution (`owner`/`authors`) — the route never trusts a client-supplied
-// author. SSO is Twitter/X, so the principal handle is the Twitter handle.
+// author. The principal handle is the Clerk username (required at sign-up, so
+// it's the stable basis for /u/<handle> URLs); for legacy X-only accounts that
+// never set a username it falls back to the connected Twitter/X handle.
 
 import { auth, currentUser } from "@clerk/nextjs/server";
 
@@ -22,7 +24,12 @@ interface ExternalAccountLike {
   username?: string | null;
 }
 
-/** Resolve the Twitter/X handle from a Clerk user, or null. */
+/**
+ * Resolve a user's handle, or null. Prefers the Clerk `username` (required at
+ * sign-up, so present for everyone who joined via the waitlist/email flow);
+ * falls back to a connected Twitter/X account's handle for legacy X-only
+ * accounts that predate the username requirement.
+ */
 function resolveHandle(user: {
   username?: string | null;
   externalAccounts?: ExternalAccountLike[];

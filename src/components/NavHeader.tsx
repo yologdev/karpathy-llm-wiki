@@ -122,14 +122,23 @@ export function NavHeader() {
           <ThemeToggle />
 
           <Show when="signed-out">
-            {/* SSO only: Clerk auto-creates the account on first "Continue with X".
-                Hidden below md — the hamburger menu carries auth on narrow widths. */}
+            {/* Invite-only: new visitors join the waitlist (the primary action);
+                approved/returning members sign in. Clerk's sign-in modal also
+                cross-links to /waitlist via `waitlistUrl`. Hidden below md — the
+                hamburger menu carries auth on narrow widths. */}
+            <Link
+              href="/waitlist"
+              className="btn primary hidden md:inline-flex"
+              style={{ marginLeft: 2 }}
+            >
+              Join waitlist
+            </Link>
             <SignInButton mode="modal">
               <button
-                className="btn primary hidden md:inline-flex"
+                className="btn ghost hidden md:inline-flex"
                 style={{ marginLeft: 2 }}
               >
-                Sign in with X
+                Sign in
               </button>
             </SignInButton>
           </Show>
@@ -245,9 +254,14 @@ export function NavHeader() {
             style={{ paddingInline: 24, paddingBlock: 6 }}
           >
             <Show when="signed-out">
-              <SignInButton mode="modal">
-                <button className="btn primary">Sign in with X</button>
-              </SignInButton>
+              <span className="inline-flex items-center gap-2">
+                <Link href="/waitlist" className="btn primary">
+                  Join waitlist
+                </Link>
+                <SignInButton mode="modal">
+                  <button className="btn ghost">Sign in</button>
+                </SignInButton>
+              </span>
             </Show>
             <Show when="signed-in">
               <span className="inline-flex items-center gap-2">
