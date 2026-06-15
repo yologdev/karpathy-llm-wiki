@@ -156,6 +156,12 @@ export async function patchMetadata(
   // Re-serialize with the existing body (unchanged).
   const mergedContent = serializeFrontmatter(mergedFrontmatter, existing.body);
 
+  // Capture disputed transition BEFORE writing — we need to know if the patch
+  // is the one that flipped disputed to true (not an unrelated edit on an
+  // already-disputed page).
+  const wasDisputed = existing.frontmatter.disputed === true;
+  const nowDisputed = mergedFrontmatter.disputed === true;
+
   await writeWikiPageWithSideEffects({
     slug,
     title: existing.title,
@@ -166,6 +172,18 @@ export async function patchMetadata(
     author: authorStr,
     logDetails: () => `metadata updated via PATCH`,
   });
+
+  // When a metadata patch transitions disputed from false→true, open a
+  // reconciliation thread so the maintenance scan can pick it up — matching
+  // the behavior of ingest and merge paths.
+  if (!wasDisputed && nowDisputed) {
+    const { ensureReconciliationThread } = await import("./talk");
+    await ensureReconciliationThread(
+      slug,
+      authorStr ?? "system",
+      "flagged disputed via metadata patch",
+    );
+  }
 
   return { slug, title: existing.title, updated: true };
 }

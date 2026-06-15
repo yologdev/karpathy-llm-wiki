@@ -6,6 +6,7 @@ import { patchMetadata, PATCHABLE_KEYS } from "../patch-metadata";
 import { ensureDirectories, writeWikiPage } from "../wiki";
 import { serializeFrontmatter } from "../frontmatter";
 import { resetAliasIndex } from "../alias-index";
+import { listThreads, RECONCILE_THREAD_TITLE } from "../talk";
 
 // ---------------------------------------------------------------------------
 // Temp directory setup
@@ -106,5 +107,63 @@ describe("patchMetadata — visibility guard", () => {
       const e = err as NodeJS.ErrnoException;
       expect(e.code).toBe("LIFECYCLE_FIELD");
     }
+  });
+});
+
+// ===========================================================================
+// disputed → reconciliation thread
+// ===========================================================================
+
+describe("patchMetadata — disputed transition", () => {
+  it("opens a reconciliation thread when disputed transitions false→true", async () => {
+    await seedPage("dispute-page");
+
+    // Page starts without disputed flag — patch it to disputed: true.
+    const result = await patchMetadata({
+      slug: "dispute-page",
+      metadata: { disputed: true },
+      author: "reviewer",
+    });
+    expect(result.updated).toBe(true);
+
+    // A reconciliation thread should now exist.
+    const threads = await listThreads("dispute-page");
+    const reconcileThread = threads.find(
+      (t) => t.title === RECONCILE_THREAD_TITLE && t.status === "open",
+    );
+    expect(reconcileThread).toBeDefined();
+    expect(reconcileThread!.comments[0].body).toContain(
+      "flagged disputed via metadata patch",
+    );
+  });
+
+  it("does NOT open a thread when patching an already-disputed page", async () => {
+    // Seed a page that is already disputed.
+    const content = serializeFrontmatter(
+      {
+        title: "Already Disputed",
+        created: "2025-01-01",
+        updated: "2025-01-01",
+        confidence: 0.5,
+        disputed: true,
+        visibility: "public",
+        authors: ["tester"],
+      },
+      "# Already Disputed\n\nContent.\n",
+    );
+    await writeWikiPage("already-disputed", content);
+
+    // Patch an unrelated field — should NOT open a reconciliation thread.
+    await patchMetadata({
+      slug: "already-disputed",
+      metadata: { confidence: 0.3 },
+      author: "editor",
+    });
+
+    const threads = await listThreads("already-disputed");
+    const reconcileThread = threads.find(
+      (t) => t.title === RECONCILE_THREAD_TITLE,
+    );
+    expect(reconcileThread).toBeUndefined();
   });
 });
