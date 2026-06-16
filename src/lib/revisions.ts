@@ -181,6 +181,71 @@ export async function listRevisions(slug: string): Promise<Revision[]> {
     .sort((a, b) => b.timestamp - a.timestamp);
 }
 
+/** A revision's attribution, without the `stat`/`sizeBytes` an activity feed never shows. */
+export interface RevisionAuthor {
+  timestamp: number;
+  date: string;
+  author?: string;
+  reason?: string;
+}
+
+/**
+ * Lighter-weight revision lister for activity feeds (the trail). Unlike
+ * {@link listRevisions} it does NOT `stat` each revision — feeds never show
+ * `sizeBytes`, and that stat was a wasted round-trip per revision. The timestamp
+ * is parsed from the filename, so ranking and the `max` cap need ZERO reads;
+ * only the capped set's `.meta.json` sidecars are fetched (for author/reason).
+ *
+ * Why it matters: the user-profile / recent trail scans many pages, each with
+ * potentially many revisions. `listRevisions` cost O(total revisions × 2 reads);
+ * this costs O(pages × min(revisions, max)) — the dominant cost of that scan.
+ * `max` bounds per-page work because a feed only surfaces a page's most RECENT
+ * edits anyway (older ones can't out-rank other pages' activity in the cap).
+ */
+export async function listRevisionAuthors(
+  slug: string,
+  max: number,
+): Promise<RevisionAuthor[]> {
+  validateSlug(slug);
+  const storage = getStorage();
+  const dirPath = revisionsRelPath(slug);
+
+  let entries: { name: string; isDirectory: boolean }[];
+  try {
+    entries = await storage.listFiles(dirPath);
+  } catch (err) {
+    if (!isEnoent(err)) {
+      logger.warn("revisions", `unexpected error reading revision dir for "${slug}":`, err);
+    }
+    return [];
+  }
+
+  // Timestamps live in the filename — rank newest-first and cap WITHOUT reading.
+  const stems = entries
+    .filter((entry) => !entry.isDirectory && entry.name.endsWith(".md"))
+    .map((entry) => Number(entry.name.slice(0, -3)))
+    .filter((ts) => Number.isFinite(ts) && ts > 0)
+    .sort((a, b) => b - a)
+    .slice(0, Math.max(0, max));
+
+  // Read ONLY the capped set's attribution sidecars (no stat).
+  return Promise.all(
+    stems.map(async (timestamp): Promise<RevisionAuthor> => {
+      let author: string | undefined;
+      let reason: string | undefined;
+      try {
+        const raw = await storage.readFile(revisionsRelPath(slug, `${timestamp}.meta.json`));
+        const meta = JSON.parse(raw) as { author?: string; reason?: string };
+        if (typeof meta.author === "string") author = meta.author;
+        if (typeof meta.reason === "string") reason = meta.reason;
+      } catch {
+        // No sidecar → unattributed (legacy revision); still a valid event.
+      }
+      return { timestamp, date: new Date(timestamp).toISOString(), author, reason };
+    }),
+  );
+}
+
 /**
  * Read a specific revision's content.
  *

@@ -5,6 +5,7 @@ import path from "path";
 import {
   saveRevision,
   listRevisions,
+  listRevisionAuthors,
   readRevision,
   readRevisionMeta,
   deleteRevisions,
@@ -123,6 +124,56 @@ describe("listRevisions", () => {
     expect(revisions[0].author).toBeUndefined();
     expect(revisions[1].author).toBe("alice");
     expect(revisions[2].author).toBeUndefined();
+  });
+});
+
+describe("listRevisionAuthors", () => {
+  it("caps to the newest `max` revisions (by filename timestamp), newest-first", async () => {
+    await ensureDirectories();
+    const dir = getRevisionsDir("capped");
+    await fs.mkdir(dir, { recursive: true });
+    // Five revisions; the cap must keep only the three newest, without reading
+    // the older two at all (ranking is by filename, so this needs no content).
+    for (const ts of [1, 2, 3, 4, 5]) {
+      await fs.writeFile(path.join(dir, `${ts}000000000000.md`), `v${ts}`, "utf-8");
+    }
+    const revs = await listRevisionAuthors("capped", 3);
+    expect(revs.map((r) => r.timestamp)).toEqual([
+      5000000000000, 4000000000000, 3000000000000,
+    ]);
+    // Shape: timestamp + ISO date, no sizeBytes (the stat is intentionally skipped).
+    expect(revs[0].date).toBe(new Date(5000000000000).toISOString());
+    expect(revs[0]).not.toHaveProperty("sizeBytes");
+  });
+
+  it("reads author/reason from sidecars and leaves them undefined when absent", async () => {
+    await ensureDirectories();
+    const dir = getRevisionsDir("attrib");
+    await fs.mkdir(dir, { recursive: true });
+    await fs.writeFile(path.join(dir, "1000000000000.md"), "v1", "utf-8"); // no sidecar
+    await fs.writeFile(path.join(dir, "2000000000000.md"), "v2", "utf-8");
+    await fs.writeFile(
+      path.join(dir, "2000000000000.meta.json"),
+      JSON.stringify({ author: "alice", reason: "fix typo" }),
+      "utf-8",
+    );
+    const revs = await listRevisionAuthors("attrib", 20);
+    expect(revs[0]).toMatchObject({ timestamp: 2000000000000, author: "alice", reason: "fix typo" });
+    expect(revs[1].author).toBeUndefined();
+    expect(revs[1].reason).toBeUndefined();
+  });
+
+  it("returns empty for a page with no revisions, and skips non-revision entries", async () => {
+    await ensureDirectories();
+    expect(await listRevisionAuthors("none", 20)).toEqual([]);
+
+    const dir = getRevisionsDir("noise");
+    await fs.mkdir(dir, { recursive: true });
+    await fs.writeFile(path.join(dir, "1000000000000.md"), "v1", "utf-8");
+    await fs.writeFile(path.join(dir, "README.txt"), "ignore", "utf-8");
+    await fs.writeFile(path.join(dir, "notanumber.md"), "ignore", "utf-8");
+    const revs = await listRevisionAuthors("noise", 20);
+    expect(revs.map((r) => r.timestamp)).toEqual([1000000000000]);
   });
 });
 

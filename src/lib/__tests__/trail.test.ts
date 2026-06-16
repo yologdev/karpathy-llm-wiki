@@ -11,15 +11,15 @@ vi.mock("../wiki", () => ({
   tenantForOwner: (o?: string) => o ?? "commons",
   ownerToTenant: (o?: string) => o ?? "commons",
 }));
-vi.mock("../revisions", () => ({ listRevisions: vi.fn() }));
+vi.mock("../revisions", () => ({ listRevisionAuthors: vi.fn() }));
 
 import { trailEventsForPages } from "../trail";
 import { readWikiPageWithFrontmatter } from "../wiki";
-import { listRevisions } from "../revisions";
+import { listRevisionAuthors } from "../revisions";
 import { logger } from "../logger";
 
 const mockedReadPage = vi.mocked(readWikiPageWithFrontmatter);
-const mockedListRevisions = vi.mocked(listRevisions);
+const mockedListRevisionAuthors = vi.mocked(listRevisionAuthors);
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -40,7 +40,7 @@ describe("trailEventsForPages — actor normalization", () => {
       },
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } as any);
-    mockedListRevisions.mockResolvedValue([
+    mockedListRevisionAuthors.mockResolvedValue([
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       { author: "lint-fix", timestamp: 1_700_000_000_000, date: "2026-06-10" } as any,
     ]);
@@ -70,7 +70,7 @@ describe("trailEventsForPages — actor normalization", () => {
       },
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } as any);
-    mockedListRevisions.mockResolvedValue([]);
+    mockedListRevisionAuthors.mockResolvedValue([]);
 
     const events = await trailEventsForPages([{ slug: "p", title: "P" }]);
     expect(events).toHaveLength(1);
@@ -82,7 +82,7 @@ describe("trailEventsForPages — actor normalization", () => {
     const src = JSON.stringify([
       { type: "url", url: "https://e.com", fetched: "2026-06-10T00:00:00.000Z", triggered_by: "alice" },
     ]);
-    mockedListRevisions.mockResolvedValue([]);
+    mockedListRevisionAuthors.mockResolvedValue([]);
 
     // A plain public page → reachable at /wiki/<slug>.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -104,7 +104,7 @@ describe("trailEventsForPages — actor normalization", () => {
     // No sources → no ingest event; the lone event is from a revision (edit).
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     mockedReadPage.mockResolvedValue({ frontmatter: { type: "html" } } as any);
-    mockedListRevisions.mockResolvedValue([
+    mockedListRevisionAuthors.mockResolvedValue([
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       { author: "alice", timestamp: 1_700_000_000_000, date: "2026-06-10" } as any,
     ]);
@@ -122,7 +122,7 @@ describe("trailEventsForPages — actor normalization", () => {
       frontmatter: { sources: src, visibility: "private" },
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } as any);
-    mockedListRevisions.mockResolvedValue([]);
+    mockedListRevisionAuthors.mockResolvedValue([]);
     const events = await trailEventsForPages([{ slug: "secret", title: "Secret" }]);
     expect(events[0].commons).toBe(false);
   });
@@ -130,7 +130,7 @@ describe("trailEventsForPages — actor normalization", () => {
   it("defaults commons=false and logs when the page read fails (not a silent swallow)", async () => {
     const warn = vi.spyOn(logger, "warn").mockImplementation(() => {});
     mockedReadPage.mockRejectedValue(new Error("R2 down"));
-    mockedListRevisions.mockResolvedValue([
+    mockedListRevisionAuthors.mockResolvedValue([
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       { author: "alice", timestamp: 1_700_000_000_000, date: "2026-06-10" } as any,
     ]);

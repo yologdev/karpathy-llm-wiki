@@ -1,5 +1,5 @@
 import { listReadableWikiPages, readWikiPageWithFrontmatter, isAgentScopedType, ownerToTenant } from "./wiki";
-import { listRevisions } from "./revisions";
+import { listRevisionAuthors } from "./revisions";
 import { parseSources } from "./sources";
 import { isAgentHandle } from "./agents";
 import { normalizeActor } from "./agent-handle";
@@ -42,6 +42,13 @@ export interface TrailEvent {
 // bumps), so the freshest 30 pages reliably over-fill the list — reading more
 // is wasted I/O on the homepage path.
 const MAX_PAGES_SCANNED = 30;
+
+// Per-page revision cap for the trail. A feed only surfaces a page's most RECENT
+// edits — older ones can't out-rank other pages' activity within the event cap —
+// so reading every revision of every scanned page was the trail's dominant I/O
+// (these pages are agent-maintained and accrue many revisions). Reading the
+// newest few per page bounds it; the dedup window collapses edit bursts anyway.
+const MAX_REVISIONS_PER_PAGE = 20;
 
 /**
  * The public activity trail. For anonymous reads (`principal == null` — the
@@ -174,9 +181,11 @@ export async function trailEventsForPages(
         // Page unreadable — skip its ingests.
       }
 
-      // Edits — attributed revisions.
+      // Edits — attributed revisions. Lighter than listRevisions: no per-revision
+      // stat, and capped to the newest few (the trail's dominant cost was reading
+      // every revision of every scanned page).
       try {
-        const revisions = await listRevisions(page.slug);
+        const revisions = await listRevisionAuthors(page.slug, MAX_REVISIONS_PER_PAGE);
         for (const r of revisions) {
           if (!r.author) continue;
           const actor = normalizeActor(r.author);
