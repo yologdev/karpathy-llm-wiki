@@ -851,6 +851,28 @@ describe("recent trail action labeling", () => {
     expect(actions).toContain("edited");
     expect(actions).not.toContain("re-ingested");
   });
+
+  it("a delete prunes the page from BOTH the global and the owner's per-tenant index", async () => {
+    const { getRecentIndex } = await import("../recent-index");
+    await getStorage().putIndex("recent", []);
+    await getStorage().putIndex("recent:tester", []); // owner tester's profile index
+
+    // An owned, public commons page → its event routes to recent:tester + global.
+    const content = serializeFrontmatter(
+      { title: "Owned Page", owner: "tester" },
+      "# Owned Page\n\nv1.",
+    );
+    await writeWikiPageWithSideEffects(
+      makeOpts({ slug: "owned-page", title: "Owned Page", author: "tester", content }),
+    );
+    expect((await getRecentIndex("tester"))?.some((e) => e.slug === "owned-page")).toBe(true);
+    expect((await getRecentIndex())?.some((e) => e.slug === "owned-page")).toBe(true);
+
+    // Delete → pruned from BOTH; the per-tenant key is derived from prevContent's owner.
+    await deleteWikiPage("owned-page");
+    expect((await getRecentIndex("tester"))?.some((e) => e.slug === "owned-page")).toBe(false);
+    expect((await getRecentIndex())?.some((e) => e.slug === "owned-page")).toBe(false);
+  });
 });
 
 // ---------------------------------------------------------------------------

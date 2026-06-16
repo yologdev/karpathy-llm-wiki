@@ -12,14 +12,19 @@ vi.mock("../wiki", () => ({
   ownerToTenant: (o?: string) => o ?? "commons",
 }));
 vi.mock("../revisions", () => ({ listRevisionAuthors: vi.fn() }));
+// getOwnerTrail dynamically imports recent-index; mock it to drive index hit/miss.
+vi.mock("../recent-index", () => ({ getRecentIndex: vi.fn(), putRecentIndex: vi.fn() }));
 
-import { trailEventsForPages } from "../trail";
+import { trailEventsForPages, getOwnerTrail } from "../trail";
 import { readWikiPageWithFrontmatter } from "../wiki";
 import { listRevisionAuthors } from "../revisions";
+import { getRecentIndex, putRecentIndex } from "../recent-index";
 import { logger } from "../logger";
 
 const mockedReadPage = vi.mocked(readWikiPageWithFrontmatter);
 const mockedListRevisionAuthors = vi.mocked(listRevisionAuthors);
+const mockedGetRecentIndex = vi.mocked(getRecentIndex);
+const mockedPutRecentIndex = vi.mocked(putRecentIndex);
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -138,5 +143,72 @@ describe("trailEventsForPages — actor normalization", () => {
     expect(events).toHaveLength(1); // the edit event survives the read failure
     expect(events[0].commons).toBe(false);
     expect(warn).toHaveBeenCalled(); // the unexpected read error is surfaced
+  });
+});
+
+describe("getOwnerTrail", () => {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const ev = (over: Record<string, unknown>): any => ({
+    ts: 1000,
+    when: "2026-06-10T00:00:00.000Z",
+    actor: "alice",
+    isAgent: false,
+    action: "edited",
+    slug: "page-a",
+    title: "Page A",
+    tenant: "alice",
+    commons: true,
+    ...over,
+  });
+
+  it("serves the per-owner index — filtering to current commons pages + refreshing titles, no scan", async () => {
+    mockedGetRecentIndex.mockResolvedValue([
+      ev({ ts: 3000, slug: "kept", title: "Stale Snapshot Title" }),
+      ev({ ts: 2000, slug: "gone" }), // not in commonsPages → deleted/private → dropped
+    ]);
+    const trail = await getOwnerTrail(
+      "alice",
+      [{ slug: "kept", title: "Current Title" }],
+      60,
+    );
+    expect(trail.map((e) => e.slug)).toEqual(["kept"]); // "gone" filtered out
+    expect(trail[0].title).toBe("Current Title"); // snapshot title refreshed to live
+    expect(mockedReadPage).not.toHaveBeenCalled(); // O(1) read — no scan
+    expect(mockedPutRecentIndex).not.toHaveBeenCalled(); // index hit doesn't re-seed
+  });
+
+  it("respects the limit when serving the index", async () => {
+    mockedGetRecentIndex.mockResolvedValue([
+      ev({ ts: 3000, slug: "a", title: "A" }),
+      ev({ ts: 2000, slug: "b", title: "B" }),
+    ]);
+    const trail = await getOwnerTrail(
+      "alice",
+      [
+        { slug: "a", title: "A" },
+        { slug: "b", title: "B" },
+      ],
+      1,
+    );
+    expect(trail.map((e) => e.slug)).toEqual(["a"]);
+  });
+
+  it("falls back to the scan and lazily seeds the index when it's absent", async () => {
+    mockedGetRecentIndex.mockResolvedValue(null); // unseeded
+    mockedReadPage.mockResolvedValue({
+      frontmatter: {
+        sources: JSON.stringify([
+          { type: "url", url: "https://e.com", fetched: "2026-06-10T00:00:00.000Z", triggered_by: "alice" },
+        ]),
+      },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } as any);
+    mockedListRevisionAuthors.mockResolvedValue([]);
+
+    const trail = await getOwnerTrail("alice", [{ slug: "p", title: "P" }], 60);
+    expect(trail.length).toBeGreaterThanOrEqual(1); // built from the scan
+    expect(mockedReadPage).toHaveBeenCalled(); // scanned
+    // Seeded the per-owner index (keyed by tenant) for next time.
+    expect(mockedPutRecentIndex).toHaveBeenCalledWith(expect.any(Array), "alice");
   });
 });

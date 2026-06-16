@@ -93,6 +93,47 @@ async function withCurrentTitles(
 }
 
 /**
+ * The activity trail for ONE owner's profile (the pages a `tenant` owns). Serves
+ * the per-owner `recent:<tenant>` index in O(1) when seeded, falling back to the
+ * {@link trailEventsForPages} scan and lazily seeding the index from it. This is
+ * the profile's analogue of {@link getTrail} for the homepage — it turns an
+ * O(pages × revisions) scan into a single KV read once warm.
+ *
+ * `commonsPages` is the owner's CURRENT public commons pages (the caller already
+ * has them). Index events are reconciled against it on every read: any whose
+ * page is gone (deleted) or no longer a public commons page (turned private)
+ * is dropped, and snapshot titles are refreshed to the live title — so the index
+ * only needs to be append-fresh (push on write), not perfectly pruned.
+ */
+export async function getOwnerTrail(
+  tenant: string,
+  commonsPages: { slug: string; title: string; owner?: string }[],
+  limit: number,
+): Promise<TrailEvent[]> {
+  const { getRecentIndex, putRecentIndex } = await import("./recent-index");
+  const idx = await getRecentIndex(tenant);
+  if (idx !== null) {
+    const titleBySlug = new Map(commonsPages.map((p) => [p.slug, p.title]));
+    return idx
+      .filter((e) => titleBySlug.has(e.slug)) // drop deleted / now-private pages
+      .map((e) => {
+        const current = titleBySlug.get(e.slug);
+        return current && current !== e.title ? { ...e, title: current } : e;
+      })
+      .slice(0, limit);
+  }
+  // Cold: scan, then lazily seed the per-owner index for next time (fail-soft —
+  // a seed failure just means the next view scans again).
+  const events = await trailEventsForPages(commonsPages, limit);
+  try {
+    await putRecentIndex(events, tenant);
+  } catch (err) {
+    logger.warn("recent-index", `owner trail seed skipped for "${tenant}":`, err);
+  }
+  return events;
+}
+
+/**
  * Build the activity trail by merging recent ingests (from each page's
  * `sources[]` provenance) and edits (from revision metadata) into one
  * time-sorted feed. Agent-scoped pages are excluded; agent *actors* are kept

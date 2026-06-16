@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { listReadableWikiPages, isArtifactType } from "@/lib/wiki";
+import { listReadableWikiPages, isArtifactType, tenantForOwner } from "@/lib/wiki";
 import { slugsForOwner } from "@/lib/search";
 import { listAgentsForOwner } from "@/lib/agents";
 import { getDiscussionStatsForSlugs } from "@/lib/talk";
@@ -8,7 +8,7 @@ import { listVaults } from "@/lib/vault";
 import { decodeSlug } from "@/lib/slugify";
 import { buildContributorProfile } from "@/lib/contributors";
 import { belongsInCommons } from "@/lib/commons";
-import { trailEventsForPages } from "@/lib/trail";
+import { getOwnerTrail } from "@/lib/trail";
 import { Trail } from "@/components/Trail";
 import { ProfileBlogIndex } from "@/components/ProfileBlogIndex";
 
@@ -84,9 +84,12 @@ export default async function UserPage({
   const vaults = vaultsAll.filter((v) => v.visibility === "public");
 
   // The remaining two reads depend on the derived page lists above, so they form
-  // a second concurrent tier (the trail dominates; stats overlaps it for free).
+  // a second concurrent tier. The trail is served from the per-owner activity
+  // index (O(1) once seeded) keyed by the SAME tenant the write path pushes to
+  // (slugsForOwner matched these pages by `tenantForOwner(handle)`), with the
+  // scan as the cold-start seed + fallback.
   const [trail, statsMap] = await Promise.all([
-    trailEventsForPages(commonsPages, 60),
+    getOwnerTrail(tenantForOwner(handle), commonsPages, 60),
     getDiscussionStatsForSlugs(artifacts.map((p) => p.slug)),
   ]);
   const discussionStats: Record<string, { total: number; open: number }> = {};

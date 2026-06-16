@@ -93,6 +93,42 @@ describe("recent-index", () => {
     expect(idx?.map((e) => e.slug)).toEqual(["page-b"]);
   });
 
+  it("pushRecentEvent routes to BOTH the global and the owner's per-tenant index", async () => {
+    await getStorage().putIndex("recent", []);
+    await getStorage().putIndex("recent:alice", []);
+    await pushRecentEvent(ev({ ts: 1000, slug: "page-a", tenant: "alice" }));
+    expect((await getRecentIndex())?.map((e) => e.slug)).toEqual(["page-a"]);
+    expect((await getRecentIndex("alice"))?.map((e) => e.slug)).toEqual(["page-a"]);
+  });
+
+  it("a per-tenant index is independent — its push no-ops until that tenant is seeded", async () => {
+    await getStorage().putIndex("recent", []); // global seeded; alice NOT
+    await pushRecentEvent(ev({ ts: 1000, slug: "page-a", tenant: "alice" }));
+    expect((await getRecentIndex())?.map((e) => e.slug)).toEqual(["page-a"]); // global got it
+    expect(await getRecentIndex("alice")).toBeNull(); // per-tenant still unseeded → no-op
+  });
+
+  it("routes events to the index matching their tenant (owners stay isolated)", async () => {
+    await getStorage().putIndex("recent", []);
+    await getStorage().putIndex("recent:alice", []);
+    await getStorage().putIndex("recent:bob", []);
+    await pushRecentEvent(ev({ ts: 1000, slug: "a1", tenant: "alice" }));
+    await pushRecentEvent(ev({ ts: 2000, slug: "b1", tenant: "bob" }));
+    expect((await getRecentIndex("alice"))?.map((e) => e.slug)).toEqual(["a1"]);
+    expect((await getRecentIndex("bob"))?.map((e) => e.slug)).toEqual(["b1"]);
+    expect((await getRecentIndex())?.map((e) => e.slug)).toEqual(["b1", "a1"]); // global has both
+  });
+
+  it("removeRecentForSlug(slug, tenant) prunes BOTH the global and per-tenant index", async () => {
+    await getStorage().putIndex("recent", []);
+    await getStorage().putIndex("recent:alice", []);
+    await pushRecentEvent(ev({ ts: 1000, slug: "page-a", tenant: "alice" }));
+    await pushRecentEvent(ev({ ts: 2000, slug: "page-b", tenant: "alice" }));
+    await removeRecentForSlug("page-a", "alice");
+    expect((await getRecentIndex())?.map((e) => e.slug)).toEqual(["page-b"]);
+    expect((await getRecentIndex("alice"))?.map((e) => e.slug)).toEqual(["page-b"]);
+  });
+
   it("getTrail serves the index for anonymous reads, capped to limit", async () => {
     await seedEmpty();
     await pushRecentEvent(ev({ ts: 1000, slug: "page-a" }));

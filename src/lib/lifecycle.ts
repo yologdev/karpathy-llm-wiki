@@ -459,7 +459,11 @@ async function runPageLifecycleOp(
   //        the daily rebuild has seeded the index. Fail-soft.
   try {
     if (op.kind === "delete") {
-      await removeRecentForSlug(slug);
+      // Prune the owner's per-tenant index too, keyed the SAME way the push (and
+      // the silo cleanup at removeSiloForPage) derive it. `deletedOwner` was
+      // captured before the file was removed; tenantForOwner maps an unknown
+      // owner to the default tenant — exactly where its events were pushed.
+      await removeRecentForSlug(slug, tenantForOwner(deletedOwner));
     } else if (op.author) {
       const fm = parseFrontmatter(op.content).data;
       const isCommons = belongsInCommons({
