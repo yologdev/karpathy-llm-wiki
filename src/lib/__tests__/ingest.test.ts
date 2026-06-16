@@ -406,7 +406,12 @@ describe("ingest — auto tags", () => {
     const result = await ingest("Topic Alpha", "second source, changed content");
 
     const page = await readWikiPageWithFrontmatter(result.primarySlug);
-    expect((page!.frontmatter.tags as string[]).sort()).toEqual(["keep-me", "new-one"]);
+    // `topic-alpha` is the always-added concept tag (the page's own topic).
+    expect((page!.frontmatter.tags as string[]).sort()).toEqual([
+      "keep-me",
+      "new-one",
+      "topic-alpha",
+    ]);
   });
 
   it("persists LLM-synthesized TAGS to the page frontmatter", async () => {
@@ -416,7 +421,30 @@ describe("ingest — auto tags", () => {
 
     const result = await ingest("Vector DBs", "A source about vector databases and ANN search.");
     const page = await readWikiPageWithFrontmatter(result.primarySlug);
-    expect(page!.frontmatter.tags).toEqual(["databases", "vector-search", "ai"]);
+    // The concept ("Vector Databases" → `vector-databases`) leads, then the
+    // synthesized facets — the page is always tagged with its own topic.
+    expect(page!.frontmatter.tags).toEqual([
+      "vector-databases",
+      "databases",
+      "vector-search",
+      "ai",
+    ]);
+  });
+
+  it("always tags the page with its own concept, and caps the set at MAX_AUTO_TAGS", async () => {
+    // The LLM emits coarse facets (more than the cap); the page's concept
+    // ("Agent Harness" → `agent-harness`) is added as a topic tag, LEADS (so it
+    // survives the cap), and the whole set is bounded — the LLM never coins the
+    // concept itself because it's told to keep facets coarser than it.
+    mockedCallLLM.mockResolvedValueOnce(
+      "CONCEPT: Agent Harness\nTAGS: ai-agents, llm, orchestration, software, systems, tooling, infra\n\n# Agent Harness\n\nBody.",
+    );
+    const result = await ingest("Agent Harness", "Source about the agent harness loop.");
+    const tags = (await readWikiPageWithFrontmatter(result.primarySlug))!.frontmatter
+      .tags as string[];
+    expect(tags).toContain("agent-harness"); // the page's own topic is tagged
+    expect(tags[0]).toBe("agent-harness"); // leads, so it survives the cap
+    expect(tags.length).toBeLessThanOrEqual(6); // MAX_AUTO_TAGS — no sprawl
   });
 
   it("merges synthesized tags with caller-supplied tags (deduped)", async () => {

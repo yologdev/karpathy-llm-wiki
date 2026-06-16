@@ -1629,10 +1629,18 @@ export async function ingest(
   const sourceEntry = buildSourceEntry(sourceUrl, sourceType, options?.triggeredBy, rawId);
   frontmatter.sources = serializeSources([sourceEntry]);
 
-  // Tags: synthesized (conceptTags, empty for a prebuilt body/fallback) plus
-  // any caller-supplied tags — normalized to the canonical form so caller tags
-  // dedupe against synthesized ones. Merged with existing tags below for re-ingests.
-  const newTags = normalizeTags([...(options?.tags ?? []), ...conceptTags], Infinity);
+  // Tags = the page's own CONCEPT as a topic tag (deterministic) + caller tags +
+  // the synthesized COARSE facets (conceptTags). The LLM is told to keep facets
+  // coarser than the concept (they group many pages), so it never coins the
+  // concept itself — we add it here so a page is always tagged with its own
+  // topic (e.g. "Agent Harness" → `agent-harness`), which is what readers expect.
+  // Capped at MAX_AUTO_TAGS (the prompt's "3-6" is only a request, never enforced)
+  // with the concept tag FIRST so it survives the cap. Merged below for re-ingests.
+  const conceptTag = concept ? slugify(concept) : "";
+  const newTags = normalizeTags(
+    [...(conceptTag ? [conceptTag] : []), ...(options?.tags ?? []), ...conceptTags],
+    MAX_AUTO_TAGS,
+  );
   if (newTags.length > 0) {
     frontmatter.tags = newTags;
   }
@@ -1654,11 +1662,14 @@ export async function ingest(
       (Number.isFinite(prevCount) ? prevCount : 0) + 1,
     );
     if (Array.isArray(existing.frontmatter.tags)) {
-      // Merge existing tags with any new tags from options (deduplicated)
       const existingTags = existing.frontmatter.tags.filter(
         (t): t is string => typeof t === "string",
       );
-      const merged = normalizeTags([...existingTags, ...newTags], Infinity);
+      // Cap the union at MAX_AUTO_TAGS with the FRESH tags (incl. the concept
+      // tag) first, so a re-ingest stays bounded + current instead of unioning
+      // unboundedly into tag sprawl (the old `Infinity` let it grow every time).
+      // Older tags fill the remaining slots.
+      const merged = normalizeTags([...newTags, ...existingTags], MAX_AUTO_TAGS);
       frontmatter.tags = merged;
     }
     // Preserve existing source_url if the new ingest doesn't provide one.
