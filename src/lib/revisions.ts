@@ -194,14 +194,15 @@ export interface RevisionAuthor {
  * {@link listRevisions} it does NOT `stat` each revision — feeds never show
  * `sizeBytes`, and that stat was a wasted round-trip per revision. The timestamp
  * is parsed from the filename, so ranking and the `max` cap need ZERO
- * per-revision reads (just the one directory listing); only the capped set's
- * `.meta.json` sidecars are then fetched (for author/reason).
+ * per-revision reads (just the one directory listing). It then reads a
+ * `.meta.json` sidecar ONLY for revisions whose sidecar appears in that same
+ * listing (for author/reason) — an unattributed revision costs no read at all.
  *
  * Why it matters: the user-profile / recent trail scans many pages, each with
  * potentially many revisions. `listRevisions` cost O(total revisions × 2 reads);
- * this costs O(pages × min(revisions, max)) — the dominant cost of that scan.
- * `max` bounds per-page work because a feed only surfaces a page's most RECENT
- * edits anyway (older ones can't out-rank other pages' activity in the cap).
+ * this costs O(pages × min(ATTRIBUTED revisions, max)) reads — the dominant cost
+ * of that scan. `max` bounds per-page work because a feed only surfaces a page's
+ * most RECENT edits anyway (older ones can't out-rank other pages' in the cap).
  */
 export async function listRevisionAuthors(
   slug: string,
@@ -221,29 +222,39 @@ export async function listRevisionAuthors(
     return [];
   }
 
-  // Timestamps live in the filename — rank newest-first and cap WITHOUT reading.
-  const stems = entries
-    .filter((entry) => !entry.isDirectory && entry.name.endsWith(".md"))
-    .map((entry) => Number(entry.name.slice(0, -3)))
-    .filter((ts) => Number.isFinite(ts) && ts > 0)
-    .sort((a, b) => b - a)
-    .slice(0, Math.max(0, max));
+  // One `listFiles` gives us BOTH the revisions (`<ts>.md`) and which of them
+  // carry an attribution sidecar (`<ts>.meta.json`). Build the sidecar set here
+  // so we read attribution ONLY where it exists — never paying an ENOENT
+  // round-trip for an unattributed (legacy/human) revision. Timestamps come from
+  // the filenames, so ranking + the `max` cap need no reads at all.
+  const sidecars = new Set<number>();
+  const mdStems: number[] = [];
+  for (const entry of entries) {
+    if (entry.isDirectory) continue;
+    if (entry.name.endsWith(".meta.json")) {
+      const ts = Number(entry.name.slice(0, -".meta.json".length));
+      if (Number.isFinite(ts) && ts > 0) sidecars.add(ts);
+    } else if (entry.name.endsWith(".md")) {
+      const ts = Number(entry.name.slice(0, -3));
+      if (Number.isFinite(ts) && ts > 0) mdStems.push(ts);
+    }
+  }
+  const stems = mdStems.sort((a, b) => b - a).slice(0, Math.max(0, max));
 
-  // Read ONLY the capped set's attribution sidecars (no stat).
   return Promise.all(
     stems.map(async (timestamp): Promise<RevisionAuthor> => {
-      let author: string | undefined;
-      let reason: string | undefined;
+      const base: RevisionAuthor = { timestamp, date: new Date(timestamp).toISOString() };
+      // No sidecar in the listing → unattributed; a valid event, but no read.
+      if (!sidecars.has(timestamp)) return base;
       try {
         const raw = await storage.readFile(revisionsRelPath(slug, `${timestamp}.meta.json`));
         const meta = JSON.parse(raw) as { author?: string; reason?: string };
-        if (typeof meta.author === "string") author = meta.author;
-        if (typeof meta.reason === "string") reason = meta.reason;
+        if (typeof meta.author === "string") base.author = meta.author;
+        if (typeof meta.reason === "string") base.reason = meta.reason;
       } catch (err) {
-        // A MISSING sidecar (ENOENT) is expected — an unattributed legacy
-        // revision, still a valid event. A corrupt/unparseable sidecar or a real
-        // read fault is NOT expected: surface it (matching readRevisionMeta and
-        // this file's convention) rather than silently dropping the attribution.
+        // The sidecar was in the listing but is unreadable/corrupt — NOT expected
+        // (we just saw it): surface it (matching readRevisionMeta and this file's
+        // convention) rather than silently dropping the attribution.
         if (!isEnoent(err)) {
           logger.warn(
             "revisions",
@@ -252,7 +263,7 @@ export async function listRevisionAuthors(
           );
         }
       }
-      return { timestamp, date: new Date(timestamp).toISOString(), author, reason };
+      return base;
     }),
   );
 }

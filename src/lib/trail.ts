@@ -46,10 +46,12 @@ const MAX_PAGES_SCANNED = 30;
 // Per-page revision cap for the trail. A feed only surfaces a page's most RECENT
 // edits — older ones can't out-rank other pages' activity within the event cap —
 // so reading every revision of every scanned page was the trail's dominant I/O
-// (these pages are agent-maintained and accrue many revisions). Reading the
+// (these pages are agent-maintained and accrue many revisions). Reading only the
 // newest few per page bounds it; the dedup window collapses same-actor edit
-// bursts (within ~2 min) anyway.
-const MAX_REVISIONS_PER_PAGE = 20;
+// bursts (within ~2 min) anyway, and across MAX_PAGES_SCANNED pages this still
+// over-fills the feed. Measured: the per-revision meta reads dominated the scan,
+// so this cap (with the no-stat + skip-unattributed reads) is the main lever.
+const MAX_REVISIONS_PER_PAGE = 8;
 
 /**
  * The public activity trail. For anonymous reads (`principal == null` — the
