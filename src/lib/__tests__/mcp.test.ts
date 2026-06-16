@@ -42,6 +42,9 @@ import {
   handleVaultUncurate,
   handleListVaults,
   handleVaultPages,
+  handleVaultCreate,
+  handleVaultRename,
+  handleVaultDelete,
   handleWikiGraph,
   handleMaintenanceScan,
   createMcpServer,
@@ -4024,6 +4027,94 @@ describe("vault_pages", () => {
     expect(entry.confidence).toBe(0.9);
     expect(entry.type).toBe("article");
     expect(entry.owner).toBe("viewer");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// vault_create / vault_rename / vault_delete
+// ---------------------------------------------------------------------------
+
+describe("vault_create", () => {
+  it("creates a new vault and returns it", async () => {
+    const result = await handleVaultCreate({ owner: "alice", name: "Research" });
+    expect(result.vault).toBeDefined();
+    expect(result.vault.owner).toBe("alice");
+    expect(result.vault.name).toBe("Research");
+    expect(result.vault.visibility).toBe("public");
+    expect(result.vault.slugs).toEqual([]);
+
+    // The vault actually exists
+    const id = vaultIdFor("alice", "Research");
+    const vault = await getVault(id);
+    expect(vault).not.toBeNull();
+    expect(vault?.name).toBe("Research");
+  });
+
+  it("is idempotent — creating the same vault twice returns the existing one", async () => {
+    const first = await handleVaultCreate({ owner: "bob", name: "Notes" });
+    const second = await handleVaultCreate({ owner: "bob", name: "Notes" });
+    expect(first.vault.id).toBe(second.vault.id);
+
+    // Only one vault for bob with that name
+    const vaults = await listVaults("bob");
+    const matching = vaults.filter((v) => v.name === "Notes");
+    expect(matching).toHaveLength(1);
+  });
+});
+
+describe("vault_rename", () => {
+  it("renames an existing vault", async () => {
+    const { vault } = await handleVaultCreate({ owner: "alice", name: "Old Name" });
+    const result = await handleVaultRename({ vault_id: vault.id, name: "New Name" });
+    expect(result).toEqual({ renamed: true, vault_id: vault.id, name: "New Name" });
+
+    // Verify the rename persisted
+    const updated = await getVault(vault.id);
+    expect(updated?.name).toBe("New Name");
+  });
+
+  it("throws when the vault does not exist", async () => {
+    await expect(
+      handleVaultRename({ vault_id: "nonexistent--vault", name: "X" }),
+    ).rejects.toThrow("Vault not found: nonexistent--vault");
+  });
+});
+
+describe("vault_delete", () => {
+  it("deletes an existing vault", async () => {
+    const { vault } = await handleVaultCreate({ owner: "alice", name: "Temporary" });
+    const result = await handleVaultDelete({ vault_id: vault.id });
+    expect(result).toEqual({ deleted: true, vault_id: vault.id });
+
+    // Verify the vault is gone
+    const gone = await getVault(vault.id);
+    expect(gone).toBeNull();
+  });
+
+  it("throws when the vault does not exist", async () => {
+    await expect(
+      handleVaultDelete({ vault_id: "nonexistent--vault" }),
+    ).rejects.toThrow("Vault not found: nonexistent--vault");
+  });
+
+  it("does not remove the commons pages themselves", async () => {
+    await writeTestPage(
+      "vault-del-page",
+      "---\ntitle: Vault Del Page\n---\n# Vault Del Page\n\nContent.",
+    );
+    const { vault } = await handleVaultCreate({ owner: "alice", name: "Doomed" });
+    await handleVaultCurate({ slug: "vault-del-page", owner: "alice", vault: "Doomed" });
+
+    // Sanity: slug is in the vault
+    const before = await getVault(vault.id);
+    expect(before?.slugs).toContain("vault-del-page");
+
+    await handleVaultDelete({ vault_id: vault.id });
+
+    // Page still exists in wiki
+    const { readWikiPageWithFrontmatter: readPage } = await import("../wiki");
+    const page = await readPage("vault-del-page");
+    expect(page).not.toBeNull();
   });
 });
 
