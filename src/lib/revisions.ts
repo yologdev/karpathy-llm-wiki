@@ -128,8 +128,9 @@ export async function listRevisions(slug: string): Promise<Revision[]> {
   // serial loop did 2 sequential storage round-trips (stat, then meta) per
   // revision, so a heavily-revised page cost O(revisions) round-trips — which
   // dominated the user-profile activity trail (it scans up to 30 pages, gated by
-  // the worst one). Mapping in parallel makes each page ~2 round-trips total
-  // (all stats overlap, then all metas), with no change to the total op count.
+  // the worst one). Mapping in parallel collapses each page to ~2 round-trips
+  // DEEP (all stats overlap, then all metas) — the op COUNT is unchanged, only
+  // the latency.
   const built = await Promise.all(
     entries.map(async (entry): Promise<Revision | null> => {
       if (entry.isDirectory || !entry.name.endsWith(".md")) return null;

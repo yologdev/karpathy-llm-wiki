@@ -95,6 +95,35 @@ describe("listRevisions", () => {
     const revisions = await listRevisions("no-history");
     expect(revisions).toEqual([]);
   });
+
+  it("keeps no-sidecar revisions alongside sidecar ones (mixed), newest-first; skips non-revision entries", async () => {
+    await ensureDirectories();
+    const dir = getRevisionsDir("mixed");
+    await fs.mkdir(dir, { recursive: true });
+    // Three real revisions; only the MIDDLE one carries an author sidecar.
+    await fs.writeFile(path.join(dir, "1000000000000.md"), "v1", "utf-8");
+    await fs.writeFile(path.join(dir, "2000000000000.md"), "v2", "utf-8");
+    await fs.writeFile(
+      path.join(dir, "2000000000000.meta.json"),
+      JSON.stringify({ author: "alice" }),
+      "utf-8",
+    );
+    await fs.writeFile(path.join(dir, "3000000000000.md"), "v3", "utf-8");
+    // Entries that must be skipped, not counted (and not drop the real ones).
+    await fs.writeFile(path.join(dir, "README.txt"), "ignore", "utf-8");
+    await fs.writeFile(path.join(dir, "notanumber.md"), "ignore", "utf-8");
+
+    const revisions = await listRevisions("mixed");
+    // All three real revisions survive (the null-filter must not over-drop the
+    // no-sidecar ones), newest-first; the invalid entries are excluded.
+    expect(revisions.map((r) => r.timestamp)).toEqual([
+      3000000000000, 2000000000000, 1000000000000,
+    ]);
+    // The sidecar author lands ONLY on the middle revision.
+    expect(revisions[0].author).toBeUndefined();
+    expect(revisions[1].author).toBe("alice");
+    expect(revisions[2].author).toBeUndefined();
+  });
 });
 
 describe("readRevision", () => {
