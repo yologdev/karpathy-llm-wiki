@@ -46,15 +46,34 @@ function StatCell({ label, value }: { label: string; value: string | number }) {
 // anyone (guests included) — yopedia is a public observer surface.
 export default async function UserPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ handle: string }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const { handle: encoded } = await params;
   const handle = decodeSlug(encoded);
+  const { debug } = await searchParams;
 
-  const principal = await getPrincipal();
-  const mine = new Set(await slugsForOwner(handle));
-  const readable = await listReadableWikiPages(principal);
+  // --- TEMP per-call server timing (remove after profile-perf diagnosis) ---
+  // Each await below is an independent storage round-trip whose cost is prod
+  // KV/R2 latency (invisible locally). Measure them on prod to find the real
+  // bottleneck instead of guessing. `?debug=perf` renders the breakdown; a
+  // `[profile-perf]` line is also logged.
+  const perf: Array<[string, number]> = [];
+  const timed = async <T,>(label: string, p: Promise<T>): Promise<T> => {
+    const start = performance.now();
+    try {
+      return await p;
+    } finally {
+      perf.push([label, Math.round(performance.now() - start)]);
+    }
+  };
+  const tStart = performance.now();
+
+  const principal = await timed("getPrincipal", getPrincipal());
+  const mine = new Set(await timed("slugsForOwner", slugsForOwner(handle)));
+  const readable = await timed("listReadableWikiPages", listReadableWikiPages(principal));
   // Newest-first, so the profile reads like a blog index.
   const pages = readable
     .filter((p) => mine.has(p.slug))
@@ -63,12 +82,15 @@ export default async function UserPage({
   // (ingests + edits on those pages); saved HTML artifacts render as cards.
   const commonsPages = pages.filter((p) => belongsInCommons(p));
   const artifacts = pages.filter((p) => isArtifactType(p.type));
-  const trail = await trailEventsForPages(commonsPages, 60);
-  const agents = await listAgentsForOwner(handle);
+  const trail = await timed("trailEventsForPages", trailEventsForPages(commonsPages, 60));
+  const agents = await timed("listAgentsForOwner", listAgentsForOwner(handle));
 
   // Contribution stats (edits/comments/trust) — moved here from the retired
   // /wiki/contributors/<handle> page. Shown only when the handle has activity.
-  const contrib = await buildContributorProfile(handle, undefined, principal);
+  const contrib = await timed(
+    "buildContributorProfile",
+    buildContributorProfile(handle, undefined, principal),
+  );
   const hasActivity =
     contrib.editCount > 0 ||
     contrib.commentCount > 0 ||
@@ -76,13 +98,23 @@ export default async function UserPage({
 
   // Public vaults this handle owns — their curated reference lenses over the
   // commons. Private vaults are hidden on the public profile.
-  const vaults = (await listVaults(handle)).filter(
+  const vaults = (await timed("listVaults", listVaults(handle))).filter(
     (v) => v.visibility === "public",
   );
 
-  const statsMap = await getDiscussionStatsForSlugs(artifacts.map((p) => p.slug));
+  const statsMap = await timed(
+    "getDiscussionStatsForSlugs",
+    getDiscussionStatsForSlugs(artifacts.map((p) => p.slug)),
+  );
   const discussionStats: Record<string, { total: number; open: number }> = {};
   for (const [slug, stats] of statsMap) discussionStats[slug] = stats;
+
+  const perfTotal = Math.round(performance.now() - tStart);
+  console.log(
+    `[profile-perf] handle=${handle} total=${perfTotal}ms ${perf
+      .map(([k, v]) => `${k}=${v}`)
+      .join(" ")} pages=${pages.length} commons=${commonsPages.length} artifacts=${artifacts.length}`,
+  );
 
   return (
     <main
@@ -92,6 +124,24 @@ export default async function UserPage({
         padding: "56px 24px 88px",
       }}
     >
+      {debug === "perf" && (
+        <pre
+          style={{
+            fontSize: 11,
+            background: "var(--accent-soft)",
+            padding: 12,
+            borderRadius: 6,
+            overflow: "auto",
+            marginBottom: 16,
+          }}
+        >
+          {`PROFILE-PERF-START\ntotal=${perfTotal}ms\n${perf
+            .map(([k, v]) => `${k}=${v}ms`)
+            .join(
+              "\n",
+            )}\npages=${pages.length} commons=${commonsPages.length} artifacts=${artifacts.length}\nPROFILE-PERF-END`}
+        </pre>
+      )}
       <header style={{ marginBottom: 28 }}>
         <Link
           href="/wiki?scope=all"
