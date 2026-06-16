@@ -12,8 +12,12 @@
  * Wikipedia does. Pinyin transliteration was rejected: it needs a dictionary
  * that would bloat the Worker bundle. UTF-8 slugs are valid in URLs
  * (percent-encoded), R2 keys, and file paths.
+ *
+ * Exported so tag normalization (`normalizeTags` in ingest.ts) shares the exact
+ * same char policy: a page's concept tag IS its slug, so tags must keep CJK too.
+ * Diverging here once silently dropped every CJK concept tag.
  */
-const SLUG_SEPARATOR_RE =
+export const SLUG_SEPARATOR_RE =
   /[^a-z0-9\u3400-\u9fff\uf900-\ufaff\u3040-\u30ff\uac00-\ud7af]+/g;
 
 /**
