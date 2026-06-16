@@ -1513,7 +1513,7 @@ export function createMcpServer(): McpServer {
       scope: z
         .string()
         .optional()
-        .describe("Scope search to an agent's pages, e.g. 'agent:yoyo'"),
+        .describe("Scope search to an agent's or vault's pages, e.g. 'agent:yoyo' or 'vault:<id>'"),
     },
     annotations: {
       readOnlyHint: true,
@@ -2110,7 +2110,7 @@ export function createMcpServer(): McpServer {
       scope: z
         .string()
         .optional()
-        .describe("Scope query to an agent's pages, e.g. 'agent:yoyo'"),
+        .describe("Scope query to an agent's or vault's pages, e.g. 'agent:yoyo' or 'vault:<id>'"),
     },
     annotations: {
       readOnlyHint: true,

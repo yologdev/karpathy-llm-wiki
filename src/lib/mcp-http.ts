@@ -130,7 +130,7 @@ export const MCP_TOOLS: ToolDef[] = [
       {
         query: str("Search query"),
         limit: { type: "number", description: "Max results (default 10)" },
-        scope: str("Optional scope, e.g. 'agent:yoyo'"),
+        scope: str("Optional scope, e.g. 'agent:yoyo' or 'vault:<id>'"),
       },
       ["query"],
     ),
@@ -162,7 +162,7 @@ export const MCP_TOOLS: ToolDef[] = [
       {
         question: str("The question to answer"),
         format: str("prose | table | slides | html (default prose)"),
-        scope: str("Optional scope, e.g. 'agent:yoyo'"),
+        scope: str("Optional scope, e.g. 'agent:yoyo' or 'vault:<id>'"),
       },
       ["question"],
     ),
