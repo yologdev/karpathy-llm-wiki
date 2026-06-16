@@ -193,8 +193,9 @@ export interface RevisionAuthor {
  * Lighter-weight revision lister for activity feeds (the trail). Unlike
  * {@link listRevisions} it does NOT `stat` each revision — feeds never show
  * `sizeBytes`, and that stat was a wasted round-trip per revision. The timestamp
- * is parsed from the filename, so ranking and the `max` cap need ZERO reads;
- * only the capped set's `.meta.json` sidecars are fetched (for author/reason).
+ * is parsed from the filename, so ranking and the `max` cap need ZERO
+ * per-revision reads (just the one directory listing); only the capped set's
+ * `.meta.json` sidecars are then fetched (for author/reason).
  *
  * Why it matters: the user-profile / recent trail scans many pages, each with
  * potentially many revisions. `listRevisions` cost O(total revisions × 2 reads);
@@ -238,8 +239,18 @@ export async function listRevisionAuthors(
         const meta = JSON.parse(raw) as { author?: string; reason?: string };
         if (typeof meta.author === "string") author = meta.author;
         if (typeof meta.reason === "string") reason = meta.reason;
-      } catch {
-        // No sidecar → unattributed (legacy revision); still a valid event.
+      } catch (err) {
+        // A MISSING sidecar (ENOENT) is expected — an unattributed legacy
+        // revision, still a valid event. A corrupt/unparseable sidecar or a real
+        // read fault is NOT expected: surface it (matching readRevisionMeta and
+        // this file's convention) rather than silently dropping the attribution.
+        if (!isEnoent(err)) {
+          logger.warn(
+            "revisions",
+            `unexpected error reading revision meta "${slug}@${timestamp}":`,
+            err,
+          );
+        }
       }
       return { timestamp, date: new Date(timestamp).toISOString(), author, reason };
     }),

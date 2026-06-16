@@ -146,6 +146,27 @@ describe("listRevisionAuthors", () => {
     expect(revs[0]).not.toHaveProperty("sizeBytes");
   });
 
+  it("ranks by NUMERIC timestamp, not lexicographically", async () => {
+    await ensureDirectories();
+    const dir = getRevisionsDir("numsort");
+    await fs.mkdir(dir, { recursive: true });
+    // 14-digit 1e13 is newer than 13-digit 9e12, but as STRINGS "10000000000000"
+    // sorts BEFORE "9000000000000" — a lexicographic sort would pick the wrong
+    // newest. cap=1 forces the ranking to decide the single winner.
+    await fs.writeFile(path.join(dir, "9000000000000.md"), "older", "utf-8");
+    await fs.writeFile(path.join(dir, "10000000000000.md"), "newer", "utf-8");
+    const revs = await listRevisionAuthors("numsort", 1);
+    expect(revs.map((r) => r.timestamp)).toEqual([10000000000000]);
+  });
+
+  it("returns [] for max <= 0 (reads no sidecars)", async () => {
+    await ensureDirectories();
+    const dir = getRevisionsDir("zerocap");
+    await fs.mkdir(dir, { recursive: true });
+    await fs.writeFile(path.join(dir, "1000000000000.md"), "v1", "utf-8");
+    expect(await listRevisionAuthors("zerocap", 0)).toEqual([]);
+  });
+
   it("reads author/reason from sidecars and leaves them undefined when absent", async () => {
     await ensureDirectories();
     const dir = getRevisionsDir("attrib");

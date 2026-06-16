@@ -47,7 +47,8 @@ const MAX_PAGES_SCANNED = 30;
 // edits — older ones can't out-rank other pages' activity within the event cap —
 // so reading every revision of every scanned page was the trail's dominant I/O
 // (these pages are agent-maintained and accrue many revisions). Reading the
-// newest few per page bounds it; the dedup window collapses edit bursts anyway.
+// newest few per page bounds it; the dedup window collapses same-actor edit
+// bursts (within ~2 min) anyway.
 const MAX_REVISIONS_PER_PAGE = 20;
 
 /**
@@ -182,8 +183,8 @@ export async function trailEventsForPages(
       }
 
       // Edits — attributed revisions. Lighter than listRevisions: no per-revision
-      // stat, and capped to the newest few (the trail's dominant cost was reading
-      // every revision of every scanned page).
+      // stat, and capped to the most recent MAX_REVISIONS_PER_PAGE per page (the
+      // trail's dominant cost was reading every revision of every scanned page).
       try {
         const revisions = await listRevisionAuthors(page.slug, MAX_REVISIONS_PER_PAGE);
         for (const r of revisions) {
@@ -202,7 +203,8 @@ export async function trailEventsForPages(
           });
         }
       } catch {
-        // No revisions — skip.
+        // Defensive only: listRevisionAuthors is fail-soft (returns [] on a read
+        // error), so this guards a pathological storage throw — skip these edits.
       }
 
       return evs;
