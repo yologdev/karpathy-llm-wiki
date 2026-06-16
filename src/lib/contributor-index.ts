@@ -135,8 +135,9 @@ function profileFromIndexAuthor(
  * Build ONE handle's profile from the index, or `null` when the index is ABSENT
  * (the caller should then fall back to the live scan). A handle missing from a
  * PRESENT index has no recorded public contributions → an empty profile, so the
- * caller still avoids the scan. The O(1) read behind the `/u/<handle>` profile +
- * `/api/contributors/<handle>` (mirrors {@link profilesFromIndex} for one handle).
+ * caller still avoids the scan. This is the O(1) read behind the `/u/<handle>`
+ * profile + `/api/contributors/<handle>` (mirrors {@link profilesFromIndex} for
+ * a single handle).
  */
 export async function contributorProfileFromIndex(
   handle: string,

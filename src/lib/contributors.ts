@@ -279,9 +279,20 @@ export async function buildContributorProfile(
   principal: Principal | null = null,
 ): Promise<ContributorProfile> {
   if (!scanData) {
-    const { contributorProfileFromIndex } = await import("./contributor-index");
-    const fromIndex = await contributorProfileFromIndex(handle);
-    if (fromIndex) return fromIndex;
+    try {
+      const { contributorProfileFromIndex } = await import("./contributor-index");
+      const fromIndex = await contributorProfileFromIndex(handle);
+      if (fromIndex) return fromIndex;
+    } catch (err) {
+      // The index is purely an accelerator — a module-load or build error here
+      // must degrade to the live scan, never crash the profile page awaiting
+      // this. Log it (don't swallow silently) so a broken index is visible.
+      logger.warn(
+        "contributors",
+        `contributor-index fast-path failed for "${handle}"; falling back to the live scan:`,
+        err,
+      );
+    }
   }
   const data = scanData ?? (await computeScanData(principal));
   const act = data.activityMap.get(handle) ?? emptyActivity();
