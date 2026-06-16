@@ -124,53 +124,60 @@ export async function listRevisions(slug: string): Promise<Revision[]> {
     return [];
   }
 
-  const revisions: Revision[] = [];
+  // Read each revision's stat + optional meta sidecar CONCURRENTLY. The old
+  // serial loop did 2 sequential storage round-trips (stat, then meta) per
+  // revision, so a heavily-revised page cost O(revisions) round-trips — which
+  // dominated the user-profile activity trail (it scans up to 30 pages, gated by
+  // the worst one). Mapping in parallel makes each page ~2 round-trips total
+  // (all stats overlap, then all metas), with no change to the total op count.
+  const built = await Promise.all(
+    entries.map(async (entry): Promise<Revision | null> => {
+      if (entry.isDirectory || !entry.name.endsWith(".md")) return null;
+      const stem = entry.name.slice(0, -3); // strip ".md"
+      const timestamp = Number(stem);
+      if (Number.isNaN(timestamp) || timestamp <= 0) return null;
 
-  for (const entry of entries) {
-    if (entry.isDirectory) continue;
-    if (!entry.name.endsWith(".md")) continue;
-    const stem = entry.name.slice(0, -3); // strip ".md"
-    const timestamp = Number(stem);
-    if (Number.isNaN(timestamp) || timestamp <= 0) continue;
-
-    try {
-      const stat = await storage.stat(revisionsRelPath(slug, entry.name));
-
-      // Read the optional author/reason sidecar.
-      let author: string | undefined;
-      let reason: string | undefined;
       try {
-        const metaRaw = await storage.readFile(revisionsRelPath(slug, `${stem}.meta.json`));
-        const meta = JSON.parse(metaRaw) as { author?: string; reason?: string };
-        if (typeof meta.author === "string") {
-          author = meta.author;
-        }
-        if (typeof meta.reason === "string") {
-          reason = meta.reason;
-        }
-      } catch {
-        // No sidecar → no author/reason attribution (backward compat).
-      }
+        const stat = await storage.stat(revisionsRelPath(slug, entry.name));
 
-      revisions.push({
-        timestamp,
-        date: new Date(timestamp).toISOString(),
-        slug,
-        sizeBytes: stat.size,
-        ...(author !== undefined && { author }),
-        ...(reason !== undefined && { reason }),
-      });
-    } catch (err) {
-      // File disappeared between listFiles and stat — skip.
-      if (!isEnoent(err)) {
-        logger.warn("revisions", `unexpected error stating revision file "${entry.name}":`, err);
+        // Read the optional author/reason sidecar.
+        let author: string | undefined;
+        let reason: string | undefined;
+        try {
+          const metaRaw = await storage.readFile(revisionsRelPath(slug, `${stem}.meta.json`));
+          const meta = JSON.parse(metaRaw) as { author?: string; reason?: string };
+          if (typeof meta.author === "string") {
+            author = meta.author;
+          }
+          if (typeof meta.reason === "string") {
+            reason = meta.reason;
+          }
+        } catch {
+          // No sidecar → no author/reason attribution (backward compat).
+        }
+
+        return {
+          timestamp,
+          date: new Date(timestamp).toISOString(),
+          slug,
+          sizeBytes: stat.size,
+          ...(author !== undefined && { author }),
+          ...(reason !== undefined && { reason }),
+        };
+      } catch (err) {
+        // File disappeared between listFiles and stat — skip.
+        if (!isEnoent(err)) {
+          logger.warn("revisions", `unexpected error stating revision file "${entry.name}":`, err);
+        }
+        return null;
       }
-    }
-  }
+    }),
+  );
 
   // Sort newest first.
-  revisions.sort((a, b) => b.timestamp - a.timestamp);
-  return revisions;
+  return built
+    .filter((r): r is Revision => r !== null)
+    .sort((a, b) => b.timestamp - a.timestamp);
 }
 
 /**
