@@ -113,8 +113,10 @@ export function editPath(tenant: string, slug: string): string {
  * view of a page (`SiteChrome` renders `/share/*` bare). Used to "open" an
  * artifact so its rendered content fills the viewport, rather than the
  * wiki-chromed `/u/<tenant>/<slug>`. Same `(tenant, slug)` addressing and raw
- * slug as {@link pagePath}; the share route read-gates identically, so a private
- * page's share URL is only viewable by its owner (a non-owner gets the same 404).
+ * slug as {@link pagePath}. The share route applies the same `canReadFrontmatter`
+ * read-gate as the owner page, so a private page is shown only to readers it
+ * permits (its owner, an admin, or the agent's human owner) and 404s for anyone
+ * else — no existence leak.
  */
 export function sharePath(tenant: string, slug: string): string {
   return `/share/${tenant}/${slug}`;
