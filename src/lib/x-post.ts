@@ -405,7 +405,12 @@ export async function fetchXPostContent(url: string): Promise<XPostContent> {
       logger.warn(
         "x-post",
         process.env.X_BEARER_TOKEN
-          ? `X Article ${id} ingested as the syndication TEASER only — full body not fetched (article older than X's ~7-day recent-search window, or the API returned no article).`
+          ? // Token is set, so the body wasn't fetched for one of a few reasons.
+            // Don't assert a single cause here: an API error (bad/rate-limited
+            // token) was already logged precisely by fetchArticleViaApi, while an
+            // out-of-window / no-article result returned silently. List both and
+            // point at any preceding x-post log rather than guess wrong.
+            `X Article ${id} ingested as the syndication TEASER only — full body not fetched (article outside X's ~7-day recent-search window, or the X API call failed; see any preceding x-post log for the exact cause).`
           : `X Article ${id} ingested as the syndication TEASER only — X_BEARER_TOKEN is not set on this worker, so the full body can't be fetched. Set it to ingest full X Articles.`,
       );
       return previewArticle;
