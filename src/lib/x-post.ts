@@ -269,6 +269,9 @@ async function fetchArticleCover(id: string): Promise<string | null> {
  */
 async function fetchArticleViaApi(id: string, url: string): Promise<XPostContent | null> {
   const bearer = process.env.X_BEARER_TOKEN;
+  // No token → can't reach the article body. Return null and let the caller fall
+  // back to the syndication teaser; it logs when the post turns out to be an
+  // article, so a missing token is visible rather than a silent degrade.
   if (!bearer) return null;
   const handle = handleFromUrl(url);
   // `conversation_id:<id>` returns the article tweet (root of its own
@@ -395,7 +398,18 @@ export async function fetchXPostContent(url: string): Promise<XPostContent> {
   // rejects below instead of ingesting as a stub.
   if (!tweet.error && !tweet.tombstone) {
     const previewArticle = formatSyndicationArticle(tweet, url);
-    if (previewArticle) return previewArticle;
+    if (previewArticle) {
+      // It IS a long-form Article, but we only have the ~200-char teaser — make
+      // WHY visible so the shrunk body isn't mistaken for a synthesis bug, and
+      // call out the actionable missing-token case.
+      logger.warn(
+        "x-post",
+        process.env.X_BEARER_TOKEN
+          ? `X Article ${id} ingested as the syndication TEASER only — full body not fetched (article older than X's ~7-day recent-search window, or the API returned no article).`
+          : `X Article ${id} ingested as the syndication TEASER only — X_BEARER_TOKEN is not set on this worker, so the full body can't be fetched. Set it to ingest full X Articles.`,
+      );
+      return previewArticle;
+    }
   }
   // Reject only a genuinely empty payload — no renderable text/media on the
   // tweet itself OR the tweet it quotes (mirrors the media set the formatter

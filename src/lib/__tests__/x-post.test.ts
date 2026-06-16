@@ -332,6 +332,32 @@ describe("fetchXPostContent — X Articles", () => {
     expect(content).toContain("preview only"); // honestly labeled as partial
   });
 
+  it("logs WHY an article degraded to the teaser — missing token vs out-of-window", async () => {
+    const warn = vi.spyOn(logger, "warn").mockImplementation(() => {});
+    const article = {
+      text: "https://t.co/x",
+      user: { name: "A", screen_name: "ada" },
+      article: { title: "Essay", preview_text: "the gist" },
+    };
+
+    // (a) No token → the actionable missing-token message.
+    delete process.env.X_BEARER_TOKEN;
+    mockApi({ synBody: article });
+    await fetchXPostContent("https://x.com/ada/status/123");
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(warn.mock.calls[0][1]).toContain("X_BEARER_TOKEN is not set");
+
+    // (b) Token set but recent-search finds nothing (older than the window) →
+    // the window message, NOT the missing-token one.
+    warn.mockClear();
+    process.env.X_BEARER_TOKEN = "test-bearer";
+    mockApi({ apiBody: { data: [] }, synBody: article });
+    await fetchXPostContent("https://x.com/ada/status/123");
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(warn.mock.calls[0][1]).toContain("recent-search window");
+    expect(warn.mock.calls[0][1]).not.toContain("X_BEARER_TOKEN is not set");
+  });
+
   it("rejects a deleted/tombstoned post even if a stale article object lingers (no stub)", async () => {
     delete process.env.X_BEARER_TOKEN; // syndication-only path
     mockApi({

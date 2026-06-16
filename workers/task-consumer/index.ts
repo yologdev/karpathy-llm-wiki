@@ -5,8 +5,8 @@
  * message to the main yopedia app's `/api/tasks/run` endpoint with the system
  * token. The actual work (reconcile / ingest) runs in the main app, which has
  * the full `src/lib` + OpenNext request context. This worker imports NO `src/lib`
- * code — that would transitively pull Clerk/Next and the OpenNext context it
- * can't provide (same reasoning as workers/x-ingest).
+ * code — that would transitively pull Clerk/Next and the OpenNext context a
+ * standalone worker can't provide.
  *
  * Ack/retry maps straight onto Cloudflare Queues semantics:
  *   - 2xx  → ack (done).

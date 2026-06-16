@@ -11,7 +11,7 @@
 
   // The /api/tasks/run call targets the main yopedia Worker on the same zone. A
   // plain same-zone Worker→Worker fetch is blocked (error 1042); this flag makes
-  // fetch() resolve as a normal public request (same as workers/x-ingest).
+  // fetch() resolve as a normal public request.
   "compatibility_flags": ["global_fetch_strictly_public"],
 
   // Autonomous-maintenance cron (Q2): daily, POSTs /api/tasks/scan. The scan

@@ -2,7 +2,7 @@
 
 The consumer for the **yopedia agent task queue** (Cloudflare Queues), as a
 **standalone Worker** (so it gets a first-class Queues consumer without wrapping
-the OpenNext entry — same reasoning as `workers/x-ingest/`).
+the OpenNext entry).
 
 It drains the **`yopedia-tasks`** queue and, for each message, POSTs the task to
 the deployed main app's **`POST /api/tasks/run`** with the system token. It is a
