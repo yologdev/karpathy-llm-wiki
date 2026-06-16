@@ -16,7 +16,7 @@ import {
   readLog,
 } from "../wiki";
 import { updateIndex } from "../wiki";
-import { listRevisions, saveRevision } from "../revisions";
+import { listRevisions, readRevisionMeta, saveRevision } from "../revisions";
 import { resolveAlias, buildAliasIndex, resetAliasIndex } from "../alias-index";
 import { serializeFrontmatter } from "../frontmatter";
 import { getStorage, _resetStorage } from "../storage";
@@ -395,6 +395,28 @@ describe("deleteWikiPage", () => {
     const result = await deleteWikiPage("victim");
     expect(result.strippedBacklinksFrom).toContain("linker");
     expect(result.strippedBacklinksFrom).not.toContain("bystander");
+  });
+
+  // 14b. Backlink-strip revisions carry author="system"
+  it("creates a revision with author 'system' when stripping backlinks", async () => {
+    await writeWikiPage(
+      "linker2",
+      "# Linker2\n\nPoints to [Gone](gone-page.md).\n",
+    );
+    await writeWikiPage("gone-page", "# Gone\n\nAbout to be deleted.\n");
+    await updateIndex([
+      { title: "Linker2", slug: "linker2", summary: "Has link" },
+      { title: "Gone", slug: "gone-page", summary: "Target" },
+    ]);
+
+    await deleteWikiPage("gone-page");
+
+    const revs = await listRevisions("linker2");
+    expect(revs.length).toBeGreaterThanOrEqual(1);
+    const meta = await readRevisionMeta("linker2", revs[0].timestamp);
+    expect(meta).not.toBeNull();
+    expect(meta!.author).toBe("system");
+    expect(meta!.reason).toBe("backlink strip");
   });
 
   // 15. Tolerates already-deleted file

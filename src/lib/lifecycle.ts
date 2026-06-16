@@ -608,7 +608,7 @@ async function runPageLifecycleOp(
     await mapWithConcurrency(linkers, LIFECYCLE_CONCURRENCY, async ({ entry, page }) => {
       const updated = stripBacklinksTo(slug, page!.content);
       if (updated !== page!.content) {
-        await writeWikiPage(entry.slug, updated);
+        await writeWikiPage(entry.slug, updated, "system", "backlink strip");
         strippedBacklinksFrom.push(entry.slug);
       }
     });

@@ -27,6 +27,7 @@ import {
   readWikiPage,
   updateIndex,
 } from "../wiki";
+import { listRevisions, readRevisionMeta } from "../revisions";
 import {
   searchWikiContent,
   findBacklinks,
@@ -639,6 +640,20 @@ describe("updateRelatedPages", () => {
     const page = await readWikiPage("existing");
     expect(page).not.toBeNull();
     expect(page!.content).toContain("**See also:** [New Page](new-page.md)");
+  });
+
+  it("creates a revision with author 'system' when injecting See-also", async () => {
+    await ensureDirectories();
+    await writeWikiPage("target-page", "# Target Page\n\nSome content here.");
+
+    await updateRelatedPages("source-page", "Source Page", ["target-page"]);
+
+    const revs = await listRevisions("target-page");
+    expect(revs.length).toBeGreaterThanOrEqual(1);
+    const meta = await readRevisionMeta("target-page", revs[0].timestamp);
+    expect(meta).not.toBeNull();
+    expect(meta!.author).toBe("system");
+    expect(meta!.reason).toBe("cross-reference update");
   });
 
   it("PRESERVES the page's frontmatter when appending a See-also", async () => {

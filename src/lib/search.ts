@@ -174,7 +174,7 @@ export async function updateRelatedPages(
         updatedContent = `${page.content.trimEnd()}\n\n**See also:** ${link}\n`;
       }
 
-      await writeWikiPage(slug, updatedContent);
+      await writeWikiPage(slug, updatedContent, "system", "cross-reference update");
       // Keep the backlink index consistent with the new outbound "See also"
       // link — writeWikiPage doesn't, so without this the index goes stale and
       // findBacklinks (which trusts the index) would never surface this edge.
