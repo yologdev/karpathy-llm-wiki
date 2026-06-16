@@ -194,6 +194,20 @@ describe("contributors data layer", () => {
       expect(profile.pagesEdited).toBe(2);
     });
 
+    it("uses the contributor index when present (O(1) fast-path, not a live scan)", async () => {
+      await createPage("idx-page", "Idx", "# Idx\n\nc");
+      await saveRevision("idx-page", "# Idx\n\nv1", "alice");
+      // Seed the index from the current on-disk state → alice has 1 edit.
+      const { rebuildContributorIndex } = await import("../contributor-index");
+      await rebuildContributorIndex();
+      // Add MORE on-disk activity the index doesn't know about.
+      await saveRevision("idx-page", "# Idx\n\nv2", "alice");
+      // The profile must come from the (now-stale) index, not a fresh scan — so
+      // it still reports 1 edit. A re-scan would read the revisions → 2.
+      const profile = await buildContributorProfile("alice");
+      expect(profile.editCount).toBe(1);
+    });
+
     it("counts talk comments and threads", async () => {
       await ensureDirectories();
 

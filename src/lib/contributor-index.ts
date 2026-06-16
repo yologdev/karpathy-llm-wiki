@@ -131,6 +131,21 @@ function profileFromIndexAuthor(
   };
 }
 
+/**
+ * Build ONE handle's profile from the index, or `null` when the index is ABSENT
+ * (the caller should then fall back to the live scan). A handle missing from a
+ * PRESENT index has no recorded public contributions → an empty profile, so the
+ * caller still avoids the scan. The O(1) read behind the `/u/<handle>` profile +
+ * `/api/contributors/<handle>` (mirrors {@link profilesFromIndex} for one handle).
+ */
+export async function contributorProfileFromIndex(
+  handle: string,
+): Promise<ContributorProfile | null> {
+  const idx = await getContributorIndex();
+  if (!idx) return null;
+  return profileFromIndexAuthor(handle, idx.authors[handle] ?? emptyIndexAuthor());
+}
+
 /** Build the full sorted profile list from the index (homepage / contributors page). */
 export function profilesFromIndex(idx: ContributorIndex): ContributorProfile[] {
   const profiles = Object.entries(idx.authors).map(([handle, a]) =>
