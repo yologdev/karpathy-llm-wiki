@@ -873,6 +873,27 @@ describe("recent trail action labeling", () => {
     expect((await getRecentIndex("tester"))?.some((e) => e.slug === "owned-page")).toBe(false);
     expect((await getRecentIndex())?.some((e) => e.slug === "owned-page")).toBe(false);
   });
+
+  it("fans a write out to a CONTRIBUTOR's index, not just the owner's", async () => {
+    const { getRecentIndex } = await import("../recent-index");
+    await getStorage().putIndex("recent", []);
+    await getStorage().putIndex("recent:owner-x", []);
+    await getStorage().putIndex("recent:contrib-y", []);
+
+    // Owned by owner-x with contrib-y as a contributor → the page shows on BOTH
+    // profiles (slugsForOwner matches owner + contributors), so its activity must
+    // reach BOTH per-tenant indexes — else contrib-y's profile trail goes stale.
+    const content = serializeFrontmatter(
+      { title: "Shared Page", owner: "owner-x", contributors: ["contrib-y"] },
+      "# Shared Page\n\nv1.",
+    );
+    await writeWikiPageWithSideEffects(
+      makeOpts({ slug: "shared-page", title: "Shared Page", author: "owner-x", content }),
+    );
+
+    expect((await getRecentIndex("owner-x"))?.some((e) => e.slug === "shared-page")).toBe(true);
+    expect((await getRecentIndex("contrib-y"))?.some((e) => e.slug === "shared-page")).toBe(true);
+  });
 });
 
 // ---------------------------------------------------------------------------

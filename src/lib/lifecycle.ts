@@ -26,7 +26,7 @@ import { getErrorMessage } from "./errors";
 import { removeAliasForPage, updateAliasIndexForPage } from "./alias-index";
 import { removeSourceForPage } from "./source-index";
 import { syncCommonsForPage, removeCommonsEntryBySlug, belongsInCommons } from "./commons";
-import { syncOwnerIndexForPage, removeOwnerIndexForSlug } from "./owner-index";
+import { syncOwnerIndexForPage, removeOwnerIndexForSlug, tenantsForPage } from "./owner-index";
 import { syncBacklinksForPage, removeBacklinksForSlug } from "./backlink-index";
 import { recordEditForAuthor } from "./contributor-index";
 import { pushRecentEvent, removeRecentForSlug } from "./recent-index";
@@ -225,6 +225,7 @@ async function runPageLifecycleOp(
   // Capture the deleted page's owner BEFORE removing it, so step 3c knows which
   // tenant silo to mirror the removal into (the flat file is gone afterward).
   let deletedOwner: string | undefined;
+  let deletedContributors: string[] = [];
 
   // Capture the page's PREVIOUS content before overwrite so the backlink index
   // can diff outbound links (write path). undefined for a brand-new page.
@@ -246,8 +247,13 @@ async function runPageLifecycleOp(
         typeof pre?.frontmatter.owner === "string"
           ? pre.frontmatter.owner
           : undefined;
+      deletedContributors = Array.isArray(pre?.frontmatter.contributors)
+        ? (pre.frontmatter.contributors as unknown[]).filter(
+            (c): c is string => typeof c === "string",
+          )
+        : [];
     } catch {
-      // Owner unknown → falls back to the default tenant in step 3c.
+      // Owner/contributors unknown → falls back to the default tenant in step 3c.
     }
     try {
       await getStorage().deleteFile(wikiRelPath(`${slug}.md`));
@@ -459,11 +465,13 @@ async function runPageLifecycleOp(
   //        the daily rebuild has seeded the index. Fail-soft.
   try {
     if (op.kind === "delete") {
-      // Prune the owner's per-tenant index too, keyed the SAME way the push (and
-      // the silo cleanup at removeSiloForPage) derive it. `deletedOwner` was
-      // captured before the file was removed; tenantForOwner maps an unknown
-      // owner to the default tenant — exactly where its events were pushed.
-      await removeRecentForSlug(slug, tenantForOwner(deletedOwner));
+      // Prune every per-tenant index the page's events were pushed to — its owner
+      // AND every contributor (the SAME fan-out as the push and owner-index), so a
+      // contributor's profile trail doesn't retain a deleted page. `deletedOwner`/
+      // `deletedContributors` were captured before the file was removed.
+      await removeRecentForSlug(slug, [
+        ...tenantsForPage(deletedOwner, deletedContributors),
+      ]);
     } else if (op.author) {
       const fm = parseFrontmatter(op.content).data;
       const isCommons = belongsInCommons({
@@ -485,29 +493,37 @@ async function runPageLifecycleOp(
         // Fold automation actors (system / lint-fix / yopedia) into the agent so
         // the incrementally-pushed event matches the scan/index normalization.
         const actor = normalizeActor(op.author);
-        await pushRecentEvent({
-          ts: now,
-          when: new Date(now).toISOString(),
-          actor,
-          isAgent: isAgentHandle(actor),
-          // An ingest onto a page that already existed is a re-ingest — label
-          // it distinctly (prevContent is undefined only for a brand-new page).
-          action:
-            logOp === "ingest"
-              ? prevContent
-                ? "re-ingested"
-                : "ingested"
-              : "edited",
-          ...(sourceType ? { sourceType } : {}),
-          slug,
-          title: op.title,
-          tenant: tenantForOwner(
-            typeof fm.owner === "string" ? fm.owner : undefined,
-          ),
-          // This push is gated by `isCommons` above, so the page is, by
-          // construction, a public commons page → links at `/wiki/<slug>`.
-          commons: true,
-        });
+        const owner = typeof fm.owner === "string" ? fm.owner : undefined;
+        const contributors = Array.isArray(fm.contributors)
+          ? (fm.contributors as unknown[]).filter((c): c is string => typeof c === "string")
+          : undefined;
+        await pushRecentEvent(
+          {
+            ts: now,
+            when: new Date(now).toISOString(),
+            actor,
+            isAgent: isAgentHandle(actor),
+            // An ingest onto a page that already existed is a re-ingest — label
+            // it distinctly (prevContent is undefined only for a brand-new page).
+            action:
+              logOp === "ingest"
+                ? prevContent
+                  ? "re-ingested"
+                  : "ingested"
+                : "edited",
+            ...(sourceType ? { sourceType } : {}),
+            slug,
+            title: op.title,
+            // The event's tenant is the OWNER's (the canonical /wiki/<slug> link).
+            tenant: tenantForOwner(owner),
+            // This push is gated by `isCommons` above, so the page is, by
+            // construction, a public commons page → links at `/wiki/<slug>`.
+            commons: true,
+          },
+          // …but route it into EVERY relevant profile index: owner + contributors,
+          // so a contributor's trail stays fresh too (mirrors the owner-index).
+          [...tenantsForPage(owner, contributors)],
+        );
       }
     }
   } catch (err) {

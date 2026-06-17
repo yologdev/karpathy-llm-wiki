@@ -50,8 +50,13 @@ async function putOwnerIndex(idx: OwnerIndex): Promise<void> {
   await getStorage().putIndex(OWNER_INDEX_KEY, idx);
 }
 
-/** Tenants a page belongs to: its owner's tenant + every contributor's tenant. */
-function tenantsForPage(owner?: string, contributors?: string[]): Set<string> {
+/**
+ * Tenants a page belongs to: its owner's tenant + every contributor's tenant.
+ * Exported so the recent-activity index fans a page's events out to the SAME
+ * tenant set this index uses — keeping `slugsForOwner` (read) and the per-owner
+ * trail (write) keyed identically, so a contributor's profile stays fresh too.
+ */
+export function tenantsForPage(owner?: string, contributors?: string[]): Set<string> {
   const tenants = new Set<string>();
   tenants.add(tenantForOwner(owner));
   for (const c of contributors ?? []) {

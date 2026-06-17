@@ -13,18 +13,18 @@ vi.mock("../wiki", () => ({
 }));
 vi.mock("../revisions", () => ({ listRevisionAuthors: vi.fn() }));
 // getOwnerTrail dynamically imports recent-index; mock it to drive index hit/miss.
-vi.mock("../recent-index", () => ({ getRecentIndex: vi.fn(), putRecentIndex: vi.fn() }));
+vi.mock("../recent-index", () => ({ getRecentIndex: vi.fn(), seedRecentIndexIfAbsent: vi.fn() }));
 
 import { trailEventsForPages, getOwnerTrail } from "../trail";
 import { readWikiPageWithFrontmatter } from "../wiki";
 import { listRevisionAuthors } from "../revisions";
-import { getRecentIndex, putRecentIndex } from "../recent-index";
+import { getRecentIndex, seedRecentIndexIfAbsent } from "../recent-index";
 import { logger } from "../logger";
 
 const mockedReadPage = vi.mocked(readWikiPageWithFrontmatter);
 const mockedListRevisionAuthors = vi.mocked(listRevisionAuthors);
 const mockedGetRecentIndex = vi.mocked(getRecentIndex);
-const mockedPutRecentIndex = vi.mocked(putRecentIndex);
+const mockedSeedRecentIndexIfAbsent = vi.mocked(seedRecentIndexIfAbsent);
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -174,7 +174,7 @@ describe("getOwnerTrail", () => {
     expect(trail.map((e) => e.slug)).toEqual(["kept"]); // "gone" filtered out
     expect(trail[0].title).toBe("Current Title"); // snapshot title refreshed to live
     expect(mockedReadPage).not.toHaveBeenCalled(); // O(1) read — no scan
-    expect(mockedPutRecentIndex).not.toHaveBeenCalled(); // index hit doesn't re-seed
+    expect(mockedSeedRecentIndexIfAbsent).not.toHaveBeenCalled(); // index hit doesn't re-seed
   });
 
   it("respects the limit when serving the index", async () => {
@@ -207,8 +207,11 @@ describe("getOwnerTrail", () => {
 
     const trail = await getOwnerTrail("alice", [{ slug: "p", title: "P" }], 60);
     expect(trail.length).toBeGreaterThanOrEqual(1); // built from the scan
+    expect(trail[0].slug).toBe("p");
     expect(mockedReadPage).toHaveBeenCalled(); // scanned
-    // Seeded the per-owner index (keyed by tenant) for next time.
-    expect(mockedPutRecentIndex).toHaveBeenCalledWith(expect.any(Array), "alice");
+    // Seeded the per-owner index (keyed by tenant) for next time — and RETURNS
+    // exactly what it seeded (guards against seeding right but returning wrong).
+    expect(mockedSeedRecentIndexIfAbsent).toHaveBeenCalledWith(expect.any(Array), "alice");
+    expect(trail).toEqual(mockedSeedRecentIndexIfAbsent.mock.calls[0][0]);
   });
 });

@@ -100,17 +100,20 @@ async function withCurrentTitles(
  * O(pages × revisions) scan into a single KV read once warm.
  *
  * `commonsPages` is the owner's CURRENT public commons pages (the caller already
- * has them). Index events are reconciled against it on every read: any whose
- * page is gone (deleted) or no longer a public commons page (turned private)
- * is dropped, and snapshot titles are refreshed to the live title — so the index
- * only needs to be append-fresh (push on write), not perfectly pruned.
+ * has them). Index events are reconciled against it on every read: any whose page
+ * is gone (deleted) or no longer a public commons page (turned private) is dropped
+ * at the PAGE level, and snapshot titles are refreshed to the live title. So the
+ * index only needs to be append-correct — the write path fans each event out to
+ * every owner+contributor tenant, and reads handle page-level removal/renames. It
+ * does NOT (and need not) heal a still-public page's events: events are only ever
+ * appended, never individually invalidated, so there's nothing to reconcile there.
  */
 export async function getOwnerTrail(
   tenant: string,
   commonsPages: { slug: string; title: string; owner?: string }[],
   limit: number,
 ): Promise<TrailEvent[]> {
-  const { getRecentIndex, putRecentIndex } = await import("./recent-index");
+  const { getRecentIndex, seedRecentIndexIfAbsent } = await import("./recent-index");
   const idx = await getRecentIndex(tenant);
   if (idx !== null) {
     const titleBySlug = new Map(commonsPages.map((p) => [p.slug, p.title]));
@@ -122,11 +125,12 @@ export async function getOwnerTrail(
       })
       .slice(0, limit);
   }
-  // Cold: scan, then lazily seed the per-owner index for next time (fail-soft —
+  // Cold: scan, then lazily seed the per-owner index for next time (under the
+  // tenant lock + only-if-absent, so a racing push isn't clobbered; fail-soft —
   // a seed failure just means the next view scans again).
   const events = await trailEventsForPages(commonsPages, limit);
   try {
-    await putRecentIndex(events, tenant);
+    await seedRecentIndexIfAbsent(events, tenant);
   } catch (err) {
     logger.warn("recent-index", `owner trail seed skipped for "${tenant}":`, err);
   }

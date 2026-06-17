@@ -65,12 +65,30 @@ export async function putRecentIndex(events: TrailEvent[], tenant?: string): Pro
  * daily rebuild seeds it) — we never fabricate a partial recent list from one
  * write, which would hide all prior activity until the next rebuild.
  */
+/**
+ * Read an index for a MUTATION (push/remove). Like {@link getRecentIndex} it
+ * returns `null` for an absent index, but it logs a genuine read FAULT
+ * distinctly — the read-path's "falling back to scan" message is false here. A
+ * push/remove that can't read the current list NO-OPS (it can't safely append to
+ * a list it didn't read); the next cold seed / daily rebuild reconciles. Both
+ * "absent" and "faulted" return `null`, so the caller no-ops either way.
+ */
+async function readForMutation(tenant?: string): Promise<TrailEvent[] | null> {
+  try {
+    const idx = await getStorage().getIndex<TrailEvent[]>(recentKey(tenant));
+    return Array.isArray(idx) ? idx : null;
+  } catch (err) {
+    logger.warn("recent-index", `read failed during update (${tenant ?? "global"}); skipping`, err);
+    return null;
+  }
+}
+
 /** Push `event` to the front of ONE index (global or per-tenant). No-op until
  *  that index is seeded — we never fabricate a partial list from a single write. */
 async function pushToIndex(tenant: string | undefined, event: TrailEvent): Promise<void> {
   await withFileLock(recentLock(tenant), async () => {
-    const idx = await getRecentIndex(tenant);
-    if (idx === null) return; // not seeded yet
+    const idx = await readForMutation(tenant);
+    if (idx === null) return; // not seeded (or unreadable) — skip
     const deduped = idx.filter(
       (d) =>
         !(
@@ -87,20 +105,46 @@ async function pushToIndex(tenant: string | undefined, event: TrailEvent): Promi
 }
 
 /**
- * Push a new activity event to BOTH the global list and the page-owner's
- * per-tenant list. Each NO-OPS until its own index is seeded (the daily rebuild
- * seeds the global one; the first profile view seeds the per-owner one), so we
- * never fabricate a partial list that would hide all prior activity.
+ * Push a new activity event to the global list AND to every per-owner list the
+ * page belongs to — its owner's tenant plus each contributor's tenant (`tenants`,
+ * the SAME set owner-index/slugsForOwner use). Pushing only to the owner would
+ * leave a CONTRIBUTOR's profile trail permanently stale for that page after its
+ * index is seeded. Each index NO-OPS until its own is seeded (the daily rebuild
+ * seeds the global one; the first profile view seeds a per-owner one).
  */
-export async function pushRecentEvent(event: TrailEvent): Promise<void> {
+export async function pushRecentEvent(
+  event: TrailEvent,
+  tenants: string[] = event.tenant ? [event.tenant] : [],
+): Promise<void> {
   await pushToIndex(undefined, event);
-  if (event.tenant) await pushToIndex(event.tenant, event);
+  const seen = new Set<string>();
+  for (const tenant of tenants) {
+    if (tenant && !seen.has(tenant)) {
+      seen.add(tenant);
+      await pushToIndex(tenant, event);
+    }
+  }
+}
+
+/**
+ * Seed a per-owner index from a scan, but ONLY if it's still absent and under the
+ * tenant's lock — so a concurrent push (or another cold view's seed) isn't
+ * clobbered by an unlocked overwrite (a lost update).
+ */
+export async function seedRecentIndexIfAbsent(
+  events: TrailEvent[],
+  tenant: string,
+): Promise<void> {
+  await withFileLock(recentLock(tenant), async () => {
+    if ((await getRecentIndex(tenant)) !== null) return; // already seeded / a push beat us
+    await putRecentIndex(events, tenant);
+  });
 }
 
 /** Drop every event for a slug from ONE index. No-op until seeded. */
 async function removeFromIndex(tenant: string | undefined, slug: string): Promise<void> {
   await withFileLock(recentLock(tenant), async () => {
-    const idx = await getRecentIndex(tenant);
+    const idx = await readForMutation(tenant);
     if (idx === null) return;
     const next = idx.filter((e) => e.slug !== slug);
     if (next.length !== idx.length) await putRecentIndex(next, tenant);
@@ -108,12 +152,18 @@ async function removeFromIndex(tenant: string | undefined, slug: string): Promis
 }
 
 /**
- * Drop every event for a slug (page deleted) from the global list and, when the
- * owner's `tenant` is known, that owner's per-tenant list. No-op until seeded.
+ * Drop every event for a slug (page deleted) from the global list and each of the
+ * page's per-owner lists (`tenants` = owner + contributors). No-op until seeded.
  */
-export async function removeRecentForSlug(slug: string, tenant?: string): Promise<void> {
+export async function removeRecentForSlug(slug: string, tenants: string[] = []): Promise<void> {
   await removeFromIndex(undefined, slug);
-  if (tenant) await removeFromIndex(tenant, slug);
+  const seen = new Set<string>();
+  for (const tenant of tenants) {
+    if (tenant && !seen.has(tenant)) {
+      seen.add(tenant);
+      await removeFromIndex(tenant, slug);
+    }
+  }
 }
 
 /** Reconstruct the recent list from the authoritative scan (daily self-heal). */
