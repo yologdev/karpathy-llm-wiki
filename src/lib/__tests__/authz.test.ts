@@ -8,6 +8,7 @@ import {
   canWriteFrontmatter,
   isAdmin,
 } from "../authz";
+import type { WriteKind } from "../authz";
 import { agentOwnerHandle } from "../agents";
 import type { IndexEntry } from "../types";
 
@@ -197,5 +198,87 @@ describe("canWriteFrontmatter", () => {
     ).toBe(false);
     // Non-string fields → treated as public → collectively editable.
     expect(canWriteFrontmatter({ owner: 123, visibility: 1 }, bobP)).toBe(true);
+  });
+});
+
+describe("realm-aware write gate (WriteKind)", () => {
+  const savedAdmin = process.env.ADMIN_HANDLES;
+  afterEach(() => {
+    if (savedAdmin === undefined) delete process.env.ADMIN_HANDLES;
+    else process.env.ADMIN_HANDLES = savedAdmin;
+  });
+
+  // A standard public commons page (no type, no private → belongsInCommons = true).
+  const commonsPage = { owner: "alice", visibility: "public" };
+  // A public agent-scoped page (type = "agent-knowledge" → NOT commons).
+  const agentPage = { owner: "alice--yoyo", visibility: "public", type: "agent-knowledge" };
+  // A private page owned by alice.
+  const privatePage = { owner: "alice", visibility: "private" };
+
+  it("blocks body writes by a human principal on a commons page", () => {
+    expect(canWritePage(commonsPage, aliceP, "body")).toBe(false);
+    expect(canWritePage(commonsPage, bobP, "body")).toBe(false);
+  });
+
+  it("blocks delete writes by a human principal on a commons page", () => {
+    expect(canWritePage(commonsPage, aliceP, "delete")).toBe(false);
+    expect(canWritePage(commonsPage, bobP, "delete")).toBe(false);
+  });
+
+  it("allows body writes by a service principal on a commons page", () => {
+    expect(canWritePage(commonsPage, service, "body")).toBe(true);
+  });
+
+  it("allows delete writes by a service principal on a commons page", () => {
+    expect(canWritePage(commonsPage, service, "delete")).toBe(true);
+  });
+
+  it("allows body writes by an admin on a commons page", () => {
+    process.env.ADMIN_HANDLES = "alice";
+    expect(canWritePage(commonsPage, aliceP, "body")).toBe(true);
+  });
+
+  it("allows delete writes by an admin on a commons page", () => {
+    process.env.ADMIN_HANDLES = "alice";
+    expect(canWritePage(commonsPage, aliceP, "delete")).toBe(true);
+  });
+
+  it("allows metadata writes (default writeKind) by a human on a commons page — backward compat", () => {
+    // Explicit "metadata"
+    expect(canWritePage(commonsPage, bobP, "metadata")).toBe(true);
+    // No writeKind (default) — identical behavior to before the realm gate
+    expect(canWritePage(commonsPage, bobP)).toBe(true);
+  });
+
+  it("allows body writes by a human on a private page they own (private is owner-gated, not commons-gated)", () => {
+    expect(canWritePage(privatePage, aliceP, "body")).toBe(true);
+    // But not by a non-owner
+    expect(canWritePage(privatePage, bobP, "body")).toBe(false);
+  });
+
+  it("does not block body writes on agent-scoped public pages (not commons)", () => {
+    expect(canWritePage(agentPage, aliceP, "body")).toBe(true);
+  });
+
+  it("canWriteFrontmatter passes writeKind through to canWritePage", () => {
+    // body write on commons → blocked
+    expect(
+      canWriteFrontmatter({ owner: "alice", visibility: "public" }, bobP, "body"),
+    ).toBe(false);
+    // metadata write on commons → allowed
+    expect(
+      canWriteFrontmatter({ owner: "alice", visibility: "public" }, bobP, "metadata"),
+    ).toBe(true);
+    // default (no writeKind) → metadata → allowed
+    expect(
+      canWriteFrontmatter({ owner: "alice", visibility: "public" }, bobP),
+    ).toBe(true);
+  });
+
+  it("blocks body/delete on an untyped public page (untyped public = commons)", () => {
+    const untypedPublic = { owner: "bob" }; // no visibility, no type
+    expect(canWritePage(untypedPublic, aliceP, "body")).toBe(false);
+    expect(canWritePage(untypedPublic, aliceP, "delete")).toBe(false);
+    expect(canWritePage(untypedPublic, aliceP, "metadata")).toBe(true);
   });
 });

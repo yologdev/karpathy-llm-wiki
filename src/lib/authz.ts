@@ -11,6 +11,7 @@
  */
 
 import { agentOwnerHandle } from "./agents";
+import { belongsInCommons } from "./commons";
 import { slugify } from "./slugify";
 import type { IndexEntry } from "./types";
 import type { Principal } from "./auth";
@@ -21,6 +22,9 @@ export interface PageReadMeta {
   visibility?: string;
   type?: string;
 }
+
+/** The kind of write being attempted. */
+export type WriteKind = "body" | "metadata" | "delete";
 
 /** A reader identity (id is used for the spoof-proof admin match). */
 type Reader = { id?: string; handle: string } | null;
@@ -139,14 +143,19 @@ export async function canReadSlug(
 // ---------------------------------------------------------------------------
 
 /**
- * True iff `principal` may WRITE a page (edit / patch / delete / re-ingest),
+ * True iff `principal` may perform a write of kind `writeKind` on a page,
  * mirroring the realm model and staying symmetric with {@link canReadPage}:
  *
  *   - The deployment-trusted **service principal** (bearer token) may write
  *     anything — it is how autonomous agents and scheduled jobs write on an
  *     owner's behalf (the caller sets `owner` explicitly).
- *   - **Public** (commons) pages are collectively editable by any signed-in
- *     user — the commons is a shared wiki.
+ *   - **Admins** may write/delete/manage every page.
+ *   - **Commons body/delete** writes are agent-only: a commons page's prose is
+ *     maintained by agents; humans steer via metadata patches and talk threads.
+ *     Body replacements and deletions by non-service, non-admin principals are
+ *     denied.
+ *   - **Public** (commons) metadata patches are collectively editable by any
+ *     signed-in user — the commons is a shared wiki.
  *   - **Private** (vault) pages are writable ONLY by the set {@link canReadPage}
  *     admits for a private page: the owner's human and that human's agents
  *     (`<user>--<name>` resolves to `<user>`). So a user's agents can write
@@ -160,12 +169,25 @@ export async function canReadSlug(
 export function canWritePage(
   meta: PageReadMeta,
   principal: Principal | null,
+  writeKind: WriteKind = "metadata",
 ): boolean {
   // Deployment-trusted automated caller — writes for owners (agents, cron).
   if (principal?.id.startsWith("service:")) return true;
   // Admins may write/delete/manage every page (incl. others' private pages).
   if (isAdmin(principal)) return true;
-  // Public / collective commons — editable by any caller the write-gate admits.
+
+  // ── Realm gate: commons body/delete writes are agent-only ──
+  // A commons page's prose is maintained by agents; humans steer via metadata
+  // patches and talk threads. Body replacements and deletions by non-service,
+  // non-admin principals are denied.
+  if (
+    (writeKind === "body" || writeKind === "delete") &&
+    belongsInCommons(meta)
+  ) {
+    return false;
+  }
+
+  // Public / collective commons — metadata editable by any caller the write-gate admits.
   if (meta.visibility !== "private") return true;
   // Private — exactly the owner-equivalence class that may READ it (requires an
   // authenticated, matching principal).
@@ -180,6 +202,7 @@ export function canWritePage(
 export function canWriteFrontmatter(
   fm: { owner?: unknown; visibility?: unknown; type?: unknown },
   principal: Principal | null,
+  writeKind: WriteKind = "metadata",
 ): boolean {
   return canWritePage(
     {
@@ -188,6 +211,7 @@ export function canWriteFrontmatter(
       type: typeof fm.type === "string" ? fm.type : undefined,
     },
     principal,
+    writeKind,
   );
 }
 
