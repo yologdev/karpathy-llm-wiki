@@ -47,12 +47,18 @@ vi.mock("@/lib/youtube", () => ({
   isYouTubeUrl: (u: string) => /youtu\.?be|youtube\.com/i.test(u),
 }));
 
+vi.mock("@/lib/vault", () => ({
+  vaultOwnedBy: vi.fn(() => true),
+  addToVault: vi.fn(async () => {}),
+}));
+
 import { ingest, ingestUrl, reingest } from "@/lib/ingest";
 import { enqueueTask } from "@/lib/tasks";
 import { createIngestJob } from "@/lib/ingest-jobs";
 import { readWikiPageWithFrontmatter } from "@/lib/wiki";
 import { getPrincipal } from "@/lib/auth";
 import { getServicePrincipal } from "@/lib/auth";
+import { vaultOwnedBy } from "@/lib/vault";
 import { POST } from "@/app/api/ingest/route";
 import { POST as POST_BATCH } from "@/app/api/ingest/batch/route";
 import { POST as POST_REINGEST } from "@/app/api/ingest/reingest/route";
@@ -67,6 +73,7 @@ const mockedGetPrincipal = vi.mocked(getPrincipal);
 const mockedGetServicePrincipal = vi.mocked(getServicePrincipal);
 const mockedEnqueue = vi.mocked(enqueueTask);
 const mockedCreateJob = vi.mocked(createIngestJob);
+const mockedVaultOwnedBy = vi.mocked(vaultOwnedBy);
 
 function makeRequest(url: string, body: unknown, token?: string): NextRequest {
   const headers: Record<string, string> = { "Content-Type": "application/json" };
@@ -90,6 +97,9 @@ beforeEach(() => {
   // the queued `{queued,jobId}` response set this to `true` explicitly.
   mockedEnqueue.mockReset();
   mockedEnqueue.mockResolvedValue(false);
+  // Default vault ownership to true (owned); tests that assert 403 override.
+  mockedVaultOwnedBy.mockReset();
+  mockedVaultOwnedBy.mockReturnValue(true);
 });
 
 const fakeResult: IngestResult = {
@@ -826,5 +836,63 @@ describe("POST /api/ingest/reingest — service token auth", () => {
     // A private page the caller can't read is "not found" (no existence oracle).
     expect(res.status).toBe(404);
     expect(mockedReingest).not.toHaveBeenCalled();
+  });
+});
+
+// ===========================================================================
+// POST /api/ingest — vaultId ownership enforcement
+// ===========================================================================
+
+describe("POST /api/ingest — vaultId ownership", () => {
+  it("returns 403 when vaultId is not owned by the caller (text path)", async () => {
+    mockedVaultOwnedBy.mockReturnValue(false);
+    const res = await POST(
+      makeRequest("http://localhost:3000/api/ingest", {
+        content: "Some text to ingest",
+        vaultId: "foreign-vault",
+      }),
+    );
+    expect(res.status).toBe(403);
+    const body = await res.json();
+    expect(body.error).toMatch(/vault not found or not owned/i);
+    expect(mockedIngest).not.toHaveBeenCalled();
+  });
+
+  it("returns 403 when vaultId is not owned by the caller (URL path)", async () => {
+    mockedVaultOwnedBy.mockReturnValue(false);
+    const res = await POST(
+      makeRequest("http://localhost:3000/api/ingest", {
+        url: "https://example.com/article",
+        vaultId: "foreign-vault",
+      }),
+    );
+    expect(res.status).toBe(403);
+    const body = await res.json();
+    expect(body.error).toMatch(/vault not found or not owned/i);
+    expect(mockedIngestUrl).not.toHaveBeenCalled();
+  });
+
+  it("succeeds with a valid owned vaultId", async () => {
+    mockedVaultOwnedBy.mockReturnValue(true);
+    mockedIngest.mockResolvedValue(fakeResult);
+    const res = await POST(
+      makeRequest("http://localhost:3000/api/ingest", {
+        content: "Some text",
+        vaultId: "my-vault",
+      }),
+    );
+    expect(res.status).toBe(200);
+    expect(mockedIngest).toHaveBeenCalled();
+  });
+
+  it("succeeds without a vaultId", async () => {
+    mockedIngest.mockResolvedValue(fakeResult);
+    const res = await POST(
+      makeRequest("http://localhost:3000/api/ingest", {
+        content: "Some text",
+      }),
+    );
+    expect(res.status).toBe(200);
+    expect(mockedIngest).toHaveBeenCalled();
   });
 });

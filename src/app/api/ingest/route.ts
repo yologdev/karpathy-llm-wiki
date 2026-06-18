@@ -78,10 +78,12 @@ export async function POST(request: NextRequest) {
         );
       }
       if (!vaultOwnedBy(body.vaultId, principal.handle)) {
-        logger.warn("ingest", `vaultId "${body.vaultId}" not owned by "${principal.handle}" — ignoring`);
-      } else {
-        validatedVaultId = body.vaultId;
+        return NextResponse.json(
+          { error: "Vault not found or not owned by you" },
+          { status: 403 },
+        );
       }
+      validatedVaultId = body.vaultId;
     }
 
     // Build ingest options from the request body (used only on the inline
