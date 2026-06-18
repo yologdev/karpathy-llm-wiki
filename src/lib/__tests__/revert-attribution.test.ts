@@ -68,9 +68,11 @@ afterEach(async () => {
 // Helpers
 // ---------------------------------------------------------------------------
 
-/** Write a page with frontmatter so the revert route can read it. */
-async function seedPage(slug: string, body: string) {
-  const fm = { title: slug, created: "2025-01-01", updated: "2025-01-01", owner: "alice" };
+/** Write a page with frontmatter so the revert route can read it.
+ *  Defaults to private so the mocked owner can body-write (commons pages
+ *  block human body writes after the realm gate). */
+async function seedPage(slug: string, body: string, owner = "alice") {
+  const fm = { title: slug, created: "2025-01-01", updated: "2025-01-01", owner, visibility: "private" };
   const content = serializeFrontmatter(fm, body);
   await writeWikiPage(slug, content);
 }
@@ -98,7 +100,7 @@ describe("POST /api/wiki/[slug]/revisions — revert attribution", () => {
     await writeWikiPage(
       "attr-test",
       serializeFrontmatter(
-        { title: "attr-test", created: "2025-01-01", updated: "2025-01-02", owner: "alice" },
+        { title: "attr-test", created: "2025-01-01", updated: "2025-01-02", owner: "alice", visibility: "private" },
         "# Attr Test\n\nUpdated content.",
       ),
     );
@@ -159,7 +161,7 @@ describe("POST /api/wiki/[slug]/revisions — revert attribution", () => {
     await writeWikiPage(
       "contrib-test",
       serializeFrontmatter(
-        { title: "contrib-test", created: "2025-01-01", updated: "2025-01-02", owner: "alice" },
+        { title: "contrib-test", created: "2025-01-01", updated: "2025-01-02", owner: "alice", visibility: "private" },
         "# Contrib Test\n\nUpdated.",
       ),
     );

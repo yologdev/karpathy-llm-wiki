@@ -252,7 +252,7 @@ export const MCP_TOOLS: ToolDef[] = [
     run: async (a, p) => {
       const slug = typeof a.slug === "string" ? a.slug : "";
       const page = slug ? await readWikiPageWithFrontmatter(slug) : null;
-      if (!page || !canWriteFrontmatter(page.frontmatter, p)) {
+      if (!page || !canWriteFrontmatter(page.frontmatter, p, "body")) {
         throw new Error(
           `Page not found or you don't have permission to re-ingest it: ${slug || "(missing slug)"}`,
         );

@@ -36,7 +36,7 @@ export async function DELETE(
     // Realm-aware write ACL. When the write is denied, CLOAK: a private page the
     // caller can't even read is 404 (no existence oracle, matching reads); a
     // readable-but-unwritable page is 403.
-    if (!canWriteFrontmatter(existing.frontmatter, principal)) {
+    if (!canWriteFrontmatter(existing.frontmatter, principal, "delete")) {
       return canReadFrontmatter(existing.frontmatter, principal)
         ? NextResponse.json(
             { error: "You don't have permission to delete this page." },
@@ -120,7 +120,7 @@ export async function PUT(
 
     // Realm-aware write ACL. Denied → cloak: a private page the caller can't
     // read is 404 (no existence oracle); readable-but-unwritable is 403.
-    if (!canWriteFrontmatter(existing.frontmatter, principal)) {
+    if (!canWriteFrontmatter(existing.frontmatter, principal, "body")) {
       return canReadFrontmatter(existing.frontmatter, principal)
         ? NextResponse.json(
             { error: "You don't have permission to edit this page." },

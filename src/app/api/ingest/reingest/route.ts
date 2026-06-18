@@ -36,7 +36,7 @@ export async function POST(request: NextRequest) {
     // Realm-aware write ACL: re-ingest rewrites the page. Denied → cloak: a
     // private page the caller can't read is 404 (no existence oracle); a
     // readable-but-unwritable page is 403.
-    if (!canWriteFrontmatter(page.frontmatter, principal)) {
+    if (!canWriteFrontmatter(page.frontmatter, principal, "body")) {
       return canReadFrontmatter(page.frontmatter, principal)
         ? NextResponse.json(
             { error: "You don't have permission to re-ingest this page." },

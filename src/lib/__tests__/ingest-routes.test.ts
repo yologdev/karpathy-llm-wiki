@@ -684,7 +684,7 @@ describe("POST /api/ingest/reingest — direct re-synthesis", () => {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const publicPage: any = {
     content: "# P",
-    frontmatter: { title: "P", source_url: "https://example.com/s" },
+    frontmatter: { title: "P", source_url: "https://example.com/s", owner: "yuanhao", visibility: "private" },
   };
 
   beforeEach(() => {
@@ -735,6 +735,8 @@ describe("POST /api/ingest/reingest — service token auth", () => {
     frontmatter: {
       title: "Test",
       source_url: "https://example.com/source",
+      owner: "alice",
+      visibility: "private",
     },
   };
 

@@ -217,13 +217,17 @@ describe("PUT /api/wiki/[slug] — contributors and updated", () => {
     return mod.PUT(req, { params: Promise.resolve({ slug }) });
   }
 
-  /** Create a page with full yopedia metadata so PUT has something to edit. */
+  /** Create a page with full yopedia metadata so PUT has something to edit.
+   *  Defaults to a private page owned by "test-user" so the mocked principal
+   *  (test-user) can body-write it — commons pages block human body writes. */
   async function seedPage(slug: string, fm: Frontmatter = {}) {
     const today = new Date().toISOString().slice(0, 10);
     const defaults: Frontmatter = {
       created: today,
       confidence: 0.5,
       authors: ["original-author"],
+      owner: "test-user",
+      visibility: "private",
       contributors: [],
       expiry: "2099-01-01",
       sources: [],
@@ -632,10 +636,26 @@ describe("realm-aware write ACL — /api/wiki/[slug]", () => {
     expect(res.status).toBe(200);
   });
 
-  it("keeps PUBLIC pages collectively editable by any signed-in user (PUT 200)", async () => {
-    // Owner is someone else, but a public commons page stays collectively editable.
+  it("blocks body writes by a human on a PUBLIC commons page (PUT 403)", async () => {
+    // A public commons page's prose is maintained by agents; humans steer via
+    // metadata patches and talk threads. Body writes → 403.
     await seed("shared-public", { owner: "alice", visibility: "public" });
     const res = await put("shared-public"); // principal = test-user (non-owner)
+    expect(res.status).toBe(403);
+  });
+
+  it("blocks deletion by a human on a PUBLIC commons page (DELETE 403)", async () => {
+    await seed("shared-public-del", { owner: "alice", visibility: "public" });
+    const res = await del("shared-public-del");
+    expect(res.status).toBe(403);
+    // Page should still exist.
+    expect(await readWikiPageWithFrontmatter("shared-public-del")).not.toBeNull();
+  });
+
+  it("keeps PUBLIC commons pages collectively patchable by any signed-in user (PATCH 200)", async () => {
+    // Metadata patches remain allowed on commons pages — only body/delete are gated.
+    await seed("shared-public-patch", { owner: "alice", visibility: "public" });
+    const res = await patch("shared-public-patch");
     expect(res.status).toBe(200);
   });
 });
@@ -880,7 +900,8 @@ describe("realm-aware ACL — discussion and revision-revert routes", () => {
     expect(res.status).toBe(200);
   });
 
-  it("keeps PUBLIC pages collectively revertible (POST revert 200)", async () => {
+  it("blocks human revert on a PUBLIC commons page (POST revert 403)", async () => {
+    // Reverts replace the body — same realm gate as PUT.
     await seed("pub-revert", { owner: "alice", visibility: "public" });
     const { saveRevision } = await import("@/lib/revisions");
     await saveRevision("pub-revert", "# pub-revert\n\nOld content.");
@@ -889,7 +910,7 @@ describe("realm-aware ACL — discussion and revision-revert routes", () => {
     expect(revs.length).toBeGreaterThan(0);
 
     const res = await postRevert("pub-revert", revs[0].timestamp);
-    expect(res.status).toBe(200);
+    expect(res.status).toBe(403);
   });
 });
 

@@ -36,7 +36,8 @@ export default async function EditWikiPage({ params }: EditPageProps) {
   }
 
   // Readable but not writable — show a clear message instead of the editor.
-  if (!canWriteFrontmatter(page.frontmatter, principal)) {
+  // This is a body editor, so pass "body" to enforce the commons realm gate.
+  if (!canWriteFrontmatter(page.frontmatter, principal, "body")) {
     return (
       <main className="mx-auto max-w-3xl px-6 py-12">
         <Link

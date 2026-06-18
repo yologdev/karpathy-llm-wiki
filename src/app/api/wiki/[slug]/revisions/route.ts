@@ -141,7 +141,7 @@ export async function POST(req: Request, { params }: RouteParams) {
     // Realm-aware write ACL. A revert is a write — use the same cloak pattern
     // as PUT: private page non-reader → 404, readable-but-unwritable → 403.
     const principal = (await getPrincipal()) ?? getServicePrincipal(req);
-    if (!canWriteFrontmatter(existing.frontmatter, principal)) {
+    if (!canWriteFrontmatter(existing.frontmatter, principal, "body")) {
       return canReadFrontmatter(existing.frontmatter, principal)
         ? NextResponse.json(
             { error: "You don't have permission to revert this page." },
