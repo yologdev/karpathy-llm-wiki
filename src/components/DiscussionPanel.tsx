@@ -248,7 +248,7 @@ export function DiscussionPanel({ slug, pageOwner }: DiscussionPanelProps) {
   const inputClasses = "w-full rounded border border-foreground/10 bg-transparent px-2 py-1 text-sm focus:border-foreground/30 focus:outline-none";
 
   return (
-    <section className="mt-6 border-t border-foreground/10 pt-6">
+    <section id="discuss" className="mt-6 border-t border-foreground/10 pt-6">
       <button
         type="button"
         onClick={handleToggle}
