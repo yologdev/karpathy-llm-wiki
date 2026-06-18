@@ -2998,6 +2998,63 @@ describe("reingest", () => {
       _resetConfigCache();
     }
   });
+
+  it("passes author provenance to reingest when provided", async () => {
+    const savedKey = process.env.ANTHROPIC_API_KEY;
+    delete process.env.ANTHROPIC_API_KEY;
+    _resetConfigCache();
+    try {
+      await writeTestPage(
+        "authored-reingest",
+        "---\nsource_url: https://x.com/u/status/456\n---\n# Authored\n\nold body.",
+      );
+      await writeIndex([
+        { title: "Authored", slug: "authored-reingest", summary: "authored" },
+      ]);
+      mockedFetchXPostContent.mockClear();
+
+      const result = await handleReingest({
+        slug: "authored-reingest",
+        author: "testuser",
+      });
+      expect(result.primarySlug).toBe("authored-reingest");
+
+      // The page should have a revision attributed to "testuser".
+      const revs = await handleListRevisions({ slug: "authored-reingest" });
+      expect(revs.revisions.length).toBeGreaterThan(0);
+      const latest = revs.revisions[0];
+      expect(latest.author).toBe("testuser");
+    } finally {
+      if (savedKey !== undefined) {
+        process.env.ANTHROPIC_API_KEY = savedKey;
+      }
+      _resetConfigCache();
+    }
+  });
+
+  it("works without author (backwards compatible)", async () => {
+    const savedKey = process.env.ANTHROPIC_API_KEY;
+    delete process.env.ANTHROPIC_API_KEY;
+    _resetConfigCache();
+    try {
+      await writeTestPage(
+        "no-author-reingest",
+        "---\nsource_url: https://x.com/u/status/789\n---\n# NoAuthor\n\nold body.",
+      );
+      await writeIndex([
+        { title: "NoAuthor", slug: "no-author-reingest", summary: "no author" },
+      ]);
+      mockedFetchXPostContent.mockClear();
+
+      const result = await handleReingest({ slug: "no-author-reingest" });
+      expect(result.primarySlug).toBe("no-author-reingest");
+    } finally {
+      if (savedKey !== undefined) {
+        process.env.ANTHROPIC_API_KEY = savedKey;
+      }
+      _resetConfigCache();
+    }
+  });
 });
 
 // ---------------------------------------------------------------------------

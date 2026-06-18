@@ -1288,11 +1288,15 @@ export async function handleReconcilePage(args: {
 
 export async function handleReingest(args: {
   slug: string;
+  author?: string;
 }): Promise<IngestResult> {
   if (!args.slug) {
     throw new Error("slug is required");
   }
-  return reingest(args.slug);
+  const opts = args.author
+    ? { author: args.author, triggeredBy: args.author }
+    : undefined;
+  return reingest(args.slug, opts);
 }
 
 // ---------------------------------------------------------------------------
@@ -2772,6 +2776,10 @@ export function createMcpServer(): McpServer {
       slug: z
         .string()
         .describe("Slug of the wiki page to re-ingest"),
+      author: z
+        .string()
+        .optional()
+        .describe("Handle to attribute the re-ingest to (author + triggeredBy)"),
     },
     annotations: {
       readOnlyHint: false,

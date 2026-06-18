@@ -257,7 +257,7 @@ export const MCP_TOOLS: ToolDef[] = [
           `Page not found or you don't have permission to re-ingest it: ${slug || "(missing slug)"}`,
         );
       }
-      return handleReingest({ slug });
+      return handleReingest(attributed({ slug }, p!.handle) as Parameters<typeof handleReingest>[0]);
     },
   },
   {
