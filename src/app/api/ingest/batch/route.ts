@@ -6,6 +6,7 @@ import { enqueueTask } from "@/lib/tasks";
 import { MAX_BATCH_URLS } from "@/lib/constants";
 import { getErrorMessage } from "@/lib/errors";
 import { logger } from "@/lib/logger";
+import { addToVault, vaultOwnedBy } from "@/lib/vault";
 
 /** A batch URL that couldn't be enqueued (queue absent) and was run inline. */
 interface InlineResult {
@@ -41,6 +42,24 @@ export async function POST(request: NextRequest) {
           { status: 400 },
         );
       }
+    }
+
+    // Validate vaultId: must be a non-empty string owned by the caller.
+    let validatedVaultId: string | undefined;
+    if (body.vaultId !== undefined) {
+      if (typeof body.vaultId !== "string" || body.vaultId.trim().length === 0) {
+        return NextResponse.json(
+          { error: "vaultId must be a non-empty string if provided" },
+          { status: 400 },
+        );
+      }
+      if (!vaultOwnedBy(body.vaultId, principal.handle)) {
+        return NextResponse.json(
+          { error: "Vault not found or not owned by you" },
+          { status: 403 },
+        );
+      }
+      validatedVaultId = body.vaultId;
     }
 
     if (urls.length > MAX_BATCH_URLS) {
@@ -98,6 +117,7 @@ export async function POST(request: NextRequest) {
           owner: principal.handle,
           author: principal.handle,
           ...(Array.isArray(tags) && tags.length > 0 ? { tags } : {}),
+          ...(validatedVaultId ? { vaultId: validatedVaultId } : {}),
         });
       } catch (err) {
         logger.warn("ingest", `batch enqueue failed for ${url}`, err);
@@ -111,6 +131,10 @@ export async function POST(request: NextRequest) {
       // Queue unavailable (off-Workers) — run this URL inline.
       try {
         const result = await ingestUrl(url, ingestOptions);
+        if (validatedVaultId) {
+          try { await addToVault(validatedVaultId, result.primarySlug); }
+          catch (err) { logger.warn("ingest", `vault filing failed for ${url}: ${(err as Error).message}`); }
+        }
         inlineResults.push({ index: i, url, success: true, slug: result.primarySlug });
       } catch (err) {
         inlineResults.push({

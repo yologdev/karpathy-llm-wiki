@@ -8,6 +8,7 @@ import { BatchItemRow } from "@/components/BatchItemRow";
 import { BatchProgressBar } from "@/components/BatchProgressBar";
 import type { BatchItem } from "@/components/BatchItemRow";
 import { useSlugTenants } from "@/hooks/useSlugTenants";
+import { IngestVaultPicker } from "@/components/IngestVaultPicker";
 
 export function BatchIngestForm() {
   const { hrefForSlug } = useSlugTenants();
@@ -21,6 +22,7 @@ export function BatchIngestForm() {
     queued: number;
     total: number;
   } | null>(null);
+  const [vaultId, setVaultId] = useState<string | null>(null);
 
   const parseUrls = useCallback((text: string): string[] => {
     return text
@@ -65,7 +67,7 @@ export function BatchIngestForm() {
         const res = await fetch("/api/ingest/batch", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ urls, async: true }),
+          body: JSON.stringify({ urls, async: true, ...(vaultId ? { vaultId } : {}) }),
         });
         const data = (await res.json().catch(() => ({}))) as {
           queued?: number;
@@ -99,7 +101,7 @@ export function BatchIngestForm() {
       const res = await fetch("/api/ingest/batch", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ urls }),
+        body: JSON.stringify({ urls, ...(vaultId ? { vaultId } : {}) }),
       });
 
       if (!res.ok) {
@@ -210,6 +212,7 @@ export function BatchIngestForm() {
     setValidationError(null);
     setRunning(false);
     setQueuedInfo(null);
+    setVaultId(null);
   }
 
   const successCount = items.filter((i) => i.status === "success").length;
@@ -241,6 +244,8 @@ export function BatchIngestForm() {
               sequentially with progress updates.
             </p>
           </div>
+
+          <IngestVaultPicker value={vaultId} onChange={setVaultId} />
 
           {/* Async (queue) toggle — process in the background instead of
               streaming. Good for large/bulk batches. */}
