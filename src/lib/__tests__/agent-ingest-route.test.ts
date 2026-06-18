@@ -193,7 +193,7 @@ describe("POST /api/agents/[id]/ingest", () => {
       expect(res.status).toBe(200);
       // Owner-attributed, normal page — NO agent-knowledge scope.
       const opts = mockedIngestUrl.mock.calls[0][1];
-      expect(opts).toMatchObject({ author: "alice", owner: "alice", sourceType: "url" });
+      expect(opts).toMatchObject({ author: "alice--yoyo", owner: "alice", sourceType: "url" });
       expect(opts).not.toHaveProperty("pageType");
       // Owner content is not appended to the agent's learnings.
       expect(mockedAddLearning).not.toHaveBeenCalled();
@@ -253,7 +253,7 @@ describe("POST /api/agents/[id]/ingest", () => {
       expect(res.status).toBe(200);
       // Owner-attributed, normal page — NO agent-knowledge scope.
       const opts = mockedIngestUrl.mock.calls[0][1];
-      expect(opts).toMatchObject({ author: "alice", owner: "alice", triggeredBy: "alice", sourceType: "url" });
+      expect(opts).toMatchObject({ author: "alice--yoyo", owner: "alice", triggeredBy: "alice", sourceType: "url" });
       expect(opts).not.toHaveProperty("pageType");
       // Owner content is not appended to the agent's learnings.
       expect(mockedAddLearning).not.toHaveBeenCalled();

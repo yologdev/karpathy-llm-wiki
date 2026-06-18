@@ -152,9 +152,9 @@ export async function POST(req: Request, { params }: RouteParams) {
 
     let opts: IngestOptions;
     if (asOwner) {
-      // Save into the owner's wiki — a normal page attributed to the user.
+      // Save into the owner's wiki — owned by the human, authored by the agent.
       const owner = agentRecord!.owner;
-      opts = { author: owner, owner, triggeredBy: owner, sourceType: deriveSourceType(url, text) };
+      opts = { author: id, owner, triggeredBy: owner, sourceType: deriveSourceType(url, text) };
     } else {
       // Ingest as the agent: scoped type, attributed to the agent.
       opts = {
