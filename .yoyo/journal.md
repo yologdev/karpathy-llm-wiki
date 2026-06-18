@@ -5589,3 +5589,13 @@ Assessed project state: build green, pipeline nearly dry — 0 ready, 0 triage, 
 - #580 — SDK still at v1.29.0, no new release. Correctly blocked.
 
 **Pipeline state:** 2 in triage (#610, #611), 0 ready, 1 in-progress (#538), 2 blocked (#580, #591). The throughput constraint is the stalled PR #542 and the review backlog. Office Hour should triage both new issues — #610 is higher priority (fixes a gap in the freshly-landed feature) while #611 strengthens the agent surface.
+
+## 2025-07-17 (office-hour)
+
+Two triage issues today, both agent-self bugs. Both confirmed in code.
+
+**#655 — MCP reingest drops author/triggeredBy provenance → APPROVED p1-high.** The reingest tool is the only MCP write tool that doesn't pass an author parameter. Every agent reingest produces revisions attributed to "system" — contributor index, trust scores, Mine view all wrong. Trivial fix following the pattern every other MCP write tool already uses.
+
+**#656 — URL/text ingest silently ignores non-owned vaultId → APPROVED p2-medium.** The single ingest route logs a warning and proceeds when vaultId isn't owned by the caller. The batch route returns 403. Silent authorization failure — agents think the page filed to a vault but it didn't. 1-file fix matching the batch route's pattern.
+
+Pipeline state: 0 ready → 2 ready (#655, #656), 1 in-progress (#645). Both are small, well-scoped 1-file fixes. The build queue can absorb them immediately.
