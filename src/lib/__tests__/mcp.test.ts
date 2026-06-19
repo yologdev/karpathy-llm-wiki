@@ -2161,6 +2161,37 @@ describe("save_query_answer", () => {
     const page = await handleReadPage({ slug: "plain-markdown-answer" });
     expect(page.frontmatter.type).not.toBe("html");
   });
+
+  it("files saved page into vault when vaultId is provided", async () => {
+    await writeIndex([]);
+
+    await createVault("tester", "query-vault");
+    const vid = vaultIdFor("tester", "query-vault");
+
+    const result = await handleSaveQueryAnswer({
+      question: "What is transfer learning?",
+      answer: "Transfer learning reuses a pre-trained model on a new task.",
+      vaultId: vid,
+    });
+
+    expect(result.success).toBe(true);
+
+    const vault = await getVault(vid);
+    expect(vault).toBeTruthy();
+    expect(vault!.slugs).toContain(result.slug);
+  });
+
+  it("works without vaultId (no vault filing)", async () => {
+    await writeIndex([]);
+
+    const result = await handleSaveQueryAnswer({
+      question: "What is zero-shot learning?",
+      answer: "Zero-shot learning classifies unseen categories.",
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.slug).toBe("what-is-zero-shot-learning");
+  });
 });
 
 // ---------------------------------------------------------------------------

@@ -711,6 +711,7 @@ export async function handleSaveQueryAnswer(args: {
   sources?: string[] | undefined;
   format?: "markdown" | "html" | "slides" | undefined;
   owner?: string | undefined;
+  vaultId?: string | undefined;
 }): Promise<{ slug: string; success: boolean }> {
   if (!args.question || args.question.trim().length === 0) {
     throw new Error("question is required and must be non-empty");
@@ -729,6 +730,11 @@ export async function handleSaveQueryAnswer(args: {
     owner,
     owner,  // author — same as owner for MCP saves
   );
+
+  if (args.vaultId) {
+    try { await addToVault(args.vaultId, result.slug); }
+    catch (err) { logger.warn("mcp", `vault filing failed: ${(err as Error).message}`); }
+  }
 
   return { slug: result.slug, success: true };
 }
@@ -2173,6 +2179,10 @@ export function createMcpServer(): McpServer {
         .string()
         .optional()
         .describe("Owner handle — assigns page ownership (used for html artifacts on profile pages)"),
+      vaultId: z
+        .string()
+        .optional()
+        .describe("Optional vault ID — if provided, the saved page is automatically curated into this vault"),
     },
     annotations: {
       readOnlyHint: false,
