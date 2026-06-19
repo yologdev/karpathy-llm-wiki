@@ -214,6 +214,26 @@ export class FilesystemStorageProvider implements StorageProvider {
     await fs.writeFile(abs, JSON.stringify(value), "utf-8");
   }
 
+  async listIndexKeys(prefix: string): Promise<string[]> {
+    const indexDir = this.resolve(".indexes");
+    try {
+      const entries = await fs.readdir(indexDir);
+      const suffix = ".json";
+      return entries
+        .filter((f) => f.startsWith(prefix) && f.endsWith(suffix))
+        .map((f) => f.slice(0, -suffix.length));
+    } catch (err: unknown) {
+      if (
+        err instanceof Error &&
+        "code" in err &&
+        (err as NodeJS.ErrnoException).code === "ENOENT"
+      ) {
+        return [];
+      }
+      throw err;
+    }
+  }
+
   // -------------------------------------------------------------------------
   // Embeddings / vector search
   // -------------------------------------------------------------------------

@@ -66,6 +66,15 @@ export interface KVNamespace {
     options?: { expirationTtl?: number },
   ): Promise<void>;
   delete(key: string): Promise<void>;
+  list(options?: {
+    prefix?: string;
+    cursor?: string;
+    limit?: number;
+  }): Promise<{
+    keys: Array<{ name: string }>;
+    list_complete: boolean;
+    cursor?: string;
+  }>;
 }
 
 // ---------------------------------------------------------------------------

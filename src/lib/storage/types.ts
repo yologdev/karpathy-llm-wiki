@@ -224,6 +224,16 @@ export interface StorageProvider {
    */
   putIndex<T = unknown>(key: string, value: T): Promise<void>;
 
+  /**
+   * List index keys that start with a given prefix.
+   * Returns the logical key names (without internal prefixes like `_idx:`).
+   * Useful for discovering all indexes of a certain type (e.g. all vault
+   * indexes via `listIndexKeys("vaults:")`).
+   * @param prefix — logical key prefix, e.g. "vaults:"
+   * @returns matching key names
+   */
+  listIndexKeys(prefix: string): Promise<string[]>;
+
   // -------------------------------------------------------------------------
   // Embeddings / vector search
   // -------------------------------------------------------------------------

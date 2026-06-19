@@ -189,19 +189,16 @@ export async function removeFromVault(
 }
 
 /**
- * Discover every tenant that has a `vaults:<tenant>` index by scanning
- * the `.indexes/` directory for matching filenames. Returns tenant strings.
- * Fail-soft: returns an empty array on any error (e.g. R2/KV backend where
- * indexes aren't stored as files).
+ * Discover every tenant that has a `vaults:<tenant>` index by listing
+ * index keys with the `vaults:` prefix. Works on both the filesystem
+ * backend (scans `.indexes/` directory) and R2/KV (uses `kv.list()`).
+ * Fail-soft: returns an empty array on any error.
  */
 async function discoverVaultTenants(): Promise<string[]> {
   try {
-    const files = await getStorage().listFiles(".indexes/");
     const prefix = "vaults:";
-    const suffix = ".json";
-    return files
-      .filter((f) => !f.isDirectory && f.name.startsWith(prefix) && f.name.endsWith(suffix))
-      .map((f) => f.name.slice(prefix.length, -suffix.length));
+    const keys = await getStorage().listIndexKeys(prefix);
+    return keys.map((k) => k.slice(prefix.length));
   } catch {
     return [];
   }

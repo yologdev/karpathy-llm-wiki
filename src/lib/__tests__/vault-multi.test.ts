@@ -127,6 +127,24 @@ describe("multi-vault model", () => {
     expect(await vaultsContaining("alice", "attention")).toEqual([va.id]);
   });
 
+  it("removeSlugFromAllVaults discovers cross-tenant vaults without owner hints", async () => {
+    const va = await createVault("alice", "ML");
+    const vb = await createVault("bob", "Reading");
+    await addToVault(va.id, "transformers");
+    await addToVault(vb.id, "transformers");
+
+    // Both vaults contain "transformers" before removal
+    expect(await vaultSlugs(va.id)).toContain("transformers");
+    expect(await vaultSlugs(vb.id)).toContain("transformers");
+
+    // Only pass alice as a hint — bob should be discovered via listIndexKeys
+    await removeSlugFromAllVaults("transformers", ["alice"]);
+
+    // "transformers" is gone from BOTH vaults (bob discovered, not hinted)
+    expect(await vaultSlugs(va.id)).toEqual([]);
+    expect(await vaultSlugs(vb.id)).toEqual([]);
+  });
+
   it("page deletion via lifecycle removes slug from all vaults", async () => {
     // Set up wiki infrastructure
     await ensureDirectories();

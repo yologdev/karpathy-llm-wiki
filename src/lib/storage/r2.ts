@@ -215,6 +215,27 @@ export class R2StorageProvider implements StorageProvider {
     await this.kv.put(`${INDEX_PREFIX}${key}`, JSON.stringify(value));
   }
 
+  async listIndexKeys(prefix: string): Promise<string[]> {
+    const kvPrefix = `${INDEX_PREFIX}${prefix}`;
+    const keys: string[] = [];
+    let cursor: string | undefined;
+
+    do {
+      const result = await this.kv.list({
+        prefix: kvPrefix,
+        cursor,
+        limit: 1000,
+      });
+      for (const k of result.keys) {
+        // Strip the internal `_idx:` prefix to return logical key names.
+        keys.push(k.name.slice(INDEX_PREFIX.length));
+      }
+      cursor = result.list_complete ? undefined : result.cursor;
+    } while (cursor);
+
+    return keys;
+  }
+
   // -------------------------------------------------------------------------
   // Embeddings / vector search
   // -------------------------------------------------------------------------
