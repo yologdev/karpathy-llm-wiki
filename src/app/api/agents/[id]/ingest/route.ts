@@ -3,6 +3,7 @@ import { verifyAgentToken, addAgentLearningPage, getAgent } from "@/lib/agents";
 import { getServicePrincipal } from "@/lib/auth";
 import { ingestUrl, ingest, ingestImage, type IngestOptions } from "@/lib/ingest";
 import { logger } from "@/lib/logger";
+import { addToVault, vaultOwnedBy } from "@/lib/vault";
 
 interface RouteParams {
   params: Promise<{ id: string }>;
@@ -110,6 +111,7 @@ export async function POST(req: Request, { params }: RouteParams) {
       imageUrl?: unknown;
       sourceUrl?: unknown;
       asOwner?: unknown;
+      vaultId?: unknown;
     };
     try {
       body = await req.json();
@@ -182,6 +184,35 @@ export async function POST(req: Request, { params }: RouteParams) {
     // ingests do not (they live in the owner's normal content space).
     if (!asOwner) {
       await addAgentLearningPage(id, result.primarySlug);
+    }
+
+    // Vault filing: explicit vaultId → agent's defaultVault → none.
+    const explicitVault =
+      typeof body.vaultId === "string" && body.vaultId.trim().length > 0
+        ? body.vaultId.trim()
+        : undefined;
+    let effectiveVault = explicitVault;
+    if (!effectiveVault) {
+      // Resolve the agent record if not yet loaded (per-agent-token, no asOwner).
+      if (!agentRecord) {
+        try { agentRecord = await getAgent(id); } catch { agentRecord = null; }
+      }
+      if (agentRecord?.defaultVault) {
+        effectiveVault = agentRecord.defaultVault;
+      }
+    }
+    if (effectiveVault) {
+      // Resolve agent record for ownership check if still missing.
+      if (!agentRecord) {
+        try { agentRecord = await getAgent(id); } catch { agentRecord = null; }
+      }
+      const ownerHandle = agentRecord?.owner;
+      if (ownerHandle && vaultOwnedBy(effectiveVault, ownerHandle)) {
+        try { await addToVault(effectiveVault, result.primarySlug); }
+        catch (e) { logger.warn("agents", `vault filing failed for ${effectiveVault}:`, e); }
+      } else {
+        logger.warn("agents", `skipping vault filing: owner "${ownerHandle}" does not own vault "${effectiveVault}"`);
+      }
     }
 
     return NextResponse.json({

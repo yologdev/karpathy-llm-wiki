@@ -15,9 +15,15 @@ vi.mock("@/lib/ingest", () => ({
   ingest: vi.fn(),
 }));
 
+vi.mock("@/lib/vault", () => ({
+  addToVault: vi.fn(),
+  vaultOwnedBy: vi.fn(() => false),
+}));
+
 import { verifyAgentToken, addAgentLearningPage, getAgent } from "@/lib/agents";
 import { getServicePrincipal } from "@/lib/auth";
 import { ingestUrl, ingest } from "@/lib/ingest";
+import { addToVault, vaultOwnedBy } from "@/lib/vault";
 import { POST } from "@/app/api/agents/[id]/ingest/route";
 
 const mockedVerify = vi.mocked(verifyAgentToken);
@@ -26,6 +32,8 @@ const mockedGetAgent = vi.mocked(getAgent);
 const mockedServicePrincipal = vi.mocked(getServicePrincipal);
 const mockedIngestUrl = vi.mocked(ingestUrl);
 const mockedIngest = vi.mocked(ingest);
+const mockedAddToVault = vi.mocked(addToVault);
+const mockedVaultOwnedBy = vi.mocked(vaultOwnedBy);
 
 const params = Promise.resolve({ id: "alice--yoyo" });
 
@@ -271,6 +279,94 @@ describe("POST /api/agents/[id]/ingest", () => {
       );
       expect(res.status).toBe(403);
       expect(mockedIngestUrl).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("vault filing", () => {
+    it("files into explicit vaultId when owner owns the vault", async () => {
+      mockedGetAgent.mockResolvedValue({ id: "alice--yoyo", owner: "alice" } as never);
+      mockedVaultOwnedBy.mockReturnValue(true);
+
+      const res = await POST(
+        req({ url: "https://example.com", vaultId: "alice--research" }, "alice--yoyo.s"),
+        { params },
+      );
+      expect(res.status).toBe(200);
+      expect(mockedAddToVault).toHaveBeenCalledWith("alice--research", "ingested-page");
+    });
+
+    it("falls back to defaultVault when no explicit vaultId", async () => {
+      mockedGetAgent.mockResolvedValue({
+        id: "alice--yoyo",
+        owner: "alice",
+        defaultVault: "alice--default",
+      } as never);
+      mockedVaultOwnedBy.mockReturnValue(true);
+
+      const res = await POST(
+        req({ url: "https://example.com" }, "alice--yoyo.s"),
+        { params },
+      );
+      expect(res.status).toBe(200);
+      expect(mockedAddToVault).toHaveBeenCalledWith("alice--default", "ingested-page");
+    });
+
+    it("explicit vaultId overrides defaultVault", async () => {
+      mockedGetAgent.mockResolvedValue({
+        id: "alice--yoyo",
+        owner: "alice",
+        defaultVault: "alice--default",
+      } as never);
+      mockedVaultOwnedBy.mockReturnValue(true);
+
+      const res = await POST(
+        req({ url: "https://example.com", vaultId: "alice--override" }, "alice--yoyo.s"),
+        { params },
+      );
+      expect(res.status).toBe(200);
+      expect(mockedAddToVault).toHaveBeenCalledWith("alice--override", "ingested-page");
+    });
+
+    it("skips vault filing when neither vaultId nor defaultVault exist", async () => {
+      mockedGetAgent.mockResolvedValue({ id: "alice--yoyo", owner: "alice" } as never);
+
+      const res = await POST(
+        req({ url: "https://example.com" }, "alice--yoyo.s"),
+        { params },
+      );
+      expect(res.status).toBe(200);
+      expect(mockedAddToVault).not.toHaveBeenCalled();
+    });
+
+    it("skips vault filing when owner does not own the vault", async () => {
+      mockedGetAgent.mockResolvedValue({ id: "alice--yoyo", owner: "alice" } as never);
+      mockedVaultOwnedBy.mockReturnValue(false);
+
+      const res = await POST(
+        req({ url: "https://example.com", vaultId: "bob--research" }, "alice--yoyo.s"),
+        { params },
+      );
+      expect(res.status).toBe(200);
+      // Ingest succeeds but vault filing is skipped (not owned).
+      expect(mockedAddToVault).not.toHaveBeenCalled();
+    });
+
+    it("works with system token and defaultVault", async () => {
+      mockedVerify.mockResolvedValue(null);
+      mockedServicePrincipal.mockReturnValue({ id: "service:yopedia", handle: "yopedia" });
+      mockedGetAgent.mockResolvedValue({
+        id: "alice--yoyo",
+        owner: "alice",
+        defaultVault: "alice--default",
+      } as never);
+      mockedVaultOwnedBy.mockReturnValue(true);
+
+      const res = await POST(
+        req({ url: "https://example.com" }, "sys-token"),
+        { params },
+      );
+      expect(res.status).toBe(200);
+      expect(mockedAddToVault).toHaveBeenCalledWith("alice--default", "ingested-page");
     });
   });
 });
