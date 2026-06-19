@@ -154,14 +154,16 @@ export function reduceReverts(revisionsPerPage: Revision[][]): Map<string, numbe
 
       // Both revisions must have authors, and they must be different.
       if (!current.author || !next.author) continue;
-      if (current.author === next.author) continue;
+      const currentAuthor = normalizeActor(current.author);
+      const nextAuthor = normalizeActor(next.author);
+      if (currentAuthor === nextAuthor) continue;
 
       // Check if the next revision substantially reduced the content size.
       if (current.sizeBytes === 0) continue;
       const reduction = (current.sizeBytes - next.sizeBytes) / current.sizeBytes;
       if (reduction > REVERT_SIZE_REDUCTION_THRESHOLD) {
-        const count = revertCounts.get(current.author) ?? 0;
-        revertCounts.set(current.author, count + 1);
+        const count = revertCounts.get(currentAuthor) ?? 0;
+        revertCounts.set(currentAuthor, count + 1);
       }
     }
   }

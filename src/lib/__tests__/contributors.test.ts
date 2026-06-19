@@ -2,9 +2,9 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import fs from "fs/promises";
 import os from "os";
 import path from "path";
-import { buildContributorProfile, buildContributorProfiles, listContributors, computeScanData } from "../contributors";
+import { buildContributorProfile, buildContributorProfiles, listContributors, computeScanData, reduceReverts } from "../contributors";
 import { ensureDirectories, writeWikiPage } from "../wiki";
-import { saveRevision } from "../revisions";
+import { saveRevision, type Revision } from "../revisions";
 import { createThread, addComment, _resetTimestamp } from "../talk";
 import { _resetLocks } from "../lock";
 import { _resetStorage } from "../storage";
@@ -539,6 +539,50 @@ describe("contributors data layer", () => {
 
       expect(batch[0]).toEqual(aliceSingle);
       expect(batch[1]).toEqual(bobSingle);
+    });
+  });
+
+  describe("reduceReverts normalizeActor", () => {
+    /** Helper to build a minimal Revision object for unit tests. */
+    function rev(author: string, sizeBytes: number, timestamp = 0): Revision {
+      return { timestamp, date: new Date(timestamp).toISOString(), slug: "test-page", sizeBytes, author };
+    }
+
+    it("treats different automation handles as same-author (no false revert)", () => {
+      // "system" writes 1000 bytes, then "lint-fix" shrinks to 100 bytes.
+      // Both normalise to "yoyo", so this is a same-author edit, NOT a revert.
+      const revisions: Revision[][] = [
+        [rev("lint-fix", 100, 2), rev("system", 1000, 1)], // newest-first
+      ];
+      const counts = reduceReverts(revisions);
+      // No revert should be counted — same normalized author.
+      expect(counts.size).toBe(0);
+    });
+
+    it("keys revert counts on the normalized handle", () => {
+      // "system" writes 1000 bytes, then "alice" shrinks to 100 (>50% reduction).
+      // The revert count should be keyed as "yoyo" (normalized "system"), not "system".
+      const revisions: Revision[][] = [
+        [rev("alice", 100, 2), rev("system", 1000, 1)], // newest-first
+      ];
+      const counts = reduceReverts(revisions);
+      expect(counts.get("yoyo")).toBe(1);
+      expect(counts.has("system")).toBe(false);
+    });
+
+    it("trust score for yoyo reflects revert penalties from automation actors", async () => {
+      await createPage("page-auto-revert", "Auto Revert", "# Auto\n\nContent.");
+      // "system" writes a large revision...
+      await saveRevision("page-auto-revert", "# Auto\n\n" + "x".repeat(1000), "system");
+      // ...then a human substantially shrinks it (>50% reduction = revert).
+      await saveRevision("page-auto-revert", "# Auto\n\nShort.", "alice");
+
+      const scanData = await computeScanData();
+      // The normalized handle "yoyo" should appear in activityMap (from reduceActivity)
+      // and revertCounts (from reduceReverts) with matching keys.
+      const yoyoProfile = await buildContributorProfile("yoyo", scanData);
+      expect(yoyoProfile.revertCount).toBe(1);
+      expect(yoyoProfile.trustScore).toBeLessThan(1.0);
     });
   });
 });
