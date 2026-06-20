@@ -5,6 +5,7 @@ import path from "path";
 import {
   vaultIdFor,
   vaultOwnedBy,
+  findVaultByName,
   createVault,
   listVaults,
   getVault,
@@ -96,6 +97,18 @@ describe("multi-vault model", () => {
     await deleteVault(v.id);
     expect(await getVault(v.id)).toBeNull();
     expect(await listVaults("alice")).toEqual([]);
+  });
+
+  it("findVaultByName returns vault by display name", async () => {
+    await createVault("alice", "Reading List");
+    const found = await findVaultByName("alice", "Reading List");
+    expect(found).not.toBeNull();
+    expect(found!.name).toBe("Reading List");
+    // After rename, findable by new name only
+    const id = vaultIdFor("alice", "Reading List");
+    await renameVault(id, "Bookmarks");
+    expect(await findVaultByName("alice", "Bookmarks")).not.toBeNull();
+    expect(await findVaultByName("alice", "Reading List")).toBeNull();
   });
 
   it("vaults are owner-scoped (different owners don't collide)", async () => {

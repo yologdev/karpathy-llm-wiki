@@ -4168,6 +4168,56 @@ describe("vault_rename", () => {
   });
 });
 
+describe("vault operations work after vault_rename", () => {
+  it("curate/uncurate/pages use renamed vault, not a duplicate", async () => {
+    // Setup: create a page and curate it into a vault
+    await writeTestPage(
+      "rename-test-page",
+      "---\ntitle: Rename Test Page\n---\n# Content",
+    );
+    await handleVaultCurate({
+      slug: "rename-test-page",
+      owner: "alice",
+      vault: "Original",
+    });
+
+    // Rename the vault
+    const id = vaultIdFor("alice", "Original");
+    await handleVaultRename({ vault_id: id, name: "Renamed" });
+
+    // vault_pages with new name should find the curated page
+    const pages = await handleVaultPages({ owner: "alice", vault: "Renamed" });
+    expect(pages.slugs).toContain("rename-test-page");
+
+    // vault_curate with new name should add to the SAME vault (no duplicate)
+    await writeTestPage(
+      "rename-test-page-2",
+      "---\ntitle: Rename Test Page 2\n---\n# Content 2",
+    );
+    await handleVaultCurate({
+      slug: "rename-test-page-2",
+      owner: "alice",
+      vault: "Renamed",
+    });
+    const vaults = await listVaults("alice");
+    expect(vaults).toHaveLength(1);
+    expect(vaults[0].name).toBe("Renamed");
+    expect(vaults[0].slugs).toContain("rename-test-page");
+    expect(vaults[0].slugs).toContain("rename-test-page-2");
+
+    // vault_uncurate with new name should work
+    const uncurated = await handleVaultUncurate({
+      slug: "rename-test-page",
+      owner: "alice",
+      vault: "Renamed",
+    });
+    expect(uncurated.curated).toBe(false);
+    const after = await listVaults("alice");
+    expect(after[0].slugs).not.toContain("rename-test-page");
+    expect(after[0].slugs).toContain("rename-test-page-2");
+  });
+});
+
 describe("vault_delete", () => {
   it("deletes an existing vault", async () => {
     const { vault } = await handleVaultCreate({ owner: "alice", name: "Temporary" });
