@@ -11,9 +11,7 @@ vi.mock("@/lib/logger", () => ({
   logger: { error: vi.fn(), info: vi.fn(), debug: vi.fn(), warn: vi.fn() },
 }));
 
-vi.mock("@/lib/auth", () => ({
-  getPrincipal: vi.fn(async () => ({ id: "u", handle: "u" })),
-}));
+vi.mock("@/lib/auth", () => ({ getPrincipal: vi.fn() }));
 
 vi.mock("@/lib/search", () => ({
   // Default to UNSCOPED; individual tests override per scope.
@@ -44,11 +42,13 @@ vi.mock("@/lib/query", () => ({
 import { listReadableWikiPages } from "@/lib/wiki";
 import { resolveScopeSlugs } from "@/lib/search";
 import { selectPagesForQuery } from "@/lib/query";
+import { getPrincipal } from "@/lib/auth";
 import { POST } from "@/app/api/query/stream/route";
 
 const mockedList = vi.mocked(listReadableWikiPages);
 const mockedScope = vi.mocked(resolveScopeSlugs);
 const mockedSelect = vi.mocked(selectPagesForQuery);
+const mockedGetPrincipal = vi.mocked(getPrincipal);
 
 const ENTRIES = [
   { slug: "concept-a", title: "A", summary: "", type: undefined },
@@ -68,6 +68,9 @@ beforeEach(() => {
   vi.clearAllMocks();
   mockedList.mockResolvedValue(ENTRIES);
   mockedScope.mockResolvedValue({ scopeSlugs: undefined });
+  // Default: a signed-in user (the middleware guarantees a session for POST).
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  mockedGetPrincipal.mockResolvedValue({ id: "u", handle: "u" } as any);
 });
 
 describe("POST /api/query/stream — agent-scope filtering (#413)", () => {
@@ -115,6 +118,15 @@ describe("POST /api/query/stream — agent-scope filtering (#413)", () => {
   it("rejects an invalid format with 400", async () => {
     const res = await POST(makeRequest({ question: "?", format: "bogus" }));
     expect(res.status).toBe(400);
+    expect(mockedSelect).not.toHaveBeenCalled();
+  });
+
+  it("401s an unauthenticated caller and never selects pages / calls the LLM", async () => {
+    mockedGetPrincipal.mockResolvedValueOnce(null); // anonymous
+    const res = await POST(makeRequest({ question: "what is A?" }));
+    expect(res.status).toBe(401);
+    expect((await res.json()).error).toMatch(/sign in/i);
+    // Stopped before any expensive work — no page selection, no LLM stream.
     expect(mockedSelect).not.toHaveBeenCalled();
   });
 });
