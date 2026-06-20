@@ -34,7 +34,10 @@
     ]
   },
 
-  "vars": { "YOPEDIA_URL": "https://yopedia.yuanhao-li.workers.dev" }
+  // Base URL the consumer POSTs maintenance/ingest tasks back to (server-to-server,
+  // authed with YOPEDIA_SERVICE_TOKEN). Uses the custom domain so it survives
+  // retiring the .workers.dev route.
+  "vars": { "YOPEDIA_URL": "https://yopedia.yolog.dev" }
 
   // Secret (set with `wrangler secret put --config workers/task-consumer/wrangler.jsonc`):
   //   YOPEDIA_SERVICE_TOKEN — the system write credential (same value as the main Worker's)
