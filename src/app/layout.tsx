@@ -30,7 +30,7 @@ const SITE_DESCRIPTION =
   "A shared second brain for humans and agents. Not RAG — it accumulates: sources become cited pages, contradictions reconcile, and lineage stays visible.";
 
 export const metadata: Metadata = {
-  metadataBase: new URL("https://yopedia.yuanhao-li.workers.dev"),
+  metadataBase: new URL("https://yopedia.yolog.dev"),
   title: {
     default: "yopedia — a shared second brain for humans and agents",
     template: "%s · yopedia",
