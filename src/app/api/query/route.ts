@@ -50,11 +50,24 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Querying invokes the LLM (a real cost), so it's signed-in-only. The
+    // middleware write-gate already 401s anonymous POSTs to /api/**; this is
+    // defense-in-depth at the cost-critical endpoint so a future middleware/
+    // matcher change can't silently open free anonymous querying. (Agents query
+    // via MCP — query() directly — not this route, so this doesn't gate them.)
+    const principal = await getPrincipal();
+    if (!principal) {
+      return NextResponse.json(
+        { error: "Sign in required to query yopedia." },
+        { status: 401 },
+      );
+    }
+
     const result = await query(
       question.trim(),
       parseFormat(format),
       scope || undefined,
-      await getPrincipal(),
+      principal,
     );
 
     return NextResponse.json(result);

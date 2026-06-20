@@ -40,6 +40,16 @@ describe("write-gate in-route auth exemptions", () => {
     expect(authenticatesInRoute("/api/wiki/transformers/discuss")).toBe(false);
   });
 
+  it("does NOT exempt the LLM query endpoints — they stay signed-in-only", () => {
+    // Querying costs a real LLM call. These are POST routes that must NOT be
+    // added to the in-route exemption list, or the write-gate would stop 401ing
+    // anonymous callers and free querying would open up. (The routes also self-
+    // guard on a null principal as defense-in-depth.) The only public query path
+    // is GET /api/query/demo — whitelisted to 3 questions + KV-cached.
+    expect(authenticatesInRoute("/api/query")).toBe(false);
+    expect(authenticatesInRoute("/api/query/stream")).toBe(false);
+  });
+
   it("exempts wiki revisions sub-route for service-token callers", () => {
     expect(authenticatesInRoute("/api/wiki/transformers/revisions")).toBe(true);
     expect(authenticatesInRoute("/api/wiki/test-slug/revisions")).toBe(true);
