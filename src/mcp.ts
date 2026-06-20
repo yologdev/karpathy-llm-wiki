@@ -344,8 +344,9 @@ export async function handleUpdateMetadata(args: {
 
 export async function handleDeletePage(args: {
   slug: string;
+  author?: string;
 }): Promise<DeletePageResult> {
-  return deleteWikiPage(args.slug);
+  return deleteWikiPage(args.slug, args.author);
 }
 
 // ---------------------------------------------------------------------------
@@ -1778,6 +1779,7 @@ export function createMcpServer(): McpServer {
     description: "Delete a yopedia wiki page by slug",
     inputSchema: {
       slug: z.string().describe("Slug of the page to delete (e.g. 'neural-networks')"),
+      author: z.string().optional().describe("Who is performing the deletion (for attribution)"),
     },
     annotations: {
       readOnlyHint: false,

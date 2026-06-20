@@ -28,7 +28,7 @@ import { removeSourceForPage } from "./source-index";
 import { syncCommonsForPage, removeCommonsEntryBySlug, belongsInCommons } from "./commons";
 import { syncOwnerIndexForPage, removeOwnerIndexForSlug, tenantsForPage } from "./owner-index";
 import { syncBacklinksForPage, removeBacklinksForSlug } from "./backlink-index";
-import { recordEditForAuthor } from "./contributor-index";
+import { recordEditForAuthor, reverseEditForAuthor } from "./contributor-index";
 import { pushRecentEvent, removeRecentForSlug } from "./recent-index";
 import { isAgentHandle, removeSlugFromAgentPages } from "./agents";
 import { removeSlugFromAllVaults } from "./vault";
@@ -135,6 +135,8 @@ type PageLifecycleOp =
       kind: "delete";
       /** Title used in the log entry (captured before unlink). */
       title: string;
+      /** Who performed the deletion — used for contributor-index cleanup. */
+      author?: string;
     };
 
 /** Internal result of a lifecycle op — a superset of Write/Delete result shapes. */
@@ -450,9 +452,10 @@ async function runPageLifecycleOp(
   //         Fail-soft.
   try {
     if (op.kind === "delete") {
-      // The author of the deleted revision isn't on the delete op; the daily
-      // rebuild reconciles per-author counts. We still drop the page from any
-      // author's pagesEdited via the rebuild. (No per-author decrement here.)
+      // Decrement per-author edit counts when the delete op carries an author.
+      if (op.author) {
+        await reverseEditForAuthor(op.author, slug);
+      }
     } else if (op.author) {
       await recordEditForAuthor(op.author, slug);
     }
@@ -655,6 +658,7 @@ async function runPageLifecycleOp(
  */
 export async function deleteWikiPage(
   slug: string,
+  author?: string,
 ): Promise<DeletePageResult> {
   validateSlug(slug);
 
@@ -667,7 +671,7 @@ export async function deleteWikiPage(
 
   const result = await runPageLifecycleOp(
     slug,
-    { kind: "delete", title },
+    { kind: "delete", title, author },
     "delete",
     ({ strippedBacklinksFrom }) =>
       `deleted · stripped backlinks from ${strippedBacklinksFrom.length} page(s)`,

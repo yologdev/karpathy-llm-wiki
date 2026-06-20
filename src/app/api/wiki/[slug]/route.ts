@@ -48,7 +48,7 @@ export async function DELETE(
           );
     }
 
-    const result = await deleteWikiPage(slug);
+    const result = await deleteWikiPage(slug, principal?.handle);
     return NextResponse.json(result);
   } catch (err) {
     const message = getErrorMessage(err);
