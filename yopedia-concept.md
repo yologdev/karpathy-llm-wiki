@@ -278,11 +278,9 @@ where this differs.
 In rough order (commons-first model). *(Shipped since the last revision: multiple named
 public vaults + curation + the `vault:<id>` Browse/Query/Graph lens; commons-global
 `/wiki/<slug>` URLs; the service-token + task-queue write path and the `@yoyoevolve`
-X-mention loop.)*
+X-mention loop; the **realm-aware write model** — commons pages block human prose-edits,
+talk is the human steering surface, owner-only writes for private/vault pages enforced.)*
 
-- **Realm-aware write model.** Retire direct prose-editing of commons pages; elevate
-  **talk** as the human steering surface (dispute / merge / split signals); **owner-only
-  writes** for private / vault pages (close the current edit-ACL gap).
 - **Agents as commons contributors.** A deliberate agent→commons publish path, distinct
   from the private agent-knowledge scratchpad.
 - **Private tier (billing).** Clerk Billing checkout → `plan="pro"`; **private-vault

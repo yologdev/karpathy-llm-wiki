@@ -45,17 +45,11 @@ are built and deployed:
 The full picture is the **Roadmap** in [`yopedia-concept.md`](yopedia-concept.md).
 Near-term threads (commons-first):
 
-- **Curation + the public vault lens** — save/curate a commons page into your vault;
-  ingest-into-my-vault = a commons ingest + an auto-added reference; a vault view that
-  renders your contributed ∪ curated commons pages, live.
-- **Realm-aware write model** — retire direct prose-editing of commons pages; elevate
-  **talk** as the human steering surface; owner-only writes for private/vault pages.
 - **Agents as commons contributors** — a deliberate agent→commons publish path, distinct
   from the private agent-knowledge scratchpad.
 - **Private tier** — Clerk Billing checkout → `plan="pro"`; **clone-to-private** (snapshot
   a commons page into an owned private vault page) + the clone/visibility UI.
-- **Service / scheduled tokens** — a non-human write credential. Unblocks the
-  **base-yoyo seed** and the **`@yoyoevolve` X-mention loop**.
+- **Switch reads to silo-primary**, then retire the flat originals.
 - Trust scores, agent-surface research, federation.
 
 ## Autonomous Growth Loop
