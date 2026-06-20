@@ -9,6 +9,7 @@ import { getPrincipal, getServicePrincipal } from "@/lib/auth";
 import { ClientInputError, getErrorMessage } from "@/lib/errors";
 import { logger } from "@/lib/logger";
 import { MAX_PDF_SIZE } from "@/lib/constants";
+import { addToVault, vaultOwnedBy } from "@/lib/vault";
 
 /**
  * POST /api/ingest/pdf
@@ -58,6 +59,18 @@ export async function POST(request: NextRequest) {
       if (typeof tags === "string" && tags.trim()) {
         options.tags = tags.split(",").map((t) => t.trim()).filter(Boolean);
       }
+      const formVaultId = form.get("vaultId");
+      let validatedVaultId: string | undefined;
+      if (typeof formVaultId === "string" && formVaultId.trim()) {
+        if (!vaultOwnedBy(formVaultId, principal.handle)) {
+          return NextResponse.json(
+            { error: "Vault not found or not owned by you" },
+            { status: 403 },
+          );
+        }
+        validatedVaultId = formVaultId;
+      }
+
       const bytes = await file.arrayBuffer();
 
       const jobId = crypto.randomUUID();
@@ -74,6 +87,7 @@ export async function POST(request: NextRequest) {
           owner: options.owner,
           author: options.author,
           ...(options.tags && options.tags.length > 0 ? { tags: options.tags } : {}),
+          ...(validatedVaultId ? { vaultId: validatedVaultId } : {}),
           ...(options.title ? { title: options.title } : {}),
           jobId,
           staged: {
@@ -83,7 +97,14 @@ export async function POST(request: NextRequest) {
             ...(file.type ? { contentType: file.type } : {}),
           },
         },
-        () => ingestPdf({ bytes, filename: file.name }, options),
+        async () => {
+          const result = await ingestPdf({ bytes, filename: file.name }, options);
+          if (validatedVaultId) {
+            try { await addToVault(validatedVaultId, result.primarySlug); }
+            catch (err) { logger.warn("ingest", `vault filing failed: ${(err as Error).message}`); }
+          }
+          return result;
+        },
       );
     }
 
@@ -100,6 +121,24 @@ export async function POST(request: NextRequest) {
     if (Array.isArray(tags) && tags.every((t: unknown) => typeof t === "string")) {
       options.tags = tags;
     }
+
+    let validatedVaultId: string | undefined;
+    if (body.vaultId !== undefined) {
+      if (typeof body.vaultId !== "string" || body.vaultId.trim().length === 0) {
+        return NextResponse.json(
+          { error: "vaultId must be a non-empty string if provided" },
+          { status: 400 },
+        );
+      }
+      if (!vaultOwnedBy(body.vaultId, principal.handle)) {
+        return NextResponse.json(
+          { error: "Vault not found or not owned by you" },
+          { status: 403 },
+        );
+      }
+      validatedVaultId = body.vaultId;
+    }
+
     const trimmedUrl = pdfUrl.trim();
 
     const jobId = crypto.randomUUID();
@@ -118,10 +157,18 @@ export async function POST(request: NextRequest) {
         owner: options.owner,
         author: options.author,
         ...(options.tags && options.tags.length > 0 ? { tags: options.tags } : {}),
+        ...(validatedVaultId ? { vaultId: validatedVaultId } : {}),
         ...(options.title ? { title: options.title } : {}),
         jobId,
       },
-      () => ingestPdf({ pdfUrl: trimmedUrl }, options),
+      async () => {
+        const result = await ingestPdf({ pdfUrl: trimmedUrl }, options);
+        if (validatedVaultId) {
+          try { await addToVault(validatedVaultId, result.primarySlug); }
+          catch (err) { logger.warn("ingest", `vault filing failed: ${(err as Error).message}`); }
+        }
+        return result;
+      },
     );
   } catch (error) {
     const msg = getErrorMessage(error);
