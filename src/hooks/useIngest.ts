@@ -262,6 +262,7 @@ export function useIngest(): UseIngestReturn {
         const fd = new FormData();
         fd.append("file", imageFile);
         if (title.trim()) fd.append("title", title.trim());
+        if (vaultId) fd.append("vaultId", vaultId);
         res = await fetch("/api/ingest/image", { method: "POST", body: fd });
       } else {
         res = await fetch("/api/ingest/image", {
@@ -270,6 +271,7 @@ export function useIngest(): UseIngestReturn {
           body: JSON.stringify({
             imageUrl: imageUrl.trim(),
             title: title.trim() || undefined,
+            vaultId: vaultId || undefined,
           }),
         });
       }
@@ -319,6 +321,7 @@ export function useIngest(): UseIngestReturn {
         const fd = new FormData();
         fd.append("file", pdfFile);
         if (title.trim()) fd.append("title", title.trim());
+        if (vaultId) fd.append("vaultId", vaultId);
         res = await fetch("/api/ingest/pdf", { method: "POST", body: fd });
       } else {
         res = await fetch("/api/ingest/pdf", {
@@ -327,6 +330,7 @@ export function useIngest(): UseIngestReturn {
           body: JSON.stringify({
             pdfUrl: pdfUrl.trim(),
             title: title.trim() || undefined,
+            vaultId: vaultId || undefined,
           }),
         });
       }
