@@ -64,6 +64,12 @@ export function vaultOwnedBy(vaultId: string, handle: string): boolean {
   return tenantOfVaultId(vaultId) === tenantForOwner(handle);
 }
 
+/** Find a vault by its current display name for a given owner. */
+export async function findVaultByName(owner: string, name: string): Promise<Vault | null> {
+  const vaults = await listVaults(owner);
+  return vaults.find((v) => v.name === name) ?? null;
+}
+
 const vaultsKey = (tenant: string) => `vaults:${tenant}`;
 
 /** All vaults owned by a handle (empty when none). Fail-soft. */

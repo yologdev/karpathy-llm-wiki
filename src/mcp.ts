@@ -87,7 +87,7 @@ import { fixLintIssue, type FixResult } from "./lib/lint-fix";
 import { listThreads, getThread, createThread, resolveThread, addComment } from "./lib/talk";
 import { queryByFrontmatter, validateQuery, type DataviewFilter, type DataviewQuery, type DataviewResult } from "./lib/dataview";
 import { listRevisions, readRevision, readRevisionMeta, type Revision } from "./lib/revisions";
-import { vaultIdFor, getVault, createVault, renameVault, deleteVault, addToVault, removeFromVault, listVaults, vaultSlugs } from "./lib/vault";
+import { vaultIdFor, getVault, findVaultByName, createVault, renameVault, deleteVault, addToVault, removeFromVault, listVaults, vaultSlugs } from "./lib/vault";
 import type { Vault } from "./lib/vault";
 import { belongsInCommons } from "./lib/commons";
 import { reconcileFromTalk, type ReconcileFromTalkResult } from "./lib/reconcile";
@@ -941,6 +941,17 @@ export async function handleWikiGraph(args: {
 // Vault handlers
 // ---------------------------------------------------------------------------
 
+/**
+ * Resolve a vault name to its stored id. Tries deterministic derivation
+ * first (O(1)), then scans by display name (handles post-rename lookup).
+ */
+async function resolveVaultId(owner: string, name: string): Promise<string | null> {
+  const derivedId = vaultIdFor(owner, name);
+  if (await getVault(derivedId)) return derivedId;
+  const found = await findVaultByName(owner, name);
+  return found?.id ?? null;
+}
+
 export async function handleVaultCurate(args: {
   slug: string;
   owner: string;
@@ -968,9 +979,10 @@ export async function handleVaultCurate(args: {
     );
   }
   // Resolve the named vault, creating it (public) on first use.
-  const id = vaultIdFor(args.owner, args.vault);
-  if (!(await getVault(id))) {
-    await createVault(args.owner, args.vault, "public");
+  let id = await resolveVaultId(args.owner, args.vault);
+  if (!id) {
+    const vault = await createVault(args.owner, args.vault, "public");
+    id = vault.id;
   }
   await addToVault(id, args.slug);
   return { curated: true, slug: args.slug, owner: args.owner, vault: args.vault };
@@ -981,7 +993,8 @@ export async function handleVaultUncurate(args: {
   owner: string;
   vault: string;
 }): Promise<{ curated: false; slug: string; owner: string; vault: string }> {
-  await removeFromVault(vaultIdFor(args.owner, args.vault), args.slug);
+  const id = await resolveVaultId(args.owner, args.vault);
+  if (id) await removeFromVault(id, args.slug);
   return { curated: false, slug: args.slug, owner: args.owner, vault: args.vault };
 }
 
@@ -1008,7 +1021,7 @@ export async function handleVaultPages(args: {
   owner: string;
   vault: string;
 }): Promise<{ owner: string; vault: string; slugs: string[]; pages: VaultPageEntry[] }> {
-  const id = vaultIdFor(args.owner, args.vault);
+  const id = (await resolveVaultId(args.owner, args.vault)) ?? vaultIdFor(args.owner, args.vault);
   const slugs = await vaultSlugs(id);
 
   // Resolve enriched metadata for each slug.  Try the page-metadata index
