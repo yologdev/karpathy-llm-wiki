@@ -8,9 +8,10 @@ import { rememberRecentJob } from "@/lib/recent-ingests";
 
 type Status = "loading" | "signin" | "confirm" | "saving" | "saved" | "error";
 
-/** Strip the "(3) " unread-count prefix browsers prepend to a page <title>. */
+/** Strip the "(3)"/"(99+)" unread-count prefix browsers prepend to a page
+ *  <title>, and trim surrounding whitespace. */
 function cleanTitle(t?: string): string {
-  return (t ?? "").replace(/^\(\d+\)\s*/, "").trim();
+  return (t ?? "").replace(/^\(\d+\+?\)\s*/, "").trim();
 }
 
 /**
@@ -30,6 +31,7 @@ export function SaveCapture({ url, title }: { url: string; title?: string }) {
   const [error, setError] = useState<string | null>(null);
 
   async function save() {
+    if (status === "saving") return; // guard against double-submit / Enter-mash
     setStatus("saving");
     setError(null);
     try {
@@ -44,6 +46,10 @@ export function SaveCapture({ url, title }: { url: string; title?: string }) {
         }),
       });
       if (res.status === 401) {
+        // Session expired between landing here and clicking Save. editTitle +
+        // vaultId are component state, so they survive the re-auth — but tell the
+        // user WHY they're back at sign-in so the dropped save isn't silent.
+        setError("Your session expired — sign in to finish saving.");
         setStatus("signin");
         return;
       }
@@ -61,6 +67,10 @@ export function SaveCapture({ url, title }: { url: string; title?: string }) {
       // page refreshes on focus, so a popup/bookmarklet save surfaces as a live
       // "working…" row instead of only appearing once it lands in the ledger.
       if (data.jobId) rememberRecentJob(data.jobId);
+      // The URL path always returns a jobId; a 200 without one means a malformed
+      // (e.g. edge-proxied) response — the save shows "saved" but won't appear in
+      // Recent ingests, so leave a breadcrumb rather than failing silently.
+      else console.warn("[SaveCapture] ingest returned 200 without a jobId — not tracked in Recent ingests");
       setStatus("saved");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Network error");
@@ -68,17 +78,25 @@ export function SaveCapture({ url, title }: { url: string; title?: string }) {
     }
   }
 
+  // Dismiss the capture view. A bookmarklet popup is script-opened so
+  // window.close() works; the PWA-share / iOS-Shortcut surfaces open a normal
+  // tab where close() is a no-op — fall back to navigating so the button isn't
+  // dead.
+  function dismiss(fallback: string) {
+    window.close();
+    setTimeout(() => {
+      if (!window.closed) window.location.href = fallback;
+    }, 120);
+  }
+
   // Move to the confirm step once signed in (or the sign-in prompt if not) —
   // but never clobber an in-progress / finished save.
   useEffect(() => {
     if (!isLoaded) return;
-    setStatus((s) =>
-      s === "saving" || s === "saved" || s === "error"
-        ? s
-        : isSignedIn
-          ? "confirm"
-          : "signin",
-    );
+    setStatus((s) => {
+      if (s === "saving" || s === "saved" || s === "error") return s;
+      return isSignedIn ? "confirm" : "signin";
+    });
   }, [isLoaded, isSignedIn]);
 
   const host = hostOf(url);
@@ -107,6 +125,11 @@ export function SaveCapture({ url, title }: { url: string; title?: string }) {
 
       {status === "signin" && (
         <div>
+          {error && (
+            <p style={{ fontSize: 13, color: "var(--danger, #dc2626)", marginBottom: 10 }}>
+              {error}
+            </p>
+          )}
           <p style={{ fontSize: 13.5, marginBottom: 12 }}>
             Sign in to save this page to yopedia.
           </p>
@@ -132,7 +155,7 @@ export function SaveCapture({ url, title }: { url: string; title?: string }) {
         >
           <label
             className="receipt"
-            style={{ display: "block", fontSize: 11.5, color: "var(--muted)", marginBottom: 6 }}
+            style={labelStyle}
           >
             Title
           </label>
@@ -157,7 +180,7 @@ export function SaveCapture({ url, title }: { url: string; title?: string }) {
 
           <label
             className="receipt"
-            style={{ display: "block", fontSize: 11.5, color: "var(--muted)", marginBottom: 6 }}
+            style={labelStyle}
           >
             Vault (optional)
           </label>
@@ -169,7 +192,7 @@ export function SaveCapture({ url, title }: { url: string; title?: string }) {
             <button type="submit" className="receipt" style={btnPrimary}>
               Save
             </button>
-            <button type="button" className="receipt" onClick={() => window.close()} style={btnSecondary}>
+            <button type="button" className="receipt" onClick={() => dismiss("/")} style={btnSecondary}>
               Cancel
             </button>
           </div>
@@ -204,10 +227,10 @@ export function SaveCapture({ url, title }: { url: string; title?: string }) {
           </p>
 
           <div style={{ marginTop: 22, display: "flex", gap: 10 }}>
-            {/* A popup's only post-save action is to close it. (No in-popup
-                "View activity" nav — it re-mounts this page and re-fires the
-                save; the server dedups it, but closing is the right action.) */}
-            <button type="button" className="receipt" onClick={() => window.close()} style={btnPrimary}>
+            {/* Post-save, the only action is to dismiss. (No in-popup "View
+                activity" nav — re-mounting drops back to the confirm step, which
+                is confusing right after a save; dismissing is the right action.) */}
+            <button type="button" className="receipt" onClick={() => dismiss("/ingest")} style={btnPrimary}>
               Close
             </button>
           </div>
@@ -225,6 +248,13 @@ const btnPrimary: CSSProperties = {
   background: "var(--accent-soft)",
   color: "var(--accent)",
   cursor: "pointer",
+};
+
+const labelStyle: CSSProperties = {
+  display: "block",
+  fontSize: 11.5,
+  color: "var(--muted)",
+  marginBottom: 6,
 };
 
 const btnSecondary: CSSProperties = {
