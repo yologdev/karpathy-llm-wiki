@@ -137,6 +137,8 @@ export interface LedgerEntry {
   started_at: string;
   finished_at: string;
   status: string;
+  /** True when the ingest was a dedup attach (no new synthesis). */
+  deduped?: boolean;
 }
 
 /** Relative path to the ingest ledger within the StorageProvider root. */
@@ -1333,6 +1335,20 @@ async function attachIngestTrigger(
       ? frontmatter.content_hash
       : undefined;
   updateSourceIndexForPage(slug, url, hash);
+
+  // Record a ledger entry so dedup'd ingests appear in /api/ingest/history.
+  const now = new Date().toISOString();
+  await persistToLedger({
+    ingest_id: `${now}/${slug}`,
+    source_type: source.type,
+    source_url: source.url,
+    primary_slug: slug,
+    related_slugs: [],
+    started_at: now,
+    finished_at: now,
+    status: "completed",
+    deduped: true,
+  });
 
   return {
     rawPath: "",
