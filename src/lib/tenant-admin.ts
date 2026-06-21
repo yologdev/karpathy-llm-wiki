@@ -25,7 +25,7 @@ export interface DeleteTenantResult {
  * Best-effort: a per-page failure is collected in `errors` and the rest proceed,
  * so one bad page can't strand the deletion.
  */
-export async function deleteTenant(handle: string): Promise<DeleteTenantResult> {
+export async function deleteTenant(handle: string, actor?: string): Promise<DeleteTenantResult> {
   const tenant = tenantForOwner(handle);
   // Defense in depth before an irreversible prefix `rm -rf`: ownerToTenant
   // already strips path-unsafe chars, but the storage layer has no traversal
@@ -47,7 +47,7 @@ export async function deleteTenant(handle: string): Promise<DeleteTenantResult> 
   let deletedPages = 0;
   for (const slug of owned) {
     try {
-      await deleteWikiPage(slug);
+      await deleteWikiPage(slug, actor ?? "admin");
       deletedPages++;
     } catch (e) {
       errors.push(`delete ${slug}: ${String(e)}`);

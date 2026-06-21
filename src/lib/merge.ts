@@ -285,7 +285,7 @@ export async function mergePages({
     "merge",
     `merged "${fromSlug}" into "${intoSlug}" — deleting "${fromSlug}" (its revisions + discussion threads are hard-deleted)`,
   );
-  await deleteWikiPage(fromSlug);
+  await deleteWikiPage(fromSlug, actor);
 
   return { fromSlug, intoSlug, disputed, repointedBacklinksFrom };
 }

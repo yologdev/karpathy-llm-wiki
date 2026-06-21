@@ -62,7 +62,7 @@ export async function DELETE(
       "tenant-admin",
       `deleteTenant "${tenant}" requested by ${principal?.handle ?? "service"}`,
     );
-    const result = await deleteTenant(handle);
+    const result = await deleteTenant(handle, principal?.handle ?? "admin");
     // 200 = fully deleted; 207 = partial (some pages failed — see `errors`), so
     // the caller doesn't read a clean 200 as complete success.
     return NextResponse.json(result, {

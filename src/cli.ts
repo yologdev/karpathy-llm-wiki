@@ -475,7 +475,7 @@ export async function runUpdate(slug: string, title?: string, tags?: string[]): 
 export async function runDelete(slug: string): Promise<void> {
   const { deleteWikiPage } = await import("./lib/lifecycle");
 
-  const result = await deleteWikiPage(slug);
+  const result = await deleteWikiPage(slug, "cli");
 
   console.log(`Deleted: ${result.slug}`);
   if (result.removedFromIndex) {

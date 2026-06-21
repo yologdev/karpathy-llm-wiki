@@ -221,7 +221,7 @@ describe("fixEmptyPage", () => {
     });
 
     expect(mockedDeleteWikiPage).toHaveBeenCalledOnce();
-    expect(mockedDeleteWikiPage).toHaveBeenCalledWith("empty");
+    expect(mockedDeleteWikiPage).toHaveBeenCalledWith("empty", "lint-fix");
   });
 });
 

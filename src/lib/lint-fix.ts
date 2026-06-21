@@ -134,7 +134,7 @@ export async function fixEmptyPage(slug: string): Promise<FixResult> {
     throw new FixValidationError("Missing required field: slug");
   }
 
-  await deleteWikiPage(slug);
+  await deleteWikiPage(slug, "lint-fix");
 
   return {
     success: true,
