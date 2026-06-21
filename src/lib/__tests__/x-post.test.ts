@@ -258,8 +258,9 @@ describe("fetchXPostContent — X Articles", () => {
     expect(content).not.toContain("LEGACY");
   });
 
-  it("falls back to the syndication teaser when the API returns a title but NO body", async () => {
+  it("falls back to the syndication teaser when the API returns a title but NO body (and warns)", async () => {
     process.env.X_BEARER_TOKEN = "test-bearer";
+    const warn = vi.spyOn(logger, "warn").mockImplementation(() => {});
     mockApi({
       // The regression case: article present with a title but empty body fields —
       // must NOT build a bodyless page; fall back to the syndication preview.
@@ -268,6 +269,24 @@ describe("fetchXPostContent — X Articles", () => {
     });
     const { content } = await fetchXPostContent("https://x.com/ada/status/123");
     expect(content).toContain("the 197-char gist");
+    expect(content).toContain("Article preview only");
+    // The degradation must be VISIBLE — a title-with-empty-body article logs at
+    // the decision point (not a silent fall-through).
+    expect(warn.mock.calls.some(([, msg]) => /EMPTY body/.test(String(msg)))).toBe(true);
+  });
+
+  it("prefers plain_text even when whitespace-only, falling back to syndication (not to legacy text)", async () => {
+    process.env.X_BEARER_TOKEN = "test-bearer";
+    mockApi({
+      // `plain_text` present but whitespace: `??` selects it (it's non-null), so
+      // a populated legacy `text` is NOT used — the page degrades to the teaser.
+      // Pins the operator choice: a future `??`→`||` or reorder would change this.
+      apiBody: { data: [{ id: "123", article: { title: "T", plain_text: "   ", text: "real legacy body" } }] },
+      synBody: { article: { title: "T", preview_text: "the gist" } },
+    });
+    const { content } = await fetchXPostContent("https://x.com/ada/status/123");
+    expect(content).not.toContain("real legacy body");
+    expect(content).toContain("the gist");
     expect(content).toContain("Article preview only");
   });
 

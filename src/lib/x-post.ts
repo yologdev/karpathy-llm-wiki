@@ -325,15 +325,27 @@ async function fetchArticleViaApi(id: string, url: string): Promise<XPostContent
   // to the first result that carries an article.
   const tweet = tweets.find((t) => t.id === id) ?? tweets.find((t) => t.article);
   const article = tweet?.article;
-  // The full body is `article.plain_text` (the rendered article); `text` is a
-  // legacy alias that X now returns EMPTY. Require an actual body — a title with
-  // no body would build a bodyless page (worse than the syndication teaser, which
-  // at least carries the ~200-char preview). Without a body, return null so the
-  // caller falls back to the syndication teaser.
+  // The full body is `article.plain_text` (the rendered article). `text` is a
+  // legacy alias X now returns empty — kept as a defensive fallback (in case X
+  // repopulates it) but normally drops through to the empty guard below.
   const body = (article?.plain_text ?? article?.text)?.trim();
-  if (!body) return null;
+  if (!body) {
+    // An article WITH a title but NO body must not build a bodyless page (worse
+    // than the syndication teaser, which at least carries the ~200-char preview)
+    // — return null so the caller falls back. Make it loud: this is a real,
+    // in-window degradation, NOT the out-of-window/API-error cases the caller's
+    // teaser log assumes, and the caller can't tell why we returned null. Guard
+    // on `article` so a plain tweet (legitimately no article) stays quiet.
+    if (article) {
+      logger.warn(
+        "x-post",
+        `X API returned an article for ${id} with a title but EMPTY body (plain_text/text) — degrading to the syndication teaser; full body not ingested`,
+      );
+    }
+    return null;
+  }
 
-  const title = article!.title?.trim() || "X Article";
+  const title = article?.title?.trim() || "X Article";
   const cover = await fetchArticleCover(id);
   const lines: string[] = [`# ${title}`, ""];
   if (handle) lines.push(`**@${handle}** · X Article`, "");
@@ -438,7 +450,7 @@ export async function fetchXPostContent(url: string): Promise<XPostContent> {
             // token) was already logged precisely by fetchArticleViaApi, while an
             // out-of-window / no-article result returned silently. List both and
             // point at any preceding x-post log rather than guess wrong.
-            `X Article ${id} ingested as the syndication TEASER only — full body not fetched (article outside X's ~7-day recent-search window, or the X API call failed; see any preceding x-post log for the exact cause).`
+            `X Article ${id} ingested as the syndication TEASER only — full body not fetched (the API returned an article with an empty body, the article is outside X's ~7-day recent-search window, or the X API call failed; see any preceding x-post log for the exact cause).`
           : `X Article ${id} ingested as the syndication TEASER only — X_BEARER_TOKEN is not set on this worker, so the full body can't be fetched. Set it to ingest full X Articles.`,
       );
       return previewArticle;
