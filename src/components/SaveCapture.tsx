@@ -3,16 +3,9 @@
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { useUser, useClerk } from "@clerk/nextjs";
 import { IngestVaultPicker } from "./IngestVaultPicker";
+import { hostOf } from "@/lib/share-target";
 
 type Status = "loading" | "signin" | "saving" | "saved" | "error";
-
-function hostOf(url: string): string {
-  try {
-    return new URL(url).hostname.replace(/^www\./, "");
-  } catch {
-    return url;
-  }
-}
 
 /**
  * The capture target for all three surfaces (bookmarklet popup, PWA share, iOS

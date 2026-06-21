@@ -12,7 +12,7 @@ import { buildBookmarklet } from "@/lib/share-target";
 export function SaveGuide() {
   const linkRef = useRef<HTMLAnchorElement>(null);
   const [bookmarklet, setBookmarklet] = useState("");
-  const [copied, setCopied] = useState(false);
+  const [copyState, setCopyState] = useState<"idle" | "ok" | "fail">("idle");
 
   useEffect(() => {
     const bm = buildBookmarklet(window.location.origin);
@@ -25,10 +25,13 @@ export function SaveGuide() {
   async function copy() {
     try {
       await navigator.clipboard.writeText(bookmarklet);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1800);
+      setCopyState("ok");
+      setTimeout(() => setCopyState("idle"), 1800);
     } catch {
-      setCopied(false);
+      // Clipboard can fail (denied permission, insecure context, older browser).
+      // This IS the fallback affordance, so tell the user to grab the visible code
+      // above rather than silently resetting to a no-op state.
+      setCopyState("fail");
     }
   }
 
@@ -82,7 +85,11 @@ export function SaveGuide() {
           </p>
           <pre style={preStyle}>{bookmarklet}</pre>
           <button type="button" className="receipt" onClick={copy} style={btnSecondary}>
-            {copied ? "Copied ✓" : "Copy code"}
+            {copyState === "ok"
+              ? "Copied ✓"
+              : copyState === "fail"
+                ? "Copy failed — select the code above"
+                : "Copy code"}
           </button>
         </details>
         <p style={{ ...noteStyle }}>

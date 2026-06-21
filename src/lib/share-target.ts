@@ -29,6 +29,19 @@ export function resolveSharedUrl(
  * authenticates the save — no token, no CORS. Generated from the live origin so it
  * always points at wherever yopedia is served (e.g. yopedia.yolog.dev).
  */
+/**
+ * Display host for a URL — the hostname without a leading `www.`, or the raw
+ * input unchanged if it doesn't parse. Used by the capture UI to show
+ * "example.com" instead of a long URL.
+ */
+export function hostOf(url: string): string {
+  try {
+    return new URL(url).hostname.replace(/^www\./, "");
+  } catch {
+    return url;
+  }
+}
+
 export function buildBookmarklet(origin: string): string {
   const base = origin.replace(/\/+$/, "");
   return (

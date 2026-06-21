@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { resolveSharedUrl, buildBookmarklet } from "../share-target";
+import { resolveSharedUrl, buildBookmarklet, hostOf } from "../share-target";
 import manifest from "@/app/manifest";
 
 describe("resolveSharedUrl", () => {
@@ -29,6 +29,14 @@ describe("resolveSharedUrl", () => {
     expect(resolveSharedUrl("", "no link here")).toBeNull();
     expect(resolveSharedUrl(null, null)).toBeNull();
   });
+
+  it("keeps query-string chars when recovering a link from text (no truncation)", () => {
+    // Pins that the extraction char-class doesn't get tightened to drop ?,&,= —
+    // a tweet-style share carries the full tracking URL inline.
+    expect(
+      resolveSharedUrl(undefined, "read https://example.com/p?utm=x&y=2 thanks"),
+    ).toBe("https://example.com/p?utm=x&y=2");
+  });
 });
 
 describe("buildBookmarklet", () => {
@@ -45,6 +53,24 @@ describe("buildBookmarklet", () => {
     expect(buildBookmarklet("https://yopedia.yolog.dev/")).toContain(
       "https://yopedia.yolog.dev/save?url=",
     );
+  });
+
+  it("produces a syntactically valid javascript: body (catches quote/paren slips)", () => {
+    const body = buildBookmarklet("https://yopedia.yolog.dev").replace(/^javascript:/, "");
+    // If a future edit unbalances a quote/paren, this throws at parse time —
+    // something substring matching can't catch.
+    expect(() => new Function(body)).not.toThrow();
+  });
+});
+
+describe("hostOf", () => {
+  it("returns the hostname without a leading www.", () => {
+    expect(hostOf("https://www.example.com/a/b?c=1")).toBe("example.com");
+    expect(hostOf("https://sub.example.com/x")).toBe("sub.example.com");
+  });
+
+  it("returns the raw input unchanged when it doesn't parse as a URL", () => {
+    expect(hostOf("not a url")).toBe("not a url");
   });
 });
 

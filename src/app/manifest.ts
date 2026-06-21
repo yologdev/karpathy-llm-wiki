@@ -7,14 +7,12 @@ import type { MetadataRoute } from "next";
  * the capture page ingests it. iOS Safari doesn't support share_target (the
  * /save guide documents an Apple Shortcut for that case).
  *
- * `share_target` isn't in Next's `MetadataRoute.Manifest` type yet, so we build
- * the object and cast — Next JSON-serializes it verbatim, so the field IS emitted
- * in `/manifest.webmanifest`. (See share-target.test.ts, which asserts the shape.)
+ * `share_target` is a typed field on Next's `MetadataRoute.Manifest`, and Next
+ * serializes this object into `/manifest.webmanifest`. (share-target.test.ts
+ * asserts the share_target shape so a refactor can't silently drop the surface.)
  */
 export default function manifest(): MetadataRoute.Manifest {
-  // Typed base (so display/icons are validated), then graft on share_target and
-  // cast — Next serializes the whole object, so share_target reaches the output.
-  const base: MetadataRoute.Manifest = {
+  return {
     name: "yopedia — a shared second brain for humans and agents",
     short_name: "yopedia",
     description: "Save any link to yopedia for ingesting into the commons.",
@@ -25,13 +23,10 @@ export default function manifest(): MetadataRoute.Manifest {
     icons: [
       { src: "/pwa-icon.svg", sizes: "any", type: "image/svg+xml", purpose: "any" },
     ],
-  };
-  return {
-    ...base,
     share_target: {
       action: "/save",
       method: "GET",
       params: { title: "title", text: "text", url: "url" },
     },
-  } as MetadataRoute.Manifest;
+  };
 }
