@@ -15,7 +15,7 @@ import { callLLM, hasLLMKey } from "./llm";
 import { fetchUrlContent, fetchImageBytes, storeImageBytes, pdfToText } from "./fetch";
 import { describeImage } from "./vision";
 import { isYouTubeUrl, fetchYouTubeContent } from "./youtube";
-import { isXPostUrl, fetchXPostContent } from "./x-post";
+import { isXPostUrl, fetchXPostContent, isXArticleTeaser } from "./x-post";
 import type { IngestResult, SourceEntry } from "./types";
 import {
   serializeSources,
@@ -218,6 +218,28 @@ export async function ingestUrl(
   {
     const dupSlug = await resolveSourceUrl(url);
     if (dupSlug) {
+      // Exception: an X Article that previously landed as a truncated TEASER
+      // (no X_BEARER_TOKEN at first ingest, or briefly out of the ~7-day window)
+      // must NOT be frozen by dedup. Re-fetch — cheap: syndication + at most one
+      // API call, no LLM yet — and ONLY if the full body is now available do we
+      // re-synthesize it in place (pinSlug). A still-teaser result falls through
+      // to a plain attach, so a perma-teaser (genuinely old article) spends no
+      // extra LLM tokens. Net: a re-save self-heals a teaser the moment the token
+      // / window allow the full body, with no manual reingest.
+      if (isXPostUrl(url)) {
+        const existing = await readWikiPageWithFrontmatter(dupSlug);
+        if (existing && isXArticleTeaser(existing.body)) {
+          const fresh = await fetchXPostContent(url);
+          if (!isXArticleTeaser(fresh.content)) {
+            return ingest(fresh.title, fresh.content, {
+              ...options,
+              sourceUrl: url,
+              sourceType: options?.sourceType ?? "x-mention",
+              pinSlug: dupSlug,
+            });
+          }
+        }
+      }
       const result = await attachIngestTrigger(dupSlug, {
         url,
         type: options?.sourceType ?? "url",

@@ -334,6 +334,24 @@ async function fetchArticleViaApi(id: string, url: string): Promise<XPostContent
 }
 
 /**
+ * Sentinel line stamped onto a teaser-only X Article page (full body NOT
+ * fetched). Lets the ingest dedup recognize a page that's still a teaser and
+ * auto-upgrade it on a later re-ingest once the API can serve the full body —
+ * see {@link isXArticleTeaser}.
+ */
+export const X_ARTICLE_TEASER_NOTE =
+  "_Article preview only — see the source for the full article._";
+
+/**
+ * True when `content` is a teaser-only X Article (the full body wasn't fetched).
+ * Substring match on the stable part of {@link X_ARTICLE_TEASER_NOTE} so light
+ * edits to the surrounding punctuation don't defeat detection.
+ */
+export function isXArticleTeaser(content: string): boolean {
+  return content.includes("Article preview only");
+}
+
+/**
  * Build an article page from the syndication CDN's truncated `preview_text` +
  * cover — the fallback when the API can't serve the full body (no token, an
  * article older than the recent-search window, or a rate-limit hiccup). Returns
@@ -358,8 +376,8 @@ function formatSyndicationArticle(
   if (cover) lines.push(`![${title}](${cover})`, "");
   lines.push(preview, "");
   // Be honest this is the truncated teaser, not the full body, so the page (and
-  // anyone reviewing it) can tell it's partial and re-ingest once available.
-  lines.push("_Article preview only — see the source for the full article._", "");
+  // the ingest dedup) can tell it's partial and auto-upgrade once available.
+  lines.push(X_ARTICLE_TEASER_NOTE, "");
   lines.push(`**Source:** [${url}](${url})`);
   return { title, content: lines.join("\n").trim() };
 }
