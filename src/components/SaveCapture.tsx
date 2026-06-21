@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { useUser, useClerk } from "@clerk/nextjs";
 import { IngestVaultPicker } from "./IngestVaultPicker";
 import { hostOf } from "@/lib/share-target";
+import { rememberRecentJob } from "@/lib/recent-ingests";
 
 type Status = "loading" | "signin" | "saving" | "saved" | "error";
 
@@ -40,12 +41,20 @@ export function SaveCapture({ url, title }: { url: string; title?: string }) {
         setStatus("signin");
         return;
       }
+      const data = (await res.json().catch(() => ({}))) as {
+        error?: string;
+        jobId?: string;
+      };
       if (!res.ok) {
-        const data = (await res.json().catch(() => ({}))) as { error?: string };
         setError(data.error ?? `Save failed (${res.status})`);
         setStatus("error");
         return;
       }
+      // Record the queued job so the /ingest "Recent ingests" strip shows this
+      // save IN FLIGHT. localStorage is shared across same-origin tabs and that
+      // page refreshes on focus, so a popup/bookmarklet save surfaces as a live
+      // "working…" row instead of only appearing once it lands in the ledger.
+      if (data.jobId) rememberRecentJob(data.jobId);
       setStatus("saved");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Network error");
