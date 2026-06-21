@@ -150,12 +150,12 @@ export function SaveCapture({ url, title }: { url: string; title?: string }) {
           </div>
 
           <div style={{ marginTop: 22, display: "flex", gap: 10 }}>
+            {/* A popup's only post-save action is to close it. (No in-popup
+                "View activity" nav — it re-mounts this page and re-fires the
+                save; the server dedups it, but closing is the right action.) */}
             <button type="button" className="receipt" onClick={() => window.close()} style={btnPrimary}>
-              Done
+              Close
             </button>
-            <a href="/ingest" className="receipt" style={{ ...btnSecondary, textDecoration: "none", lineHeight: "1.9" }}>
-              View activity
-            </a>
           </div>
         </div>
       )}
