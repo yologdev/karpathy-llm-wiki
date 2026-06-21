@@ -13,6 +13,7 @@
 import { agentOwnerHandle } from "./agents";
 import { belongsInCommons } from "./commons";
 import { slugify } from "./slugify";
+import { isOwnerHandle } from "./owner";
 import type { IndexEntry } from "./types";
 import type { Principal } from "./auth";
 
@@ -50,6 +51,13 @@ type Reader = { id?: string; handle: string } | null;
 export function isAdmin(
   principal: { id?: string; handle?: string } | null | undefined,
 ): boolean {
+  // The site owner runs the instance, so they ARE the operator/admin — they may
+  // delete commons pages and manage any page. `handle` comes from the verified
+  // Clerk session, and the owner handle is the deploy-configured
+  // NEXT_PUBLIC_OWNER_HANDLE, so this is a safe identity check (not just the
+  // public handle string). This is the one place owner ⇒ admin is granted.
+  if (isOwnerHandle(principal?.handle)) return true;
+
   const raw = process.env.ADMIN_HANDLES;
   if (!raw) return false;
   const admins = raw

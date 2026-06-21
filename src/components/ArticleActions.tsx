@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useUser } from "@clerk/nextjs";
 import { rawPath } from "@/lib/links";
+import { isOwnerHandle } from "@/lib/owner";
 import { ReingestButton } from "@/components/ReingestButton";
 import { DeletePageButton } from "@/components/DeletePageButton";
 import { SaveToVaultButton } from "@/components/SaveToVaultButton";
@@ -30,7 +31,8 @@ interface ArticleActionsProps {
  *
  *   - View raw        — when a raw source exists.
  *   - Reingest        — owner/contributor, when a source URL exists.
- *   - Delete          — owner only.
+ *   - Delete          — site owner/admin on a commons page; page owner on a
+ *                       non-commons (private/artifact/agent) page.
  *   - Save to vault    — signed-in non-owner/contributor on a commons page.
  *
  * There is intentionally NO human "Edit page" button: in the commons-first
@@ -63,9 +65,15 @@ export function ArticleActions({
   const handleLc = handle?.toLowerCase() ?? null;
 
   const isOwner = !!handleLc && handleLc === owner.toLowerCase();
+  const isSiteOwner = isOwnerHandle(handleLc);
   const ownsOrContributes =
     !!handleLc &&
     (isOwner || contributors.some((c) => c.toLowerCase() === handleLc));
+  // Mirror the server realm gate (authz.canWritePage with "delete") so the button
+  // never shows a delete that 403s: a COMMONS page is operator-only (the site
+  // owner / admin); a non-commons page (private / artifact / agent) is deletable
+  // by its page owner. The site owner can delete either.
+  const canDelete = isCommonsPage ? isSiteOwner : isOwner || isSiteOwner;
   // Any signed-in user can curate a commons page into their vault — including
   // owners and contributors (owned/contributed pages are NOT automatically in
   // vaults, so excluding them created a curation gap for the most engaged users).
@@ -80,7 +88,7 @@ export function ArticleActions({
       )}
       {hasSourceUrl && ownsOrContributes && <ReingestButton slug={slug} />}
       {canCurate && <SaveToVaultButton slug={slug} />}
-      {isOwner && <DeletePageButton slug={slug} />}
+      {canDelete && <DeletePageButton slug={slug} />}
     </div>
   );
 }

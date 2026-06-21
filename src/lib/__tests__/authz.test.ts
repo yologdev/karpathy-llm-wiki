@@ -282,3 +282,38 @@ describe("realm-aware write gate (WriteKind)", () => {
     expect(canWritePage(untypedPublic, aliceP, "metadata")).toBe(true);
   });
 });
+
+describe("site owner is an operator (admin)", () => {
+  const savedOwner = process.env.NEXT_PUBLIC_OWNER_HANDLE;
+  const savedAdmins = process.env.ADMIN_HANDLES;
+  afterEach(() => {
+    if (savedOwner === undefined) delete process.env.NEXT_PUBLIC_OWNER_HANDLE;
+    else process.env.NEXT_PUBLIC_OWNER_HANDLE = savedOwner;
+    if (savedAdmins === undefined) delete process.env.ADMIN_HANDLES;
+    else process.env.ADMIN_HANDLES = savedAdmins;
+  });
+
+  const ownerP = { id: "user_yuanhao", handle: "yuanhao" };
+
+  it("treats the configured site owner as admin (case-insensitive)", () => {
+    delete process.env.ADMIN_HANDLES;
+    process.env.NEXT_PUBLIC_OWNER_HANDLE = "yuanhao";
+    expect(isAdmin(ownerP)).toBe(true);
+    expect(isAdmin({ handle: "YuanHao" })).toBe(true); // case-insensitive
+    expect(isAdmin(aliceP)).toBe(false); // a non-owner human is not admin
+  });
+
+  it("grants nobody admin when neither owner nor ADMIN_HANDLES is set", () => {
+    delete process.env.NEXT_PUBLIC_OWNER_HANDLE;
+    delete process.env.ADMIN_HANDLES;
+    expect(isAdmin(ownerP)).toBe(false);
+  });
+
+  it("lets the site owner DELETE a commons page (realm-gate bypass); other humans cannot", () => {
+    delete process.env.ADMIN_HANDLES;
+    process.env.NEXT_PUBLIC_OWNER_HANDLE = "yuanhao";
+    const commons = { owner: "someone-else", visibility: undefined, type: undefined };
+    expect(canWritePage(commons, ownerP, "delete")).toBe(true); // operator may delete
+    expect(canWritePage(commons, aliceP, "delete")).toBe(false); // realm gate holds for others
+  });
+});
