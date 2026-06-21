@@ -1,40 +1,46 @@
 "use client";
 
-import { useEffect, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useState, type CSSProperties } from "react";
 import { useUser, useClerk } from "@clerk/nextjs";
 import { IngestVaultPicker } from "./IngestVaultPicker";
 import { hostOf } from "@/lib/share-target";
 import { rememberRecentJob } from "@/lib/recent-ingests";
 
-type Status = "loading" | "signin" | "saving" | "saved" | "error";
+type Status = "loading" | "signin" | "confirm" | "saving" | "saved" | "error";
+
+/** Strip the "(3) " unread-count prefix browsers prepend to a page <title>. */
+function cleanTitle(t?: string): string {
+  return (t ?? "").replace(/^\(\d+\)\s*/, "").trim();
+}
 
 /**
  * The capture target for all three surfaces (bookmarklet popup, PWA share, iOS
  * Shortcut). It runs on yopedia's own origin, so the user's session cookie
- * authenticates the save automatically. When signed in it fires `POST /api/ingest`
- * immediately (the click/share WAS the intent), shows status, and offers to also
- * file the page into a vault. Signed-out → a sign-in prompt; the save fires once
- * the session lands.
+ * authenticates the save. When signed in it shows a CONFIRM step — the captured
+ * URL, an editable title (the raw page <title> is often noisy), and a vault
+ * picker — and nothing is ingested until the user clicks Save. Signed-out → a
+ * sign-in prompt, then the confirm step once the session lands.
  */
 export function SaveCapture({ url, title }: { url: string; title?: string }) {
   const { isSignedIn, isLoaded } = useUser();
   const { openSignIn } = useClerk();
   const [status, setStatus] = useState<Status>("loading");
+  const [editTitle, setEditTitle] = useState(cleanTitle(title));
   const [vaultId, setVaultId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const firedRef = useRef(false);
 
-  async function save(vault: string | null) {
+  async function save() {
     setStatus("saving");
     setError(null);
     try {
+      const trimmed = editTitle.trim();
       const res = await fetch("/api/ingest", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           url,
-          ...(title ? { title } : {}),
-          ...(vault ? { vaultId: vault } : {}),
+          ...(trimmed ? { title: trimmed } : {}),
+          ...(vaultId ? { vaultId } : {}),
         }),
       });
       if (res.status === 401) {
@@ -62,19 +68,17 @@ export function SaveCapture({ url, title }: { url: string; title?: string }) {
     }
   }
 
-  // Auto-fire once when signed in. The bookmarklet/share click is itself the
-  // intent to save, so we don't make the user click again. Re-ingesting the same
-  // URL is deduped server-side, so a refresh is harmless.
+  // Move to the confirm step once signed in (or the sign-in prompt if not) —
+  // but never clobber an in-progress / finished save.
   useEffect(() => {
     if (!isLoaded) return;
-    if (!isSignedIn) {
-      setStatus("signin");
-      return;
-    }
-    if (firedRef.current) return;
-    firedRef.current = true;
-    void save(null);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    setStatus((s) =>
+      s === "saving" || s === "saved" || s === "error"
+        ? s
+        : isSignedIn
+          ? "confirm"
+          : "signin",
+    );
   }, [isLoaded, isSignedIn]);
 
   const host = hostOf(url);
@@ -94,8 +98,6 @@ export function SaveCapture({ url, title }: { url: string; title?: string }) {
         }}
         title={url}
       >
-        {title ? <strong style={{ color: "var(--ink)" }}>{title}</strong> : null}
-        {title ? <br /> : null}
         {url}
       </p>
 
@@ -112,13 +114,66 @@ export function SaveCapture({ url, title }: { url: string; title?: string }) {
             type="button"
             className="receipt"
             // Modal sign-in keeps us on this page; once the session lands,
-            // isSignedIn flips and the auto-save effect fires. No redirect needed.
+            // isSignedIn flips and the effect advances to the confirm step.
             onClick={() => openSignIn()}
             style={btnPrimary}
           >
-            Sign in & save
+            Sign in
           </button>
         </div>
+      )}
+
+      {status === "confirm" && (
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            void save();
+          }}
+        >
+          <label
+            className="receipt"
+            style={{ display: "block", fontSize: 11.5, color: "var(--muted)", marginBottom: 6 }}
+          >
+            Title
+          </label>
+          <input
+            type="text"
+            value={editTitle}
+            onChange={(e) => setEditTitle(e.target.value)}
+            autoFocus
+            placeholder={host}
+            style={{
+              width: "100%",
+              fontSize: 14,
+              padding: "8px 10px",
+              borderRadius: 8,
+              border: "1px solid var(--rule)",
+              background: "var(--paper)",
+              color: "var(--ink)",
+              marginBottom: 14,
+              boxSizing: "border-box",
+            }}
+          />
+
+          <label
+            className="receipt"
+            style={{ display: "block", fontSize: 11.5, color: "var(--muted)", marginBottom: 6 }}
+          >
+            Vault (optional)
+          </label>
+          <div style={{ marginBottom: 22 }}>
+            <IngestVaultPicker value={vaultId} onChange={setVaultId} />
+          </div>
+
+          <div style={{ display: "flex", gap: 10 }}>
+            <button type="submit" className="receipt" style={btnPrimary}>
+              Save
+            </button>
+            <button type="button" className="receipt" onClick={() => window.close()} style={btnSecondary}>
+              Cancel
+            </button>
+          </div>
+        </form>
       )}
 
       {status === "saving" && (
@@ -130,9 +185,14 @@ export function SaveCapture({ url, title }: { url: string; title?: string }) {
           <p style={{ fontSize: 13.5, color: "var(--danger, #dc2626)", marginBottom: 12 }}>
             {error}
           </p>
-          <button type="button" className="receipt" onClick={() => save(vaultId)} style={btnPrimary}>
-            Retry
-          </button>
+          <div style={{ display: "flex", gap: 10 }}>
+            <button type="button" className="receipt" onClick={() => save()} style={btnPrimary}>
+              Retry
+            </button>
+            <button type="button" className="receipt" onClick={() => setStatus("confirm")} style={btnSecondary}>
+              Edit
+            </button>
+          </div>
         </div>
       )}
 
@@ -142,21 +202,6 @@ export function SaveCapture({ url, title }: { url: string; title?: string }) {
             <span style={{ color: "var(--accent)" }}>✓ Saved.</span> yopedia is reading{" "}
             <strong>{host}</strong> now — it’ll appear in the commons shortly.
           </p>
-
-          <label
-            className="receipt"
-            style={{ display: "block", fontSize: 11.5, color: "var(--muted)", marginBottom: 6 }}
-          >
-            Also file it in a vault (optional)
-          </label>
-          <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-            <IngestVaultPicker value={vaultId} onChange={setVaultId} />
-            {vaultId && (
-              <button type="button" className="receipt" onClick={() => save(vaultId)} style={btnSecondary}>
-                Add to vault
-              </button>
-            )}
-          </div>
 
           <div style={{ marginTop: 22, display: "flex", gap: 10 }}>
             {/* A popup's only post-save action is to close it. (No in-popup
