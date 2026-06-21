@@ -6,12 +6,25 @@ vi.mock("@/lib/storage", () => ({
 // rawRelPath maps a markdown ref to the physical storage key (raw/ prefix).
 vi.mock("@/lib/wiki", () => ({
   rawRelPath: (f: string) => `raw/${f}`,
+  readWikiPageWithFrontmatter: vi.fn(),
+}));
+vi.mock("@/lib/auth", () => ({
+  getPrincipal: vi.fn(),
+}));
+vi.mock("@/lib/authz", () => ({
+  canReadFrontmatter: vi.fn(),
 }));
 
 import { getStorage } from "@/lib/storage";
+import { readWikiPageWithFrontmatter } from "@/lib/wiki";
+import { getPrincipal } from "@/lib/auth";
+import { canReadFrontmatter } from "@/lib/authz";
 import { GET } from "@/app/api/assets/[...path]/route";
 
 const mockedGetStorage = vi.mocked(getStorage);
+const mockedReadPage = vi.mocked(readWikiPageWithFrontmatter);
+const mockedGetPrincipal = vi.mocked(getPrincipal);
+const mockedCanRead = vi.mocked(canReadFrontmatter);
 
 function readAssetReturning(buf: ArrayBuffer | Error) {
   const readAsset = vi.fn(() =>
@@ -25,7 +38,13 @@ function req() {
   return new Request("http://localhost/api/assets/x");
 }
 
-beforeEach(() => vi.clearAllMocks());
+beforeEach(() => {
+  vi.clearAllMocks();
+  // Default: page does not exist (public / no auth needed)
+  mockedReadPage.mockResolvedValue(null);
+  mockedGetPrincipal.mockResolvedValue(null);
+  mockedCanRead.mockReturnValue(true);
+});
 
 describe("GET /api/assets/[...path]", () => {
   it("serves an asset, mapping assets/<...> → raw/assets/<...> with the right Content-Type", async () => {
@@ -85,5 +104,77 @@ describe("GET /api/assets/[...path]", () => {
       params: Promise.resolve({ path: ["alice", "file.bin"] }),
     });
     expect(res.headers.get("Content-Type")).toBe("application/octet-stream");
+  });
+
+  it("serves a public-page asset without resolving the principal", async () => {
+    const bytes = new Uint8Array([1]).buffer;
+    readAssetReturning(bytes);
+    mockedReadPage.mockResolvedValue({
+      frontmatter: { owner: "alice", visibility: "public" },
+      body: "",
+    } as never);
+
+    const res = await GET(req(), {
+      params: Promise.resolve({ path: ["alice", "img.png"] }),
+    });
+
+    expect(res.status).toBe(200);
+    // Principal resolution should NOT be called for public pages (performance).
+    expect(mockedGetPrincipal).not.toHaveBeenCalled();
+  });
+
+  it("returns 404 for a private-page asset when unauthenticated", async () => {
+    readAssetReturning(new Uint8Array([1]).buffer);
+    mockedReadPage.mockResolvedValue({
+      frontmatter: { owner: "alice", visibility: "private" },
+      body: "",
+    } as never);
+    mockedGetPrincipal.mockResolvedValue(null);
+    mockedCanRead.mockReturnValue(false);
+
+    const res = await GET(req(), {
+      params: Promise.resolve({ path: ["alice", "secret.png"] }),
+    });
+
+    expect(res.status).toBe(404);
+    expect(mockedGetPrincipal).toHaveBeenCalled();
+  });
+
+  it("serves a private-page asset to its owner", async () => {
+    const bytes = new Uint8Array([1, 2]).buffer;
+    readAssetReturning(bytes);
+    mockedReadPage.mockResolvedValue({
+      frontmatter: { owner: "alice", visibility: "private" },
+      body: "",
+    } as never);
+    mockedGetPrincipal.mockResolvedValue({ id: "user_alice", handle: "alice" });
+    mockedCanRead.mockReturnValue(true);
+
+    const res = await GET(req(), {
+      params: Promise.resolve({ path: ["alice", "secret.png"] }),
+    });
+
+    expect(res.status).toBe(200);
+    expect(mockedGetPrincipal).toHaveBeenCalled();
+    expect(mockedCanRead).toHaveBeenCalledWith(
+      { owner: "alice", visibility: "private" },
+      { id: "user_alice", handle: "alice" },
+    );
+  });
+
+  it("returns 404 for a private-page asset when the wrong user is authenticated", async () => {
+    readAssetReturning(new Uint8Array([1]).buffer);
+    mockedReadPage.mockResolvedValue({
+      frontmatter: { owner: "alice", visibility: "private" },
+      body: "",
+    } as never);
+    mockedGetPrincipal.mockResolvedValue({ id: "user_bob", handle: "bob" });
+    mockedCanRead.mockReturnValue(false);
+
+    const res = await GET(req(), {
+      params: Promise.resolve({ path: ["alice", "secret.png"] }),
+    });
+
+    expect(res.status).toBe(404);
   });
 });

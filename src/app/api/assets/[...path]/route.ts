@@ -1,7 +1,9 @@
-import { rawRelPath } from "@/lib/wiki";
+import { rawRelPath, readWikiPageWithFrontmatter } from "@/lib/wiki";
 import { getStorage } from "@/lib/storage";
 import { isEnoent } from "@/lib/errors";
 import { logger } from "@/lib/logger";
+import { getPrincipal } from "@/lib/auth";
+import { canReadFrontmatter } from "@/lib/authz";
 
 /**
  * GET /api/assets/[...path]
@@ -12,7 +14,10 @@ import { logger } from "@/lib/logger";
  * referenced in markdown by the relative path `assets/{slug}/{file}`. This route
  * maps a request path back to that storage key and streams the bytes.
  *
- * Public + read-only: the middleware only gates write methods on `/api`.
+ * Read-only with visibility enforcement: the first path segment is the page
+ * slug. If that page exists and is private, only the owner may access the
+ * asset; everyone else gets a 404 (not 403, to avoid leaking existence).
+ * Public-page assets skip principal resolution entirely for performance.
  */
 
 /** Map a file extension to a Content-Type. */
@@ -57,6 +62,19 @@ export async function GET(
   // avoid leaking which paths exist.
   if (!segments?.length || segments.some(isUnsafeSegment)) {
     return new Response(null, { status: 404 });
+  }
+
+  // The first segment is the page slug. Check visibility: if the page exists
+  // and is private, only the owner may access the asset. Public pages (the
+  // vast majority) skip principal resolution entirely — no Clerk call, no
+  // latency penalty.
+  const slug = segments[0];
+  const page = await readWikiPageWithFrontmatter(slug);
+  if (page && page.frontmatter.visibility === "private") {
+    const principal = await getPrincipal();
+    if (!canReadFrontmatter(page.frontmatter, principal)) {
+      return new Response(null, { status: 404 });
+    }
   }
 
   // markdown ref `assets/<...>` → storage key `raw/assets/<...>` (rawRelPath is
