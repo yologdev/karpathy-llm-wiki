@@ -137,28 +137,45 @@ export default function QueryPage() {
     if (deepLink) setScope(deepLink);
   }, [isLoaded, setScope]);
 
-  // Auto-run a `?q=` deep link once (e.g. arriving from the homepage Ask). Any
-  // `?scope=` is read straight from the URL and passed to runQuery, so this run
-  // uses the right scope without waiting on the scope-init effect's setScope()
-  // to land in state. Strips `?q=` from the URL afterward so a refresh doesn't
-  // silently re-run.
+  // Handle a deep link once on load:
+  //   ?q=…   → AUTO-RUN the query (e.g. the homepage Ask, which carries a full
+  //            question). Any `?scope=` is read straight from the URL and passed
+  //            to runQuery so the run uses the right scope without waiting on the
+  //            scope-init effect's setScope() to land in state.
+  //   ?ask=… → PREFILL the box but do NOT run — for "Ask about this page", which
+  //            seeds only a `About "…": ` prefix the user still has to complete.
+  //            Focus the textarea with the cursor at the end so they can type on.
+  // Strips the param from the URL afterward so a refresh doesn't re-trigger.
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const didInitQuestion = useRef(false);
   useEffect(() => {
     if (didInitQuestion.current || !isLoaded) return;
     didInitQuestion.current = true;
     const params = new URLSearchParams(window.location.search);
     const q = params.get("q");
-    if (!q) return;
-    const scopeParam = params.get("scope") || undefined;
-    runQuery(q, scopeParam);
+    const ask = params.get("ask");
+    if (!q && !ask) return;
+    if (q) {
+      runQuery(q, params.get("scope") || undefined);
+    } else if (ask) {
+      setQuestion(ask);
+      // Focus + cursor-to-end after the value lands, so typing continues the seed.
+      requestAnimationFrame(() => {
+        const el = textareaRef.current;
+        if (!el) return;
+        el.focus();
+        el.setSelectionRange(ask.length, ask.length);
+      });
+    }
     params.delete("q");
+    params.delete("ask");
     const rest = params.toString();
     window.history.replaceState(
       null,
       "",
       window.location.pathname + (rest ? `?${rest}` : ""),
     );
-  }, [isLoaded, runQuery]);
+  }, [isLoaded, runQuery, setQuestion]);
 
   // A deep-linked owner:<handle> scope renders as a dismissible chip; otherwise
   // the Public + your-vaults selector drives `scope` (undefined=Public vs
@@ -309,6 +326,7 @@ export default function QueryPage() {
                   <Icon.spark width="22" height="22" />
                 </span>
                 <textarea
+                  ref={textareaRef}
                   value={question}
                   onChange={(e) => setQuestion(e.target.value)}
                   onKeyDown={(e) => {
