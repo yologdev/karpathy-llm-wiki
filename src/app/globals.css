@@ -558,3 +558,256 @@ body {
   content: "// ";
   color: var(--accent);
 }
+
+/* ---- Save-to-yopedia guide (/save with no ?url) ----------------------- */
+/* Refined editorial "field guide": big light numerals, a draggable bookmarklet
+   specimen, a two-up magazine pair with a column rule, staggered load. */
+.sg-title {
+  font-size: clamp(2rem, 5vw, 3rem);
+  margin: 14px 0 12px;
+}
+.sg-lede {
+  font-size: clamp(1rem, 1.4vw, 1.12rem);
+  line-height: 1.6;
+  color: var(--ink-2);
+  max-width: 48ch;
+  margin: 0;
+}
+
+/* A numbered method: big editorial numeral + body. */
+.sg-method {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: clamp(16px, 3vw, 30px);
+  padding: clamp(28px, 4vw, 40px) 0;
+  border-top: 1px solid var(--rule);
+  margin-top: clamp(28px, 5vw, 48px);
+}
+.sg-num {
+  font-family: var(--font-display);
+  font-weight: 300;
+  font-size: clamp(2.4rem, 6vw, 3.4rem);
+  line-height: 0.82;
+  letter-spacing: -0.04em;
+  color: var(--rule-strong);
+  font-variant-numeric: tabular-nums;
+}
+.sg-method--hero .sg-num {
+  color: var(--accent);
+}
+.sg-body {
+  min-width: 0;
+}
+.sg-h {
+  font-size: 1.06rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  margin: 8px 0 6px;
+}
+.sg-p {
+  font-size: 0.92rem;
+  line-height: 1.6;
+  color: var(--ink-2);
+  margin: 0;
+}
+.sg-p + .sg-p {
+  margin-top: 10px;
+}
+.sg-note {
+  font-size: 0.78rem;
+  line-height: 1.5;
+  color: var(--faint);
+  margin-top: 14px;
+}
+.sg-inline {
+  font-family: var(--font-mono);
+  font-size: 0.82em;
+  background: var(--paper-3);
+  padding: 1px 5px;
+  border-radius: 4px;
+}
+
+/* Bookmarklet specimen — a recessed tray that makes the chip feel grabbable. */
+.sg-specimen {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 14px;
+  margin: 16px 0 2px;
+  padding: 18px 20px;
+  background: var(--paper-2);
+  border: 1px solid var(--rule);
+  border-radius: 14px;
+}
+.sg-bm {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 0.95rem;
+  padding: 11px 17px;
+  border-radius: 11px;
+  background: var(--accent);
+  color: var(--on-accent);
+  text-decoration: none;
+  cursor: grab;
+  box-shadow: 0 6px 18px -10px color-mix(in oklab, var(--accent) 70%, transparent);
+  transition:
+    transform 0.16s cubic-bezier(0.2, 0.7, 0.2, 1),
+    box-shadow 0.16s;
+}
+.sg-bm:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 12px 26px -10px color-mix(in oklab, var(--accent) 78%, transparent);
+}
+.sg-bm:active {
+  cursor: grabbing;
+  transform: translateY(0) scale(0.99);
+}
+.sg-draghint {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.03em;
+  color: var(--muted);
+}
+
+/* Copy fallback */
+.sg-details {
+  margin-top: 14px;
+}
+.sg-details > summary {
+  cursor: pointer;
+  font-size: 0.82rem;
+  color: var(--muted);
+  list-style: none;
+}
+.sg-details > summary::-webkit-details-marker {
+  display: none;
+}
+.sg-details > summary::before {
+  content: "▸ ";
+  color: var(--accent);
+}
+.sg-details[open] > summary::before {
+  content: "▾ ";
+}
+.sg-code {
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  line-height: 1.5;
+  margin: 10px 0;
+  padding: 12px 14px;
+  background: var(--paper-3);
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+  color: var(--ink-2);
+}
+.sg-copy {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  padding: 6px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--rule);
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  transition:
+    border-color 0.15s,
+    color 0.15s;
+}
+.sg-copy:hover {
+  border-color: var(--accent);
+  color: var(--ink);
+}
+
+/* Android + iOS — magazine two-up with a centered column rule. */
+.sg-pair {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  padding: clamp(28px, 4vw, 40px) 0;
+  border-top: 1px solid var(--rule);
+  margin-top: clamp(28px, 5vw, 48px);
+}
+.sg-pair > .sg-col:first-child {
+  padding-right: clamp(24px, 4vw, 44px);
+}
+.sg-pair > .sg-col:nth-child(2) {
+  padding-left: clamp(24px, 4vw, 44px);
+  border-left: 1px solid var(--rule);
+}
+.sg-num--sm {
+  font-size: clamp(1.8rem, 4vw, 2.3rem);
+  margin-bottom: 8px;
+}
+.sg-steps {
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: sgstep;
+}
+.sg-steps li {
+  position: relative;
+  padding-left: 26px;
+  margin-bottom: 9px;
+  font-size: 0.9rem;
+  line-height: 1.55;
+  color: var(--ink-2);
+}
+.sg-steps li::before {
+  counter-increment: sgstep;
+  content: counter(sgstep);
+  position: absolute;
+  left: 0;
+  top: 0.1em;
+  width: 17px;
+  height: 17px;
+  border: 1px solid var(--rule-strong);
+  border-radius: 50%;
+  font-family: var(--font-mono);
+  font-size: 0.66rem;
+  color: var(--accent);
+  display: grid;
+  place-items: center;
+  line-height: 1;
+}
+.sg-footnote {
+  margin-top: clamp(30px, 5vw, 52px);
+  padding-top: 20px;
+  border-top: 1px solid var(--rule);
+  font-size: 0.82rem;
+  color: var(--muted);
+}
+
+/* Staggered entrance (pairs with the existing `.rise`; reduced-motion is
+   already neutralized globally above). */
+.sg-d1 {
+  animation-delay: 0s;
+}
+.sg-d2 {
+  animation-delay: 0.07s;
+}
+.sg-d3 {
+  animation-delay: 0.14s;
+}
+.sg-d4 {
+  animation-delay: 0.21s;
+}
+
+@media (max-width: 640px) {
+  .sg-pair {
+    display: flex;
+    flex-direction: column;
+    gap: 30px;
+  }
+  .sg-pair > .sg-col:nth-child(2) {
+    padding-left: 0;
+    border-left: none;
+  }
+  .sg-pair > .sg-col:first-child {
+    padding-right: 0;
+  }
+}
