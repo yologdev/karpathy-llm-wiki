@@ -64,6 +64,7 @@ import {
   readWikiPageWithFrontmatter,
   listReadableWikiPages,
   validateSlug,
+  parseFrontmatter,
   serializeFrontmatter,
   writeWikiPageWithSideEffects,
   deleteWikiPage,
@@ -227,8 +228,13 @@ export async function handleCreatePage(args: {
     throw new Error(`Page already exists: ${args.slug}`);
   }
 
-  const title = extractTitle(args.content, args.slug);
-  const bodyForSummary = args.content.replace(/^#\s+.+$/m, "").trim();
+  // Strip any frontmatter the caller included in content to avoid double
+  // frontmatter.  Merge caller-supplied frontmatter fields into ours so
+  // metadata sent inside the content block is not silently lost.
+  const { data: callerFm, body: callerBody } = parseFrontmatter(args.content);
+
+  const title = extractTitle(callerBody, args.slug);
+  const bodyForSummary = callerBody.replace(/^#\s+.+$/m, "").trim();
   const summary = extractSummary(bodyForSummary);
   const today = new Date().toISOString().slice(0, 10);
   const expiry = new Date();
@@ -236,6 +242,9 @@ export async function handleCreatePage(args: {
   const expiryDate = expiry.toISOString().slice(0, 10);
 
   const frontmatter: Frontmatter = {
+    // Caller-supplied frontmatter as base (low priority)
+    ...callerFm,
+    // Canonical fields override anything the caller sent
     title,
     created: today,
     updated: today,
@@ -250,7 +259,7 @@ export async function handleCreatePage(args: {
     ...(args.owner ? { owner: args.owner } : {}),
   };
 
-  const fullContent = serializeFrontmatter(frontmatter, args.content);
+  const fullContent = serializeFrontmatter(frontmatter, callerBody);
 
   await writeWikiPageWithSideEffects({
     slug: args.slug,
@@ -276,14 +285,20 @@ export async function handleUpdatePage(args: {
     throw new Error(`Page not found: ${args.slug}`);
   }
 
-  const title = extractTitle(args.content, existingPage.title);
-  const bodyForSummary = args.content.replace(/^#\s+.+$/m, "").trim();
+  // Strip any frontmatter the caller included in content to avoid double
+  // frontmatter.  Merge caller-supplied frontmatter fields into the existing
+  // page's frontmatter so metadata sent inside the content block is preserved.
+  const { data: callerFm, body: callerBody } = parseFrontmatter(args.content);
+
+  const title = extractTitle(callerBody, existingPage.title);
+  const bodyForSummary = callerBody.replace(/^#\s+.+$/m, "").trim();
   const summary = extractSummary(bodyForSummary);
   const today = new Date().toISOString().slice(0, 10);
 
-  // Merge frontmatter: preserve existing fields, bump updated, backfill created
+  // Merge frontmatter: existing → caller-supplied → canonical overrides
   const merged: Frontmatter = {
     ...existingPage.frontmatter,
+    ...callerFm,
     title,
     updated: today,
     ...(args.owner && !existingPage.frontmatter.owner ? { owner: args.owner } : {}),
@@ -302,7 +317,7 @@ export async function handleUpdatePage(args: {
     }
   }
 
-  const fullContent = serializeFrontmatter(merged, args.content);
+  const fullContent = serializeFrontmatter(merged, callerBody);
 
   await writeWikiPageWithSideEffects({
     slug: args.slug,
@@ -311,7 +326,7 @@ export async function handleUpdatePage(args: {
     summary,
     logOp: "edit",
     author: args.author,
-    crossRefSource: args.content,
+    crossRefSource: callerBody,
   });
 
   return { slug: args.slug, title, updated: true };

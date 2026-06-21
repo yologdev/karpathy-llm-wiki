@@ -560,6 +560,33 @@ describe("MCP write tools", () => {
       expect(summary).not.toMatch(/Big Heading/);
       expect(summary).toContain("actual summary text");
     });
+
+    it("strips caller frontmatter to prevent double frontmatter", async () => {
+      const contentWithFm =
+        "---\ntitle: Agent Title\ncustom_field: hello\n---\n# Created Page\n\nBody text here.";
+      const result = await handleCreatePage({
+        slug: "double-fm-create",
+        content: contentWithFm,
+      });
+
+      expect(result.created).toBe(true);
+      expect(result.title).toBe("Created Page");
+
+      const filePath = path.join(tmpDir, "wiki", "double-fm-create.md");
+      const fileContent = await fs.readFile(filePath, "utf-8");
+
+      // Count frontmatter delimiters — exactly one block (opening + closing = 2)
+      const delimiterCount = (fileContent.match(/^---$/gm) || []).length;
+      expect(delimiterCount).toBe(2);
+
+      // The body should appear exactly once
+      expect(fileContent).toContain("Body text here.");
+      expect(fileContent).toContain("# Created Page");
+
+      // Caller-supplied custom field should be merged into frontmatter
+      const parsed = parseFrontmatter(fileContent);
+      expect(parsed.data.custom_field).toBe("hello");
+    });
   });
 
   describe("update_page", () => {
@@ -662,6 +689,38 @@ describe("MCP write tools", () => {
       const summary = summaryMatch![1];
       expect(summary).not.toMatch(/Updated Heading/);
       expect(summary).toContain("updated summary text");
+    });
+
+    it("strips caller frontmatter to prevent double frontmatter", async () => {
+      await handleCreatePage({
+        slug: "double-fm-update",
+        content: "# Original\n\nOriginal body.",
+      });
+
+      // Caller sends content that already includes a YAML frontmatter block
+      const contentWithFm =
+        "---\ntitle: Caller Title\ntags: [extra]\n---\n# Updated\n\nNew body with frontmatter.";
+      const result = await handleUpdatePage({
+        slug: "double-fm-update",
+        content: contentWithFm,
+      });
+
+      expect(result.updated).toBe(true);
+
+      const filePath = path.join(tmpDir, "wiki", "double-fm-update.md");
+      const fileContent = await fs.readFile(filePath, "utf-8");
+
+      // Count frontmatter delimiters — exactly one block (opening + closing = 2)
+      const delimiterCount = (fileContent.match(/^---$/gm) || []).length;
+      expect(delimiterCount).toBe(2);
+
+      // The body should appear exactly once, not duplicated
+      expect(fileContent).toContain("New body with frontmatter.");
+      expect(fileContent).toContain("# Updated");
+
+      // Caller-supplied tags should be merged into frontmatter
+      const parsed = parseFrontmatter(fileContent);
+      expect(parsed.data.tags).toEqual(["extra"]);
     });
   });
 });
