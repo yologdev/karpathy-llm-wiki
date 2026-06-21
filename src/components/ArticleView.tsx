@@ -265,7 +265,6 @@ export async function ArticleView({
     });
   }
 
-  // Sources rail label: a readable host, or the paste sentinel.
   // `ask=` PREFILLS the query box (and doesn't auto-run) — it seeds only a
   // `About "…": ` prefix the user still has to complete. (`q=` would auto-run.)
   const askHref = `/query?ask=${encodeURIComponent(`About "${page.title}": `)}`;
