@@ -7,7 +7,6 @@ import { logger } from "./logger";
 import {
   readWikiPage,
   readWikiPageWithFrontmatter,
-  writeWikiPage,
   listWikiPages,
   listReadableWikiPages,
   withPageCache,
@@ -16,6 +15,7 @@ import {
   isArtifactType,
   tenantForOwner,
 } from "./wiki";
+import { writeWikiPageWithSideEffects } from "./lifecycle";
 import { canReadFrontmatter } from "./authz";
 import type { Principal } from "./auth";
 import { isEnoent } from "./errors";
@@ -23,7 +23,7 @@ import { getAgent, resolveAgentPages } from "./agents";
 import { getVault } from "./vault";
 import { getStorage } from "./storage";
 import { getOwnerIndex } from "./owner-index";
-import { getBacklinkIndex, syncBacklinksForPage } from "./backlink-index";
+import { getBacklinkIndex } from "./backlink-index";
 import { relatedByVector, searchByVector } from "./embeddings";
 import { RELATED_PAGES_LIMIT, RELATED_MIN_SCORE, RELATED_CANDIDATE_POOL } from "./constants";
 
@@ -134,8 +134,8 @@ export async function updateRelatedPages(
       // a self-contained document, and the "See also" markdown would render as
       // literal text below it. (Read frontmatter only for this type check.)
       const meta = await readWikiPageWithFrontmatter(slug);
+      if (!meta) continue;
       if (
-        meta &&
         isArtifactType(
           typeof meta.frontmatter.type === "string"
             ? meta.frontmatter.type
@@ -146,8 +146,9 @@ export async function updateRelatedPages(
       }
 
       // Operate on the FULL file content (frontmatter + body) so the write-back
-      // preserves the frontmatter block — writeWikiPage writes verbatim, and
-      // `readWikiPageWithFrontmatter.body` would have stripped the frontmatter.
+      // preserves the frontmatter block — writeWikiPageWithSideEffects writes
+      // verbatim, and `readWikiPageWithFrontmatter.body` would have stripped
+      // the frontmatter.
       const page = await readWikiPage(slug);
       if (!page) continue;
 
@@ -174,11 +175,19 @@ export async function updateRelatedPages(
         updatedContent = `${page.content.trimEnd()}\n\n**See also:** ${link}\n`;
       }
 
-      await writeWikiPage(slug, updatedContent, "system", "cross-reference update");
-      // Keep the backlink index consistent with the new outbound "See also"
-      // link — writeWikiPage doesn't, so without this the index goes stale and
-      // findBacklinks (which trusts the index) would never surface this edge.
-      await syncBacklinksForPage(slug, updatedContent, page.content);
+      await writeWikiPageWithSideEffects({
+        slug,
+        title: meta.frontmatter.title as string || slug,
+        content: updatedContent,
+        summary: (() => {
+          const m = meta.body.match(/^#\s+.+\n+(.+)/m);
+          return m ? m[1].slice(0, 120) : slug;
+        })(),
+        logOp: "edit",
+        logDetails: () => `cross-reference update from "${newSlug}"`,
+        crossRefSource: null,
+        author: "system",
+      });
       updatedSlugs.push(slug);
     }
 

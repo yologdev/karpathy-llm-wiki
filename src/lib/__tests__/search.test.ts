@@ -653,7 +653,6 @@ describe("updateRelatedPages", () => {
     const meta = await readRevisionMeta("target-page", revs[0].timestamp);
     expect(meta).not.toBeNull();
     expect(meta!.author).toBe("system");
-    expect(meta!.reason).toBe("cross-reference update");
   });
 
   it("PRESERVES the page's frontmatter when appending a See-also", async () => {
