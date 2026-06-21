@@ -8,9 +8,10 @@
  * author, media, and any quoted tweet as JSON — no API key required.
  *
  * Long-form **X Articles** carry their body in the authenticated X API v2
- * `article` field. Only the **recent-search** endpoint actually populates
- * `article.text` — a plain `GET /2/tweets/:id?tweet.fields=article` returns the
- * title with an empty body — so when `X_BEARER_TOKEN` is configured we fetch the
+ * `article` field — specifically `article.plain_text` (the rendered article;
+ * `article.text` is a legacy alias X now returns empty). Only the **recent-search**
+ * endpoint populates it — a plain `GET /2/tweets/:id?tweet.fields=article` returns
+ * the title with an empty body — so when `X_BEARER_TOKEN` is configured we fetch the
  * article via the same recent-search-by-`conversation_id` request the @yoyo
  * mention worker relies on. We fall back to syndication for plain tweets / no token /
  * articles older than the ~7-day search window — and there we use the
@@ -220,7 +221,9 @@ interface XApiSearchResponse {
   data?: Array<{
     id?: string;
     text?: string;
-    article?: { title?: string; text?: string };
+    // The full article body comes back under `plain_text` (the rendered article
+    // markdown); `text` is a legacy/empty alias. Read `plain_text` first.
+    article?: { title?: string; plain_text?: string; text?: string };
   }>;
 }
 
@@ -257,9 +260,11 @@ async function fetchArticleCover(id: string): Promise<string | null> {
  *
  * Uses the **recent-search** endpoint (`conversation_id:<id>`), the same
  * recent-search request the @yoyo mention worker relies on — this is the only X
- * API call that actually populates `article.text`. (The plain `GET /2/tweets/:id?tweet.fields=article`
- * returns the title with an EMPTY body, which is why the previous version
- * produced title-only article pages.) Recent-search only covers ~7 days, so
+ * API call that populates the article body, which arrives under
+ * `article.plain_text` (NOT `article.text`, which X returns empty — reading the
+ * wrong field is what silently degraded every article to a title-only page). The
+ * plain `GET /2/tweets/:id?tweet.fields=article` returns the title with an EMPTY
+ * body regardless. Recent-search only covers ~7 days, so
  * older articles return nothing here and the caller falls back to the
  * syndication teaser.
  *
@@ -320,15 +325,20 @@ async function fetchArticleViaApi(id: string, url: string): Promise<XPostContent
   // to the first result that carries an article.
   const tweet = tweets.find((t) => t.id === id) ?? tweets.find((t) => t.article);
   const article = tweet?.article;
-  if (!article || (!article.text?.trim() && !article.title?.trim())) return null;
+  // The full body is `article.plain_text` (the rendered article); `text` is a
+  // legacy alias that X now returns EMPTY. Require an actual body — a title with
+  // no body would build a bodyless page (worse than the syndication teaser, which
+  // at least carries the ~200-char preview). Without a body, return null so the
+  // caller falls back to the syndication teaser.
+  const body = (article?.plain_text ?? article?.text)?.trim();
+  if (!body) return null;
 
-  const title = article.title?.trim() || "X Article";
+  const title = article!.title?.trim() || "X Article";
   const cover = await fetchArticleCover(id);
   const lines: string[] = [`# ${title}`, ""];
   if (handle) lines.push(`**@${handle}** · X Article`, "");
   if (cover) lines.push(`![${title}](${cover})`, "");
-  const body = article.text?.trim();
-  if (body) lines.push(body, "");
+  lines.push(body, "");
   lines.push(`**Source:** [${url}](${url})`);
   return { title, content: lines.join("\n").trim() };
 }

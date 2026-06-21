@@ -243,6 +243,34 @@ describe("fetchXPostContent — X Articles", () => {
     expect(content).toContain("**Source:** [https://x.com/ada/status/123]");
   });
 
+  it("reads the body from `article.plain_text`, preferring it over the legacy `text`", async () => {
+    process.env.X_BEARER_TOKEN = "test-bearer";
+    mockApi({
+      // X serves the full body under `plain_text`; `text` is a legacy alias it
+      // now returns empty. Reading the wrong one is what produced bodyless pages.
+      apiBody: {
+        data: [{ id: "123", article: { title: "Essay", text: "LEGACY", plain_text: "The full body via plain_text." } }],
+      },
+      synBody: {},
+    });
+    const { content } = await fetchXPostContent("https://x.com/ada/status/123");
+    expect(content).toContain("The full body via plain_text.");
+    expect(content).not.toContain("LEGACY");
+  });
+
+  it("falls back to the syndication teaser when the API returns a title but NO body", async () => {
+    process.env.X_BEARER_TOKEN = "test-bearer";
+    mockApi({
+      // The regression case: article present with a title but empty body fields —
+      // must NOT build a bodyless page; fall back to the syndication preview.
+      apiBody: { data: [{ id: "123", article: { title: "18 lessons", text: "" } }] },
+      synBody: { article: { title: "18 lessons", preview_text: "the 197-char gist" } },
+    });
+    const { content } = await fetchXPostContent("https://x.com/ada/status/123");
+    expect(content).toContain("the 197-char gist");
+    expect(content).toContain("Article preview only");
+  });
+
   it("queries recent-search by conversation_id (the proven request, not GET /:id)", async () => {
     process.env.X_BEARER_TOKEN = "test-bearer";
     const calls: string[] = [];
@@ -452,16 +480,18 @@ describe("fetchXPostContent — X Articles", () => {
     expect(content).not.toContain("!["); // no image markdown
   });
 
-  it("renders a title-only article (empty body) rather than falling back", async () => {
+  it("falls back to syndication when the article has a title but empty body (no bodyless page)", async () => {
     process.env.X_BEARER_TOKEN = "test-bearer";
     mockApi({
+      // Title present, body fields empty — the exact shape X now returns. This
+      // must NOT build a bodyless title-only page; fall back to syndication
+      // content (here a plain tweet) so the page has real content.
       apiBody: { data: [{ article: { title: "Title Only", text: "  " } }] },
       synBody: { text: "SYNDICATION TWEET", user: { name: "Ada", screen_name: "ada" } },
     });
-    const { title, content } = await fetchXPostContent("https://x.com/ada/status/9");
-    expect(title).toBe("Title Only");
-    expect(content).toContain("# Title Only");
-    expect(content).not.toContain("SYNDICATION TWEET"); // article path, not fallback
+    const { content } = await fetchXPostContent("https://x.com/ada/status/9");
+    expect(content).toContain("SYNDICATION TWEET");
+    expect(content).not.toContain("# Title Only");
   });
 
   it("defaults the heading to 'X Article' when the article has body but no title", async () => {
