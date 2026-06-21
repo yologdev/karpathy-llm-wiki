@@ -6,6 +6,7 @@ import { Footer } from "@/components/Footer";
 import { SiteChrome } from "@/components/SiteChrome";
 import { ClientProviders } from "@/components/ClientProviders";
 import { EnsureYoyo } from "@/components/EnsureYoyo";
+import { RegisterSW } from "@/components/RegisterSW";
 import "./globals.css";
 
 // Self-hosted via next/font (no runtime Google CDN calls). Exposed as CSS
@@ -85,6 +86,7 @@ export default function RootLayout({
         <ClerkProvider waitlistUrl="/waitlist">
           <ClientProviders>
             <EnsureYoyo />
+            <RegisterSW />
             <SiteChrome nav={<NavHeader />} footer={<Footer />}>
               {children}
             </SiteChrome>

@@ -16,12 +16,14 @@ const primaryLinks = [
   { href: "/wiki", label: "Browse" },
   { href: "/query", label: "Ask" },
   { href: "/ingest", label: "Ingest" },
+  { href: "/save", label: "Save" },
 ];
 
 /** Which primary link should read as "active" for the current path. */
 function getActiveHref(pathname: string): string | null {
   if (pathname === "/query" || pathname.startsWith("/query/")) return "/query";
   if (pathname === "/ingest" || pathname.startsWith("/ingest/")) return "/ingest";
+  if (pathname === "/save" || pathname.startsWith("/save/")) return "/save";
   // Browse owns the commons + article reading surfaces.
   if (
     pathname === "/wiki" ||
