@@ -70,7 +70,8 @@ import {
   deleteWikiPage,
   type Frontmatter,
 } from "./lib/wiki";
-import { canReadFrontmatter } from "./lib/authz";
+import { canReadFrontmatter, canWriteFrontmatter } from "./lib/authz";
+import type { Principal } from "./lib/auth";
 import { extractSummary, ingest, ingestUrl, ingestImage, ingestPdf, ingestXMention, reingest, readLedger, type LedgerEntry } from "./lib/ingest";
 import { query, saveAnswerToWiki, type QueryFormat } from "./lib/query";
 import { isUrl } from "./lib/fetch";
@@ -279,9 +280,26 @@ export async function handleUpdatePage(args: {
   content: string;
   author?: string;
   owner?: string;
+  principal?: Principal | null;
 }): Promise<{ slug: string; title: string; updated: true }> {
   const existingPage = await readWikiPageWithFrontmatter(args.slug);
   if (!existingPage) {
+    throw new Error(`Page not found: ${args.slug}`);
+  }
+
+  // Realm-aware write ACL — mirrors the REST surface at PUT /api/wiki/[slug].
+  // When no explicit principal is provided (stdio MCP, deployment-trusted),
+  // fall back to a service principal so existing callers aren't broken.
+  // When a principal IS provided (e.g. HTTP MCP surface), use it for the
+  // real ACL check — defense-in-depth.
+  const principal: Principal | null =
+    args.principal !== undefined
+      ? args.principal
+      : { id: "service:mcp", handle: args.author ?? "system" };
+  if (!canWriteFrontmatter(existingPage.frontmatter, principal, "body")) {
+    if (canReadFrontmatter(existingPage.frontmatter, principal)) {
+      throw new Error("You don't have permission to edit this page.");
+    }
     throw new Error(`Page not found: ${args.slug}`);
   }
 
@@ -360,7 +378,25 @@ export async function handleUpdateMetadata(args: {
 export async function handleDeletePage(args: {
   slug: string;
   author?: string;
+  principal?: Principal | null;
 }): Promise<DeletePageResult> {
+  // Realm-aware write ACL — mirrors the REST surface at DELETE /api/wiki/[slug].
+  // When no explicit principal is provided (stdio MCP, deployment-trusted),
+  // fall back to a service principal so existing callers aren't broken.
+  const principal: Principal | null =
+    args.principal !== undefined
+      ? args.principal
+      : { id: "service:mcp", handle: args.author ?? "system" };
+  const existing = await readWikiPageWithFrontmatter(args.slug);
+  if (!existing) {
+    throw new Error(`page not found: ${args.slug}`);
+  }
+  if (!canWriteFrontmatter(existing.frontmatter, principal, "delete")) {
+    if (canReadFrontmatter(existing.frontmatter, principal)) {
+      throw new Error("You don't have permission to delete this page.");
+    }
+    throw new Error(`page not found: ${args.slug}`);
+  }
   return deleteWikiPage(args.slug, args.author);
 }
 

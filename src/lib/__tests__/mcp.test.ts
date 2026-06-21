@@ -4497,3 +4497,179 @@ describe("mcp.json manifest sync", () => {
     expect(manifestTools.sort()).toEqual(registeredTools.sort());
   });
 });
+
+// ---------------------------------------------------------------------------
+// Realm-aware write ACL tests (handleUpdatePage / handleDeletePage)
+// ---------------------------------------------------------------------------
+
+describe("MCP write ACL", () => {
+  /** Helper: create a page with specific frontmatter (owner, visibility…). */
+  async function createPageWithFrontmatter(
+    slug: string,
+    fm: Record<string, unknown>,
+    body: string,
+  ) {
+    const { writeWikiPageWithSideEffects, serializeFrontmatter } = await import(
+      "../wiki"
+    );
+    await writeWikiPageWithSideEffects({
+      slug,
+      title: (fm.title as string) ?? slug,
+      content: serializeFrontmatter(
+        {
+          title: slug,
+          created: "2026-01-01",
+          confidence: 0.5,
+          expiry: "2099-01-01",
+          authors: ["system"],
+          contributors: [],
+          ...fm,
+        },
+        body,
+      ),
+      summary: "test",
+      logOp: "ingest",
+      crossRefSource: null,
+    });
+  }
+
+  describe("handleUpdatePage", () => {
+    it("rejects body write on commons page when principal is a regular user", async () => {
+      // Commons page: public, no special type → belongsInCommons = true
+      await createPageWithFrontmatter("commons-acl", {}, "# Commons\n\nBody.");
+
+      await expect(
+        handleUpdatePage({
+          slug: "commons-acl",
+          content: "# Commons\n\nEdited body.",
+          author: "alice",
+          principal: { id: "user_alice", handle: "alice" },
+        }),
+      ).rejects.toThrow("You don't have permission to edit this page.");
+    });
+
+    it("allows body write on commons page when principal is a service", async () => {
+      await createPageWithFrontmatter("commons-service", {}, "# Commons\n\nBody.");
+
+      const result = await handleUpdatePage({
+        slug: "commons-service",
+        content: "# Commons\n\nUpdated by agent.",
+        author: "agent",
+        principal: { id: "service:agent", handle: "agent" },
+      });
+      expect(result.updated).toBe(true);
+    });
+
+    it("allows body write when no principal provided (stdio MCP fallback)", async () => {
+      // Stdio MCP: no principal → falls back to service:mcp → always allowed
+      await createPageWithFrontmatter("commons-stdio", {}, "# Commons\n\nBody.");
+
+      const result = await handleUpdatePage({
+        slug: "commons-stdio",
+        content: "# Commons\n\nStdio update.",
+        author: "yoyo",
+      });
+      expect(result.updated).toBe(true);
+    });
+
+    it("rejects body write on private page not owned by caller", async () => {
+      await createPageWithFrontmatter(
+        "private-acl",
+        { owner: "bob", visibility: "private" },
+        "# Private\n\nSecret.",
+      );
+
+      // Alice tries to edit Bob's private page — cloaked as not-found
+      await expect(
+        handleUpdatePage({
+          slug: "private-acl",
+          content: "# Private\n\nHacked!",
+          author: "alice",
+          principal: { id: "user_alice", handle: "alice" },
+        }),
+      ).rejects.toThrow("Page not found: private-acl");
+    });
+
+    it("allows body write on own private page", async () => {
+      await createPageWithFrontmatter(
+        "private-own",
+        { owner: "alice", visibility: "private" },
+        "# My Page\n\nMy content.",
+      );
+
+      const result = await handleUpdatePage({
+        slug: "private-own",
+        content: "# My Page\n\nEdited content.",
+        author: "alice",
+        principal: { id: "user_alice", handle: "alice" },
+      });
+      expect(result.updated).toBe(true);
+    });
+  });
+
+  describe("handleDeletePage", () => {
+    it("rejects deletion of private page not owned by caller", async () => {
+      await createPageWithFrontmatter(
+        "private-del",
+        { owner: "bob", visibility: "private" },
+        "# Private Del\n\nSecret.",
+      );
+
+      // Alice tries to delete Bob's private page — cloaked as not-found
+      await expect(
+        handleDeletePage({
+          slug: "private-del",
+          author: "alice",
+          principal: { id: "user_alice", handle: "alice" },
+        }),
+      ).rejects.toThrow("page not found: private-del");
+    });
+
+    it("allows owner to delete own private page", async () => {
+      await createPageWithFrontmatter(
+        "private-del-own",
+        { owner: "bob", visibility: "private" },
+        "# My Private\n\nMy stuff.",
+      );
+
+      const result = await handleDeletePage({
+        slug: "private-del-own",
+        author: "bob",
+        principal: { id: "user_bob", handle: "bob" },
+      });
+      expect(result.slug).toBe("private-del-own");
+      expect(result.removedFromIndex).toBe(true);
+    });
+
+    it("rejects deletion of commons page by regular user", async () => {
+      await createPageWithFrontmatter(
+        "commons-del",
+        {},
+        "# Commons Del\n\nPublic knowledge.",
+      );
+
+      await expect(
+        handleDeletePage({
+          slug: "commons-del",
+          author: "alice",
+          principal: { id: "user_alice", handle: "alice" },
+        }),
+      ).rejects.toThrow("You don't have permission to delete this page.");
+    });
+
+    it("allows deletion when no principal provided (stdio MCP fallback)", async () => {
+      await createPageWithFrontmatter(
+        "commons-del-stdio",
+        {},
+        "# Commons Stdio\n\nBody.",
+      );
+
+      const result = await handleDeletePage({
+        slug: "commons-del-stdio",
+        author: "yoyo",
+      });
+      expect(result.slug).toBe("commons-del-stdio");
+      expect(result.removedFromIndex).toBe(true);
+    });
+  });
+});
