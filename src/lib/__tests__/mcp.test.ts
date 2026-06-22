@@ -1845,6 +1845,31 @@ describe("ingest_image", () => {
       _resetConfigCache();
     }
   });
+
+  it("forwards tags to ingestImage", async () => {
+    const savedKey = process.env.ANTHROPIC_API_KEY;
+    delete process.env.ANTHROPIC_API_KEY;
+    _resetConfigCache();
+    try {
+      const result = await handleIngestImage({
+        url: "https://example.com/tagged-photo.png",
+        tags: ["photography", "test"],
+      });
+
+      expect(result.slug).toBeTruthy();
+
+      // Verify the page was created with the expected tags
+      const page = await handleReadPage({ slug: result.slug });
+      expect(page.frontmatter.tags).toEqual(
+        expect.arrayContaining(["photography", "test"]),
+      );
+    } finally {
+      if (savedKey !== undefined) {
+        process.env.ANTHROPIC_API_KEY = savedKey;
+      }
+      _resetConfigCache();
+    }
+  });
 });
 
 // ---------------------------------------------------------------------------

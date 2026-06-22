@@ -698,6 +698,7 @@ export async function handleIngestImage(args: {
   url: string;
   owner?: string;
   prompt?: string;
+  tags?: string[];
   triggeredBy?: string;
   vaultId?: string;
 }): Promise<{
@@ -717,6 +718,7 @@ export async function handleIngestImage(args: {
     {
       ...(args.owner ? { owner: args.owner, author: args.owner } : {}),
       ...(args.prompt ? { title: args.prompt } : {}),
+      ...(args.tags && args.tags.length > 0 ? { tags: args.tags } : {}),
       ...(args.triggeredBy ? { triggeredBy: args.triggeredBy } : {}),
     },
   );
@@ -2140,6 +2142,10 @@ export function createMcpServer(): McpServer {
         .string()
         .optional()
         .describe("Optional guidance for the vision model analysis — used as the page title hint"),
+      tags: z
+        .array(z.string())
+        .optional()
+        .describe("Optional tags to apply to the created page"),
       triggeredBy: z.string().optional().describe("Handle of the user or agent that triggered this ingest (for provenance tracking)"),
       vaultId: z.string().optional().describe("Optional vault ID — if provided, the ingested page is automatically curated into this vault"),
     },
