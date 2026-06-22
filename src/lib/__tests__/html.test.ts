@@ -155,24 +155,46 @@ describe("composeSrcDoc", () => {
     // it — so even un-wrapped content (no <main>/.doc) sits in a column whose
     // edges match the full-width yoyo illustrations.
     expect(out).toContain("--measure:50rem");
-    expect(out).toContain("body{max-width:var(--measure);margin-inline:auto}");
+    // The cap is plain `body{}` (overridable); the centering is `html body{}`
+    // (0,0,2) so a model `margin:0` reset can't cancel it.
+    expect(out).toContain("body{max-width:var(--measure)}");
+    expect(out).toContain("html body{margin-inline:auto}");
     // All three consumers share the token: the body column, the wrapper, and
     // the illustration figure — so they align whether or not content is wrapped.
     expect(out).toContain(".doc,main,article{max-width:var(--measure)");
     expect(out).toContain("figure.yoyo-illustration{max-width:var(--measure)");
   });
 
-  it("injects the body-column cap BEFORE the model's own <style> so the model can override it", () => {
+  it("keeps the body-column CAP overridable by the model (plain `body` specificity)", () => {
     const out = composeSrcDoc(
       "<html><head><style>body{max-width:1200px}</style></head><body><p>x</p></body></html>",
     );
-    // CSS is last-wins on source order (both are bare `body{}` selectors, no
-    // !important), so our injected cap MUST precede the model's style for the
-    // model to win. Guards against a refactor that appends head bits after the
-    // model markup and silently overrides every model/app layout.
+    // The injected `body{max-width}` is plain `body{}` and precedes the model's
+    // style, so the model's later `body{max-width:1200px}` wins (last on equal
+    // specificity) — a model can still widen its column.
     expect(
-      out.indexOf("body{max-width:var(--measure);margin-inline:auto}"),
+      out.indexOf("body{max-width:var(--measure)}"),
     ).toBeLessThan(out.indexOf("body{max-width:1200px}"));
+  });
+
+  it("centering survives a model `body{margin:0}` reset (the bug that pinned content left)", () => {
+    const out = composeSrcDoc(
+      "<html><head><style>body{margin:0}</style></head><body><div class='container'><p>x</p></div></body></html>",
+    );
+    // `html body{margin-inline:auto}` (0,0,2) beats the model's `body{margin:0}`
+    // (0,0,1) regardless of source order, so the column still centers.
+    expect(out).toContain("html body{margin-inline:auto}");
+  });
+
+  it("forces the resolved app theme (overrides the OS prefers-color-scheme default)", () => {
+    const dark = composeSrcDoc("<p>x</p>", undefined, false, "dark");
+    expect(dark).toContain(`:root{color-scheme:dark;--paper:#14130f`);
+    const light = composeSrcDoc("<p>x</p>", undefined, false, "light");
+    expect(light).toContain(`:root{color-scheme:light;--paper:#fbfaf6`);
+    // No theme → no override (the media-query default governs).
+    const none = composeSrcDoc("<p>x</p>");
+    expect(none).not.toContain("color-scheme:dark;--paper");
+    expect(none).not.toContain("color-scheme:light;--paper");
   });
 
   it("leaves app-style (viewport-unit) layouts full-bleed — no body column cap", () => {
@@ -191,7 +213,8 @@ describe("composeSrcDoc", () => {
       '<main><p>article</p><figure class="yoyo-illustration">' +
         '<img src="data:image/jpeg;base64,/9j/4AAQ/100vh/SkZJRg=="></figure></main>',
     );
-    expect(out).toContain("body{max-width:var(--measure);margin-inline:auto}");
+    expect(out).toContain("body{max-width:var(--measure)}");
+    expect(out).toContain("html body{margin-inline:auto}");
   });
 });
 

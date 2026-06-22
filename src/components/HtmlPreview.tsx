@@ -38,6 +38,23 @@ export function HtmlPreview({
   // frame instead of auto-height; see the iframe below.
   const appStyle = usesViewportUnits(html);
 
+  // Match the artifact's paper/ink to the page's RESOLVED theme (yopedia toggles
+  // a `dark`/`light` class on <html> via localStorage; the sandboxed iframe can't
+  // read that, so we read it here and bake it into the srcDoc). Re-render when the
+  // user flips the toggle so the artifact follows.
+  // Start "light" (SSR-stable, avoids a srcDoc hydration mismatch); the effect
+  // below corrects to the real theme on mount before paint settles.
+  const [theme, setTheme] = useState<"light" | "dark">("light");
+  useEffect(() => {
+    const root = document.documentElement;
+    const sync = () =>
+      setTheme(root.classList.contains("dark") ? "dark" : "light");
+    sync();
+    const obs = new MutationObserver(sync);
+    obs.observe(root, { attributes: true, attributeFilter: ["class"] });
+    return () => obs.disconnect();
+  }, []);
+
   // Lazy-load the (~200KB) Chart.js source ONLY for documents that actually use
   // it, so prose/table answers don't pay for it. The chartless render happens
   // immediately; a chart document re-renders once the library resolves.
@@ -119,7 +136,7 @@ export function HtmlPreview({
       // feedback-loops them to absurd heights — so we fix the frame and let
       // them scroll INSIDE it, with that inner scrollbar hidden. Full-screen
       // share (`bare`) fills the viewport; inline gets a tall contained frame.
-      srcDoc={composeSrcDoc(renderedHtml, chartLib, bare || appStyle)}
+      srcDoc={composeSrcDoc(renderedHtml, chartLib, bare || appStyle, theme)}
       sandbox={HTML_SANDBOX}
       title="HTML output"
       style={{

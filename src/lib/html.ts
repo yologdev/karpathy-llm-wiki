@@ -66,9 +66,17 @@ const SANDBOX_CSP =
  * its content; app-style (viewport-unit) layouts are left full-bleed and manage
  * their own width.
  */
+// Folio color tokens, light + dark — factored out so the per-frame theme
+// override in `sandboxHead` can force the app's RESOLVED theme (matching
+// yopedia's in-app light/dark toggle, not just the OS `prefers-color-scheme`).
+const LIGHT_VARS =
+  "--paper:#fbfaf6;--paper-2:#f4f1e9;--ink:#1b1a16;--ink-2:#423f38;--muted:#756f62;--rule:#e2ddd0;--accent:#4d6bfe;--accent-soft:#e7ebff";
+const DARK_VARS =
+  "--paper:#14130f;--paper-2:#1c1b16;--ink:#efebdf;--ink-2:#c7c2b4;--muted:#948e7f;--rule:#2b281f;--accent:#90a4ff;--accent-soft:#20233a";
+
 const BASE_STYLE = `<style>
-:root{color-scheme:light dark;--paper:#fbfaf6;--paper-2:#f4f1e9;--ink:#1b1a16;--ink-2:#423f38;--muted:#756f62;--rule:#e2ddd0;--accent:#4d6bfe;--accent-soft:#e7ebff;--radius:12px;--measure:50rem;--head:"Iowan Old Style","Palatino Linotype",Palatino,Georgia,ui-serif,serif}
-@media (prefers-color-scheme:dark){:root{--paper:#14130f;--paper-2:#1c1b16;--ink:#efebdf;--ink-2:#c7c2b4;--muted:#948e7f;--rule:#2b281f;--accent:#90a4ff;--accent-soft:#20233a}}
+:root{color-scheme:light dark;${LIGHT_VARS};--radius:12px;--measure:50rem;--head:"Iowan Old Style","Palatino Linotype",Palatino,Georgia,ui-serif,serif}
+@media (prefers-color-scheme:dark){:root{${DARK_VARS}}}
 *{box-sizing:border-box}
 html{-webkit-text-size-adjust:100%}
 body{margin:0;background:var(--paper);color:var(--ink);font:17px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;padding:clamp(20px,5vw,56px) clamp(18px,5vw,28px)}
@@ -182,11 +190,19 @@ function sandboxHead(
   html: string,
   chartLibSource?: string,
   hideScrollbar?: boolean,
+  theme?: "light" | "dark",
 ): string {
   const chartLib =
     chartLibSource && usesChartLib(html)
       ? `<script>${chartLibSource}</script>`
       : "";
+  // Force the app's RESOLVED theme so the artifact's paper/ink matches the page
+  // around it — including yopedia's in-app dark TOGGLE, which the BASE_STYLE
+  // `@media (prefers-color-scheme)` default can't see. Injected AFTER BASE_STYLE
+  // so this `:root` wins over the media-query default at equal specificity.
+  const themeOverride = theme
+    ? `<style>:root{color-scheme:${theme};${theme === "dark" ? DARK_VARS : LIGHT_VARS}}</style>`
+    : "";
   // Full-screen share view: the frame is fixed to the viewport and the artifact
   // scrolls inside it — hide that inner scrollbar so the page reads clean.
   const hideBar = hideScrollbar
@@ -201,13 +217,21 @@ function sandboxHead(
   // also paint `html` with `--paper` so the gutters beside the narrowed body
   // column show the page background, not the bare iframe. App-style (100vh)
   // layouts manage their own full-bleed width, so they're left alone.
+  // Two rules, on purpose:
+  //  - `body{max-width}` stays at plain specificity so a model that WANTS a wider
+  //    column can still override it (the documented escape hatch), and a model
+  //    that removes the cap (`max-width:none`) goes full-bleed.
+  //  - `html body{margin-inline:auto}` (specificity 0,0,2) so the common reset
+  //    `body{margin:0}` can't ACCIDENTALLY cancel the centering — it's a no-op
+  //    when there's no width cap, and centers the column when there is.
   const centerColumn = usesViewportUnits(html)
     ? ""
-    : `<style>html{background:var(--paper)}body{max-width:var(--measure);margin-inline:auto}</style>`;
+    : `<style>html{background:var(--paper)}body{max-width:var(--measure)}html body{margin-inline:auto}</style>`;
   return (
     `<meta http-equiv="Content-Security-Policy" content="${SANDBOX_CSP}">` +
     `<base target="_blank">` +
     BASE_STYLE +
+    themeOverride +
     centerColumn +
     hideBar +
     chartLib +
@@ -242,12 +266,16 @@ export function stripHtmlFence(html: string): string {
  * actually uses charts; pass it from a lazy `import()` of `vendor/chartjs.generated`
  * so the heavy library stays out of the default client bundle. `hideScrollbar`
  * suppresses the document's own scrollbar (the full-screen share view, where the
- * frame is fixed to the viewport and scrolls internally).
+ * frame is fixed to the viewport and scrolls internally). `theme` forces the
+ * artifact's paper/ink to the app's RESOLVED light/dark theme so the iframe
+ * matches the page around it (pass the parent's current theme; omit to fall back
+ * to the OS `prefers-color-scheme` default).
  */
 export function composeSrcDoc(
   html: string,
   chartLibSource?: string,
   hideScrollbar?: boolean,
+  theme?: "light" | "dark",
 ): string {
   let src = stripHtmlFence(html);
   // Drop anything after the document's closing </html> — a self-contained
@@ -261,7 +289,7 @@ export function composeSrcDoc(
   if (lastClose?.index !== undefined) {
     src = src.slice(0, lastClose.index + lastClose[0].length);
   }
-  const head = sandboxHead(src, chartLibSource, hideScrollbar);
+  const head = sandboxHead(src, chartLibSource, hideScrollbar, theme);
 
   const headOpen = src.match(/<head[^>]*>/i);
   if (headOpen?.index !== undefined) {
