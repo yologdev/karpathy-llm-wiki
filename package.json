@@ -28,6 +28,7 @@
     "mermaid": "^11.15.0",
     "next": "15.5.18",
     "ollama-ai-provider-v2": "^3.5.0",
+    "posthog-js": "^1.392.0",
     "react": "19.1.0",
     "react-dom": "19.1.0",
     "react-markdown": "^10.1.0",
