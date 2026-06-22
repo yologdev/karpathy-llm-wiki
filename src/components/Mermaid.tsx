@@ -53,7 +53,9 @@ export function Mermaid({ chart }: { chart: string }) {
     <div
       className="mermaid-diagram"
       style={{ textAlign: "center", margin: "1.25rem 0" }}
-      // Mermaid renders with securityLevel "strict" (sanitized labels, no scripts).
+      // SVG is safe to inline: beautiful-mermaid (primary) escapes label text/
+      // attrs, and the mermaid fallback renders with securityLevel "strict"
+      // (sanitized labels, no scripts) — neither path emits executable markup.
       dangerouslySetInnerHTML={{ __html: svg }}
     />
   );

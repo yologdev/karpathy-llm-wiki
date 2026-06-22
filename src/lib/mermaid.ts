@@ -114,11 +114,14 @@ function loadBeautiful() {
  * Render one Mermaid graph definition to an SVG string.
  *
  * Hybrid: try **beautiful-mermaid** first (nicer layout, synchronous, and for the
- * common flowchart case avoids loading the ~3MB mermaid library); fall back to
- * full **mermaid** for diagram types beautiful-mermaid doesn't implement
- * (gantt/pie/mindmap/timeline) or any definition it can't parse — it throws an
- * "Invalid mermaid header" for those, which the catch routes to mermaid. Both get
- * the {@link repairMermaid} pass. Rejects only if BOTH engines fail.
+ * common flowchart case avoids loading the ~3MB mermaid library; it handles
+ * flowchart/class/er/sequence/xychart) — fall back to full **mermaid** for the
+ * types it doesn't implement (gantt/pie/mindmap/timeline) or any definition it
+ * can't parse. Those throw "Invalid mermaid header" (the EXPECTED routing, kept
+ * at debug); a genuine unexpected failure logs a warn. Both engines get the
+ * {@link repairMermaid} pass. Rejects only if BOTH fail. NOTE: a flowchart that
+ * beautiful-mermaid parses but renders with reduced fidelity (e.g. ignoring
+ * `click`/`linkStyle`) is returned as-is — try-first means it won't fall back.
  */
 export async function renderMermaid(code: string): Promise<string> {
   const def = repairMermaid(code.trim());
@@ -126,10 +129,20 @@ export async function renderMermaid(code: string): Promise<string> {
     const bm = await loadBeautiful();
     const svg = bm.renderMermaidSVG(def, BM_OPTIONS);
     if (svg && svg.includes("<svg")) return svg;
+    // A non-throwing, non-SVG return shouldn't happen — breadcrumb (debug, not
+    // warn: we still recover via mermaid) so a future bm regression is traceable.
+    logger.debug("mermaid", "beautiful-mermaid returned no <svg>; using mermaid");
   } catch (err) {
-    logger.warn(
+    // "Invalid mermaid header" is the DESIGNED route for a type bm doesn't
+    // implement (gantt/pie/mindmap/timeline) — keep it at debug so routine
+    // routing isn't noise at the default warn level; a real failure stays warn.
+    const expected =
+      err instanceof Error && /invalid mermaid header/i.test(err.message);
+    logger[expected ? "debug" : "warn"](
       "mermaid",
-      "beautiful-mermaid failed; falling back to mermaid",
+      expected
+        ? "beautiful-mermaid: unsupported diagram type; using mermaid"
+        : "beautiful-mermaid render failed unexpectedly; using mermaid",
       err,
     );
   }

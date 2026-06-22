@@ -6,6 +6,7 @@ import {
   renderMermaid,
 } from "../mermaid";
 import { SLIDES_FORMAT_INSTRUCTION, HTML_FORMAT_INSTRUCTION } from "../query";
+import { renderMermaidSVG } from "beautiful-mermaid";
 
 // Actual Mermaid rendering needs a browser DOM and is exercised in the app, not
 // here. These cover the pure pieces: detection, the no-op fast path (which must
@@ -152,6 +153,17 @@ describe("renderMermaid (hybrid: beautiful-mermaid → mermaid)", () => {
     expect(svg).toContain("<svg");
     expect(svg).toContain("Built-in Harness");
     expect(svg).toContain("Outer Harness");
+  });
+
+  it("beautiful-mermaid throws 'Invalid mermaid header' on unsupported types (fallback contract)", () => {
+    // The hybrid relies on bm THROWING for types it doesn't implement so the
+    // catch routes to mermaid. Pin that contract against the real library.
+    expect(() => renderMermaidSVG("pie title Pets\n  Dogs: 1", {})).toThrow(
+      /invalid mermaid header/i,
+    );
+    expect(() => renderMermaidSVG("gantt\n  title X", {})).toThrow(
+      /invalid mermaid header/i,
+    );
   });
 });
 
