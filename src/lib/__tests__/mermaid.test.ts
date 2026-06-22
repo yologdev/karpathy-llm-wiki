@@ -1,5 +1,9 @@
 import { describe, it, expect } from "vitest";
-import { htmlHasMermaid, renderMermaidInHtml } from "../mermaid";
+import {
+  htmlHasMermaid,
+  renderMermaidInHtml,
+  repairMermaid,
+} from "../mermaid";
 import { SLIDES_FORMAT_INSTRUCTION, HTML_FORMAT_INSTRUCTION } from "../query";
 
 // Actual Mermaid rendering needs a browser DOM and is exercised in the app, not
@@ -64,6 +68,47 @@ describe("renderMermaidInHtml", () => {
     });
     expect(out).toContain("<svg>good</svg>");
     expect(out).toContain('<pre class="mermaid">bad</pre>');
+  });
+});
+
+describe("repairMermaid", () => {
+  it("fixes a subgraph title with spaces + an edge that links subgraphs (the real bug)", () => {
+    const bad = [
+      "flowchart TB",
+      "  subgraph Built-in Harness",
+      "    S[System Prompt]",
+      "  end",
+      "  subgraph Outer Harness",
+      "    FG[Feedforward Guides]",
+      "  end",
+      "  Built-in Harness --> Outer Harness",
+    ].join("\n");
+    const out = repairMermaid(bad);
+    // Headers get an explicit id + quoted title…
+    expect(out).toContain('subgraph sg_1["Built-in Harness"]');
+    expect(out).toContain('subgraph sg_2["Outer Harness"]');
+    // …and the linking edge references the ids, not the space-containing titles.
+    expect(out).toContain("sg_1 --> sg_2");
+    expect(out).not.toMatch(/Built-in Harness\s*-->/);
+  });
+
+  it("leaves a valid graph unchanged (single-token + explicit-id subgraphs)", () => {
+    const ok = [
+      "flowchart TB",
+      "  subgraph backend",
+      "    A[API]",
+      "  end",
+      '  subgraph fe["Front End"]',
+      "    B[UI]",
+      "  end",
+      "  backend --> fe",
+    ].join("\n");
+    expect(repairMermaid(ok)).toBe(ok);
+  });
+
+  it("does not touch a graph with no subgraphs", () => {
+    const code = "flowchart LR\n  A[Start] --> B[End]";
+    expect(repairMermaid(code)).toBe(code);
   });
 });
 

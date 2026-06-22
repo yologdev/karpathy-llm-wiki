@@ -22,6 +22,12 @@ const MERMAID_THEME: MermaidConfig = {
   theme: "base",
   fontFamily:
     'ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif',
+  // HTML (foreignObject) labels, not SVG <text>: the DOM measures multi-line
+  // (`<br/>`) and CJK labels correctly, so a two-line node sizes its box to fit
+  // instead of clipping the second line. securityLevel "strict" still runs the
+  // DOMPurify pass, and the CSP allows `style-src 'unsafe-inline'`, so the
+  // foreignObject renders inside the sandboxed iframe.
+  flowchart: { htmlLabels: true, padding: 10 },
   // Concrete hex (the SVG is standalone — CSS vars aren't available inside it),
   // matching the yopedia/yoyo palette (accent #4d6bfe on warm paper).
   themeVariables: {
@@ -48,11 +54,46 @@ function loadMermaid() {
 
 let seq = 0;
 
+/**
+ * Repair the most common model-authored mermaid mistake before parsing: a
+ * `subgraph` whose title has spaces/punctuation but NO explicit id. Mermaid then
+ * can't reference it in an edge, and a line like `Built-in Harness --> Outer
+ * Harness` is a hard syntax error (the whole diagram fails). Rewrite each such
+ * header to `id["Title"]` and rewrite edge lines that reference the bare title to
+ * that id. A graph with only valid single-token / `id[...]` subgraphs is returned
+ * unchanged.
+ */
+export function repairMermaid(code: string): string {
+  const lines = code.split("\n");
+  const titleToId = new Map<string, string>();
+  let n = 0;
+  const rewritten = lines.map((line) => {
+    const m = line.match(/^(\s*)subgraph\s+(.+?)\s*$/);
+    if (!m) return line;
+    const title = m[2].trim();
+    // Already valid: an explicit `id[...]` form, or a bare single-token id.
+    if (/^\S+\s*\[/.test(title) || /^[A-Za-z0-9_]+$/.test(title)) return line;
+    const clean = title.replace(/^["']|["']$/g, "");
+    const id = `sg_${++n}`;
+    titleToId.set(clean, id);
+    return `${m[1]}subgraph ${id}["${clean}"]`;
+  });
+  if (titleToId.size === 0) return code; // nothing to repair
+  return rewritten
+    .map((line) => {
+      if (!/--|==|-\.|<--|-->/.test(line)) return line; // only edge lines
+      let l = line;
+      for (const [title, id] of titleToId) l = l.split(title).join(id);
+      return l;
+    })
+    .join("\n");
+}
+
 /** Render one Mermaid graph definition to an SVG string. Rejects on a syntax error. */
 export async function renderMermaid(code: string): Promise<string> {
   const mermaid = await loadMermaid();
   const id = `mmd-${seq++}-${Math.floor(performance.now())}`;
-  const { svg } = await mermaid.render(id, code.trim());
+  const { svg } = await mermaid.render(id, repairMermaid(code.trim()));
   return svg;
 }
 
