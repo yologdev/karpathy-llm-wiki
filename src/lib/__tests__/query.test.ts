@@ -984,6 +984,87 @@ describe("saveAnswerToWiki", () => {
     expect(parsed!.frontmatter.authors).toEqual(["system"]);
   });
 
+  it("attributes markdown save to the known owner in frontmatter authors", async () => {
+    await ensureDirectories();
+
+    await saveAnswerToWiki(
+      "Owned Markdown Save",
+      "This markdown answer has a known owner.",
+      undefined,
+      undefined,
+      "markdown",
+      "alice",
+    );
+
+    const parsed = await readWikiPageWithFrontmatter("owned-markdown-save");
+    expect(parsed).not.toBeNull();
+    expect(parsed!.frontmatter.authors).toEqual(["alice"]);
+  });
+
+  it("attributes markdown save to author when both author and owner are provided", async () => {
+    await ensureDirectories();
+
+    await saveAnswerToWiki(
+      "Author Markdown Save",
+      "This markdown answer has both author and owner.",
+      undefined,
+      undefined,
+      "markdown",
+      "alice",
+      "bob",
+    );
+
+    const parsed = await readWikiPageWithFrontmatter("author-markdown-save");
+    expect(parsed).not.toBeNull();
+    // author takes precedence over owner
+    expect(parsed!.frontmatter.authors).toEqual(["bob"]);
+  });
+
+  it("uses the known owner in source entry triggered_by instead of system", async () => {
+    await ensureDirectories();
+
+    await saveAnswerToWiki(
+      "Owned Source Answer",
+      "This answer cites page-x.",
+      undefined,
+      ["page-x"],
+      "markdown",
+      "alice",
+    );
+
+    const parsed = await readWikiPageWithFrontmatter("owned-source-answer");
+    expect(parsed).not.toBeNull();
+
+    const { parseSources } = await import("../sources");
+    const sources = parseSources(parsed!.frontmatter.sources as string);
+    expect(sources).toHaveLength(1);
+    expect(sources[0].type).toBe("wiki-ref");
+    expect(sources[0].url).toBe("page-x");
+    expect(sources[0].triggered_by).toBe("alice");
+  });
+
+  it("uses author for source entry triggered_by when both author and owner are provided", async () => {
+    await ensureDirectories();
+
+    await saveAnswerToWiki(
+      "Author Source Answer",
+      "This answer cites page-y.",
+      undefined,
+      ["page-y"],
+      "markdown",
+      "alice",
+      "bob",
+    );
+
+    const parsed = await readWikiPageWithFrontmatter("author-source-answer");
+    expect(parsed).not.toBeNull();
+
+    const { parseSources } = await import("../sources");
+    const sources = parseSources(parsed!.frontmatter.sources as string);
+    expect(sources).toHaveLength(1);
+    expect(sources[0].triggered_by).toBe("bob");
+  });
+
   it("does not duplicate heading if content already starts with one", async () => {
     await ensureDirectories();
 

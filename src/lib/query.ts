@@ -414,7 +414,7 @@ export async function saveAnswerToWiki(
     tags: ["query-answer"],
     confidence: 0.5,
     expiry,
-    authors: ["system"],
+    authors: [author ?? owner ?? "system"],
   };
 
   // HTML/slides outputs are personal artifacts: mark the type (so the page
@@ -430,9 +430,10 @@ export async function saveAnswerToWiki(
     }
   }
 
+  const triggeredBy = author ?? owner ?? "system";
   if (sources && sources.length > 0) {
     const sourceEntries = sources.map((slug) =>
-      buildSourceEntry(slug, "wiki-ref", "system"),
+      buildSourceEntry(slug, "wiki-ref", triggeredBy),
     );
     frontmatterData.sources = serializeSources(sourceEntries);
   }
