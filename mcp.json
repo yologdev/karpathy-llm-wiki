@@ -22,6 +22,7 @@
     "ingest_image",
     "query_wiki",
     "save_query_answer",
+    "query_history",
     "agent_context",
     "seed_agent",
     "list_agents",

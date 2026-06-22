@@ -19,6 +19,7 @@ import {
   handleIngestXMention,
   handleQueryWiki,
   handleSaveQueryAnswer,
+  handleQueryHistory,
   handleAgentContext,
   handleSeedAgent,
   handleListAgents,
@@ -2351,6 +2352,107 @@ describe("save_query_answer", () => {
 
     expect(result.success).toBe(true);
     expect(result.slug).toBe("what-is-zero-shot-learning");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// query_history tests
+// ---------------------------------------------------------------------------
+
+describe("query_history", () => {
+  it("returns empty array when no history exists for owner", async () => {
+    const result = await handleQueryHistory({ owner: "testuser" });
+    expect(result).toEqual({ entries: [] });
+  });
+
+  it("throws when owner is missing", async () => {
+    await expect(handleQueryHistory({ owner: "" })).rejects.toThrow(
+      "owner is required",
+    );
+  });
+
+  it("returns entries most-recent-first", async () => {
+    // Write a query history file directly
+    const { tenantForOwner } = await import("../wiki");
+    const tenant = tenantForOwner("histuser");
+    const histDir = path.join(tmpDir, "tenants", tenant);
+    await fs.mkdir(histDir, { recursive: true });
+    const entries = [
+      {
+        id: "a1",
+        question: "First question",
+        answer: "First answer",
+        sources: ["page-a"],
+        timestamp: "2025-01-01T00:00:00Z",
+        owner: "histuser",
+      },
+      {
+        id: "a2",
+        question: "Second question",
+        answer: "Second answer",
+        sources: ["page-b"],
+        timestamp: "2025-01-02T00:00:00Z",
+        owner: "histuser",
+      },
+    ];
+    await fs.writeFile(
+      path.join(histDir, "query-history.json"),
+      JSON.stringify(entries),
+    );
+
+    const result = await handleQueryHistory({ owner: "histuser" });
+    expect(result.entries).toHaveLength(2);
+    // Most recent first (reversed)
+    expect(result.entries[0].id).toBe("a2");
+    expect(result.entries[1].id).toBe("a1");
+    expect(result.entries[0].question).toBe("Second question");
+  });
+
+  it("respects limit parameter", async () => {
+    const { tenantForOwner } = await import("../wiki");
+    const tenant = tenantForOwner("limuser");
+    const histDir = path.join(tmpDir, "tenants", tenant);
+    await fs.mkdir(histDir, { recursive: true });
+    const entries = Array.from({ length: 5 }, (_, i) => ({
+      id: `e${i}`,
+      question: `Question ${i}`,
+      answer: `Answer ${i}`,
+      sources: [],
+      timestamp: `2025-01-0${i + 1}T00:00:00Z`,
+      owner: "limuser",
+    }));
+    await fs.writeFile(
+      path.join(histDir, "query-history.json"),
+      JSON.stringify(entries),
+    );
+
+    const result = await handleQueryHistory({ owner: "limuser", limit: 2 });
+    expect(result.entries).toHaveLength(2);
+    // Most recent first
+    expect(result.entries[0].id).toBe("e4");
+    expect(result.entries[1].id).toBe("e3");
+  });
+
+  it("uses default limit of 20", async () => {
+    const { tenantForOwner } = await import("../wiki");
+    const tenant = tenantForOwner("defuser");
+    const histDir = path.join(tmpDir, "tenants", tenant);
+    await fs.mkdir(histDir, { recursive: true });
+    const entries = Array.from({ length: 25 }, (_, i) => ({
+      id: `d${i}`,
+      question: `Q${i}`,
+      answer: `A${i}`,
+      sources: [],
+      timestamp: new Date(2025, 0, i + 1).toISOString(),
+      owner: "defuser",
+    }));
+    await fs.writeFile(
+      path.join(histDir, "query-history.json"),
+      JSON.stringify(entries),
+    );
+
+    const result = await handleQueryHistory({ owner: "defuser" });
+    expect(result.entries).toHaveLength(20);
   });
 });
 

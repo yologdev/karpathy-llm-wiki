@@ -19,6 +19,7 @@
  *   ingest_image   — Ingest an image into the wiki by URL (vision model analysis)
  *   query_wiki     — Ask the wiki a question with LLM synthesis
  *   save_query_answer — Save a query answer as a durable wiki page
+ *   query_history   — View past query history entries for an owner
  *   agent_context  — Get an agent's full context by agent ID
  *   seed_agent     — Register an agent and create its wiki pages
  *   list_agents    — List all registered agents
@@ -74,6 +75,7 @@ import { canReadFrontmatter, canWriteFrontmatter } from "./lib/authz";
 import type { Principal } from "./lib/auth";
 import { extractSummary, ingest, ingestUrl, ingestImage, ingestPdf, ingestXMention, reingest, readLedger, type LedgerEntry, type IngestOptions } from "./lib/ingest";
 import { query, saveAnswerToWiki, type QueryFormat } from "./lib/query";
+import { listQueries, type QueryHistoryEntry } from "./lib/query-history";
 import { isUrl } from "./lib/fetch";
 import { MAX_BATCH_URLS } from "./lib/constants";
 import { getErrorMessage } from "./lib/errors";
@@ -794,6 +796,22 @@ export async function handleSaveQueryAnswer(args: {
   }
 
   return { slug: result.slug, success: true };
+}
+
+// ---------------------------------------------------------------------------
+// Query history handler
+// ---------------------------------------------------------------------------
+
+export async function handleQueryHistory(args: {
+  owner: string;
+  limit?: number | undefined;
+}): Promise<{ entries: QueryHistoryEntry[] }> {
+  if (!args.owner || args.owner.trim().length === 0) {
+    throw new Error("owner is required and must be non-empty");
+  }
+  const limit = args.limit ?? 20;
+  const entries = await listQueries(limit, args.owner.trim());
+  return { entries };
 }
 
 // ---------------------------------------------------------------------------
@@ -2270,6 +2288,53 @@ export function createMcpServer(): McpServer {
   }, async (args) => {
     try {
       const result = await handleSaveQueryAnswer(args);
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: JSON.stringify(result, null, 2),
+          },
+        ],
+      };
+    } catch (err) {
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: (err as Error).message,
+          },
+        ],
+        isError: true,
+      };
+    }
+  });
+
+  // query_history — View past query history entries for an owner
+  server.registerTool("query_history", {
+    description:
+      "View past query history entries for an owner. " +
+      "Returns structured JSON array of past queries, most recent first. " +
+      "Each entry includes id, question, answer, sources, timestamp, format, and savedAs slug if the answer was saved.",
+    inputSchema: {
+      owner: z
+        .string()
+        .describe("Owner handle whose query history to retrieve (required)"),
+      limit: z
+        .number()
+        .int()
+        .positive()
+        .optional()
+        .describe("Maximum number of entries to return (default: 20)"),
+    },
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+  }, async (args) => {
+    try {
+      const result = await handleQueryHistory(args);
       return {
         content: [
           {
