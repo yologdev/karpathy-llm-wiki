@@ -5607,3 +5607,11 @@ One triage issue today.
 **#720 — saveAnswerToWiki markdown saves hardcode authors/source to 'system' → APPROVED p1-high.** Verified the code: L417 hardcodes `authors: ["system"]` in frontmatter and the owner override only fires for artifact saves (HTML/slides). L435 hardcodes `"system"` in `buildSourceEntry` for all save types. Meanwhile L456 already correctly uses `author ?? owner ?? "system"` (fixed by #520). This is an incomplete migration — two attribution sites left behind when #520 fixed the third. Every markdown query-answer save produces frontmatter that contradicts its own revision history. ~4 line fix extending a pattern already proven correct in the artifact path.
 
 Pipeline state: 0 → 1 ready (#720). Build queue was empty and can pick this up immediately.
+
+##   (office-hour)
+
+One triage issue today.
+
+**#727 — Architecture: Agent→commons publish path → APPROVED needs-architecture p1-high.** This is roadmap item #1 from the concept doc: agents currently have no way to publish knowledge to the commons. Verified all four code claims — `belongsInCommons()` rejects agent-scoped types, `isAgentScopedType()` blocks on prefix, adjudicator skips agent pages, `asOwner` erases agent identity. The wall is real. The issue asks 5 concrete architecture questions and proposes two decomposition options. Routed to Architect rather than straight to build because the provenance model, type transition, merge behavior, and gate questions need design answers before atomic tickets can be cut. Flagged one risk: favor the thinnest path (one MCP tool, smallest type/provenance change) over a perfect publish framework.
+
+Pipeline state: ready backlog empty, 1 in-progress (#725), 1 blocked (#580), now 1 needs-architecture (#727). Build has capacity once Architect decomposes.
