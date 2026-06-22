@@ -120,6 +120,14 @@ summary{cursor:pointer;padding:14px 0;font-family:var(--head);font-weight:600;co
 input[type=range]{width:100%;accent-color:var(--accent)}
 button.btn{font:inherit;font-weight:600;background:var(--accent);color:#fff;border:0;border-radius:8px;padding:8px 14px;cursor:pointer}
 .sources{font-size:.9rem;color:var(--muted)}
+/* Mermaid renders its diagram in the PARENT app (HtmlPreview) and we inline the
+   SVG here — so this document's body line-height (1.65) leaks into mermaid's
+   foreignObject HTML labels, inflating them past the height mermaid measured in
+   the parent → a two-line / CJK node label clips. Reset the label typography to
+   what mermaid measured (tight, no <p> margin), and let any residual overflow
+   show within the node's (taller) rect rather than being clipped. */
+.mermaid-diagram foreignObject{overflow:visible;line-height:normal}
+.mermaid-diagram foreignObject p{margin:0}
 </style>`;
 
 /**
