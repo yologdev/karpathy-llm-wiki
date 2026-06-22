@@ -94,11 +94,48 @@ export function repairMermaid(code: string): string {
     .join("\n");
 }
 
-/** Render one Mermaid graph definition to an SVG string. Rejects on a syntax error. */
+// beautiful-mermaid: a synchronous, DOM-free renderer with cleaner, more
+// predictable layouts than mermaid's defaults. Themed to the folio palette;
+// colors are passed at the top level of RenderOptions (NOT nested), and per-node
+// `style … fill:` directives in the source are still honored. Lazy-imported.
+const BM_OPTIONS = {
+  bg: "#fbfaf6",
+  fg: "#1b1a16",
+  accent: "#4d6bfe",
+  font: 'ui-sans-serif, system-ui, -apple-system, "Segoe UI", "PingFang SC", Roboto, sans-serif',
+};
+let bmLoader: Promise<typeof import("beautiful-mermaid")> | null = null;
+function loadBeautiful() {
+  if (!bmLoader) bmLoader = import("beautiful-mermaid");
+  return bmLoader;
+}
+
+/**
+ * Render one Mermaid graph definition to an SVG string.
+ *
+ * Hybrid: try **beautiful-mermaid** first (nicer layout, synchronous, and for the
+ * common flowchart case avoids loading the ~3MB mermaid library); fall back to
+ * full **mermaid** for diagram types beautiful-mermaid doesn't implement
+ * (gantt/pie/mindmap/timeline) or any definition it can't parse — it throws an
+ * "Invalid mermaid header" for those, which the catch routes to mermaid. Both get
+ * the {@link repairMermaid} pass. Rejects only if BOTH engines fail.
+ */
 export async function renderMermaid(code: string): Promise<string> {
+  const def = repairMermaid(code.trim());
+  try {
+    const bm = await loadBeautiful();
+    const svg = bm.renderMermaidSVG(def, BM_OPTIONS);
+    if (svg && svg.includes("<svg")) return svg;
+  } catch (err) {
+    logger.warn(
+      "mermaid",
+      "beautiful-mermaid failed; falling back to mermaid",
+      err,
+    );
+  }
   const mermaid = await loadMermaid();
   const id = `mmd-${seq++}-${Math.floor(performance.now())}`;
-  const { svg } = await mermaid.render(id, repairMermaid(code.trim()));
+  const { svg } = await mermaid.render(id, def);
   return svg;
 }
 

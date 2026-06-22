@@ -3,6 +3,7 @@ import {
   htmlHasMermaid,
   renderMermaidInHtml,
   repairMermaid,
+  renderMermaid,
 } from "../mermaid";
 import { SLIDES_FORMAT_INSTRUCTION, HTML_FORMAT_INSTRUCTION } from "../query";
 
@@ -129,6 +130,28 @@ describe("repairMermaid", () => {
   it("does not touch a graph with no subgraphs", () => {
     const code = "flowchart LR\n  A[Start] --> B[End]";
     expect(repairMermaid(code)).toBe(code);
+  });
+});
+
+describe("renderMermaid (hybrid: beautiful-mermaid → mermaid)", () => {
+  // beautiful-mermaid is synchronous + DOM-free, so the PRIMARY path renders here
+  // without a browser. (The mermaid fallback needs a DOM and is exercised in-app.)
+  it("renders a flowchart via beautiful-mermaid, no DOM", async () => {
+    const svg = await renderMermaid("flowchart LR\n  A[开始] --> B[结束]");
+    expect(svg).toContain("<svg");
+    expect(svg).toContain("开始");
+    expect(svg).toContain("结束");
+  });
+
+  it("applies repairMermaid before rendering (subgraph titles with spaces)", async () => {
+    const svg = await renderMermaid(
+      "flowchart TB\n  subgraph Built-in Harness\n    S[System Prompt]\n  end\n  subgraph Outer Harness\n    F[Guides]\n  end\n  Built-in Harness --> Outer Harness",
+    );
+    // Renders (doesn't throw on the space-named subgraph link) and keeps the
+    // human-readable titles.
+    expect(svg).toContain("<svg");
+    expect(svg).toContain("Built-in Harness");
+    expect(svg).toContain("Outer Harness");
   });
 });
 
