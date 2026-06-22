@@ -83,7 +83,12 @@ export function repairMermaid(code: string): string {
     .map((line) => {
       if (!/--|==|-\.|<--|-->/.test(line)) return line; // only edge lines
       let l = line;
-      for (const [title, id] of titleToId) l = l.split(title).join(id);
+      // Sort longest-first so a shorter title can't corrupt a longer one that
+      // contains it as a substring (e.g. "Data Flow" vs "Extended Data Flow").
+      const sorted = [...titleToId.entries()].sort(
+        (a, b) => b[0].length - a[0].length,
+      );
+      for (const [title, id] of sorted) l = l.split(title).join(id);
       return l;
     })
     .join("\n");

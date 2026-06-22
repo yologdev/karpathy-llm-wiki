@@ -106,6 +106,26 @@ describe("repairMermaid", () => {
     expect(repairMermaid(ok)).toBe(ok);
   });
 
+  it("handles substring-collision: longer title replaced before shorter one", () => {
+    const bad = [
+      "flowchart TB",
+      "  subgraph Data Flow",
+      "    A[Input]",
+      "  end",
+      "  subgraph Extended Data Flow",
+      "    B[Output]",
+      "  end",
+      "  Data Flow --> Extended Data Flow",
+    ].join("\n");
+    const out = repairMermaid(bad);
+    expect(out).toContain('subgraph sg_1["Data Flow"]');
+    expect(out).toContain('subgraph sg_2["Extended Data Flow"]');
+    // The edge must use synthetic ids for BOTH subgraphs — the shorter title
+    // must not corrupt the longer title's occurrence.
+    expect(out).toContain("sg_1 --> sg_2");
+    expect(out).not.toContain("Extended sg_1");
+  });
+
   it("does not touch a graph with no subgraphs", () => {
     const code = "flowchart LR\n  A[Start] --> B[End]";
     expect(repairMermaid(code)).toBe(code);
