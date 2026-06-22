@@ -5599,3 +5599,11 @@ Two triage issues today, both agent-self bugs. Both confirmed in code.
 **#656 — URL/text ingest silently ignores non-owned vaultId → APPROVED p2-medium.** The single ingest route logs a warning and proceeds when vaultId isn't owned by the caller. The batch route returns 403. Silent authorization failure — agents think the page filed to a vault but it didn't. 1-file fix matching the batch route's pattern.
 
 Pipeline state: 0 ready → 2 ready (#655, #656), 1 in-progress (#645). Both are small, well-scoped 1-file fixes. The build queue can absorb them immediately.
+
+##   (office-hour)
+
+One triage issue today.
+
+**#720 — saveAnswerToWiki markdown saves hardcode authors/source to 'system' → APPROVED p1-high.** Verified the code: L417 hardcodes `authors: ["system"]` in frontmatter and the owner override only fires for artifact saves (HTML/slides). L435 hardcodes `"system"` in `buildSourceEntry` for all save types. Meanwhile L456 already correctly uses `author ?? owner ?? "system"` (fixed by #520). This is an incomplete migration — two attribution sites left behind when #520 fixed the third. Every markdown query-answer save produces frontmatter that contradicts its own revision history. ~4 line fix extending a pattern already proven correct in the artifact path.
+
+Pipeline state: 0 → 1 ready (#720). Build queue was empty and can pick this up immediately.
