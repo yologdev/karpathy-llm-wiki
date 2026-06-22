@@ -72,7 +72,7 @@ import {
 } from "./lib/wiki";
 import { canReadFrontmatter, canWriteFrontmatter } from "./lib/authz";
 import type { Principal } from "./lib/auth";
-import { extractSummary, ingest, ingestUrl, ingestImage, ingestPdf, ingestXMention, reingest, readLedger, type LedgerEntry } from "./lib/ingest";
+import { extractSummary, ingest, ingestUrl, ingestImage, ingestPdf, ingestXMention, reingest, readLedger, type LedgerEntry, type IngestOptions } from "./lib/ingest";
 import { query, saveAnswerToWiki, type QueryFormat } from "./lib/query";
 import { isUrl } from "./lib/fetch";
 import { MAX_BATCH_URLS } from "./lib/constants";
@@ -550,6 +550,8 @@ export async function handleIngestText(args: {
   owner?: string;
   triggeredBy?: string;
   vaultId?: string;
+  sourceUrl?: string;
+  sourceType?: string;
 }): Promise<{
   slug: string;
   title: string;
@@ -564,7 +566,8 @@ export async function handleIngestText(args: {
 
   const result: IngestResult = await ingest(title, args.content, {
     ...(args.tags && args.tags.length > 0 ? { tags: args.tags } : {}),
-    sourceType: "text",
+    sourceType: (args.sourceType as IngestOptions["sourceType"]) ?? "text",
+    ...(args.sourceUrl ? { sourceUrl: args.sourceUrl } : {}),
     ...(args.owner ? { owner: args.owner, author: args.owner } : {}),
     ...(args.triggeredBy ? { triggeredBy: args.triggeredBy } : {}),
   });
@@ -580,7 +583,7 @@ export async function handleIngestText(args: {
     slug: result.primarySlug,
     title: pageTitle,
     summary,
-    sourceUrl: "",
+    sourceUrl: args.sourceUrl ?? "",
   };
   if (args.vaultId) {
     try { await addToVault(args.vaultId, result.primarySlug); }
@@ -2010,6 +2013,8 @@ export function createMcpServer(): McpServer {
       owner: z.string().optional().describe("Owner handle — the accountable principal for the resulting page. Sets frontmatter owner for tenant model."),
       triggeredBy: z.string().optional().describe("Handle of the user or agent that triggered this ingest (for provenance tracking)"),
       vaultId: z.string().optional().describe("Optional vault ID — if provided, the ingested page is automatically curated into this vault"),
+      sourceUrl: z.string().optional().describe("Optional source URL — attaches provenance metadata so the page records where the text originally came from"),
+      sourceType: z.string().optional().describe("Optional source type override (e.g. 'url', 'text', 'x-mention', 'image', 'pdf', 'youtube'). Defaults to 'text' when omitted"),
     },
     annotations: {
       readOnlyHint: false,

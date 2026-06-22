@@ -1656,6 +1656,82 @@ describe("ingest_text", () => {
       _resetConfigCache();
     }
   });
+
+  it("passes sourceUrl through to the page frontmatter", async () => {
+    const savedKey = process.env.ANTHROPIC_API_KEY;
+    delete process.env.ANTHROPIC_API_KEY;
+    _resetConfigCache();
+    try {
+      const result = await handleIngestText({
+        content: "Text with known provenance from an external document.",
+        title: "Provenance Text Test",
+        sourceUrl: "https://example.com/original-doc",
+      });
+
+      expect(result.slug).toBeTruthy();
+      expect(result.sourceUrl).toBe("https://example.com/original-doc");
+
+      // Verify the page frontmatter contains the source URL
+      const page = await handleReadPage({ slug: result.slug });
+      const sources = typeof page.frontmatter.sources === "string"
+        ? page.frontmatter.sources
+        : JSON.stringify(page.frontmatter.sources ?? "");
+      expect(sources).toContain("https://example.com/original-doc");
+    } finally {
+      if (savedKey !== undefined) {
+        process.env.ANTHROPIC_API_KEY = savedKey;
+      }
+      _resetConfigCache();
+    }
+  });
+
+  it("defaults sourceType to text when not provided with sourceUrl", async () => {
+    const savedKey = process.env.ANTHROPIC_API_KEY;
+    delete process.env.ANTHROPIC_API_KEY;
+    _resetConfigCache();
+    try {
+      const result = await handleIngestText({
+        content: "Default source type test content.",
+        title: "Default SourceType Test",
+        sourceUrl: "https://example.com/default-type",
+      });
+
+      expect(result.slug).toBeTruthy();
+
+      // The page should still work — the default sourceType is "text"
+      const page = await handleReadPage({ slug: result.slug });
+      const sources = typeof page.frontmatter.sources === "string"
+        ? page.frontmatter.sources
+        : JSON.stringify(page.frontmatter.sources ?? "");
+      expect(sources).toContain("text");
+    } finally {
+      if (savedKey !== undefined) {
+        process.env.ANTHROPIC_API_KEY = savedKey;
+      }
+      _resetConfigCache();
+    }
+  });
+
+  it("without sourceUrl continues to work as before", async () => {
+    const savedKey = process.env.ANTHROPIC_API_KEY;
+    delete process.env.ANTHROPIC_API_KEY;
+    _resetConfigCache();
+    try {
+      const result = await handleIngestText({
+        content: "No source URL regression test content for MCP.",
+        title: "No SourceUrl Test",
+      });
+
+      expect(result.slug).toBeTruthy();
+      expect(result.sourceUrl).toBe("");
+      expect(result.title).toBeTruthy();
+    } finally {
+      if (savedKey !== undefined) {
+        process.env.ANTHROPIC_API_KEY = savedKey;
+      }
+      _resetConfigCache();
+    }
+  });
 });
 
 // ---------------------------------------------------------------------------
