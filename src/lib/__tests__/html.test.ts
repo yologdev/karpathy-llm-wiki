@@ -197,6 +197,25 @@ describe("composeSrcDoc", () => {
     expect(none).not.toContain("color-scheme:light;--paper");
   });
 
+  it("applies the theme override to app-style (viewport) docs too — not just the centered column", () => {
+    // themeOverride is independent of usesViewportUnits: a full-screen (100vh)
+    // dark artifact must still get dark paper, even though it gets NO body cap.
+    // Also exercises the real share path: hideScrollbar=true + a resolved theme.
+    const out = composeSrcDoc("<div style='height:100vh'>app</div>", undefined, true, "dark");
+    expect(out).toContain(`:root{color-scheme:dark;--paper:#14130f`);
+    expect(out).not.toContain("body{max-width:var(--measure)"); // no column for app-style
+    expect(out).toContain("scrollbar-width:none"); // hideScrollbar still applied
+  });
+
+  it("injects the theme override AFTER BASE_STYLE so its :root wins the source-order tie", () => {
+    const out = composeSrcDoc("<p>x</p>", undefined, false, "dark");
+    // Both :root rules have equal specificity (media queries add none), so the
+    // override only wins by coming later. Guards a refactor that reorders them.
+    expect(out.indexOf(":root{color-scheme:dark;--paper")).toBeGreaterThan(
+      out.indexOf(":root{color-scheme:light dark"),
+    );
+  });
+
   it("leaves app-style (viewport-unit) layouts full-bleed — no body column cap", () => {
     const out = composeSrcDoc("<div style='height:100vh'>full-screen app</div>");
     // App-style docs define their own full-screen width; don't impose a column.

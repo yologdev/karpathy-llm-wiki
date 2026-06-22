@@ -43,7 +43,8 @@ export function HtmlPreview({
   // read that, so we read it here and bake it into the srcDoc). Re-render when the
   // user flips the toggle so the artifact follows.
   // Start "light" (SSR-stable, avoids a srcDoc hydration mismatch); the effect
-  // below corrects to the real theme on mount before paint settles.
+  // below corrects to the real theme immediately on mount (one frame after first
+  // paint — useEffect, not useLayoutEffect, which would warn under SSR).
   const [theme, setTheme] = useState<"light" | "dark">("light");
   useEffect(() => {
     const root = document.documentElement;
