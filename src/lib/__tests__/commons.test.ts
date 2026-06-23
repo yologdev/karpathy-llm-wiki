@@ -4,6 +4,7 @@ import os from "os";
 import path from "path";
 import {
   belongsInCommons,
+  isVaultEligible,
   getCommonsIndex,
   upsertCommonsEntry,
   syncCommonsForPage,
@@ -47,6 +48,24 @@ describe("belongsInCommons", () => {
 
   it("excludes saved HTML artifacts (personal rendered outputs)", () => {
     expect(belongsInCommons({ type: "html" })).toBe(false);
+  });
+});
+
+describe("isVaultEligible", () => {
+  it("allows public pages INCLUDING artifacts (unlike belongsInCommons)", () => {
+    expect(isVaultEligible({})).toBe(true);
+    expect(isVaultEligible({ type: "wiki" })).toBe(true);
+    // The key difference: artifacts ARE curatable into a vault.
+    expect(isVaultEligible({ type: "html" })).toBe(true);
+    expect(isVaultEligible({ type: "slides" })).toBe(true);
+    expect(belongsInCommons({ type: "html" })).toBe(false); // contrast
+  });
+
+  it("excludes private pages (a vault references by slug → would leak) and agent-scoped", () => {
+    expect(isVaultEligible({ visibility: "private" })).toBe(false);
+    expect(isVaultEligible({ visibility: "private", type: "html" })).toBe(false);
+    expect(isVaultEligible({ type: "agent-knowledge" })).toBe(false);
+    expect(isVaultEligible({ type: "agent-identity" })).toBe(false);
   });
 });
 

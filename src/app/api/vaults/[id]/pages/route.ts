@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { getPrincipal } from "@/lib/auth";
 import { addToVault, removeFromVault, vaultOwnedBy, getVault } from "@/lib/vault";
 import { readWikiPageWithFrontmatter } from "@/lib/wiki";
-import { belongsInCommons } from "@/lib/commons";
+import { isVaultEligible } from "@/lib/commons";
 
 interface Params {
   params: Promise<{ id: string }>;
@@ -110,16 +110,19 @@ export async function POST(req: Request, { params }: Params) {
   if (!page) {
     return NextResponse.json({ error: "Page not found." }, { status: 404 });
   }
-  const isCommons = belongsInCommons({
+  // Public, non-agent pages — INCLUDING artifacts (html/slides), which a vault
+  // can collect for Browse. Private pages are excluded (a vault references by
+  // slug, so a private page would leak).
+  const eligible = isVaultEligible({
     visibility:
       typeof page.frontmatter.visibility === "string"
         ? page.frontmatter.visibility
         : undefined,
     type: typeof page.frontmatter.type === "string" ? page.frontmatter.type : undefined,
   });
-  if (!isCommons) {
+  if (!eligible) {
     return NextResponse.json(
-      { error: "Only public commons pages can be added to a public vault." },
+      { error: "Only public, non-agent pages can be added to a vault." },
       { status: 400 },
     );
   }

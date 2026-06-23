@@ -53,6 +53,20 @@ export function belongsInCommons(meta: {
 }
 
 /**
+ * A page may be CURATED into a vault iff it's public and not agent-scoped.
+ * Unlike {@link belongsInCommons}, artifacts (rendered `html`/`slides` outputs)
+ * ARE eligible — a vault can collect them for Browse (they remain excluded from
+ * Query/Graph retrieval, which is keyed on knowledge pages). Private pages stay
+ * excluded: a vault references pages by slug, so a private one would leak.
+ */
+export function isVaultEligible(meta: {
+  visibility?: string;
+  type?: string;
+}): boolean {
+  return meta.visibility !== "private" && !isAgentScopedType(meta.type);
+}
+
+/**
  * Read the full commons index (empty array when absent). Fail-soft: a missing
  * or corrupt index returns `[]` so reads fall back to deriving the public set
  * rather than crashing a page render.

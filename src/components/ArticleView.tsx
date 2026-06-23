@@ -5,7 +5,7 @@ import type { Frontmatter } from "@/lib/frontmatter";
 import type { WikiPage } from "@/lib/types";
 import { findBacklinks, findSimilarPages, buildSlugTenantMap } from "@/lib/wiki";
 import { resolveSlugPath, profileHref } from "@/lib/links";
-import { getCommonsSlugSet, belongsInCommons } from "@/lib/commons";
+import { getCommonsSlugSet, belongsInCommons, isVaultEligible } from "@/lib/commons";
 import type { Principal } from "@/lib/auth";
 import { parseSources, dedupeSourcesForDisplay, sourceLabel } from "@/lib/sources";
 import { stripLeadingH1 } from "@/lib/markdown";
@@ -170,6 +170,18 @@ export async function ArticleView({
   // Whether this page is a commons (public, non-agent) page — gates the curate
   // action in the client action bar.
   const isCommonsPage = belongsInCommons({
+    visibility:
+      typeof page.frontmatter.visibility === "string"
+        ? page.frontmatter.visibility
+        : undefined,
+    type:
+      typeof page.frontmatter.type === "string"
+        ? page.frontmatter.type
+        : undefined,
+  });
+  // Curatable into a vault: public + non-agent, INCLUDING artifacts (which the
+  // commons gate above excludes). Gates the "Save to vault" button.
+  const isCuratable = isVaultEligible({
     visibility:
       typeof page.frontmatter.visibility === "string"
         ? page.frontmatter.visibility
@@ -491,6 +503,7 @@ export async function ArticleView({
             owner={pageOwner}
             contributors={pageContributors}
             isCommonsPage={isCommonsPage}
+            isCuratable={isCuratable}
             hasRawSource={hasRawSource}
             hasSourceUrl={hasSourceUrl}
           />

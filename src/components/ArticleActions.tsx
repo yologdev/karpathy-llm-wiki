@@ -16,8 +16,11 @@ interface ArticleActionsProps {
   owner: string;
   /** Contributor handles. */
   contributors: string[];
-  /** Whether this is a PUBLIC, non-agent commons page (gates the curate button). */
+  /** Whether this is a PUBLIC, non-agent commons page (gates Delete realm). */
   isCommonsPage: boolean;
+  /** Whether the page may be curated into a vault: public + non-agent, INCLUDING
+   *  artifacts (gates the "Save to vault" button). */
+  isCuratable: boolean;
   /** Whether a raw source exists (gates the View-source link). */
   hasRawSource: boolean;
   /** Whether a source URL exists (gates the Reingest button). */
@@ -47,6 +50,7 @@ export function ArticleActions({
   owner,
   contributors,
   isCommonsPage,
+  isCuratable,
   hasRawSource,
   hasSourceUrl,
 }: ArticleActionsProps) {
@@ -74,10 +78,11 @@ export function ArticleActions({
   // owner / admin); a non-commons page (private / artifact / agent) is deletable
   // by its page owner. The site owner can delete either.
   const canDelete = isCommonsPage ? isSiteOwner : isOwner || isSiteOwner;
-  // Any signed-in user can curate a commons page into their vault — including
-  // owners and contributors (owned/contributed pages are NOT automatically in
-  // vaults, so excluding them created a curation gap for the most engaged users).
-  const canCurate = isLoaded && !!isSignedIn && isCommonsPage;
+  // Any signed-in user can curate a curatable page (public + non-agent, incl.
+  // artifacts) into their vault — including owners and contributors (owned/
+  // contributed pages are NOT automatically in vaults, so excluding them created
+  // a curation gap for the most engaged users).
+  const canCurate = isLoaded && !!isSignedIn && isCuratable;
 
   return (
     <div className="mt-12 border-t border-rule pt-6 flex flex-wrap items-center gap-3">
