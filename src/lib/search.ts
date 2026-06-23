@@ -516,8 +516,8 @@ export async function searchWikiContent(
 
   const SKIP = new Set(["index.md", "log.md"]);
   const scopeSlugs = scope ? new Set(scope.slugs) : null;
-  // Without a scope, exclude agent-scoped pages from general search — they
-  // surface only via an `agent:` scope.
+  // Always excludes artifacts; agent-scoped pages too when UNSCOPED (they surface
+  // only via an `agent:` scope).
   const excludedSlugs = await searchExcludedSlugSet(/* includeAgentScoped */ !scope);
 
   const scored: Array<{
@@ -534,7 +534,7 @@ export async function searchWikiContent(
 
     // Scope filtering: skip pages not in the scope's slug set
     if (scopeSlugs && !scopeSlugs.has(slug)) continue;
-    // General search: skip agent-scoped pages
+    // Skip artifacts (always) and, when unscoped, agent-scoped pages.
     if (excludedSlugs.has(slug)) continue;
 
     let content: string;
@@ -662,7 +662,7 @@ export async function fuzzySearchWikiContent(
 
     // Scope filtering: skip pages not in the scope's slug set
     if (scopeSlugs && !scopeSlugs.has(slug)) continue;
-    // General search: skip agent-scoped pages
+    // Skip artifacts (always) and, when unscoped, agent-scoped pages.
     if (excludedSlugs.has(slug)) continue;
 
     // Skip pages already in exact results

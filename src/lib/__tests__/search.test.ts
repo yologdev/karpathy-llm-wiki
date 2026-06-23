@@ -189,17 +189,45 @@ describe("searchWikiContent", () => {
       ),
     );
     await writeWikiPage(
-      "index",
-      "# Index\n\n- [Note](note-x.md) — n\n- [Artifact](artifact-x.md) — a",
+      "deck-x",
+      serializeFrontmatter(
+        { type: "slides" },
+        "# Deck X\n\nAttention mechanisms explained here.",
+      ),
     );
-    // Both slugs are in the scope (as if a vault curated the artifact), but the
-    // artifact must still NOT surface as a search hit.
-    const scope = { agentId: "vault:v1", slugs: ["note-x", "artifact-x"] };
+    await writeWikiPage(
+      "index",
+      "# Index\n\n- [Note](note-x.md) — n\n- [Artifact](artifact-x.md) — a\n- [Deck](deck-x.md) — d",
+    );
+    // All slugs are in the scope (as if a vault curated the artifacts), but the
+    // artifacts (html AND slides) must still NOT surface as search hits.
+    const scope = { agentId: "vault:v1", slugs: ["note-x", "artifact-x", "deck-x"] };
     const slugs = (await searchWikiContent("attention", 10, scope)).map(
       (r) => r.slug,
     );
     expect(slugs).toContain("note-x");
     expect(slugs).not.toContain("artifact-x");
+    expect(slugs).not.toContain("deck-x");
+  });
+
+  it("an `agent:` scope STILL surfaces agent-typed pages (only unscoped excludes them)", async () => {
+    await ensureDirectories();
+    await writeWikiPage(
+      "ak",
+      serializeFrontmatter(
+        { type: "agent-knowledge" },
+        "# AK\n\nAttention mechanisms explained here.",
+      ),
+    );
+    await writeWikiPage("index", "# Index\n\n- [AK](ak.md) — a");
+    // Unscoped: agent-scoped page excluded.
+    expect((await searchWikiContent("attention")).map((r) => r.slug)).not.toContain("ak");
+    // Scoped (the agent's own lens): it MUST surface — guards the scope-aware
+    // includeAgentScoped:!scope refactor.
+    const scope = { agentId: "agent:x", slugs: ["ak"] };
+    expect(
+      (await searchWikiContent("attention", 10, scope)).map((r) => r.slug),
+    ).toContain("ak");
   });
 
   it("is case-insensitive", async () => {

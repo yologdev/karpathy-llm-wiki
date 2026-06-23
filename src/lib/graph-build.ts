@@ -14,6 +14,7 @@ import {
   readWikiPageWithFrontmatter,
   listReadableWikiPages,
   isAgentScopedType,
+  isArtifactType,
 } from "./wiki";
 import { ownerToTenant } from "./links";
 import { listCommonsPages } from "./commons";
@@ -54,8 +55,14 @@ export async function buildWikiGraph(
   if (expanded) {
     const resolved = await resolveScope(expanded);
     const scopeSet = new Set(resolved?.slugs ?? []);
+    // Artifacts are excluded from the graph at every scope (incl. a vault that
+    // curated one) — they're rendered outputs, not knowledge nodes. The commons
+    // (unscoped) branch is already artifact-free via listCommonsPages.
     pages = (await listReadableWikiPages(principal)).filter(
-      (p) => scopeSet.has(p.slug) && !isAgentScopedType(p.type),
+      (p) =>
+        scopeSet.has(p.slug) &&
+        !isAgentScopedType(p.type) &&
+        !isArtifactType(p.type),
     );
   } else {
     pages = await listCommonsPages();

@@ -91,7 +91,7 @@ import { queryByFrontmatter, validateQuery, type DataviewFilter, type DataviewQu
 import { listRevisions, readRevision, readRevisionMeta, type Revision } from "./lib/revisions";
 import { vaultIdFor, getVault, findVaultByName, createVault, renameVault, deleteVault, addToVault, removeFromVault, listVaults, vaultSlugs } from "./lib/vault";
 import type { Vault } from "./lib/vault";
-import { belongsInCommons } from "./lib/commons";
+import { isVaultEligible } from "./lib/commons";
 import { reconcileFromTalk, type ReconcileFromTalkResult } from "./lib/reconcile";
 import { buildWikiGraph, type GraphNode, type GraphEdge } from "./lib/graph-build";
 import { mergePages, type MergePagesResult } from "./lib/merge";
@@ -1017,7 +1017,7 @@ export async function handleVaultCurate(args: {
     throw new Error(`Page not found: ${args.slug}`);
   }
   if (
-    !belongsInCommons({
+    !isVaultEligible({
       visibility:
         typeof page.frontmatter.visibility === "string"
           ? page.frontmatter.visibility
@@ -1029,7 +1029,7 @@ export async function handleVaultCurate(args: {
     })
   ) {
     throw new Error(
-      "Only public commons pages can be curated into a vault.",
+      "Only public, non-agent pages can be curated into a vault.",
     );
   }
   // Resolve the named vault, creating it (public) on first use.
@@ -3250,10 +3250,10 @@ export function createMcpServer(): McpServer {
   // vault_curate — Add a commons page to a user's vault
   server.registerTool("vault_curate", {
     description:
-      "Curate a public commons page into one of a user's named vaults. A vault is a personal " +
-      "reference lens over the commons — no copy is made; the page itself stays collective. The " +
-      "named vault is created (public) on first use. Only public, non-agent (commons) pages can " +
-      "be curated.",
+      "Curate a public page into one of a user's named vaults. A vault is a personal reference " +
+      "lens — no copy is made; the page itself stays where it is. The named vault is created " +
+      "(public) on first use. Public, non-agent pages are eligible, INCLUDING rendered artifacts " +
+      "(html/slides), which the vault collects for Browse (they stay out of Query/Graph).",
     inputSchema: {
       slug: z.string().describe("Slug of the commons page to curate"),
       owner: z

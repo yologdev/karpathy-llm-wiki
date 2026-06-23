@@ -3991,6 +3991,21 @@ describe("vault_curate", () => {
     expect(vault?.slugs).toContain("machine-learning");
   });
 
+  it("curates a public ARTIFACT (html) into a vault — parity with the UI", async () => {
+    await writeTestPage(
+      "explainer",
+      "---\ntitle: Explainer\ntype: html\n---\n<h1>Explainer</h1>",
+    );
+    const result = await handleVaultCurate({
+      slug: "explainer",
+      owner: "alice",
+      vault: "Collection",
+    });
+    expect(result).toMatchObject({ curated: true, slug: "explainer" });
+    const vault = await getVault(vaultIdFor("alice", "Collection"));
+    expect(vault?.slugs).toContain("explainer");
+  });
+
   it("throws for a non-existent page", async () => {
     await expect(
       handleVaultCurate({ slug: "does-not-exist", owner: "alice", vault: "v" }),
@@ -4005,7 +4020,7 @@ describe("vault_curate", () => {
 
     await expect(
       handleVaultCurate({ slug: "private-notes", owner: "alice", vault: "v" }),
-    ).rejects.toThrow("Only public commons pages can be curated into a vault.");
+    ).rejects.toThrow("Only public, non-agent pages can be curated into a vault.");
   });
 
   it("throws for an agent-scoped page", async () => {
@@ -4016,7 +4031,7 @@ describe("vault_curate", () => {
 
     await expect(
       handleVaultCurate({ slug: "agent-identity", owner: "alice", vault: "v" }),
-    ).rejects.toThrow("Only public commons pages can be curated into a vault.");
+    ).rejects.toThrow("Only public, non-agent pages can be curated into a vault.");
   });
 
   it("is idempotent — curating twice keeps a single membership in the named vault", async () => {
