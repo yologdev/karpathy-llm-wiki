@@ -14,6 +14,7 @@ import { Icon } from "@/components/folio/icons";
 import { Avatar, Mark, Confidence, Freshness } from "@/components/folio/primitives";
 import { MarkdownRenderer } from "@/components/MarkdownRenderer";
 import { HtmlPreview } from "@/components/HtmlPreview";
+import { isHtmlDeck } from "@/lib/html";
 import { SlidePreview } from "@/components/SlidePreview";
 import { SharePageButton } from "@/components/SharePageButton";
 import { ArticleActions } from "@/components/ArticleActions";
@@ -429,8 +430,7 @@ export async function ArticleView({
               // A slide deck. New decks are self-contained HTML (rendered in the
               // sandboxed iframe with the deck runtime); legacy decks are Marp
               // markdown (the `<SlidePreview>` carousel) — sniff the body to pick.
-              /<section[^>]*class=["'][^"']*\bslide\b/i.test(page.body) ||
-              /^\s*<!doctype/i.test(page.body) ? (
+              isHtmlDeck(page.body) ? (
                 <HtmlPreview html={page.body} deck />
               ) : (
                 <SlidePreview content={page.body} />

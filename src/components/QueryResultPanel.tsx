@@ -5,7 +5,7 @@ import Link from "next/link";
 import { MarkdownRenderer } from "@/components/MarkdownRenderer";
 import { SlidePreview } from "@/components/SlidePreview";
 import { HtmlPreview } from "@/components/HtmlPreview";
-import { stripHtmlFence, composeSrcDoc, usesChartLib } from "@/lib/html";
+import { stripHtmlFence, composeSrcDoc, usesChartLib, isHtmlDeck } from "@/lib/html";
 import { Alert } from "@/components/Alert";
 import { useSlugTenants } from "@/hooks/useSlugTenants";
 import { logger } from "@/lib/logger";
@@ -59,7 +59,11 @@ export function QueryResultPanel({
     return () => clearTimeout(timer);
   }, [copyState]);
 
-  const isHtml = format === "html";
+  // A slides answer is now a self-contained HTML deck (one `<section class="slide">`
+  // per slide). Detect it from the body so the live preview/copy use the deck
+  // runtime — without it the deck would render as a flat, navigation-less document.
+  const isDeck = isHtmlDeck(result.answer);
+  const isHtml = format === "html" || isDeck;
   const handleCopy = useCallback(async () => {
     // HTML copies the fully self-contained document (CSP + baseline styles +
     // inlined Chart.js) so a pasted/hosted copy renders standalone offline — the
@@ -74,7 +78,7 @@ export function QueryResultPanel({
         const chartLib = usesChartLib(result.answer)
           ? (await import("@/lib/vendor/chartjs.generated")).CHARTJS_SOURCE
           : undefined;
-        text = composeSrcDoc(result.answer, chartLib);
+        text = composeSrcDoc(result.answer, chartLib, undefined, undefined, isDeck);
       } else {
         const lines = [`# ${question.trim()}`, "", result.answer];
         if (result.sources.length > 0) {
@@ -89,7 +93,7 @@ export function QueryResultPanel({
       logger.error("query", "copy failed", err);
       setCopyState("error");
     }
-  }, [result, question, isHtml]);
+  }, [result, question, isHtml, isDeck]);
 
   function handleSaveClick() {
     setSaveTitle(question.trim());
@@ -157,6 +161,7 @@ export function QueryResultPanel({
   // is still recognized as HTML.
   const isHtmlAnswer =
     format === "html" ||
+    isDeck ||
     /^\s*(<!doctype html|<html)/i.test(stripHtmlFence(result.answer));
   const isMarp = result.answer.trimStart().startsWith("---\nmarp: true");
 
@@ -170,7 +175,7 @@ export function QueryResultPanel({
             {result.answer || "Rendering HTML…"}
           </pre>
         ) : isHtmlAnswer ? (
-          <HtmlPreview html={result.answer} />
+          <HtmlPreview html={result.answer} deck={isDeck} />
         ) : !streaming && isMarp ? (
           <SlidePreview content={result.answer} />
         ) : (

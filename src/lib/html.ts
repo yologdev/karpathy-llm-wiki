@@ -196,13 +196,17 @@ export function usesViewportUnits(html: string): boolean {
  * `<style>` overrides the baseline.
  */
 // Slide-deck runtime — injected ONLY for `deck` documents. Each `<section
-// class="slide">` becomes a 16:9-ish full-viewport slide; one shows at a time,
-// navigated with ←/→/space/click. A slide that overflows scrolls inside itself
-// (graceful) rather than clipping. Reuses BASE_STYLE typography + components
-// (charts/cards/mermaid all work per slide), so a deck is as rich as an article.
+// class="slide">` becomes a full-viewport slide (the iframe's shape, not forced
+// 16:9); one shows at a time, navigated with the ←/→/space keys or the on-screen
+// ‹/› arrows. A slide that overflows scrolls inside itself (graceful) rather than
+// clipping — `safe` keeps the top reachable when content exceeds the slide.
+// Source `<a href="slug.md">` links inherit the head's `<base target="_blank">`,
+// so they open in a new tab instead of navigating the sandboxed deck — intended.
+// Reuses BASE_STYLE typography + components (charts/cards/mermaid all work per
+// slide), so a deck is as rich as an article.
 const DECK_STYLE = `<style>
 html,body{height:100%;margin:0;overflow:hidden}
-.slide{position:absolute;inset:0;display:none;flex-direction:column;justify-content:center;gap:.35em;padding:clamp(28px,4.5vh,56px) clamp(40px,6vw,84px);box-sizing:border-box;overflow:auto}
+.slide{position:absolute;inset:0;display:none;flex-direction:column;justify-content:safe center;gap:.35em;padding:clamp(28px,4.5vh,56px) clamp(40px,6vw,84px);box-sizing:border-box;overflow:auto}
 .slide.active{display:flex}
 .slide>*{max-width:100%;margin-top:.25em;margin-bottom:.25em}
 .slide h1{font-size:clamp(2rem,5.2vw,3.4rem);margin:.1em 0;border:0;padding:0}
@@ -314,6 +318,16 @@ export function stripHtmlFence(html: string): string {
   if (!lead) return out;
   const body = out.slice(lead[0].length).replace(/\r?\n```[ \t]*$/i, "");
   return body.trim();
+}
+
+/**
+ * True when a body is a self-contained HTML slide DECK — it has at least one
+ * `<section class="slide">`. Distinguishes a new HTML deck from a legacy Marp
+ * markdown deck (no such section) AND from a plain html artifact (also no slide
+ * section), so callers can pick the deck renderer / pass `deck` to composeSrcDoc.
+ */
+export function isHtmlDeck(body: string): boolean {
+  return /<section[^>]*class=["'][^"']*\bslide\b/i.test(body ?? "");
 }
 
 /**

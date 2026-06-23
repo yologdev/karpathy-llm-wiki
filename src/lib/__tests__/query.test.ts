@@ -852,8 +852,12 @@ describe("query", () => {
     // XAI_API_KEY here, generation returns null and the directive is dropped —
     // proving the bake ran for format=slides (no leftover fence reaches the client).
     mockedHasLLMKey.mockReturnValue(true);
+    // A slides answer is now a self-contained HTML deck, so its illustration
+    // directive is an HTML <figure>, baked via the HTML path.
     mockedCallLLM.mockResolvedValue(
-      "# Deck\n\n```yoyo-illustration\nyoyo waving hello\n```\n",
+      '<!doctype html><html><body><section class="slide">' +
+        '<figure class="yoyo-illustration" data-scene="yoyo waving hello"></figure>' +
+        "</section></body></html>",
     );
     await writeWikiPage("alpha", "# Alpha\n\nAlpha content.");
     await updateIndex([{ slug: "alpha", title: "Alpha", summary: "Alpha page" }]);

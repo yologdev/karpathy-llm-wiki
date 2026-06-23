@@ -320,7 +320,9 @@ export async function query(
     // with no per-view fetch. Prose/table carry no directives, so they skip it.
     const answer =
       format === "slides" || format === "html"
-        ? await bakeYoyoIllustrations(raw, format === "html")
+        ? // slides answers are HTML decks now, so bake via the HTML path too —
+          // else the live preview shows an un-baked empty <figure>.
+          await bakeYoyoIllustrations(raw, format === "html" || format === "slides")
         : raw;
 
     // All slugs in the wiki are valid citation targets

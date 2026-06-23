@@ -5,6 +5,7 @@ import {
   stripHtmlFence,
   usesChartLib,
   usesViewportUnits,
+  isHtmlDeck,
   HTML_SANDBOX,
   HTML_MAX_HEIGHT,
 } from "../html";
@@ -381,5 +382,38 @@ describe("htmlToPlainText", () => {
 
   it("collapses whitespace and trims", () => {
     expect(htmlToPlainText("<div>  a\n\n  b  </div>")).toBe("a b");
+  });
+});
+
+describe("isHtmlDeck", () => {
+  it("detects an HTML deck by its slide section marker", () => {
+    expect(
+      isHtmlDeck('<!doctype html><html><body><section class="slide"><h1>A</h1></section></body></html>'),
+    ).toBe(true);
+  });
+
+  it("matches regardless of attribute order, quoting, or extra classes", () => {
+    expect(isHtmlDeck("<section data-i='1' class='intro slide active'>")).toBe(true);
+    expect(isHtmlDeck('<SECTION CLASS="slide">')).toBe(true);
+  });
+
+  it("does not match a substring class like 'slides' or 'slider'", () => {
+    expect(isHtmlDeck('<section class="slides">')).toBe(false);
+    expect(isHtmlDeck('<section class="slider-track">')).toBe(false);
+  });
+
+  it("does not match a legacy Marp deck (frontmatter, no slide section)", () => {
+    expect(isHtmlDeck("---\nmarp: true\n---\n\n# Title\n\n---\n\n## Next")).toBe(false);
+  });
+
+  it("does not match a plain HTML artifact (no slide section)", () => {
+    expect(
+      isHtmlDeck("<!doctype html><html><body><h1>Article</h1><p>Prose.</p></body></html>"),
+    ).toBe(false);
+  });
+
+  it("does not match plain markdown prose or empty input", () => {
+    expect(isHtmlDeck("# Heading\n\nSome **markdown** body.")).toBe(false);
+    expect(isHtmlDeck("")).toBe(false);
   });
 });
