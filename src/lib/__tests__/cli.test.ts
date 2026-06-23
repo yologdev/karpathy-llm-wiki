@@ -176,6 +176,28 @@ describe("CLI argument parsing", () => {
     });
   });
 
+  describe("publish command", () => {
+    it("parses publish with slug and --agent", () => {
+      const result = parseArgs(["publish", "my-topic", "--agent", "alice--yoyo"]);
+      expect(result).toEqual({ command: "publish", slug: "my-topic", agentId: "alice--yoyo" });
+    });
+
+    it("returns error when publish has no slug", () => {
+      const result = parseArgs(["publish", "--agent", "alice--yoyo"]);
+      expect(result.command).toBe("error");
+    });
+
+    it("returns error when publish has no --agent", () => {
+      const result = parseArgs(["publish", "my-topic"]);
+      expect(result.command).toBe("error");
+    });
+
+    it("returns error when publish has neither slug nor --agent", () => {
+      const result = parseArgs(["publish"]);
+      expect(result.command).toBe("error");
+    });
+  });
+
   describe("create command", () => {
     it("parses create with slug and title", () => {
       const result = parseArgs(["create", "my-page", "--title", "My Page"]);
@@ -350,6 +372,10 @@ vi.mock("../lifecycle", () => ({
 
 vi.mock("../frontmatter", () => ({
   serializeFrontmatter: vi.fn(),
+}));
+
+vi.mock("../publish", () => ({
+  publishToCommons: vi.fn(),
 }));
 
 describe("CLI command execution", () => {
@@ -1182,5 +1208,36 @@ describe("CLI command execution", () => {
     await expect(runDelete("nonexistent")).rejects.toThrow(
       "page not found: nonexistent",
     );
+  });
+
+  it("runPublish() prints publish result", async () => {
+    const { publishToCommons } = await import("../publish");
+    vi.mocked(publishToCommons).mockResolvedValueOnce({
+      slug: "my-topic",
+      previousType: "agent-knowledge",
+      owner: "alice",
+      agent: "alice--yoyo",
+    });
+
+    const { runPublish } = await import("../../cli");
+    await runPublish("my-topic", "alice--yoyo");
+
+    expect(logSpy).toHaveBeenCalledWith('Published "my-topic" to commons');
+    expect(logSpy).toHaveBeenCalledWith("  Previous type: agent-knowledge");
+    expect(logSpy).toHaveBeenCalledWith("  Owner: alice");
+    expect(logSpy).toHaveBeenCalledWith("  Agent: alice--yoyo");
+  });
+
+  it("runPublish() exits 1 on error", async () => {
+    const { publishToCommons } = await import("../publish");
+    vi.mocked(publishToCommons).mockRejectedValueOnce(
+      new Error("Page not found: no-such-page"),
+    );
+
+    const { runPublish } = await import("../../cli");
+    await expect(runPublish("no-such-page", "alice--yoyo")).rejects.toThrow("process.exit");
+
+    expect(errorSpy).toHaveBeenCalledWith("Publish failed: Page not found: no-such-page");
+    expect(exitSpy).toHaveBeenCalledWith(1);
   });
 });

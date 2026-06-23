@@ -15,6 +15,7 @@
  *   pnpm cli list                 List all wiki pages
  *   pnpm cli list --raw           List raw sources
  *   pnpm cli delete <slug>        Delete a wiki page and clean up side effects
+ *   pnpm cli publish <slug> --agent <id>  Publish agent page to commons
  *   pnpm cli history              Show recent ingest history
  *   pnpm cli status               Show wiki health summary
  *   pnpm cli help                 Show this help
@@ -38,6 +39,7 @@ export type ParsedCommand =
   | { command: "delete"; slug: string }
   | { command: "history"; limit: number }
   | { command: "status" }
+  | { command: "publish"; slug: string; agentId: string }
   | { command: "help" }
   | { command: "error"; message: string };
 
@@ -150,6 +152,21 @@ export function parseArgs(argv: string[]): ParsedCommand {
     }
     case "status":
       return { command: "status" };
+    case "publish": {
+      const agentIdx = rest.indexOf("--agent");
+      const agentId = agentIdx !== -1 ? rest[agentIdx + 1] : undefined;
+      // Skip flag tokens and the value right after --agent when looking for slug
+      const skipIndices = new Set<number>();
+      if (agentIdx !== -1) { skipIndices.add(agentIdx); skipIndices.add(agentIdx + 1); }
+      const slug = rest.find((a, i) => !a.startsWith("-") && !skipIndices.has(i));
+      if (!slug) {
+        return { command: "error", message: "Usage: pnpm cli publish <slug> --agent <agentId>" };
+      }
+      if (!agentId) {
+        return { command: "error", message: "Usage: pnpm cli publish <slug> --agent <agentId>" };
+      }
+      return { command: "publish", slug, agentId };
+    }
     default:
       return { command: "error", message: `Unknown command: ${sub}\nRun "pnpm cli help" for usage.` };
   }
@@ -174,6 +191,7 @@ Commands:
   create <slug>        Create a new wiki page (reads body from stdin)
   update <slug>        Update an existing wiki page (reads body from stdin)
   delete <slug>        Delete a wiki page and clean up side effects
+  publish <slug>       Publish an agent page to commons (requires --agent <id>)
   lint                 Run wiki lint checks
   lint --fix           Run lint and auto-fix issues
   list                 List all wiki pages (slug + title)
@@ -486,6 +504,21 @@ export async function runDelete(slug: string): Promise<void> {
   }
 }
 
+export async function runPublish(slug: string, agentId: string): Promise<void> {
+  const { publishToCommons } = await import("./lib/publish");
+
+  try {
+    const result = await publishToCommons(slug, agentId);
+    console.log(`Published "${result.slug}" to commons`);
+    console.log(`  Previous type: ${result.previousType}`);
+    console.log(`  Owner: ${result.owner}`);
+    console.log(`  Agent: ${result.agent}`);
+  } catch (err) {
+    console.error(`Publish failed: ${(err as Error).message}`);
+    process.exit(1);
+  }
+}
+
 export async function runLint(fix: boolean): Promise<void> {
   const { lint } = await import("./lib/lint");
   const result = await lint();
@@ -643,6 +676,9 @@ async function main(): Promise<void> {
       return;
     case "delete":
       await runDelete(parsed.slug);
+      return;
+    case "publish":
+      await runPublish(parsed.slug, parsed.agentId);
       return;
     case "lint":
       await runLint(parsed.fix);
