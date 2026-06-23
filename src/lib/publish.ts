@@ -8,6 +8,7 @@ import { readWikiPageWithFrontmatter, serializeFrontmatter } from "./wiki";
 import { writeWikiPageWithSideEffects } from "./lifecycle";
 import { isAgentScopedType } from "./page-types";
 import { getAgent, registerAgent } from "./agents";
+import { logger } from "./logger";
 
 // ---------------------------------------------------------------------------
 // Type → agent page-array mapping
@@ -149,8 +150,9 @@ export async function publishToCommons(
         await registerAgent(agent);
       }
     }
-  } catch {
+  } catch (e) {
     // Non-critical — log but don't fail the publish
+    logger.warn("publish", "failed to remove slug from agent page array:", e);
   }
 
   return {
