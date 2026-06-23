@@ -184,6 +184,79 @@ describe("publishToCommons", () => {
     expect(page!.frontmatter.type).toBeUndefined();
   });
 
+  it("removes slug from agent's identityPages when publishing agent-identity", async () => {
+    const agent = makeAgent({
+      identityPages: ["keep-id", "agent-bio", "also-keep-id"],
+      learningPages: ["unrelated"],
+    });
+    await registerAgent(agent);
+
+    const fm = {
+      title: "Agent Bio",
+      type: "agent-identity",
+      owner: "alice--yoyo",
+      summary: "Bio page",
+    };
+    const content = serializeFrontmatter(
+      fm as Record<string, string | string[] | number | boolean>,
+      "# Agent Bio\n\nIdentity content.\n",
+    );
+    await writeWikiPage("agent-bio", content);
+
+    await publishToCommons("agent-bio", "alice--yoyo");
+
+    const updated = await getAgent("alice--yoyo");
+    expect(updated).not.toBeNull();
+    expect(updated!.identityPages).toEqual(["keep-id", "also-keep-id"]);
+    // learningPages should be untouched
+    expect(updated!.learningPages).toEqual(["unrelated"]);
+  });
+
+  it("removes slug from agent's learningPages when publishing agent-knowledge (regression)", async () => {
+    const agent = makeAgent({
+      learningPages: ["keep-this", "my-topic", "also-keep"],
+      identityPages: ["unrelated-id"],
+    });
+    await registerAgent(agent);
+    await writeAgentPage("my-topic", "alice--yoyo");
+
+    await publishToCommons("my-topic", "alice--yoyo");
+
+    const updated = await getAgent("alice--yoyo");
+    expect(updated).not.toBeNull();
+    expect(updated!.learningPages).toEqual(["keep-this", "also-keep"]);
+    // identityPages should be untouched
+    expect(updated!.identityPages).toEqual(["unrelated-id"]);
+  });
+
+  it("removes slug from agent's socialPages when publishing agent-social", async () => {
+    const agent = makeAgent({
+      socialPages: ["keep-social", "agent-intro", "also-keep-social"],
+      learningPages: ["unrelated"],
+    });
+    await registerAgent(agent);
+
+    const fm = {
+      title: "Agent Intro",
+      type: "agent-social",
+      owner: "alice--yoyo",
+      summary: "Social page",
+    };
+    const content = serializeFrontmatter(
+      fm as Record<string, string | string[] | number | boolean>,
+      "# Agent Intro\n\nSocial content.\n",
+    );
+    await writeWikiPage("agent-intro", content);
+
+    await publishToCommons("agent-intro", "alice--yoyo");
+
+    const updated = await getAgent("alice--yoyo");
+    expect(updated).not.toBeNull();
+    expect(updated!.socialPages).toEqual(["keep-social", "also-keep-social"]);
+    // learningPages should be untouched
+    expect(updated!.learningPages).toEqual(["unrelated"]);
+  });
+
   // -------------------------------------------------------------------------
   // Error cases
   // -------------------------------------------------------------------------

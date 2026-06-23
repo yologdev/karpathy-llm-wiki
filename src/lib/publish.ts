@@ -10,6 +10,26 @@ import { isAgentScopedType } from "./page-types";
 import { getAgent, registerAgent } from "./agents";
 
 // ---------------------------------------------------------------------------
+// Type → agent page-array mapping
+// ---------------------------------------------------------------------------
+
+/** Map an agent-scoped type to the agent profile array it belongs in. */
+function agentTypeToPageArray(
+  type: string,
+): "identityPages" | "learningPages" | "socialPages" | undefined {
+  switch (type) {
+    case "agent-identity":
+      return "identityPages";
+    case "agent-knowledge":
+      return "learningPages";
+    case "agent-social":
+      return "socialPages";
+    default:
+      return undefined;
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Error
 // ---------------------------------------------------------------------------
 
@@ -43,7 +63,7 @@ export interface PublishResult {
  * 2. Sets `owner` to the agent's human owner handle
  * 3. Ensures the agent id is in `contributors[]`
  * 4. Rewrites the page via writeWikiPageWithSideEffects (triggers commons sync)
- * 5. Removes the slug from the agent's learningPages
+ * 5. Removes the slug from the agent's page array matching the old type
  */
 export async function publishToCommons(
   slug: string,
@@ -115,12 +135,19 @@ export async function publishToCommons(
     crossRefSource: null, // skip cross-ref — content didn't change
   });
 
-  // 7. Remove from agent's learningPages (fail-soft)
+  // 7. Remove from the correct agent page array based on previous type (fail-soft)
   try {
-    if (agent.learningPages?.includes(slug)) {
-      agent.learningPages = agent.learningPages.filter((s) => s !== slug);
-      agent.lastUpdated = new Date().toISOString();
-      await registerAgent(agent);
+    const arrayKey = agentTypeToPageArray(currentType!);
+    if (arrayKey) {
+      const arr = agent[arrayKey] as string[] | undefined;
+      if (arr?.includes(slug)) {
+        const filtered = arr.filter((s) => s !== slug);
+        if (arrayKey === "identityPages") agent.identityPages = filtered;
+        else if (arrayKey === "learningPages") agent.learningPages = filtered;
+        else agent.socialPages = filtered;
+        agent.lastUpdated = new Date().toISOString();
+        await registerAgent(agent);
+      }
     }
   } catch {
     // Non-critical — log but don't fail the publish
