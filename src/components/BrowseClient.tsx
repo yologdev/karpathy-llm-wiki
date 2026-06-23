@@ -320,7 +320,7 @@ export function BrowseClient({
       <section className="shell" style={{ paddingTop: 64 }}>
         <p className="fmark" style={{ marginBottom: 20 }}>
           {activeVault
-            ? `vault · ${activeVault.name}`
+            ? `vault · ${activeVault.visibility}`
             : "the commons · public"}
         </p>
         <div
@@ -336,7 +336,7 @@ export function BrowseClient({
             className="display"
             style={{ fontSize: "clamp(38px,5vw,62px)", margin: 0 }}
           >
-            Browse the commons
+            {activeVault ? activeVault.name : "Browse the commons"}
           </h1>
           <p
             className="receipt"
