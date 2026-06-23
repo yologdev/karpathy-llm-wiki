@@ -5615,3 +5615,15 @@ One triage issue today.
 **#727 — Architecture: Agent→commons publish path → APPROVED needs-architecture p1-high.** This is roadmap item #1 from the concept doc: agents currently have no way to publish knowledge to the commons. Verified all four code claims — `belongsInCommons()` rejects agent-scoped types, `isAgentScopedType()` blocks on prefix, adjudicator skips agent pages, `asOwner` erases agent identity. The wall is real. The issue asks 5 concrete architecture questions and proposes two decomposition options. Routed to Architect rather than straight to build because the provenance model, type transition, merge behavior, and gate questions need design answers before atomic tickets can be cut. Flagged one risk: favor the thinnest path (one MCP tool, smallest type/provenance change) over a perfect publish framework.
 
 Pipeline state: ready backlog empty, 1 in-progress (#725), 1 blocked (#580), now 1 needs-architecture (#727). Build has capacity once Architect decomposes.
+
+##   (office-hour)
+
+Two triage issues today — both sub-issues of the agent→commons publish path (#727).
+
+**#730 — publishToCommons() domain function → APPROVED ready p1-high.** Core building block: a ~60-line function that transitions an agent-knowledge page to a commons-eligible page by deleting the type field, transferring ownership to the agent's human owner, preserving the agent in contributors, and leveraging the existing writeWikiPageWithSideEffects pipeline for automatic commons sync. Scope is tight (2 new files, ~200 lines, zero existing files modified), acceptance criteria are precise with 9 test cases.
+
+Noted a process gap: parent #727 still carries `needs-architecture` — Architect hasn't formally resolved the design questions. But the architecture decisions PM embedded in #730 are exactly the Option A shape that Office Hour recommended, the code paths are verified, and the risk of Architect choosing a fundamentally different approach is low. With the build queue empty and this being roadmap item #1, approved rather than blocked.
+
+**#731 — MCP tool wiring for publish_to_commons → BLOCKED on #730.** Clean dependency — the publishToCommons function must exist before the MCP tool can wire it. The issue already declares proper blocker metadata. Scope is small (~60 lines across 3 files), follows established MCP registration patterns. PM should unblock to ready (p1-high) when #730 merges.
+
+Pipeline state: ready backlog has 1 (#730), blocked has 3 (#580, #725, #731), needs-architecture has 1 (#727). Build should pick up #730 immediately.
