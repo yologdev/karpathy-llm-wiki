@@ -175,6 +175,33 @@ describe("searchWikiContent", () => {
     expect(slugs).not.toContain("agent-note");
   });
 
+  it("excludes artifacts even WITHIN a scope (vault/owner) — markup is never query knowledge", async () => {
+    await ensureDirectories();
+    await writeWikiPage(
+      "note-x",
+      "# Note X\n\nAttention mechanisms explained here.",
+    );
+    await writeWikiPage(
+      "artifact-x",
+      serializeFrontmatter(
+        { type: "html" },
+        "# Artifact X\n\nAttention mechanisms explained here.",
+      ),
+    );
+    await writeWikiPage(
+      "index",
+      "# Index\n\n- [Note](note-x.md) — n\n- [Artifact](artifact-x.md) — a",
+    );
+    // Both slugs are in the scope (as if a vault curated the artifact), but the
+    // artifact must still NOT surface as a search hit.
+    const scope = { agentId: "vault:v1", slugs: ["note-x", "artifact-x"] };
+    const slugs = (await searchWikiContent("attention", 10, scope)).map(
+      (r) => r.slug,
+    );
+    expect(slugs).toContain("note-x");
+    expect(slugs).not.toContain("artifact-x");
+  });
+
   it("is case-insensitive", async () => {
     await ensureDirectories();
     await writeWikiPage("test-page", "# Test Page\n\nHello WORLD.");

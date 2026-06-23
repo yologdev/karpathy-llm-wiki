@@ -263,13 +263,14 @@ export async function query(
       return { answer: scopeError, sources: [] };
     }
 
-    // General (unscoped) query excludes agent-scoped pages (agent knowledge
-    // surfaces only via an `agent:` scope) and saved HTML artifacts (rendered
-    // outputs, not knowledge — their markup must never enter the LLM context).
+    // Artifacts (saved html/slides) are NEVER query knowledge — their markup
+    // must never enter the LLM context — so exclude them REGARDLESS of scope
+    // (incl. a vault that curated one, or the owner/"Mine" scope). Agent-scoped
+    // pages are excluded only from a GENERAL (unscoped) query — they surface via
+    // an `agent:` scope.
+    entries = entries.filter((e) => !isArtifactType(e.type));
     if (!scopeSlugs) {
-      entries = entries.filter(
-        (e) => !isAgentScopedType(e.type) && !isArtifactType(e.type),
-      );
+      entries = entries.filter((e) => !isAgentScopedType(e.type));
     }
 
     // Empty wiki — nothing to query
