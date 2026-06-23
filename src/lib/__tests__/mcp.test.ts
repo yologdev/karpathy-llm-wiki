@@ -25,6 +25,7 @@ import {
   handleListAgents,
   handleUpdateAgent,
   handleDeleteAgent,
+  handlePublishToCommons,
   handleLintWiki,
   handleFixLintIssue,
   handleListDiscussions,
@@ -3727,6 +3728,136 @@ describe("delete_agent", () => {
     await expect(
       handleDeleteAgent({ agent_id: "nonexistent" }),
     ).rejects.toThrow("Agent not found: nonexistent");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// publish_to_commons tests
+// ---------------------------------------------------------------------------
+
+describe("publish_to_commons", () => {
+  it("publishes an agent-knowledge page to the commons", async () => {
+    // Register agent with owner
+    await registerAgent({
+      id: "alice--yoyo",
+      name: "Yoyo",
+      description: "Alice's agent",
+      owner: "alice",
+      identityPages: [],
+      learningPages: ["my-topic"],
+      socialPages: [],
+      registered: "2026-06-01T00:00:00.000Z",
+      lastUpdated: "2026-06-01T00:00:00.000Z",
+    });
+
+    // Create an agent-knowledge page
+    await writeTestPage(
+      "my-topic",
+      `---
+title: My Topic
+type: agent-knowledge
+owner: alice--yoyo
+summary: Agent knowledge page
+---
+# My Topic
+
+Agent knowledge content.
+`,
+    );
+
+    const result = await handlePublishToCommons({
+      slug: "my-topic",
+      agentId: "alice--yoyo",
+    });
+
+    expect(result.published).toBe(true);
+    expect(result.slug).toBe("my-topic");
+    expect(result.owner).toBe("alice");
+    expect(result.agent).toBe("alice--yoyo");
+    expect(result.previousType).toBe("agent-knowledge");
+  });
+
+  it("throws when page does not exist", async () => {
+    await registerAgent({
+      id: "alice--yoyo",
+      name: "Yoyo",
+      description: "Alice's agent",
+      owner: "alice",
+      identityPages: [],
+      learningPages: [],
+      socialPages: [],
+      registered: "2026-06-01T00:00:00.000Z",
+      lastUpdated: "2026-06-01T00:00:00.000Z",
+    });
+
+    await expect(
+      handlePublishToCommons({ slug: "nonexistent", agentId: "alice--yoyo" }),
+    ).rejects.toThrow("Page not found: nonexistent");
+  });
+
+  it("throws when page is not agent-scoped", async () => {
+    await registerAgent({
+      id: "alice--yoyo",
+      name: "Yoyo",
+      description: "Alice's agent",
+      owner: "alice",
+      identityPages: [],
+      learningPages: [],
+      socialPages: [],
+      registered: "2026-06-01T00:00:00.000Z",
+      lastUpdated: "2026-06-01T00:00:00.000Z",
+    });
+
+    // Write a normal page (no agent type)
+    await writeTestPage(
+      "normal-page",
+      `---
+title: Normal Page
+owner: alice--yoyo
+summary: A normal page
+---
+# Normal Page
+
+Regular content.
+`,
+    );
+
+    await expect(
+      handlePublishToCommons({ slug: "normal-page", agentId: "alice--yoyo" }),
+    ).rejects.toThrow("not agent-scoped");
+  });
+
+  it("throws when agent does not own the page", async () => {
+    await registerAgent({
+      id: "alice--yoyo",
+      name: "Yoyo",
+      description: "Alice's agent",
+      owner: "alice",
+      identityPages: [],
+      learningPages: [],
+      socialPages: [],
+      registered: "2026-06-01T00:00:00.000Z",
+      lastUpdated: "2026-06-01T00:00:00.000Z",
+    });
+
+    // Page owned by a different agent
+    await writeTestPage(
+      "other-topic",
+      `---
+title: Other Topic
+type: agent-knowledge
+owner: bob--yoyo
+summary: Someone else's page
+---
+# Other Topic
+
+Content.
+`,
+    );
+
+    await expect(
+      handlePublishToCommons({ slug: "other-topic", agentId: "alice--yoyo" }),
+    ).rejects.toThrow("does not own page");
   });
 });
 

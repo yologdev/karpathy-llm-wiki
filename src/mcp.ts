@@ -98,6 +98,7 @@ import { reconcileFromTalk, type ReconcileFromTalkResult } from "./lib/reconcile
 import { buildWikiGraph, type GraphNode, type GraphEdge } from "./lib/graph-build";
 import { mergePages, type MergePagesResult } from "./lib/merge";
 import { scanForMaintenance } from "./lib/maintenance";
+import { publishToCommons } from "./lib/publish";
 import { logger } from "./lib/logger";
 import type { TalkThread, TalkComment } from "./lib/types";
 
@@ -972,6 +973,20 @@ export async function handleDeleteAgent(args: {
     throw new Error(`Agent not found: ${args.agent_id}`);
   }
   return { deleted: true, agent_id: args.agent_id };
+}
+
+export async function handlePublishToCommons(args: {
+  slug: string;
+  agentId: string;
+}): Promise<{ published: true; slug: string; owner: string; agent: string; previousType: string }> {
+  const result = await publishToCommons(args.slug, args.agentId);
+  return {
+    published: true,
+    slug: result.slug,
+    owner: result.owner,
+    agent: result.agent,
+    previousType: result.previousType,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -2536,6 +2551,48 @@ export function createMcpServer(): McpServer {
   }, async (args) => {
     try {
       const result = await handleDeleteAgent(args);
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: JSON.stringify(result, null, 2),
+          },
+        ],
+      };
+    } catch (err) {
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: (err as Error).message,
+          },
+        ],
+        isError: true,
+      };
+    }
+  });
+
+  // publish_to_commons — Promote an agent page to the public commons
+  server.registerTool("publish_to_commons", {
+    description:
+      "Publish an agent-knowledge page to the public commons. The page's type is " +
+      "cleared (making it a normal wiki page), ownership transfers to the agent's " +
+      "human owner, and the agent is preserved in contributors[]. The page then " +
+      "participates in normal concept resolution and appears in public browse/search. " +
+      "This is a one-way promotion — the page cannot be unpublished back to agent-knowledge.",
+    inputSchema: {
+      slug: z.string().describe("Slug of the agent-knowledge page to publish"),
+      agentId: z.string().describe("ID of the agent that owns the page (e.g. alice--yoyo)"),
+    },
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: false,
+      openWorldHint: false,
+    },
+  }, async (args) => {
+    try {
+      const result = await handlePublishToCommons(args);
       return {
         content: [
           {

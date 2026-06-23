@@ -28,6 +28,7 @@
     "list_agents",
     "update_agent",
     "delete_agent",
+    "publish_to_commons",
     "list_contributors",
     "get_contributor",
     "wiki_graph",

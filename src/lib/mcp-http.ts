@@ -30,6 +30,7 @@ import {
   handleCreatePage,
   handleSaveQueryAnswer,
   handleMaintenanceScan,
+  handlePublishToCommons,
 } from "@/mcp";
 import { readWikiPageWithFrontmatter } from "@/lib/wiki";
 import { canWriteFrontmatter } from "@/lib/authz";
@@ -271,6 +272,25 @@ export const MCP_TOOLS: ToolDef[] = [
     run: (a) =>
       handleMaintenanceScan(
         a as Parameters<typeof handleMaintenanceScan>[0],
+      ),
+  },
+  {
+    name: "publish_to_commons",
+    description:
+      "Publish an agent-knowledge page to the public commons. Clears the agent type, " +
+      "transfers ownership to the agent's human owner, preserves the agent in contributors[]. " +
+      "One-way promotion — cannot be unpublished.",
+    inputSchema: schema(
+      {
+        slug: str("Slug of the agent-knowledge page to publish"),
+        agentId: str("ID of the agent that owns the page (e.g. alice--yoyo)"),
+      },
+      ["slug", "agentId"],
+    ),
+    write: true,
+    run: (a, _p) =>
+      handlePublishToCommons(
+        a as Parameters<typeof handlePublishToCommons>[0],
       ),
   },
 ];
