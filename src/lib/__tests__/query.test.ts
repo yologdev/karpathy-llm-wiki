@@ -1080,19 +1080,16 @@ describe("saveAnswerToWiki", () => {
     expect(headingCount).toBe(1);
   });
 
-  it("saves a slides deck as an owner-attributed artifact (type slides, verbatim body, no data-URI in summary)", async () => {
+  it("saves a slides deck as an owner-attributed artifact (type slides, verbatim HTML body, no data-URI in summary)", async () => {
     await ensureDirectories();
+    // Slides answers are now self-contained HTML decks (one <section class="slide">
+    // per slide), processed like an html artifact.
     const deck = [
-      "---",
-      "marp: true",
-      "---",
-      "# My Deck",
-      "",
-      "A short opening line for the summary.",
-      "",
-      "---",
-      "",
-      "![an illustration](data:image/jpeg;base64,AAAAAAAA)",
+      "<!doctype html><html><body>",
+      '<section class="slide"><h1>My Deck</h1>',
+      '<p class="lead">A short opening line for the summary.</p></section>',
+      '<section class="slide"><figure><img src="data:image/jpeg;base64,AAAAAAAA"></figure></section>',
+      "</body></html>",
     ].join("\n");
 
     const { slug } = await saveAnswerToWiki(
@@ -1111,12 +1108,13 @@ describe("saveAnswerToWiki", () => {
     expect(page!.frontmatter.type).toBe("slides");
     expect(page!.frontmatter.owner).toBe("alice");
     expect(page!.frontmatter.authors).toEqual(["alice"]);
-    // Body stored verbatim — Marp markdown, no injected `# ` heading prepended.
-    expect(page!.body).toContain("marp: true");
-    expect(page!.body).toContain("![an illustration](data:image/jpeg;base64,AAAAAAAA)");
-    // The baked image's data URI never leaks into the index summary.
+    // Body stored verbatim — the HTML deck, no injected `# ` heading prepended.
+    expect(page!.body).toContain('<section class="slide">');
+    expect(page!.body).toContain('src="data:image/jpeg;base64,AAAAAAAA"');
+    // The image's data URI never leaks into the index summary (tags stripped).
     const entry = (await listWikiPages()).find((e) => e.slug === slug);
     expect(entry!.summary).not.toContain("data:image");
+    expect(entry!.summary).toContain("short opening line");
     expect(entry!.type).toBe("slides");
   });
 

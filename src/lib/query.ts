@@ -73,21 +73,26 @@ export const TABLE_FORMAT_INSTRUCTION =
   "Format your answer as a markdown comparison table where possible. Include a short prose lead-in (1-2 sentences) before the table. Every column header should be meaningful. Cite sources as [Page Title](slug.md) in a final 'Sources' row or paragraph.";
 
 /**
- * Extra system-prompt instruction appended when the caller requests a
- * Marp slide deck answer format.
+ * Extra system-prompt instruction appended when the caller requests a slide-deck
+ * answer — a self-contained HTML deck rendered full-screen with slide navigation.
  */
-export const SLIDES_FORMAT_INSTRUCTION = `Format your answer as a Marp slide deck. Use \`---\` to separate slides.
-The first slide should be a title slide with \`# {question}\`.
-Each subsequent slide should cover one key point with a heading and 2-4 bullet points.
-Keep slides concise — aim for 5-8 slides total.
-When a point is structural — a flow, process, architecture, hierarchy, sequence, or relationship — prefer a **Mermaid diagram** over a wall of bullets. Put it in a fenced \`\`\`mermaid code block (e.g. \`graph TD\`, \`flowchart LR\`, \`sequenceDiagram\`); it renders as a diagram. Keep node labels short.
-Include **exactly one** hand-drawn **yoyo illustration** in the deck — on the single slide where a metaphor, a key judgment, a before/after, or a change-of-state lands better as a picture than text (often the title slide or the core-insight slide). Add it with a fenced \`\`\`yoyo-illustration block whose body is a short SCENE: what the yoyo octopus is doing with its tentacles to express that idea, plus 2-4 short labels. Use it for feeling/metaphor (not data, not structure) — keep it to one, never more than two.
-Include a final "Sources" slide citing wiki pages as [Page Title](slug.md).
-Use standard Marp markdown (no custom directives needed).
-Start the response with the Marp front matter:
----
-marp: true
----`;
+export const SLIDES_FORMAT_INSTRUCTION = `Format your answer as a SELF-CONTAINED HTML SLIDE DECK — visually rich, like a beautiful presentation a reader would want to share.
+
+OUTPUT
+- Output ONLY HTML: start with \`<!doctype html>\` and a full \`<html>\`/\`<head>\`/\`<body>\`. No markdown, no \`\`\`html fence, no prose before/after.
+- Each slide is ONE \`<section class="slide">…</section>\` element. A navigable deck runtime (one slide at a time, ←/→ keys, a slide counter and progress bar) is ALREADY injected — do NOT add your own slide/navigation script or CSS for it.
+- A polished baseline stylesheet AND the Chart.js library are ALREADY injected. Do NOT add any \`<link>\`, \`<script src>\`, CDN URL, or web font. You MAY add inline \`<style>\`.
+
+SLIDES — aim for 5-8 total, ONE idea per slide
+- First slide: a title — \`<h1>\` + a \`<p class="lead">\` one-line framing.
+- Each content slide: a short \`<h2>\` heading and ONE focused visual or a few bullets. Keep it light — a slide is fixed-size, so 3-5 short bullets or one component, NOT a wall of text. (Overflow scrolls within the slide, but prefer to fit.)
+- Last slide: "Sources" citing wiki pages as \`<a href="slug.md">Page Title</a>\`.
+
+VISUALS — make slides rich (all components are pre-styled — just use the class names)
+- \`<div class="grid"> <div class="card">…</div> … </div>\` — card grid; \`<div class="stat"><span class="num">87%</span><span class="label">caption</span></div>\` — big-number stats; \`<div class="callout">…</div>\`, \`<span class="badge">tag</span>\`, \`<blockquote>\`, \`<table>\`.
+- CHARTS (data): a Chart.js chart in \`<figure><div class="chart"><canvas id="c1"></canvas></div></figure>\` + an inline \`<script>new Chart(...)</script>\` with \`responsive:true, maintainAspectRatio:false\`. Palette: \`#4d6bfe,#11a36b,#e8893a,#9b59d0,#d24d6b,#3aa6c4\`.
+- DIAGRAMS (structure — flow/architecture/sequence): a Mermaid diagram in \`<pre class="mermaid">graph TD; A--&gt;B</pre>\` (no fence, no script). Keep node labels short.
+- Include **exactly one** hand-drawn **yoyo illustration**, on the single slide where a metaphor/judgment/before-after lands better as a picture. Add an EMPTY figure carrying the scene: \`<figure class="yoyo-illustration" data-scene="A short scene: what the yoyo octopus is doing with its tentacles to express the idea, plus 2-4 short labels"></figure>\` (leave it empty — no \`<img>\`). One only; for feeling/metaphor, not data/structure.`;
 
 /**
  * Extra system-prompt instruction appended when the caller requests an HTML
@@ -360,7 +365,10 @@ export async function saveAnswerToWiki(
     throw new Error("Title must produce a valid slug");
   }
 
-  const isHtml = contentType === "html";
+  // Both `html` and `slides` answers are now HTML bodies (a slides answer is a
+  // self-contained HTML deck) — processed identically. `contentType` still
+  // distinguishes them for the stored `type` (the renderer picks iframe vs deck).
+  const isHtml = contentType === "html" || contentType === "slides";
   // HTML and slides are personal rendered artifacts (owned, typed, kept out of
   // the commons/search corpus); plain markdown is a system-owned commons page.
   const isArtifact = contentType !== "markdown";
@@ -374,9 +382,8 @@ export async function saveAnswerToWiki(
   const content = await bakeYoyoIllustrations(rawContent, isHtml);
 
   // Body, by type:
-  //  - HTML: strip a wrapping ```html fence; store verbatim, no H1 (the title
-  //    shows via ArticleView's <h1> outside the iframe).
-  //  - slides: store the Marp markdown verbatim, no H1 (it renders as a deck).
+  //  - HTML / slides: strip a wrapping ```html fence; store the HTML verbatim, no
+  //    H1 (it renders in the sandboxed iframe — a document, or a deck for slides).
   //  - markdown: prepend an H1 if missing.
   const html = isHtml ? stripHtmlFence(content) : content;
   const needsH1 = !isArtifact && !content.trimStart().startsWith("# ");

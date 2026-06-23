@@ -195,11 +195,56 @@ export function usesViewportUnits(html: string): boolean {
  * runtime. The model's own markup is injected after this string, so its
  * `<style>` overrides the baseline.
  */
+// Slide-deck runtime — injected ONLY for `deck` documents. Each `<section
+// class="slide">` becomes a 16:9-ish full-viewport slide; one shows at a time,
+// navigated with ←/→/space/click. A slide that overflows scrolls inside itself
+// (graceful) rather than clipping. Reuses BASE_STYLE typography + components
+// (charts/cards/mermaid all work per slide), so a deck is as rich as an article.
+const DECK_STYLE = `<style>
+html,body{height:100%;margin:0;overflow:hidden}
+.slide{position:absolute;inset:0;display:none;flex-direction:column;justify-content:center;gap:.35em;padding:clamp(28px,4.5vh,56px) clamp(40px,6vw,84px);box-sizing:border-box;overflow:auto}
+.slide.active{display:flex}
+.slide>*{max-width:100%;margin-top:.25em;margin-bottom:.25em}
+.slide h1{font-size:clamp(2rem,5.2vw,3.4rem);margin:.1em 0;border:0;padding:0}
+.slide h2{font-size:clamp(1.4rem,3.4vw,2.1rem);margin:.1em 0;border:0;padding:0}
+.slide .lead{font-size:clamp(1.05rem,2vw,1.5rem);margin:.1em 0}
+.slide li{margin:.25em 0}
+.deck-bar{position:fixed;left:0;right:0;bottom:0;height:4px;background:var(--rule);z-index:20}
+.deck-bar>i{display:block;height:100%;background:var(--accent);transition:width .2s}
+.deck-count{position:fixed;bottom:12px;right:18px;font:600 12px/1 ui-sans-serif,system-ui,sans-serif;color:var(--muted);background:var(--paper-2);border:1px solid var(--rule);border-radius:999px;padding:5px 10px;z-index:20}
+.deck-arrow{position:fixed;bottom:10px;left:18px;display:flex;gap:6px;z-index:20}
+.deck-arrow button{font:15px/1 ui-sans-serif,system-ui,sans-serif;background:var(--paper-2);color:var(--ink-2);border:1px solid var(--rule);border-radius:8px;padding:6px 12px;cursor:pointer}
+</style>`;
+const DECK_SCRIPT = `<script>(function(){
+function slides(){return Array.prototype.slice.call(document.querySelectorAll('.slide'))}
+var i=0;
+function render(){var s=slides();if(!s.length)return;i=Math.max(0,Math.min(i,s.length-1));
+s.forEach(function(el,n){el.classList.toggle('active',n===i)});
+var c=document.getElementById('__dc');if(c)c.textContent=(i+1)+' / '+s.length;
+var b=document.getElementById('__db');if(b)b.style.width=((i+1)/s.length*100)+'%';
+try{s[i].scrollTop=0}catch(_){}}
+function go(d){i+=d;render()}
+function setup(){if(document.getElementById('__dc'))return;
+var bar=document.createElement('div');bar.className='deck-bar';bar.innerHTML='<i id="__db"></i>';
+var nav=document.createElement('div');nav.className='deck-arrow';
+var p=document.createElement('button');p.setAttribute('aria-label','Previous');p.textContent='‹';p.onclick=function(){go(-1)};
+var n=document.createElement('button');n.setAttribute('aria-label','Next');n.textContent='›';n.onclick=function(){go(1)};
+nav.appendChild(p);nav.appendChild(n);
+var count=document.createElement('div');count.className='deck-count';count.innerHTML='<span id="__dc"></span>';
+document.body.appendChild(bar);document.body.appendChild(nav);document.body.appendChild(count);
+document.addEventListener('keydown',function(e){
+if(e.key==='ArrowRight'||e.key==='PageDown'||e.key===' '){e.preventDefault();go(1)}
+else if(e.key==='ArrowLeft'||e.key==='PageUp'){e.preventDefault();go(-1)}});
+render();}
+if(document.readyState!=='loading')setup();else document.addEventListener('DOMContentLoaded',setup);
+})();</script>`;
+
 function sandboxHead(
   html: string,
   chartLibSource?: string,
   hideScrollbar?: boolean,
   theme?: "light" | "dark",
+  deck?: boolean,
 ): string {
   const chartLib =
     chartLibSource && usesChartLib(html)
@@ -233,9 +278,12 @@ function sandboxHead(
   //  - `html body{margin-inline:auto}` (specificity 0,0,2) so the common reset
   //    `body{margin:0}` can't ACCIDENTALLY cancel the centering — it's a no-op
   //    when there's no width cap, and centers the column when there is.
-  const centerColumn = usesViewportUnits(html)
-    ? ""
-    : `<style>html{background:var(--paper)}body{max-width:var(--measure)}html body{margin-inline:auto}</style>`;
+  // A deck owns its full-viewport layout, so skip the centered article column.
+  const centerColumn =
+    deck || usesViewportUnits(html)
+      ? ""
+      : `<style>html{background:var(--paper)}body{max-width:var(--measure)}html body{margin-inline:auto}</style>`;
+  const deckBits = deck ? DECK_STYLE + DECK_SCRIPT : "";
   return (
     `<meta http-equiv="Content-Security-Policy" content="${SANDBOX_CSP}">` +
     `<base target="_blank">` +
@@ -244,7 +292,8 @@ function sandboxHead(
     centerColumn +
     hideBar +
     chartLib +
-    BASE_SCRIPT
+    BASE_SCRIPT +
+    deckBits
   );
 }
 
@@ -278,13 +327,15 @@ export function stripHtmlFence(html: string): string {
  * frame is fixed to the viewport and scrolls internally). `theme` forces the
  * artifact's paper/ink to the app's RESOLVED light/dark theme so the iframe
  * matches the page around it (pass the parent's current theme; omit to fall back
- * to the OS `prefers-color-scheme` default).
+ * to the OS `prefers-color-scheme` default). `deck` injects the slide-deck runtime
+ * — `<section class="slide">` blocks become a navigable full-viewport deck.
  */
 export function composeSrcDoc(
   html: string,
   chartLibSource?: string,
   hideScrollbar?: boolean,
   theme?: "light" | "dark",
+  deck?: boolean,
 ): string {
   let src = stripHtmlFence(html);
   // Drop anything after the document's closing </html> — a self-contained
@@ -298,7 +349,7 @@ export function composeSrcDoc(
   if (lastClose?.index !== undefined) {
     src = src.slice(0, lastClose.index + lastClose[0].length);
   }
-  const head = sandboxHead(src, chartLibSource, hideScrollbar, theme);
+  const head = sandboxHead(src, chartLibSource, hideScrollbar, theme, deck);
 
   const headOpen = src.match(/<head[^>]*>/i);
   if (headOpen?.index !== undefined) {

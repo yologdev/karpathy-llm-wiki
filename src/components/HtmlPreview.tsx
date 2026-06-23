@@ -26,17 +26,21 @@ import { logger } from "@/lib/logger";
 export function HtmlPreview({
   html,
   bare = false,
+  deck = false,
 }: {
   html: string;
   /** Full-bleed share view: no border/radius, fills the viewport below the
    *  share header. The auto-height still drives growth; this only restyles. */
   bare?: boolean;
+  /** Render as a slide deck: inject the deck runtime (one `<section class="slide">`
+   *  at a time, ←/→ nav) and use a fixed full-viewport frame like an app-style doc. */
+  deck?: boolean;
 }) {
   const ref = useRef<HTMLIFrameElement>(null);
   const [height, setHeight] = useState(360);
-  // App-style artifacts (full-viewport 100vh layouts) get a fixed, scroll-hidden
-  // frame instead of auto-height; see the iframe below.
-  const appStyle = usesViewportUnits(html);
+  // App-style artifacts (full-viewport 100vh layouts) and decks get a fixed,
+  // scroll-hidden frame instead of auto-height; see the iframe below.
+  const appStyle = usesViewportUnits(html) || deck;
 
   // Match the artifact's paper/ink to the page's RESOLVED theme (yopedia toggles
   // a `dark`/`light` class on <html> via localStorage; the sandboxed iframe can't
@@ -137,7 +141,7 @@ export function HtmlPreview({
       // feedback-loops them to absurd heights — so we fix the frame and let
       // them scroll INSIDE it, with that inner scrollbar hidden. Full-screen
       // share (`bare`) fills the viewport; inline gets a tall contained frame.
-      srcDoc={composeSrcDoc(renderedHtml, chartLib, bare || appStyle, theme)}
+      srcDoc={composeSrcDoc(renderedHtml, chartLib, bare || appStyle, theme, deck)}
       sandbox={HTML_SANDBOX}
       title="HTML output"
       style={{

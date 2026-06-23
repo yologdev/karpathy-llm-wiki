@@ -186,6 +186,22 @@ describe("composeSrcDoc", () => {
     expect(out).toContain("html body{margin-inline:auto}");
   });
 
+  it("deck mode injects the slide runtime and skips the centered article column", () => {
+    const out = composeSrcDoc(
+      '<section class="slide"><h1>X</h1></section>',
+      undefined,
+      true,
+      undefined,
+      true,
+    );
+    expect(out).toContain(".slide.active{display:flex}"); // deck CSS
+    expect(out).toContain("ArrowRight"); // deck nav script
+    expect(out).not.toContain("body{max-width:var(--measure)}"); // no article column
+    // Non-deck doc gets neither the deck runtime.
+    const plain = composeSrcDoc("<p>x</p>");
+    expect(plain).not.toContain(".slide.active");
+  });
+
   it("forces the resolved app theme (overrides the OS prefers-color-scheme default)", () => {
     const dark = composeSrcDoc("<p>x</p>", undefined, false, "dark");
     expect(dark).toContain(`:root{color-scheme:dark;--paper:#14130f`);
