@@ -159,6 +159,7 @@ export async function handleListPages(args: {
   {
     slug: string;
     title: string;
+    summary?: string;
     tags?: string[];
     confidence?: number;
     updated?: string;

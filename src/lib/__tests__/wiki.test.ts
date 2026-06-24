@@ -26,6 +26,7 @@ import {
   _getPageCacheSize,
   updateRelatedPages,
   enrichEntry,
+  Frontmatter,
 } from "../wiki";
 import { _resetStorage } from "../storage";
 import type { IndexEntry } from "../types";
@@ -1210,7 +1211,7 @@ describe("serializeFrontmatter", () => {
 
     // Merge: spread existing, bump updated.
     const today = "2026-04-08";
-    const merged: Record<string, string | string[]> = { ...parsed.data };
+    const merged: Frontmatter = { ...parsed.data };
     if (typeof merged.created !== "string" || merged.created === "") {
       merged.created = today;
     }
@@ -1237,7 +1238,7 @@ describe("serializeFrontmatter", () => {
     expect(parsed.data).toEqual({});
 
     const today = "2026-04-08";
-    const merged: Record<string, string | string[]> = { ...parsed.data };
+    const merged: Frontmatter = { ...parsed.data };
     if (typeof merged.created !== "string" || merged.created === "") {
       merged.created = today;
     }
