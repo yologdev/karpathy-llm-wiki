@@ -33,7 +33,8 @@ export function HtmlPreview({
    *  share header. The auto-height still drives growth; this only restyles. */
   bare?: boolean;
   /** Render as a slide deck: inject the deck runtime (one `<section class="slide">`
-   *  at a time, ←/→ nav) and use a fixed full-viewport frame like an app-style doc. */
+   *  at a time, ←/→ nav). Inline, the frame is a landscape 16:10 slide capped to
+   *  the viewport; the full-screen (`bare`) share view fills the viewport instead. */
   deck?: boolean;
 }) {
   const ref = useRef<HTMLIFrameElement>(null);
