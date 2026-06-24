@@ -206,17 +206,28 @@ describe("composeSrcDoc", () => {
   it("deck layout uses !important so a model's own .slide CSS can't stack slides", () => {
     // A model that redefines `.slide{display:flex}` would otherwise win at equal
     // specificity (its <style> is injected after ours), showing every slide at once.
+    const modelSlide = ".slide{display:flex;min-height:80vh}";
     const out = composeSrcDoc(
-      '<head><style>.slide{display:flex;min-height:80vh}</style></head>' +
+      `<head><style>${modelSlide}</style></head>` +
         '<section class="slide"><h1>A</h1></section>',
       undefined,
       false,
       undefined,
       true,
     );
-    expect(out).toContain("display:none!important");
-    expect(out).toContain("position:absolute!important");
-    expect(out).toContain("inset:0!important");
+    // The make-or-break props are !important ON the .slide selector itself
+    // (not just present somewhere — `display:none!important` also appears on the
+    // yoyo ::before/::after rule).
+    expect(out).toMatch(
+      /\.slide\{position:absolute!important;inset:0!important;display:none!important;/,
+    );
+    expect(out).toContain(".slide.active{display:flex!important}");
+    // The whole premise: our baseline .slide rule must precede the model's, so
+    // !important (not source order) is what wins. Assert the source ordering the
+    // fix depends on.
+    expect(out.indexOf(".slide{position:absolute!important")).toBeLessThan(
+      out.indexOf(modelSlide),
+    );
   });
 
   it("neutralizes model-authored ::before/::after art on the yoyo figure", () => {
