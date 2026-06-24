@@ -140,7 +140,7 @@ describe("YouTube source type verification", () => {
     const page = await readWikiPageWithFrontmatter(result.primarySlug);
     expect(page).not.toBeNull();
 
-    const sources = parseSources(page!.frontmatter.sources);
+    const sources = parseSources(page!.frontmatter.sources as string | string[] | undefined);
     expect(sources).toHaveLength(1);
     expect(sources[0].type).toBe("youtube");
     expect(sources[0].url).toBe("https://youtu.be/xyz789");
@@ -190,7 +190,7 @@ describe("ingestYouTube direct call", () => {
 
     const page = await readWikiPageWithFrontmatter(result.primarySlug);
     expect(page).not.toBeNull();
-    const sources = parseSources(page!.frontmatter.sources);
+    const sources = parseSources(page!.frontmatter.sources as string | string[] | undefined);
     expect(sources).toHaveLength(1);
     expect(sources[0].type).toBe("youtube");
     expect(sources[0].url).toBe("https://www.youtube.com/watch?v=direct");

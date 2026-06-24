@@ -459,6 +459,7 @@ describe("CLI command execution", () => {
       apiKeySource: "env",
       ollamaBaseUrl: null,
       ollamaBaseUrlSource: "default",
+      readOnly: false,
     });
 
     const { runStatus } = await import("../../cli");
@@ -870,7 +871,7 @@ describe("CLI command execution", () => {
   it("runCreate() exits with error when page already exists", async () => {
     const { readWikiPage, validateSlug } = await import("../wiki");
     vi.mocked(validateSlug).mockImplementation(() => {});
-    vi.mocked(readWikiPage).mockResolvedValueOnce("existing content");
+    vi.mocked(readWikiPage).mockResolvedValueOnce({ slug: "existing-page", title: "Existing Page", content: "existing content", path: "wiki/existing-page.md" });
 
     const { runCreate } = await import("../../cli");
     await expect(runCreate("existing-page", "Existing Page")).rejects.toThrow("process.exit");
