@@ -13,6 +13,7 @@ import {
 import { getTenantWikiDir, getTenantRawDir } from "./paths";
 import { DEFAULT_TENANT, ownerToTenant } from "./links";
 import { parseSources, dedupeSourcesForDisplay } from "./sources";
+import { getPageIndex } from "./page-index";
 
 // ---------------------------------------------------------------------------
 // Configurable base directories — delegated to the config layer
@@ -115,6 +116,24 @@ export async function buildSlugTenantMap(): Promise<Record<string, string>> {
   const map: Record<string, string> = {};
   for (const p of await listWikiPages()) map[p.slug] = tenantForOwner(p.owner);
   return map;
+}
+
+/**
+ * Resolve the tenant for a given slug. Fast path: O(1) KV read from
+ * the page-metadata index. Fallback: O(N) full scan via buildSlugTenantMap.
+ * Returns DEFAULT_TENANT when the slug has no owner or is not found.
+ */
+export async function tenantForSlug(slug: string): Promise<string> {
+  // Fast path: page-metadata KV index
+  const pageIdx = await getPageIndex();
+  if (pageIdx) {
+    const entry = pageIdx[slug];
+    if (entry) return tenantForOwner(entry.owner);
+    // slug not in index → could be deleted or index stale; fall through
+  }
+  // Slow path: full scan
+  const map = await buildSlugTenantMap();
+  return map[slug] ?? tenantForOwner(undefined);
 }
 
 /** Storage-relative path for a file in a tenant's wiki tree. */
