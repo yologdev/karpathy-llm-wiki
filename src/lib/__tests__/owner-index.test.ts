@@ -135,9 +135,9 @@ describe("rebuildOwnerIndex", () => {
     await createPage("c", ""); // ownerless → yopedia
     await rebuildOwnerIndex();
     const idx = await getOwnerIndex();
-    expect(idx.alice.sort()).toEqual(["a", "b"]);
-    expect(idx.bob).toEqual(["b"]);
-    expect(idx.yopedia).toEqual(["c"]);
+    expect(idx!.alice.sort()).toEqual(["a", "b"]);
+    expect(idx!.bob).toEqual(["b"]);
+    expect(idx!.yopedia).toEqual(["c"]);
   });
 });
 

@@ -127,8 +127,8 @@ describe("rebuildBacklinkIndex", () => {
     await createPage("c", "leaf");
     await rebuildBacklinkIndex();
     const idx = await getBacklinkIndex();
-    expect(idx.b).toEqual(["a"]);
-    expect(idx.c).toEqual(["b"]);
+    expect(idx!.b).toEqual(["a"]);
+    expect(idx!.c).toEqual(["b"]);
   });
 });
 
