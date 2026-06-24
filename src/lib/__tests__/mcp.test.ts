@@ -200,6 +200,10 @@ describe("search_wiki", () => {
       "gradient-descent",
       "---\ntags: [ml]\n---\n# Gradient Descent\n\nGradient descent is an optimization algorithm.",
     );
+    await writeIndex([
+      { title: "Neural Networks", slug: "neural-networks", summary: "s" },
+      { title: "Gradient Descent", slug: "gradient-descent", summary: "s" },
+    ]);
 
     const results = await handleSearchWiki({ query: "neural" });
     expect(results.length).toBeGreaterThanOrEqual(1);
@@ -233,6 +237,10 @@ describe("search_wiki", () => {
     // Create pages — one belongs to agent, one does not
     await writeTestPage("agent-identity", "# Agent Identity\n\nAgent knowledge about testing.");
     await writeTestPage("global-page", "# Global Page\n\nGlobal knowledge about testing.");
+    await writeIndex([
+      { title: "Agent Identity", slug: "agent-identity", summary: "s" },
+      { title: "Global Page", slug: "global-page", summary: "s" },
+    ]);
 
     // Register an agent that owns only agent-identity
     await registerAgent({
@@ -259,6 +267,7 @@ describe("search_wiki", () => {
 
   it("returns all results when scope is omitted (backward compatible)", async () => {
     await writeTestPage("page-x", "# Page X\n\nUnique searchable content alpha.");
+    await writeIndex([{ title: "Page X", slug: "page-x", summary: "s" }]);
 
     const results = await handleSearchWiki({ query: "unique searchable content alpha" });
     expect(results.length).toBeGreaterThanOrEqual(1);
@@ -271,6 +280,7 @@ describe("search_wiki", () => {
       "photosynthesis",
       "# Photosynthesis\n\nPhotosynthesis is the process by which plants convert sunlight into energy.",
     );
+    await writeIndex([{ title: "Photosynthesis", slug: "photosynthesis", summary: "s" }]);
 
     // Search with a typo — "photosynthsis" (missing 'e')
     const results = await handleSearchWiki({ query: "photosynthsis" });
@@ -4209,6 +4219,10 @@ describe("visibility enforcement", () => {
   it("handleSearchWiki excludes private page content", async () => {
     await writeTestPage("public-page", PUBLIC_PAGE);
     await writeTestPage("secret-page", PRIVATE_PAGE);
+    await writeIndex([
+      { title: "Public Page", slug: "public-page", summary: "s" },
+      { title: "Secret Page", slug: "secret-page", summary: "s" },
+    ]);
 
     const results = await handleSearchWiki({ query: "page" });
     const slugs = results.map((r) => r.slug);

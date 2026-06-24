@@ -144,6 +144,10 @@ describe("searchWikiContent", () => {
     await ensureDirectories();
     await writeWikiPage("neural-networks", "# Neural Networks\n\nArtificial neural networks are computing systems.");
     await writeWikiPage("transformers", "# Transformers\n\nA transformer is a deep learning architecture.");
+    await updateIndex([
+      { title: "Neural Networks", slug: "neural-networks", summary: "s" },
+      { title: "Transformers", slug: "transformers", summary: "s" },
+    ]);
 
     const results = await searchWikiContent("neural");
     expect(results).toHaveLength(1);
@@ -233,6 +237,7 @@ describe("searchWikiContent", () => {
   it("is case-insensitive", async () => {
     await ensureDirectories();
     await writeWikiPage("test-page", "# Test Page\n\nHello WORLD.");
+    await updateIndex([{ title: "Test Page", slug: "test-page", summary: "s" }]);
 
     const results = await searchWikiContent("world");
     expect(results).toHaveLength(1);
@@ -247,6 +252,10 @@ describe("searchWikiContent", () => {
     await ensureDirectories();
     await writeWikiPage("both-terms", "# Both Terms\n\nThis page has alpha and beta content.");
     await writeWikiPage("one-term", "# One Term\n\nThis page only has alpha content.");
+    await updateIndex([
+      { title: "Both Terms", slug: "both-terms", summary: "s" },
+      { title: "One Term", slug: "one-term", summary: "s" },
+    ]);
 
     const results = await searchWikiContent("alpha beta");
     expect(results).toHaveLength(2);
@@ -259,6 +268,10 @@ describe("searchWikiContent", () => {
     await ensureDirectories();
     await writeWikiPage("zebra", "# Zebra\n\nAnimal with stripes.");
     await writeWikiPage("alpha", "# Alpha\n\nAnimal with fur.");
+    await updateIndex([
+      { title: "Zebra", slug: "zebra", summary: "s" },
+      { title: "Alpha", slug: "alpha", summary: "s" },
+    ]);
 
     const results = await searchWikiContent("animal");
     expect(results).toHaveLength(2);
@@ -272,6 +285,7 @@ describe("searchWikiContent", () => {
     await writeWikiPage("index", "# Index\n\nThis is the wiki index.");
     await writeWikiPage("log", "# Log\n\nThis is the wiki log.");
     await writeWikiPage("real-page", "# Real Page\n\nThis is a real wiki page.");
+    await updateIndex([{ title: "Real Page", slug: "real-page", summary: "s" }]);
 
     const results = await searchWikiContent("wiki");
     expect(results).toHaveLength(1);
@@ -283,6 +297,7 @@ describe("searchWikiContent", () => {
     for (let i = 0; i < 5; i++) {
       await writeWikiPage(`page-${i}`, `# Page ${i}\n\nCommon keyword here.`);
     }
+    await updateIndex(Array.from({ length: 5 }, (_, i) => ({ title: `Page ${i}`, slug: `page-${i}`, summary: "s" })));
 
     const results = await searchWikiContent("keyword", 3);
     expect(results).toHaveLength(3);
@@ -293,6 +308,7 @@ describe("searchWikiContent", () => {
     for (let i = 0; i < 15; i++) {
       await writeWikiPage(`page-${String(i).padStart(2, "0")}`, `# Page ${i}\n\nShared term here.`);
     }
+    await updateIndex(Array.from({ length: 15 }, (_, i) => ({ title: `Page ${i}`, slug: `page-${String(i).padStart(2, "0")}`, summary: "s" })));
 
     const results = await searchWikiContent("shared");
     expect(results).toHaveLength(10);
@@ -303,6 +319,7 @@ describe("searchWikiContent", () => {
     const longPrefix = "A".repeat(100);
     const longSuffix = "B".repeat(100);
     await writeWikiPage("snippet-test", `# Snippet Test\n\n${longPrefix} keyword ${longSuffix}`);
+    await updateIndex([{ title: "Snippet Test", slug: "snippet-test", summary: "s" }]);
 
     const results = await searchWikiContent("keyword");
     expect(results).toHaveLength(1);
@@ -318,6 +335,7 @@ describe("searchWikiContent", () => {
   it("snippet has no leading ellipsis when match is near the start", async () => {
     await ensureDirectories();
     await writeWikiPage("near-start", "# Match Near Start\n\nkeyword here and more.");
+    await updateIndex([{ title: "Match Near Start", slug: "near-start", summary: "s" }]);
 
     const results = await searchWikiContent("Match");
     expect(results).toHaveLength(1);
@@ -331,6 +349,7 @@ describe("searchWikiContent", () => {
       "fm-leak",
       `---\ntags: [agentics, ml]\nsource_count: 1\nupdated: 2026-06-08\n---\n# Poke Assistant\n\nPoke is an AI assistant that uses an agent to triage notifications.`,
     );
+    await updateIndex([{ title: "Poke Assistant", slug: "fm-leak", summary: "s" }]);
 
     const results = await searchWikiContent("agent");
     expect(results).toHaveLength(1);
@@ -347,6 +366,7 @@ describe("searchWikiContent", () => {
     await ensureDirectories();
     const filler = "alpha beta gamma delta epsilon zeta eta theta iota kappa";
     await writeWikiPage("word-cut", `# Word Cut\n\n${filler} keyword ${filler}`);
+    await updateIndex([{ title: "Word Cut", slug: "word-cut", summary: "s" }]);
 
     const results = await searchWikiContent("keyword");
     const snippet = results[0].snippet.replace(/…/g, "");
@@ -364,6 +384,7 @@ describe("searchWikiContent", () => {
       "fm-only",
       `---\ntags: [serverless]\n---\n# Cloud Topic\n\nA concise overview of deployment models.`,
     );
+    await updateIndex([{ title: "Cloud Topic", slug: "fm-only", summary: "s" }]);
 
     const results = await searchWikiContent("serverless");
     expect(results).toHaveLength(1);
@@ -376,6 +397,7 @@ describe("searchWikiContent", () => {
   it("extracts title from first heading", async () => {
     await ensureDirectories();
     await writeWikiPage("heading-page", "# My Great Title\n\nSome content here.");
+    await updateIndex([{ title: "My Great Title", slug: "heading-page", summary: "s" }]);
 
     const results = await searchWikiContent("content");
     expect(results).toHaveLength(1);
@@ -385,6 +407,7 @@ describe("searchWikiContent", () => {
   it("falls back to slug when no heading present", async () => {
     await ensureDirectories();
     await writeWikiPage("no-heading", "Just plain text with a search term.");
+    await updateIndex([{ title: "no-heading", slug: "no-heading", summary: "s" }]);
 
     const results = await searchWikiContent("search");
     expect(results).toHaveLength(1);
@@ -394,6 +417,7 @@ describe("searchWikiContent", () => {
   it("returns no results when no pages match", async () => {
     await ensureDirectories();
     await writeWikiPage("page-a", "# Page A\n\nHello world.");
+    await updateIndex([{ title: "Page A", slug: "page-a", summary: "s" }]);
 
     const results = await searchWikiContent("nonexistent");
     expect(results).toEqual([]);
@@ -402,6 +426,7 @@ describe("searchWikiContent", () => {
   it("extracts summary from first paragraph after heading", async () => {
     await ensureDirectories();
     await writeWikiPage("summary-page", "# Summary Page\n\nThis is the summary line.\n\nMore content here.");
+    await updateIndex([{ title: "Summary Page", slug: "summary-page", summary: "s" }]);
 
     const results = await searchWikiContent("summary");
     expect(results).toHaveLength(1);
@@ -925,6 +950,11 @@ describe("fuzzySearchWikiContent", () => {
     await writeWikiPage("page-a", "# Alpha\n\nAttention mechanisms work well.");
     await writeWikiPage("page-b", "# Beta\n\nAttention is key to transformers.");
     await writeWikiPage("page-c", "# Gamma\n\nAttention layers are stacked.");
+    await updateIndex([
+      { title: "Alpha", slug: "page-a", summary: "s" },
+      { title: "Beta", slug: "page-b", summary: "s" },
+      { title: "Gamma", slug: "page-c", summary: "s" },
+    ]);
 
     const results = await fuzzySearchWikiContent("attention");
     expect(results.length).toBe(3);
@@ -937,6 +967,11 @@ describe("fuzzySearchWikiContent", () => {
     await writeWikiPage("exact-match", "# Exact\n\nAttention is important.");
     await writeWikiPage("typo-match", "# Typo\n\nAttnetion mechanisms are useful.");
     await writeWikiPage("no-match", "# Unrelated\n\nSomething completely different.");
+    await updateIndex([
+      { title: "Exact", slug: "exact-match", summary: "s" },
+      { title: "Typo", slug: "typo-match", summary: "s" },
+      { title: "Unrelated", slug: "no-match", summary: "s" },
+    ]);
 
     const results = await fuzzySearchWikiContent("attention");
     // Should have 1 exact + 1 fuzzy
@@ -956,6 +991,7 @@ describe("fuzzySearchWikiContent", () => {
   it("does not duplicate pages in exact and fuzzy results", async () => {
     await ensureDirectories();
     await writeWikiPage("transformers", "# Transformers\n\nTransformer architecture details.");
+    await updateIndex([{ title: "Transformers", slug: "transformers", summary: "s" }]);
 
     const results = await fuzzySearchWikiContent("transformer");
     const slugs = results.map((r) => r.slug);
@@ -967,6 +1003,10 @@ describe("fuzzySearchWikiContent", () => {
     await ensureDirectories();
     await writeWikiPage("ai-page", "# AI\n\nArtificial intelligence overview.");
     await writeWikiPage("xy-page", "# XY\n\nSome XY content.");
+    await updateIndex([
+      { title: "AI", slug: "ai-page", summary: "s" },
+      { title: "XY", slug: "xy-page", summary: "s" },
+    ]);
 
     // "AI" is ≤2 chars, so fuzzy won't match "XY"
     const results = await fuzzySearchWikiContent("AI");
@@ -986,6 +1026,11 @@ describe("searchWikiContent with scope", () => {
     await writeWikiPage("alpha", "# Alpha\n\nMachine learning concepts.");
     await writeWikiPage("beta", "# Beta\n\nMore machine learning.");
     await writeWikiPage("gamma", "# Gamma\n\nUnrelated content about cooking.");
+    await updateIndex([
+      { title: "Alpha", slug: "alpha", summary: "s" },
+      { title: "Beta", slug: "beta", summary: "s" },
+      { title: "Gamma", slug: "gamma", summary: "s" },
+    ]);
 
     const results = await searchWikiContent("machine learning");
     expect(results).toHaveLength(2);
@@ -999,6 +1044,11 @@ describe("searchWikiContent with scope", () => {
     await writeWikiPage("alpha", "# Alpha\n\nMachine learning concepts.");
     await writeWikiPage("beta", "# Beta\n\nMore machine learning.");
     await writeWikiPage("gamma", "# Gamma\n\nMachine learning for cooking.");
+    await updateIndex([
+      { title: "Alpha", slug: "alpha", summary: "s" },
+      { title: "Beta", slug: "beta", summary: "s" },
+      { title: "Gamma", slug: "gamma", summary: "s" },
+    ]);
 
     const scope: SearchScope = { agentId: "test", slugs: ["alpha", "gamma"] };
     const results = await searchWikiContent("machine learning", 10, scope);
@@ -1012,6 +1062,7 @@ describe("searchWikiContent with scope", () => {
   it("returns empty when scope slugs don't match any existing pages", async () => {
     await ensureDirectories();
     await writeWikiPage("alpha", "# Alpha\n\nMachine learning concepts.");
+    await updateIndex([{ title: "Alpha", slug: "alpha", summary: "s" }]);
 
     const scope: SearchScope = { agentId: "test", slugs: ["nonexistent"] };
     const results = await searchWikiContent("machine learning", 10, scope);
@@ -1022,6 +1073,10 @@ describe("searchWikiContent with scope", () => {
     await ensureDirectories();
     await writeWikiPage("alpha", "# Alpha\n\nMachine learning concepts.");
     await writeWikiPage("beta", "# Beta\n\nCooking recipes.");
+    await updateIndex([
+      { title: "Alpha", slug: "alpha", summary: "s" },
+      { title: "Beta", slug: "beta", summary: "s" },
+    ]);
 
     const scope: SearchScope = { agentId: "test", slugs: ["beta"] };
     const results = await searchWikiContent("machine learning", 10, scope);
@@ -1031,6 +1086,7 @@ describe("searchWikiContent with scope", () => {
   it("scope with empty slugs array returns no results", async () => {
     await ensureDirectories();
     await writeWikiPage("alpha", "# Alpha\n\nMachine learning concepts.");
+    await updateIndex([{ title: "Alpha", slug: "alpha", summary: "s" }]);
 
     const scope: SearchScope = { agentId: "test", slugs: [] };
     const results = await searchWikiContent("machine learning", 10, scope);
@@ -1048,6 +1104,11 @@ describe("fuzzySearchWikiContent with scope", () => {
     await writeWikiPage("exact-match", "# Exact\n\nAttention is important.");
     await writeWikiPage("typo-match", "# Typo\n\nAttnetion mechanisms are useful.");
     await writeWikiPage("excluded", "# Excluded\n\nAttention should be excluded.");
+    await updateIndex([
+      { title: "Exact", slug: "exact-match", summary: "s" },
+      { title: "Typo", slug: "typo-match", summary: "s" },
+      { title: "Excluded", slug: "excluded", summary: "s" },
+    ]);
 
     // Scope includes exact-match and typo-match, but not excluded
     const scope: SearchScope = { agentId: "test", slugs: ["exact-match", "typo-match"] };

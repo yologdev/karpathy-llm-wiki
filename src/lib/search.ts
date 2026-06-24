@@ -10,7 +10,6 @@ import {
   listWikiPages,
   listReadableWikiPages,
   withPageCache,
-  wikiRelPath,
   isAgentScopedType,
   isArtifactType,
   tenantForOwner,
@@ -18,10 +17,8 @@ import {
 import { writeWikiPageWithSideEffects } from "./lifecycle";
 import { canReadFrontmatter } from "./authz";
 import type { Principal } from "./auth";
-import { isEnoent } from "./errors";
 import { getAgent, resolveAgentPages } from "./agents";
 import { getVault } from "./vault";
-import { getStorage } from "./storage";
 import { getOwnerIndex } from "./owner-index";
 import { getBacklinkIndex } from "./backlink-index";
 import { relatedByVector, searchByVector } from "./embeddings";
@@ -504,17 +501,10 @@ export async function searchWikiContent(
     .filter((t) => t.length > 0);
   if (terms.length === 0) return [];
 
-  const storage = getStorage();
-  let files: string[];
-  try {
-    const entries = await storage.listFiles(wikiRelPath(""));
-    files = entries.map((e) => e.name);
-  } catch (err) {
-    logger.warn("wiki", "searchWikiContent failed to read wiki directory:", err);
-    return [];
-  }
+  // Use the page index instead of a raw directory listing.
+  const allPages = await listWikiPages();
 
-  const SKIP = new Set(["index.md", "log.md"]);
+  const SKIP = new Set(["index", "log"]);
   const scopeSlugs = scope ? new Set(scope.slugs) : null;
   // Always excludes artifacts; agent-scoped pages too when UNSCOPED (they surface
   // only via an `agent:` scope).
@@ -528,22 +518,20 @@ export async function searchWikiContent(
     score: number;
   }> = [];
 
-  for (const file of files) {
-    if (!file.endsWith(".md") || SKIP.has(file)) continue;
-    const slug = file.replace(/\.md$/, "");
+  for (const entry of allPages) {
+    if (SKIP.has(entry.slug)) continue;
 
     // Scope filtering: skip pages not in the scope's slug set
-    if (scopeSlugs && !scopeSlugs.has(slug)) continue;
+    if (scopeSlugs && !scopeSlugs.has(entry.slug)) continue;
     // Skip artifacts (always) and, when unscoped, agent-scoped pages.
-    if (excludedSlugs.has(slug)) continue;
+    if (excludedSlugs.has(entry.slug)) continue;
 
-    let content: string;
-    try {
-      content = await storage.readFile(wikiRelPath(file));
-    } catch (err) {
-      logger.warn("wiki", `searchWikiContent failed to read "${file}":`, err);
-      continue;
-    }
+    const slug = entry.slug;
+
+    // Read via readWikiPage (silo-primary after #749)
+    const page = await readWikiPage(slug);
+    if (!page) continue;
+    const content = page.content;
 
     const lower = content.toLowerCase();
 
@@ -639,26 +627,19 @@ export async function fuzzySearchWikiContent(
   // Don't bother with fuzzy if all terms are too short
   if (terms.every((t) => t.length <= 2)) return exactResults;
 
-  const storage = getStorage();
-  let files: string[];
-  try {
-    const entries = await storage.listFiles(wikiRelPath(""));
-    files = entries.map((e) => e.name);
-  } catch (err) {
-    logger.warn("wiki", "fuzzySearchWikiContent failed to read wiki directory:", err);
-    return exactResults;
-  }
+  // Use the page index instead of a raw directory listing.
+  const allPages = await listWikiPages();
 
-  const SKIP = new Set(["index.md", "log.md"]);
+  const SKIP = new Set(["index", "log"]);
   const exactSlugs = new Set(exactResults.map((r) => r.slug));
   const scopeSlugs = scope ? new Set(scope.slugs) : null;
   const excludedSlugs = await searchExcludedSlugSet(/* includeAgentScoped */ !scope);
 
   const fuzzyResults: ContentSearchResult[] = [];
 
-  for (const file of files) {
-    if (!file.endsWith(".md") || SKIP.has(file)) continue;
-    const slug = file.replace(/\.md$/, "");
+  for (const entry of allPages) {
+    if (SKIP.has(entry.slug)) continue;
+    const slug = entry.slug;
 
     // Scope filtering: skip pages not in the scope's slug set
     if (scopeSlugs && !scopeSlugs.has(slug)) continue;
@@ -668,15 +649,10 @@ export async function fuzzySearchWikiContent(
     // Skip pages already in exact results
     if (exactSlugs.has(slug)) continue;
 
-    let content: string;
-    try {
-      content = await storage.readFile(wikiRelPath(file));
-    } catch (err) {
-      if (!isEnoent(err)) {
-        logger.warn("search", `unexpected error reading wiki file "${file}":`, err);
-      }
-      continue;
-    }
+    // Read via readWikiPage (silo-primary after #749)
+    const page = await readWikiPage(slug);
+    if (!page) continue;
+    const content = page.content;
 
     if (!fuzzyMatch(query, content)) continue;
 

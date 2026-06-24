@@ -1713,6 +1713,11 @@ describe("searchWikiContent", () => {
     await writeWikiPage("machine-learning", "# Machine Learning\n\nDeep neural networks are a class of machine learning algorithms.");
     await writeWikiPage("cooking", "# Cooking\n\nHow to make pasta from scratch.");
     await writeWikiPage("ai-safety", "# AI Safety\n\nAlignment of neural networks with human values.");
+    await updateIndex([
+      { title: "Machine Learning", slug: "machine-learning", summary: "s" },
+      { title: "Cooking", slug: "cooking", summary: "s" },
+      { title: "AI Safety", slug: "ai-safety", summary: "s" },
+    ]);
 
     const results = await searchWikiContent("neural networks");
     expect(results.length).toBeGreaterThanOrEqual(2);
@@ -1723,6 +1728,7 @@ describe("searchWikiContent", () => {
 
   it("returns empty array for no matches", async () => {
     await writeWikiPage("cooking", "# Cooking\n\nHow to make pasta from scratch.");
+    await updateIndex([{ title: "Cooking", slug: "cooking", summary: "s" }]);
 
     const results = await searchWikiContent("quantum entanglement");
     expect(results).toHaveLength(0);
@@ -1730,6 +1736,7 @@ describe("searchWikiContent", () => {
 
   it("returns empty array for empty query", async () => {
     await writeWikiPage("something", "# Something\n\nContent here.");
+    await updateIndex([{ title: "Something", slug: "something", summary: "s" }]);
     const results = await searchWikiContent("");
     expect(results).toHaveLength(0);
     const results2 = await searchWikiContent("   ");
@@ -1740,6 +1747,7 @@ describe("searchWikiContent", () => {
     await writeWikiPage("index", "# Index\n\nSome index content with special keyword.");
     await writeWikiPage("log", "# Log\n\nSome log content with special keyword.");
     await writeWikiPage("real-page", "# Real Page\n\nThis has the special keyword too.");
+    await updateIndex([{ title: "Real Page", slug: "real-page", summary: "s" }]);
 
     const results = await searchWikiContent("special keyword");
     const slugs = results.map((r) => r.slug);
@@ -1750,6 +1758,7 @@ describe("searchWikiContent", () => {
 
   it("is case-insensitive", async () => {
     await writeWikiPage("test-case", "# Test Case\n\nThe QUICK Brown Fox Jumps.");
+    await updateIndex([{ title: "Test Case", slug: "test-case", summary: "s" }]);
 
     const results = await searchWikiContent("quick brown fox");
     expect(results.length).toBe(1);
@@ -1759,6 +1768,10 @@ describe("searchWikiContent", () => {
   it("ranks pages with more matching terms higher", async () => {
     await writeWikiPage("one-term", "# One Term\n\nThis has alpha only.");
     await writeWikiPage("two-terms", "# Two Terms\n\nThis has alpha and beta words.");
+    await updateIndex([
+      { title: "One Term", slug: "one-term", summary: "s" },
+      { title: "Two Terms", slug: "two-terms", summary: "s" },
+    ]);
 
     const results = await searchWikiContent("alpha beta");
     expect(results.length).toBe(2);
@@ -1770,6 +1783,9 @@ describe("searchWikiContent", () => {
     for (let i = 0; i < 5; i++) {
       await writeWikiPage(`page-${i}`, `# Page ${i}\n\nCommon keyword here.`);
     }
+    await updateIndex(
+      Array.from({ length: 5 }, (_, i) => ({ title: `Page ${i}`, slug: `page-${i}`, summary: "s" })),
+    );
 
     const results = await searchWikiContent("common keyword", 2);
     expect(results).toHaveLength(2);
@@ -1777,6 +1793,7 @@ describe("searchWikiContent", () => {
 
   it("includes snippets with match context", async () => {
     await writeWikiPage("snippet-test", "# Snippet Test\n\nThe answer to life, the universe, and everything is forty-two.");
+    await updateIndex([{ title: "Snippet Test", slug: "snippet-test", summary: "s" }]);
 
     const results = await searchWikiContent("universe");
     expect(results.length).toBe(1);
@@ -1786,6 +1803,7 @@ describe("searchWikiContent", () => {
 
   it("returns correct title from heading", async () => {
     await writeWikiPage("titled", "# My Custom Title\n\nSome searchable content.");
+    await updateIndex([{ title: "My Custom Title", slug: "titled", summary: "s" }]);
 
     const results = await searchWikiContent("searchable");
     expect(results.length).toBe(1);
