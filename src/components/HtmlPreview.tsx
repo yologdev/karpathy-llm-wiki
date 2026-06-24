@@ -140,7 +140,9 @@ export function HtmlPreview({
       // viewport (100vh) define their own scroll viewport — auto-sizing
       // feedback-loops them to absurd heights — so we fix the frame and let
       // them scroll INSIDE it, with that inner scrollbar hidden. Full-screen
-      // share (`bare`) fills the viewport; inline gets a tall contained frame.
+      // share (`bare`) fills the viewport. An inline DECK gets a landscape,
+      // slide-shaped frame (aspect-ratio, capped to the viewport) instead of a
+      // flat tall box; other inline app-style docs get a tall contained frame.
       srcDoc={composeSrcDoc(renderedHtml, chartLib, bare || appStyle, theme, deck)}
       sandbox={HTML_SANDBOX}
       title="HTML output"
@@ -148,9 +150,14 @@ export function HtmlPreview({
         width: "100%",
         height: bare
           ? "calc(100dvh - 56px)"
-          : appStyle
-            ? "80vh"
-            : height,
+          : deck
+            ? undefined // height comes from aspectRatio below
+            : appStyle
+              ? "80vh"
+              : height,
+        // Inline deck: a 16:10 slide shape, but never taller than the viewport.
+        aspectRatio: !bare && deck ? "16 / 10" : undefined,
+        maxHeight: !bare && deck ? "78vh" : undefined,
         border: bare ? "none" : "1px solid var(--rule)",
         borderRadius: bare ? 0 : 10,
         background: "var(--paper)",
