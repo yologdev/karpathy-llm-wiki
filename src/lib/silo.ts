@@ -20,8 +20,10 @@ import {
   rawRelPath,
   tenantWikiRelPath,
   tenantRawRelPath,
+  tenantForOwner,
   validateTenant,
 } from "./wiki";
+import { logger } from "./logger";
 
 async function copyText(src: string, dst: string): Promise<boolean> {
   const storage = getStorage();
@@ -153,4 +155,60 @@ export async function removeSiloForPage(
     deleteDirSafe(tenantWikiRelPath(tenant, `.revisions/${slug}`)),
     deleteDirSafe(tenantRawRelPath(tenant, `assets/${slug}`)),
   ]);
+}
+
+// ---------------------------------------------------------------------------
+// Silo reconciliation — verify and repair silo consistency
+// ---------------------------------------------------------------------------
+
+/** Summary returned by {@link reconcileSilos}. */
+export interface ReconcileResult {
+  total: number;
+  synced: number;
+  alreadyCurrent: number;
+  errors: string[];
+}
+
+/** Infrastructure slugs that are not real pages — never synced to silos. */
+const SKIP = new Set(["index", "log"]);
+
+/**
+ * Scan every page in the flat index, verify that its tenant silo copy exists,
+ * and repair any that are missing. This closes the gap left by fail-soft silo
+ * mirrors — a page whose mirror write failed silently will be re-synced here.
+ *
+ * Designed to run at the END of {@link rebuildDerivedIndexes} (it reads from
+ * flat, so all indexes should be fresh first) and is also available for the
+ * admin migrate endpoint.
+ */
+export async function reconcileSilos(): Promise<ReconcileResult> {
+  const { listWikiPages } = await import("./wiki");
+  const pages = await listWikiPages();
+  const storage = getStorage();
+  const result: ReconcileResult = {
+    total: 0,
+    synced: 0,
+    alreadyCurrent: 0,
+    errors: [],
+  };
+
+  for (const page of pages) {
+    if (SKIP.has(page.slug)) continue;
+    result.total++;
+    const tenant = tenantForOwner(page.owner);
+    try {
+      const siloPath = tenantWikiRelPath(tenant, `${page.slug}.md`);
+      const exists = await storage.fileExists(siloPath);
+      if (!exists) {
+        await syncSiloForPage(page.slug, tenant);
+        result.synced++;
+      } else {
+        result.alreadyCurrent++;
+      }
+    } catch (e) {
+      result.errors.push(`${page.slug}: ${String(e)}`);
+      logger.warn("silo", `reconcile failed for "${page.slug}":`, e);
+    }
+  }
+  return result;
 }

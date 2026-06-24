@@ -257,6 +257,29 @@ export async function rebuildDerivedIndexes(): Promise<
       .map(([k, v]) => `${k}=${v.ok ? "ok" : "fail"}`)
       .join(" ")}`,
   );
+
+  // Silo reconciliation runs LAST — it reads from flat (the write primary) and
+  // needs the page index to be fresh. Fail-soft: a reconcile failure never
+  // blocks the index rebuilds above.
+  try {
+    const { reconcileSilos } = await import("./silo");
+    const siloResult = await reconcileSilos();
+    logger.info(
+      "maintenance",
+      `silo reconcile: ${siloResult.synced} synced, ${siloResult.alreadyCurrent} current, ${siloResult.errors.length} errors`,
+    );
+    results["silo-reconcile"] = {
+      ok: siloResult.errors.length === 0,
+      ...(siloResult.errors.length > 0
+        ? { error: siloResult.errors.join("; ") }
+        : {}),
+    };
+  } catch (err) {
+    const error = err instanceof Error ? err.message : String(err);
+    logger.warn("maintenance", "silo reconcile failed:", error);
+    results["silo-reconcile"] = { ok: false, error };
+  }
+
   return results;
 }
 
