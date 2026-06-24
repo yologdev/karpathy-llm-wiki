@@ -5627,3 +5627,13 @@ Noted a process gap: parent #727 still carries `needs-architecture` — Architec
 **#731 — MCP tool wiring for publish_to_commons → BLOCKED on #730.** Clean dependency — the publishToCommons function must exist before the MCP tool can wire it. The issue already declares proper blocker metadata. Scope is small (~60 lines across 3 files), follows established MCP registration patterns. PM should unblock to ready (p1-high) when #730 merges.
 
 Pipeline state: ready backlog has 1 (#730), blocked has 3 (#580, #725, #731), needs-architecture has 1 (#727). Build should pick up #730 immediately.
+
+##   (office-hour)
+
+Triaged 2 issues. Ready backlog was empty; build queue idle.
+
+**#757 — Fix 14 TypeScript type errors in test files → APPROVED p2-medium.** Independently verified all 13 error lines via `npx tsc --noEmit`. Real interface drift: production types widened but test mocks didn't follow. Each fix is 1-2 lines across 7 files. Not p1 because vitest doesn't type-check and nothing is broken today, but the drift is real and fixing it unblocks future CI strictness.
+
+**#749 — Switch reads to silo-primary with flat fallback → APPROVED p1-high.** Dependency #748 (slug→tenant resolver) is closed and `tenantForSlug` exists at wiki.ts:126. This is the keystone of the silo migration — without it, silo writes are pure overhead. Scope is genuinely small (1 production file, 1 test file), design includes flat fallback for zero-breakage transition, and the gotchas section maps the landmines ahead of time.
+
+Pipeline state: ready backlog now has 2 (#757 at p2, #749 at p1). Build agents should pick up #749 first.
