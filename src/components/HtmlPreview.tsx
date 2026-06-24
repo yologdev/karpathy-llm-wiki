@@ -133,7 +133,15 @@ export function HtmlPreview({
     return () => window.removeEventListener("message", onMessage);
   }, []);
 
-  return (
+  // An inline deck is framed as a landscape slide. We put the aspect-ratio on a
+  // wrapper <div> and let the iframe fill it absolutely, rather than on the
+  // iframe itself: `aspect-ratio` on a replaced element (iframe) is unreliable
+  // (its intrinsic 300x150 size interferes), so a deck would otherwise fall back
+  // to a tall/odd box. The bare (full-screen share) deck keeps its own viewport
+  // sizing and is NOT wrapped.
+  const inlineDeck = !bare && deck;
+
+  const iframe = (
     <iframe
       ref={ref}
       // Document-style artifacts auto-size to content (the page scrolls, no
@@ -141,29 +149,43 @@ export function HtmlPreview({
       // viewport (100vh) define their own scroll viewport — auto-sizing
       // feedback-loops them to absurd heights — so we fix the frame and let
       // them scroll INSIDE it, with that inner scrollbar hidden. Full-screen
-      // share (`bare`) fills the viewport. An inline DECK gets a landscape,
-      // slide-shaped frame (aspect-ratio, capped to the viewport) instead of a
-      // flat tall box; other inline app-style docs get a tall contained frame.
+      // share (`bare`) fills the viewport. An inline deck fills its slide-shaped
+      // wrapper (below). Other inline app-style docs get a tall contained frame.
       srcDoc={composeSrcDoc(renderedHtml, chartLib, bare || appStyle, theme, deck)}
       sandbox={HTML_SANDBOX}
       title="HTML output"
       style={{
         width: "100%",
-        height: bare
-          ? "calc(100dvh - 56px)"
-          : deck
-            ? undefined // height comes from aspectRatio below
+        height: inlineDeck
+          ? "100%" // fills the aspect-ratio wrapper
+          : bare
+            ? "calc(100dvh - 56px)"
             : appStyle
               ? "80vh"
               : height,
-        // Inline deck: a 16:10 slide shape, but never taller than the viewport.
-        aspectRatio: !bare && deck ? "16 / 10" : undefined,
-        maxHeight: !bare && deck ? "78vh" : undefined,
+        position: inlineDeck ? "absolute" : undefined,
+        inset: inlineDeck ? 0 : undefined,
         border: bare ? "none" : "1px solid var(--rule)",
         borderRadius: bare ? 0 : 10,
         background: "var(--paper)",
         display: "block",
       }}
     />
+  );
+
+  if (!inlineDeck) return iframe;
+
+  // Inline deck: a 16:10 slide shape, capped so it's never taller than the viewport.
+  return (
+    <div
+      style={{
+        position: "relative",
+        width: "100%",
+        aspectRatio: "16 / 10",
+        maxHeight: "78vh",
+      }}
+    >
+      {iframe}
+    </div>
   );
 }
