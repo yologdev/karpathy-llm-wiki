@@ -80,8 +80,8 @@ export const SLIDES_FORMAT_INSTRUCTION = `Format your answer as a SELF-CONTAINED
 
 OUTPUT
 - Output ONLY HTML: start with \`<!doctype html>\` and a full \`<html>\`/\`<head>\`/\`<body>\`. No markdown, no \`\`\`html fence, no prose before/after.
-- Each slide is ONE \`<section class="slide">…</section>\` element. A navigable deck runtime (one slide at a time, ←/→ keys, a slide counter and progress bar) is ALREADY injected — do NOT add your own slide/navigation script or CSS for it.
-- A polished baseline stylesheet AND the Chart.js library are ALREADY injected. Do NOT add any \`<link>\`, \`<script src>\`, CDN URL, or web font. You MAY add inline \`<style>\`.
+- Each slide is ONE \`<section class="slide">…</section>\` element. A navigable deck runtime (one slide at a time, full-viewport, ←/→ keys, a slide counter and progress bar) is ALREADY injected — do NOT add your own slide/navigation script, and do NOT write any CSS that targets \`.slide\` or sizes \`html\`/\`body\` (the runtime owns slide layout; redefining \`.slide\` breaks the deck so every slide stacks at once).
+- A polished baseline stylesheet AND the Chart.js library are ALREADY injected. Do NOT add any \`<link>\`, \`<script src>\`, CDN URL, or web font. You MAY add a small inline \`<style>\` for per-element accents only (NOT slide layout).
 
 SLIDES — aim for 5-8 total, ONE idea per slide
 - First slide: a title — \`<h1>\` + a \`<p class="lead">\` one-line framing.
@@ -92,7 +92,7 @@ VISUALS — make slides rich (all components are pre-styled — just use the cla
 - \`<div class="grid"> <div class="card">…</div> … </div>\` — card grid; \`<div class="stat"><span class="num">87%</span><span class="label">caption</span></div>\` — big-number stats; \`<div class="callout">…</div>\`, \`<span class="badge">tag</span>\`, \`<blockquote>\`, \`<table>\`.
 - CHARTS (data): a Chart.js chart in \`<figure><div class="chart"><canvas id="c1"></canvas></div></figure>\` + an inline \`<script>new Chart(...)</script>\` with \`responsive:true, maintainAspectRatio:false\`. Palette: \`#4d6bfe,#11a36b,#e8893a,#9b59d0,#d24d6b,#3aa6c4\`.
 - DIAGRAMS (structure — flow/architecture/sequence): a Mermaid diagram in \`<pre class="mermaid">graph TD; A--&gt;B</pre>\` (no fence, no script). Keep node labels short.
-- Include **exactly one** hand-drawn **yoyo illustration**, on the single slide where a metaphor/judgment/before-after lands better as a picture. Add an EMPTY figure carrying the scene: \`<figure class="yoyo-illustration" data-scene="A short scene: what the yoyo octopus is doing with its tentacles to express the idea, plus 2-4 short labels"></figure>\` (leave it empty — no \`<img>\`). One only; for feeling/metaphor, not data/structure.`;
+- Include **exactly one** hand-drawn **yoyo illustration**, on the single slide where a metaphor/judgment/before-after lands better as a picture. Request it EXACTLY as on an HTML article page: an EMPTY figure carrying the scene — \`<figure class="yoyo-illustration" data-scene="A short scene: what the yoyo octopus is doing with its tentacles to express the idea, plus 2-4 short labels"></figure>\` — which is replaced by a generated image automatically. Leave it empty: NO \`<img>\`, and NEVER draw the illustration yourself with emoji, CSS gradients, or \`::before\`/\`::after\` art. One only; for feeling/metaphor, not data/structure.`;
 
 /**
  * Extra system-prompt instruction appended when the caller requests an HTML

@@ -109,6 +109,11 @@ tr:hover td{background:var(--paper-2)}
 .stat .label{font-size:.8rem;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)}
 .badge{display:inline-block;font-size:.78rem;font-weight:600;padding:2px 9px;border-radius:999px;background:var(--accent-soft);color:var(--accent);border:1px solid var(--rule)}
 figure{margin:1.6em 0}figure.yoyo-illustration{max-width:var(--measure);margin-left:auto;margin-right:auto;text-align:center}figure>figcaption{font-size:.85rem;color:var(--muted);margin-top:.5em;text-align:center}
+/* The yoyo illustration is a BAKED img (generated server-side); the class is
+   ours. Some models try to "draw" it themselves with emoji + CSS gradient
+   pseudo-elements layered on the figure — kill those so only the real image
+   shows. The important flag beats the model's own style, injected after this. */
+figure.yoyo-illustration::before,figure.yoyo-illustration::after{content:none!important;display:none!important}
 .chart{position:relative;height:340px}
 details{border:1px solid var(--rule);border-radius:var(--radius);padding:0 16px;margin:1em 0;background:var(--paper-2)}
 details[open]{padding-bottom:8px}
@@ -206,8 +211,12 @@ export function usesViewportUnits(html: string): boolean {
 // slide), so a deck is as rich as an article.
 const DECK_STYLE = `<style>
 html,body{height:100%;margin:0;overflow:hidden}
-.slide{position:absolute;inset:0;display:none;flex-direction:column;justify-content:safe center;gap:.35em;padding:clamp(28px,4.5vh,56px) clamp(40px,6vw,84px);box-sizing:border-box;overflow:auto}
-.slide.active{display:flex}
+/* The important flag on the make-or-break layout props (full-viewport, one at a
+   time) so the deck still works if the model emits its own .slide rule — its
+   style is injected after this one and would otherwise win at equal
+   specificity, stacking every slide on top of each other. */
+.slide{position:absolute!important;inset:0!important;display:none!important;flex-direction:column;justify-content:safe center;gap:.35em;padding:clamp(28px,4.5vh,56px) clamp(40px,6vw,84px);box-sizing:border-box;overflow:auto}
+.slide.active{display:flex!important}
 .slide>*{max-width:100%;margin-top:.25em;margin-bottom:.25em}
 .slide h1{font-size:clamp(2rem,5.2vw,3.4rem);margin:.1em 0;border:0;padding:0}
 .slide h2{font-size:clamp(1.4rem,3.4vw,2.1rem);margin:.1em 0;border:0;padding:0}
