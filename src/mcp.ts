@@ -50,6 +50,7 @@
  *   list_vaults        — List all named vaults for a user
  *   vault_pages        — List enriched page entries curated into a named vault
  *   maintenance_scan   — Scan the wiki for maintenance tasks (read-only health check)
+ *   activity_trail     — View recent wiki activity (ingests, re-ingests, edits) with actor attribution
  *
  * Usage:
  *   pnpm mcp          # starts the stdio server
@@ -98,6 +99,7 @@ import { reconcileFromTalk, type ReconcileFromTalkResult } from "./lib/reconcile
 import { buildWikiGraph, type GraphNode, type GraphEdge } from "./lib/graph-build";
 import { mergePages, type MergePagesResult } from "./lib/merge";
 import { scanForMaintenance } from "./lib/maintenance";
+import { getTrail, type TrailEvent } from "./lib/trail";
 import { publishToCommons } from "./lib/publish";
 import { logger } from "./lib/logger";
 import type { TalkThread, TalkComment } from "./lib/types";
@@ -1445,6 +1447,18 @@ export async function handleIngestHistory(args: {
   const limit = args.limit ?? 50;
   const entries = await readLedger(limit);
   return { entries };
+}
+
+// ---------------------------------------------------------------------------
+// Activity trail handler
+// ---------------------------------------------------------------------------
+
+export async function handleActivityTrail(args: {
+  limit?: number | undefined;
+}): Promise<{ events: TrailEvent[] }> {
+  const limit = args.limit ?? 20;
+  const events = await getTrail(limit);
+  return { events };
 }
 
 export async function handleDataviewQuery(args: {
@@ -3717,6 +3731,50 @@ export function createMcpServer(): McpServer {
   }, async (args) => {
     try {
       const result = await handleMaintenanceScan(args);
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: JSON.stringify(result, null, 2),
+          },
+        ],
+      };
+    } catch (err) {
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: (err as Error).message,
+          },
+        ],
+        isError: true,
+      };
+    }
+  });
+
+  // activity_trail — View recent wiki activity (ingests, re-ingests, edits)
+  server.registerTool("activity_trail", {
+    description:
+      "View recent wiki activity — ingests, re-ingests, and edits — with timestamps and actor attribution. " +
+      "Returns a JSON array of TrailEvent objects sorted by most recent first. " +
+      "Each event includes ts (epoch ms), when (ISO date), actor, action, slug, and title.",
+    inputSchema: {
+      limit: z
+        .number()
+        .int()
+        .positive()
+        .optional()
+        .describe("Maximum number of events to return (default: 20)"),
+    },
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+  }, async (args) => {
+    try {
+      const result = await handleActivityTrail(args);
       return {
         content: [
           {

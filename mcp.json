@@ -53,6 +53,7 @@
     "vault_delete",
     "list_vaults",
     "vault_pages",
-    "maintenance_scan"
+    "maintenance_scan",
+    "activity_trail"
   ]
 }
