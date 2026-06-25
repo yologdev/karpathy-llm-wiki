@@ -606,6 +606,10 @@ const X_URL_PATTERN = /^https?:\/\/(www\.)?(x\.com|twitter\.com)\//i;
 export async function handleIngestXMention(args: {
   url: string;
   triggered_by: string;
+  owner?: string;
+  tags?: string[];
+  triggeredBy?: string;
+  vaultId?: string;
 }): Promise<{
   slug: string;
   title: string;
@@ -624,10 +628,16 @@ export async function handleIngestXMention(args: {
     throw new Error("triggered_by is required and must be a non-empty string");
   }
 
+  const effectiveOwner = args.owner?.trim() || args.triggered_by.trim();
+
   const result: IngestResult = await ingestXMention(
     args.url.trim(),
-    args.triggered_by.trim(),
-    { author: args.triggered_by.trim(), owner: args.triggered_by.trim() },
+    args.triggeredBy?.trim() || args.triggered_by.trim(),
+    {
+      author: effectiveOwner,
+      owner: effectiveOwner,
+      ...(args.tags && args.tags.length > 0 ? { tags: args.tags } : {}),
+    },
   );
 
   // Read the written page to extract title and summary for the response
@@ -637,6 +647,10 @@ export async function handleIngestXMention(args: {
     ? extractSummary(page.body)
     : `Ingested from ${args.url}`;
 
+  if (args.vaultId) {
+    try { await addToVault(args.vaultId, result.primarySlug); }
+    catch (err) { logger.warn("mcp", `vault filing failed: ${(err as Error).message}`); }
+  }
   return {
     slug: result.primarySlug,
     title,
@@ -2087,6 +2101,13 @@ export function createMcpServer(): McpServer {
     inputSchema: {
       url: z.string().describe("X/Twitter URL to ingest (must be an x.com or twitter.com URL)"),
       triggered_by: z.string().describe("Handle of the user who triggered the mention (e.g. '@username')"),
+      owner: z.string().optional().describe("Owner handle — the accountable principal for the resulting page. Falls back to triggered_by if omitted."),
+      tags: z
+        .array(z.string())
+        .optional()
+        .describe("Optional tags to apply to the created page"),
+      triggeredBy: z.string().optional().describe("Handle of the user or agent that triggered this ingest (for provenance tracking). Falls back to triggered_by if omitted."),
+      vaultId: z.string().optional().describe("Optional vault ID — if provided, the ingested page is automatically curated into this vault"),
     },
     annotations: {
       readOnlyHint: false,

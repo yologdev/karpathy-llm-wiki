@@ -531,7 +531,7 @@ export async function reingest(
 export async function ingestXMention(
   url: string,
   triggeredBy: string,
-  opts?: { author?: string; owner?: string },
+  opts?: { author?: string; owner?: string; tags?: string[] },
 ): Promise<IngestResult> {
   return ingestUrl(url, {
     sourceType: "x-mention",
