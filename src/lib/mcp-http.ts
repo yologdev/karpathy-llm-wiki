@@ -31,6 +31,7 @@ import {
   handleSaveQueryAnswer,
   handleMaintenanceScan,
   handlePublishToCommons,
+  handleUpdateMetadata,
 } from "@/mcp";
 import { readWikiPageWithFrontmatter } from "@/lib/wiki";
 import { canWriteFrontmatter } from "@/lib/authz";
@@ -292,6 +293,31 @@ export const MCP_TOOLS: ToolDef[] = [
       handlePublishToCommons(
         a as Parameters<typeof handlePublishToCommons>[0],
       ),
+  },
+  {
+    name: "update_metadata",
+    description:
+      "Update a wiki page's frontmatter metadata (confidence, disputed, tags, aliases, expiry) " +
+      "without modifying the page body. Lifecycle-managed fields (created, authors, sources) are rejected.",
+    inputSchema: schema(
+      {
+        slug: str("Slug of the page to update"),
+        metadata: {
+          type: "object",
+          description:
+            "Object of metadata fields to update. Allowed: confidence, disputed, tags, aliases, expiry, valid_from, supersedes, visibility.",
+          additionalProperties: true,
+        },
+      },
+      ["slug", "metadata"],
+    ),
+    write: true,
+    run: (a, p) =>
+      handleUpdateMetadata({
+        ...(a as { slug: string; metadata: Record<string, unknown> }),
+        author: p!.handle,
+        principal: p,
+      }),
   },
 ];
 

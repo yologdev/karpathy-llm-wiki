@@ -364,16 +364,21 @@ export async function handleUpdateMetadata(args: {
   slug: string;
   metadata: Record<string, unknown>;
   author?: string;
+  principal?: Principal | null;
 }): Promise<PatchMetadataResult> {
+  // When an explicit principal is provided (e.g. HTTP MCP surface), use it for
+  // the real ACL check — defense-in-depth, same pattern as handleUpdatePage
+  // and handleDeletePage. When none is provided (stdio MCP, deployment-trusted),
+  // fall back to a service principal so existing callers aren't broken.
+  const principal: Principal | null =
+    args.principal !== undefined
+      ? args.principal
+      : { id: "service:mcp", handle: args.author ?? "system" };
   return patchMetadata({
     slug: args.slug,
     metadata: args.metadata,
     author: args.author,
-    // MCP is deployment-trusted (stdio-only). Act as a service principal so the
-    // realm-aware write ACL admits metadata patches on private pages (setting
-    // visibility:private stays paid-gated via canSetPrivate, which rejects
-    // service principals — unchanged from before).
-    principal: { id: "service:mcp", handle: args.author ?? "system" },
+    principal,
   });
 }
 

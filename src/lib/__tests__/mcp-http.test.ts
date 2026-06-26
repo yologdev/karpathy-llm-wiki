@@ -128,7 +128,7 @@ describe("dispatchMcp — tools/call auth gating", () => {
     const writes = MCP_TOOLS.filter((t) => t.write).map((t) => t.name);
     const reads = MCP_TOOLS.filter((t) => !t.write).map((t) => t.name);
     expect(writes).toEqual(
-      expect.arrayContaining(["ingest_url", "ingest_text", "create_page", "save_query_answer", "reingest"]),
+      expect.arrayContaining(["ingest_url", "ingest_text", "create_page", "save_query_answer", "reingest", "update_metadata"]),
     );
     expect(reads).toEqual(
       expect.arrayContaining(["search_wiki", "read_page", "list_pages", "query_wiki"]),
@@ -203,5 +203,56 @@ describe("dispatchMcp — per-agent target vault", () => {
     expect(r.isError).toBeFalsy();
     const { readWikiPage } = await import("../wiki");
     expect(await readWikiPage("still-created")).not.toBeNull();
+  });
+});
+
+describe("dispatchMcp — update_metadata", () => {
+  it("tools/list returns update_metadata", async () => {
+    const res = await dispatchMcp({ id: 1, method: "tools/list" }, null);
+    const tools = (res!.result as { tools: { name: string }[] }).tools;
+    expect(tools.map((t) => t.name)).toContain("update_metadata");
+  });
+
+  it("rejects update_metadata without auth (write-gated)", async () => {
+    const res = await dispatchMcp(
+      {
+        id: 1,
+        method: "tools/call",
+        params: { name: "update_metadata", arguments: { slug: "test", metadata: { disputed: true } } },
+      },
+      null,
+    );
+    const r = res!.result as { isError?: boolean; content: { text: string }[] };
+    expect(r.isError).toBe(true);
+    expect(r.content[0].text).toMatch(/authentication required/i);
+  });
+
+  it("forwards the principal to patchMetadata (updates metadata on an owned page)", async () => {
+    // Create a page owned by alice first.
+    const { writeWikiPage, serializeFrontmatter } = await import("../wiki");
+    const fm = { title: "Meta Test", owner: "alice", created: "2025-01-01" };
+    await writeWikiPage("meta-test", serializeFrontmatter(fm, "# Meta Test\n\nBody."));
+
+    const res = await dispatchMcp(
+      {
+        id: 1,
+        method: "tools/call",
+        params: {
+          name: "update_metadata",
+          arguments: { slug: "meta-test", metadata: { disputed: true, confidence: 0.5 } },
+        },
+      },
+      ALICE,
+    );
+    const r = res!.result as { isError?: boolean; content: { text: string }[] };
+    expect(r.isError).toBeFalsy();
+    const parsed = JSON.parse(r.content[0].text);
+    expect(parsed.updated).toBe(true);
+
+    // Verify the metadata was actually applied.
+    const { readWikiPageWithFrontmatter: readFm } = await import("../wiki");
+    const page = await readFm("meta-test");
+    expect(page!.frontmatter.disputed).toBe(true);
+    expect(page!.frontmatter.confidence).toBe(0.5);
   });
 });
