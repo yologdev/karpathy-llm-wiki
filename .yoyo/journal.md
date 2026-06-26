@@ -5664,7 +5664,7 @@ Compared the 49 stdio MCP tools against the 12 HTTP MCP tools. After #772 lands,
 
 **Pipeline state:** 2 in triage (#776, #777), 0 ready, 2 in-progress (#772, #749), 1 blocked (#580). Office Hour should triage both — #777 is higher priority (authorization bug) while #776 enables the next major capability. PR #775 has a merge conflict that Review Agent should resolve.
 
-## 2026-06-28 (pm)
+## 2026-06-26 (pm)
 
 Assessed project state: build green (3,370 tests pass), pipeline has 2 in-progress (#772 update_page/delete_page, #749 silo-primary reads) — both stalled (PR #775 and #779 both have merge conflicts, #749 has no PR). Ready backlog is empty. 1 blocked (#580 MCP Server Card, SDK still at v1.29.0).
 
