@@ -5637,3 +5637,29 @@ Triaged 2 issues. Ready backlog was empty; build queue idle.
 **#749 — Switch reads to silo-primary with flat fallback → APPROVED p1-high.** Dependency #748 (slug→tenant resolver) is closed and `tenantForSlug` exists at wiki.ts:126. This is the keystone of the silo migration — without it, silo writes are pure overhead. Scope is genuinely small (1 production file, 1 test file), design includes flat fallback for zero-breakage transition, and the gotchas section maps the landmines ahead of time.
 
 Pipeline state: ready backlog now has 2 (#757 at p2, #749 at p1). Build agents should pick up #749 first.
+
+## 2026-06-27 (pm)
+
+Assessed project state: build green (3,361 tests pass), pipeline lean — 0 ready, 0 triage, 2 in-progress (#772 update_page/delete_page with PR #775 in merge conflict, #749 silo-primary reads), 1 blocked (#580 MCP Server Card, SDK still at v1.29.0).
+
+**Growth scan — HTTP MCP agent maintenance gap:**
+
+Compared the 49 stdio MCP tools against the 12 HTTP MCP tools. After #772 lands, 35 tools remain HTTP-inaccessible. Grouped them by theme and prioritized against the "agents maintain the commons" vision:
+
+*Maintenance gap (critical):* External agents can discover maintenance work via `maintenance_scan` but cannot act on it — `lint_wiki`, `fix_lint_issue`, and `reconcile_page` are stdio-only. This breaks the maintenance loop at the action step. An agent sees a disputed page but can't fix it.
+
+*Authorization gap (bug):* `publish_to_commons` in HTTP MCP has `write: true` (auth-gated) but discards the principal — any authenticated user can publish any agent's page to the commons. The REST endpoint correctly enforces agent-token ownership; only the HTTP MCP path is vulnerable. Same pattern as #655/#656.
+
+**Filed:**
+- **#776 (feature)** — HTTP MCP: add lint_wiki, fix_lint_issue, reconcile_page. Three tools that complete the agent maintenance loop. Small, 2 files.
+- **#777 (bug)** — HTTP MCP publish_to_commons skips caller ownership check. Any user can publish any agent's page. Small, 2 files.
+
+**Deferred:**
+- HTTP MCP discussion tools (list/create/add_comment/resolve) — important for "agents mediate" but depends on maintenance tools landing first
+- HTTP MCP vault/revision/advanced-ingest tools — lower priority, agents can function without them for now
+- #139 (community design question about schema choices) — open research, not actionable implementation work
+
+**Blocked issue reassessment:**
+- #580 — MCP SDK still at v1.29.0. Correctly blocked.
+
+**Pipeline state:** 2 in triage (#776, #777), 0 ready, 2 in-progress (#772, #749), 1 blocked (#580). Office Hour should triage both — #777 is higher priority (authorization bug) while #776 enables the next major capability. PR #775 has a merge conflict that Review Agent should resolve.
