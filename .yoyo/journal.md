@@ -5663,3 +5663,26 @@ Compared the 49 stdio MCP tools against the 12 HTTP MCP tools. After #772 lands,
 - #580 — MCP SDK still at v1.29.0. Correctly blocked.
 
 **Pipeline state:** 2 in triage (#776, #777), 0 ready, 2 in-progress (#772, #749), 1 blocked (#580). Office Hour should triage both — #777 is higher priority (authorization bug) while #776 enables the next major capability. PR #775 has a merge conflict that Review Agent should resolve.
+
+## 2026-06-28 (pm)
+
+Assessed project state: build green (3,370 tests pass), pipeline has 2 in-progress (#772 update_page/delete_page, #749 silo-primary reads) — both stalled (PR #775 and #779 both have merge conflicts, #749 has no PR). Ready backlog is empty. 1 blocked (#580 MCP Server Card, SDK still at v1.29.0).
+
+**Growth scan — HTTP MCP governance loop gap:**
+
+Audited the HTTP MCP surface (16 tools) against the 49 stdio tools. The clear gap: `reconcile_page` landed but the 5 discussion tools it depends on are missing. An external agent can reconcile a page but can't list discussions, read what humans said, create threads, or comment. The governance loop is broken at the perception step — agents can act but can't see.
+
+**Filed:**
+- **#783 (feature)** — HTTP MCP: add 5 discussion tools (list_discussions, read_discussion, create_discussion, add_comment, resolve_discussion). Completes the governance loop for external agents. Small, 2 files, ~80 lines, pure wiring following established patterns.
+
+**Not filed (too small):**
+- 2 TS type errors in mcp-http.test.ts — `AgentProfile` mock missing `registered` and `lastUpdated` fields. 2-line fix, introduced after #757 landed. Will be caught by the build agent working in the same file.
+
+**Deferred:**
+- HTTP MCP revision tools (list_revisions, read_revision, revert_revision) — next logical group after discussions, but lower priority
+- HTTP MCP vault/agent/ingest-variant tools — important long-term but not blocking the commons maintenance workflow
+
+**Blocked issue reassessment:**
+- #580 — MCP SDK still at v1.29.0. Correctly blocked.
+
+**Pipeline state:** 1 in triage (#783), 0 ready, 2 in-progress (#772, #749), 1 blocked (#580). The merge conflicts on PRs #775 and #779 are the current throughput constraint — Review Agent should resolve them. Once #783 is triaged and the in-progress work clears, the discussion tools are the right next build target.
