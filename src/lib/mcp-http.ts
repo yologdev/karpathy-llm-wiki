@@ -36,6 +36,7 @@ import {
 import { readWikiPageWithFrontmatter } from "@/lib/wiki";
 import { canWriteFrontmatter } from "@/lib/authz";
 import { addToVault } from "@/lib/vault";
+import { getAgent } from "@/lib/agents";
 import { logger } from "@/lib/logger";
 import type { Principal } from "@/lib/auth";
 
@@ -289,10 +290,18 @@ export const MCP_TOOLS: ToolDef[] = [
       ["slug", "agentId"],
     ),
     write: true,
-    run: (a, _p) =>
-      handlePublishToCommons(
-        a as Parameters<typeof handlePublishToCommons>[0],
-      ),
+    run: async (a, p) => {
+      const args = a as Parameters<typeof handlePublishToCommons>[0];
+      // Verify the caller owns the agent whose page is being published.
+      const agent = await getAgent(args.agentId);
+      if (!agent) throw new Error(`Agent not found: ${args.agentId}`);
+      if (!agent.owner || agent.owner !== p!.handle) {
+        throw new Error(
+          `Ownership mismatch: only the agent's owner can publish its pages to the commons.`,
+        );
+      }
+      return handlePublishToCommons(args);
+    },
   },
   {
     name: "update_metadata",

@@ -13,9 +13,11 @@ import {
 import { ensureDirectories } from "../wiki";
 import { _resetStorage } from "../storage";
 import { createVault, vaultSlugs } from "../vault";
+import { registerAgent } from "../agents";
 import type { Principal } from "../auth";
 
 const ALICE: Principal = { id: "agent:a--yoyo", handle: "alice" };
+const BOB: Principal = { id: "user:bob", handle: "bob" };
 
 // Most cases exercise the JSON-RPC envelope + auth gating, which need no
 // storage/LLM (a write tool is rejected BEFORE its handler runs when there's no
@@ -254,5 +256,97 @@ describe("dispatchMcp — update_metadata", () => {
     const page = await readFm("meta-test");
     expect(page!.frontmatter.disputed).toBe(true);
     expect(page!.frontmatter.confidence).toBe(0.5);
+  });
+});
+
+describe("dispatchMcp — publish_to_commons ownership check", () => {
+  it("rejects publish_to_commons when caller does not own the agent", async () => {
+    // Register an agent owned by alice.
+    await registerAgent({
+      id: "alice--yoyo",
+      name: "yoyo",
+      description: "Alice's agent",
+      owner: "alice",
+      identityPages: [],
+      learningPages: [],
+      socialPages: [],
+    });
+
+    // Bob tries to publish alice's agent page — should be rejected.
+    const res = await dispatchMcp(
+      {
+        id: 1,
+        method: "tools/call",
+        params: {
+          name: "publish_to_commons",
+          arguments: { slug: "some-page", agentId: "alice--yoyo" },
+        },
+      },
+      BOB,
+    );
+    const r = res!.result as { isError?: boolean; content: { text: string }[] };
+    expect(r.isError).toBe(true);
+    expect(r.content[0].text).toMatch(/ownership mismatch/i);
+  });
+
+  it("allows publish_to_commons when caller owns the agent", async () => {
+    // Register an agent owned by alice.
+    await registerAgent({
+      id: "alice--yoyo",
+      name: "yoyo",
+      description: "Alice's agent",
+      owner: "alice",
+      identityPages: [],
+      learningPages: [],
+      socialPages: [],
+    });
+
+    // Create an agent-knowledge page owned by the agent.
+    const { writeWikiPage, serializeFrontmatter } = await import("../wiki");
+    const fm = {
+      title: "Agent Knowledge",
+      owner: "alice--yoyo",
+      type: "agent-knowledge",
+      created: "2025-01-01",
+    };
+    await writeWikiPage(
+      "agent-topic",
+      serializeFrontmatter(fm, "# Agent Knowledge\n\nBody."),
+    );
+
+    // Alice (the agent's owner) publishes — should succeed.
+    const res = await dispatchMcp(
+      {
+        id: 1,
+        method: "tools/call",
+        params: {
+          name: "publish_to_commons",
+          arguments: { slug: "agent-topic", agentId: "alice--yoyo" },
+        },
+      },
+      ALICE,
+    );
+    const r = res!.result as { isError?: boolean; content: { text: string }[] };
+    expect(r.isError).toBeFalsy();
+    const parsed = JSON.parse(r.content[0].text);
+    expect(parsed.published).toBe(true);
+    expect(parsed.owner).toBe("alice");
+  });
+
+  it("rejects publish_to_commons for a nonexistent agent", async () => {
+    const res = await dispatchMcp(
+      {
+        id: 1,
+        method: "tools/call",
+        params: {
+          name: "publish_to_commons",
+          arguments: { slug: "some-page", agentId: "ghost--yoyo" },
+        },
+      },
+      ALICE,
+    );
+    const r = res!.result as { isError?: boolean; content: { text: string }[] };
+    expect(r.isError).toBe(true);
+    expect(r.content[0].text).toMatch(/agent not found/i);
   });
 });
