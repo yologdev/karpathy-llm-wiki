@@ -35,6 +35,11 @@ import {
   handleLintWiki,
   handleFixLintIssue,
   handleReconcilePage,
+  handleListDiscussions,
+  handleReadDiscussion,
+  handleCreateDiscussion,
+  handleAddComment,
+  handleResolveDiscussion,
 } from "@/mcp";
 import { readWikiPageWithFrontmatter } from "@/lib/wiki";
 import { canWriteFrontmatter } from "@/lib/authz";
@@ -383,6 +388,92 @@ export const MCP_TOOLS: ToolDef[] = [
         ...(a as { pageSlug: string; threadIndex: number }),
         author: p!.handle,
       }),
+  },
+  // -- Discussion tools ---------------------------------------------------
+  {
+    name: "list_discussions",
+    description:
+      "List all discussion threads for a wiki page (public, read-only).",
+    inputSchema: schema(
+      { pageSlug: str("Slug of the wiki page to list discussions for") },
+      ["pageSlug"],
+    ),
+    write: false,
+    run: (a) =>
+      handleListDiscussions(a as Parameters<typeof handleListDiscussions>[0]),
+  },
+  {
+    name: "read_discussion",
+    description:
+      "Read a single discussion thread with full comment bodies (public, read-only). " +
+      "Use list_discussions first to discover thread indices.",
+    inputSchema: schema(
+      {
+        pageSlug: str("Slug of the wiki page the discussion belongs to"),
+        threadIndex: { type: "number", description: "Zero-based index of the thread (from list_discussions)" },
+      },
+      ["pageSlug", "threadIndex"],
+    ),
+    write: false,
+    run: (a) =>
+      handleReadDiscussion(a as Parameters<typeof handleReadDiscussion>[0]),
+  },
+  {
+    name: "create_discussion",
+    description:
+      "Start a new discussion thread on a wiki page for editorial discussion.",
+    inputSchema: schema(
+      {
+        pageSlug: str("Slug of the wiki page to discuss"),
+        title: str("Title of the discussion thread"),
+        body: str("Opening comment body (markdown)"),
+      },
+      ["pageSlug", "title", "body"],
+    ),
+    write: true,
+    run: (a, p) =>
+      handleCreateDiscussion({
+        ...(a as { pageSlug: string; title: string; body: string }),
+        author: p!.handle,
+      }),
+  },
+  {
+    name: "add_comment",
+    description:
+      "Add a comment to an existing discussion thread on a wiki page.",
+    inputSchema: schema(
+      {
+        pageSlug: str("Slug of the wiki page the discussion belongs to"),
+        threadIndex: { type: "number", description: "Zero-based index of the thread" },
+        content: str("Comment body (markdown)"),
+        parentId: str("Optional parent comment ID for threaded replies"),
+      },
+      ["pageSlug", "threadIndex", "content"],
+    ),
+    write: true,
+    run: (a, p) =>
+      handleAddComment({
+        ...(a as { pageSlug: string; threadIndex: number; content: string; parentId?: string }),
+        author: p!.handle,
+      }),
+  },
+  {
+    name: "resolve_discussion",
+    description:
+      "Resolve a discussion thread on a wiki page (mark as resolved or wontfix).",
+    inputSchema: schema(
+      {
+        pageSlug: str("Slug of the wiki page the discussion belongs to"),
+        threadIndex: { type: "number", description: "Zero-based index of the thread" },
+        resolution: str("Resolution status: open | resolved | wontfix"),
+      },
+      ["pageSlug", "threadIndex", "resolution"],
+    ),
+    write: true,
+    run: (a, _p) =>
+      handleResolveDiscussion(
+        a as Parameters<typeof handleResolveDiscussion>[0],
+      ),
   },
 ];
 

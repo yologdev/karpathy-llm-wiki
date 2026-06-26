@@ -418,3 +418,178 @@ describe("dispatchMcp — reconcile_page", () => {
     expect(r.content[0].text).toMatch(/authentication required/i);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Discussion tools
+// ---------------------------------------------------------------------------
+
+describe("dispatchMcp — list_discussions", () => {
+  it("tools/list returns list_discussions", async () => {
+    const res = await dispatchMcp({ id: 1, method: "tools/list" }, null);
+    const tools = (res!.result as { tools: { name: string }[] }).tools;
+    expect(tools.map((t) => t.name)).toContain("list_discussions");
+  });
+
+  it("list_discussions works without auth (read-only)", async () => {
+    const res = await dispatchMcp(
+      {
+        id: 1,
+        method: "tools/call",
+        params: { name: "list_discussions", arguments: { pageSlug: "nonexistent" } },
+      },
+      null,
+    );
+    const r = res!.result as { isError?: boolean; content: { text: string }[] };
+    expect(r.isError).toBeFalsy();
+    const parsed = JSON.parse(r.content[0].text);
+    expect(parsed.pageSlug).toBe("nonexistent");
+    expect(parsed.threads).toEqual([]);
+  });
+});
+
+describe("dispatchMcp — read_discussion", () => {
+  it("tools/list returns read_discussion", async () => {
+    const res = await dispatchMcp({ id: 1, method: "tools/list" }, null);
+    const tools = (res!.result as { tools: { name: string }[] }).tools;
+    expect(tools.map((t) => t.name)).toContain("read_discussion");
+  });
+
+  it("read_discussion works without auth (read-only, returns error for missing thread)", async () => {
+    const res = await dispatchMcp(
+      {
+        id: 1,
+        method: "tools/call",
+        params: { name: "read_discussion", arguments: { pageSlug: "test", threadIndex: 0 } },
+      },
+      null,
+    );
+    const r = res!.result as { isError?: boolean; content: { text: string }[] };
+    // Handler throws for missing thread — surfaced as isError tool result, NOT a 401.
+    expect(r.isError).toBe(true);
+    expect(r.content[0].text).toMatch(/thread not found/i);
+  });
+});
+
+describe("dispatchMcp — create_discussion", () => {
+  it("tools/list returns create_discussion", async () => {
+    const res = await dispatchMcp({ id: 1, method: "tools/list" }, null);
+    const tools = (res!.result as { tools: { name: string }[] }).tools;
+    expect(tools.map((t) => t.name)).toContain("create_discussion");
+  });
+
+  it("rejects create_discussion without auth (write-gated)", async () => {
+    const res = await dispatchMcp(
+      {
+        id: 1,
+        method: "tools/call",
+        params: {
+          name: "create_discussion",
+          arguments: { pageSlug: "test", title: "Bug?", body: "Something looks wrong" },
+        },
+      },
+      null,
+    );
+    const r = res!.result as { isError?: boolean; content: { text: string }[] };
+    expect(r.isError).toBe(true);
+    expect(r.content[0].text).toMatch(/authentication required/i);
+  });
+
+  it("sets author from principal handle when authenticated", async () => {
+    const res = await dispatchMcp(
+      {
+        id: 1,
+        method: "tools/call",
+        params: {
+          name: "create_discussion",
+          arguments: { pageSlug: "test-page", title: "Question", body: "Is this right?" },
+        },
+      },
+      ALICE,
+    );
+    const r = res!.result as { isError?: boolean; content: { text: string }[] };
+    expect(r.isError).toBeFalsy();
+    const parsed = JSON.parse(r.content[0].text);
+    expect(parsed.comments[0].author).toBe("alice");
+  });
+});
+
+describe("dispatchMcp — add_comment", () => {
+  it("tools/list returns add_comment", async () => {
+    const res = await dispatchMcp({ id: 1, method: "tools/list" }, null);
+    const tools = (res!.result as { tools: { name: string }[] }).tools;
+    expect(tools.map((t) => t.name)).toContain("add_comment");
+  });
+
+  it("rejects add_comment without auth (write-gated)", async () => {
+    const res = await dispatchMcp(
+      {
+        id: 1,
+        method: "tools/call",
+        params: {
+          name: "add_comment",
+          arguments: { pageSlug: "test", threadIndex: 0, content: "I agree" },
+        },
+      },
+      null,
+    );
+    const r = res!.result as { isError?: boolean; content: { text: string }[] };
+    expect(r.isError).toBe(true);
+    expect(r.content[0].text).toMatch(/authentication required/i);
+  });
+
+  it("sets author from principal handle when authenticated", async () => {
+    // First create a thread to comment on
+    await dispatchMcp(
+      {
+        id: 1,
+        method: "tools/call",
+        params: {
+          name: "create_discussion",
+          arguments: { pageSlug: "comment-test", title: "Topic", body: "Start" },
+        },
+      },
+      ALICE,
+    );
+    // Now add a comment as BOB
+    const res = await dispatchMcp(
+      {
+        id: 2,
+        method: "tools/call",
+        params: {
+          name: "add_comment",
+          arguments: { pageSlug: "comment-test", threadIndex: 0, content: "Good point" },
+        },
+      },
+      BOB,
+    );
+    const r = res!.result as { isError?: boolean; content: { text: string }[] };
+    expect(r.isError).toBeFalsy();
+    const parsed = JSON.parse(r.content[0].text);
+    expect(parsed.author).toBe("bob");
+  });
+});
+
+describe("dispatchMcp — resolve_discussion", () => {
+  it("tools/list returns resolve_discussion", async () => {
+    const res = await dispatchMcp({ id: 1, method: "tools/list" }, null);
+    const tools = (res!.result as { tools: { name: string }[] }).tools;
+    expect(tools.map((t) => t.name)).toContain("resolve_discussion");
+  });
+
+  it("rejects resolve_discussion without auth (write-gated)", async () => {
+    const res = await dispatchMcp(
+      {
+        id: 1,
+        method: "tools/call",
+        params: {
+          name: "resolve_discussion",
+          arguments: { pageSlug: "test", threadIndex: 0, resolution: "resolved" },
+        },
+      },
+      null,
+    );
+    const r = res!.result as { isError?: boolean; content: { text: string }[] };
+    expect(r.isError).toBe(true);
+    expect(r.content[0].text).toMatch(/authentication required/i);
+  });
+});
