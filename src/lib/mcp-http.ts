@@ -32,6 +32,9 @@ import {
   handleMaintenanceScan,
   handlePublishToCommons,
   handleUpdateMetadata,
+  handleLintWiki,
+  handleFixLintIssue,
+  handleReconcilePage,
 } from "@/mcp";
 import { readWikiPageWithFrontmatter } from "@/lib/wiki";
 import { canWriteFrontmatter } from "@/lib/authz";
@@ -326,6 +329,59 @@ export const MCP_TOOLS: ToolDef[] = [
         ...(a as { slug: string; metadata: Record<string, unknown> }),
         author: p!.handle,
         principal: p,
+      }),
+  },
+  {
+    name: "lint_wiki",
+    description:
+      "Run quality checks on the wiki. Returns issues with type, severity, slug, and message. " +
+      "Optionally scope to specific check types or minimum severity.",
+    inputSchema: schema({
+      checks: {
+        type: "array",
+        items: { type: "string" },
+        description: "Check types to run (default: all)",
+      },
+      minSeverity: str("Minimum severity: error | warning | info (default: info)"),
+    }),
+    write: false,
+    run: (a) => handleLintWiki(a as Parameters<typeof handleLintWiki>[0]),
+  },
+  {
+    name: "fix_lint_issue",
+    description:
+      "Auto-fix a lint issue found by lint_wiki. Takes the issue type, slug, and optional target/message. " +
+      "Not all issue types are auto-fixable.",
+    inputSchema: schema(
+      {
+        type: str("Lint issue type (e.g. 'orphan-page', 'stale-index', 'empty-page')"),
+        slug: str("Slug of the affected page"),
+        target: str("Target slug for cross-ref, contradiction, broken-link, and duplicate-entity fixes"),
+        message: str("Message context for contradiction or missing-concept-page fixes"),
+      },
+      ["type", "slug"],
+    ),
+    write: true,
+    run: (a, _p) =>
+      handleFixLintIssue(a as Parameters<typeof handleFixLintIssue>[0]),
+  },
+  {
+    name: "reconcile_page",
+    description:
+      "Reconcile a wiki page by applying valid points from a discussion thread. " +
+      "Reads the page and thread, LLM-revises the page, posts a summary comment, and resolves the thread.",
+    inputSchema: schema(
+      {
+        pageSlug: str("Slug of the wiki page to reconcile"),
+        threadIndex: { type: "number", description: "Zero-based index of the discussion thread" },
+      },
+      ["pageSlug", "threadIndex"],
+    ),
+    write: true,
+    run: (a, p) =>
+      handleReconcilePage({
+        ...(a as { pageSlug: string; threadIndex: number }),
+        author: p!.handle,
       }),
   },
 ];
