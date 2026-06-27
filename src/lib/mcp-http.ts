@@ -45,6 +45,7 @@ import {
   handleRevertRevision,
   handleListVaults,
   handleVaultPages,
+  handleAgentContext,
 } from "@/mcp";
 import { readWikiPageWithFrontmatter } from "@/lib/wiki";
 import { canWriteFrontmatter } from "@/lib/authz";
@@ -570,6 +571,20 @@ export const MCP_TOOLS: ToolDef[] = [
       }
       return handleVaultPages({ owner, vault: args.vault });
     },
+  },
+  // -- Agent context --------------------------------------------------------
+  {
+    name: "agent_context",
+    description:
+      "Bootstrap an agent's identity context — returns identity, learnings, " +
+      "social wisdom, and metadata in a single payload. Call once at startup.",
+    inputSchema: schema(
+      { agent_id: str("Agent ID (e.g. 'yoyo')") },
+      ["agent_id"],
+    ),
+    write: false,
+    run: (a) =>
+      handleAgentContext(a as Parameters<typeof handleAgentContext>[0]),
   },
 ];
 

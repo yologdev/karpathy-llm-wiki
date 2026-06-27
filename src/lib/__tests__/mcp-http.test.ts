@@ -86,6 +86,7 @@ describe("dispatchMcp — tools/list", () => {
     expect(names).toContain("query_wiki");
     expect(names).toContain("ingest_url");
     expect(names).toContain("ingest_text");
+    expect(names).toContain("agent_context");
     // Every descriptor carries a schema; the internal `write`/`run` fields are
     // NOT leaked to the wire.
     for (const t of tools) {
@@ -819,5 +820,71 @@ describe("dispatchMcp — vault tools", () => {
     const r2 = res!.result as { isError?: boolean; content: { text: string }[] };
     expect(r2.isError).toBe(true);
     expect(r2.content[0].text).toMatch(/owner is required/i);
+  });
+});
+
+describe("dispatchMcp — agent_context", () => {
+  it("agent_context tool appears in tools/list", async () => {
+    const res = await dispatchMcp({ id: 1, method: "tools/list" }, null);
+    const tools = (res!.result as { tools: { name: string }[] }).tools;
+    const tool = tools.find((t) => t.name === "agent_context");
+    expect(tool).toBeDefined();
+  });
+
+  it("agent_context is read-only (write: false) — no auth required", () => {
+    const tool = MCP_TOOLS.find((t) => t.name === "agent_context");
+    expect(tool).toBeDefined();
+    expect(tool!.write).toBe(false);
+  });
+
+  it("agent_context returns identity, learnings, socialWisdom, and meta for a registered agent", async () => {
+    // Register a test agent with some pages
+    await registerAgent({
+      id: "a--test-bot",
+      name: "test-bot",
+      description: "A test agent",
+      owner: "alice",
+      identityPages: [],
+      learningPages: [],
+      socialPages: [],
+      registered: new Date().toISOString(),
+      lastUpdated: new Date().toISOString(),
+    });
+
+    const res = await dispatchMcp(
+      {
+        id: 1,
+        method: "tools/call",
+        params: { name: "agent_context", arguments: { agent_id: "a--test-bot" } },
+      },
+      null, // no auth required — read-only
+    );
+
+    const r = res!.result as { content: { text: string }[] };
+    expect(r).not.toHaveProperty("isError");
+    const parsed = JSON.parse(r.content[0].text);
+    expect(parsed.agent).toBeDefined();
+    expect(parsed.agent.name).toBe("test-bot");
+    expect(parsed.context).toBeDefined();
+    expect(parsed.context).toHaveProperty("identity");
+    expect(parsed.context).toHaveProperty("learnings");
+    expect(parsed.context).toHaveProperty("socialWisdom");
+    expect(parsed.meta).toBeDefined();
+    expect(parsed.meta).toHaveProperty("totalChars");
+    expect(parsed.meta).toHaveProperty("pageCount");
+  });
+
+  it("agent_context returns error for unknown agent", async () => {
+    const res = await dispatchMcp(
+      {
+        id: 1,
+        method: "tools/call",
+        params: { name: "agent_context", arguments: { agent_id: "nonexistent" } },
+      },
+      null,
+    );
+    const r = res!.result as { isError?: boolean; content: { text: string }[] };
+    expect(r.isError).toBe(true);
+    expect(r.content[0].text).toMatch(/agent not found/i);
   });
 });
