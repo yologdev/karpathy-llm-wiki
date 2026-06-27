@@ -60,6 +60,21 @@ export type Task =
       };
       /** Optional vault to auto-file the resulting page into (fail-soft). */
       vaultId?: string;
+      /** Agent ingests: the page `type` (scoped knowledge/identity), so the page
+       *  stays out of the public commons/feed. */
+      pageType?: "agent-knowledge" | "agent-identity";
+      /** Provenance actor; when absent the executor falls back to `author`. Lets
+       *  an agent ingest attribute `triggeredBy` to the human owner while `author`
+       *  stays the agent. */
+      triggeredBy?: string;
+      /** Provenance URL for a text ingest (the original source link). */
+      sourceUrl?: string;
+      /** Explicit source classification (e.g. agent `asOwner` ingests set
+       *  x-mention/url/text); when absent the pipeline derives it. */
+      sourceType?: "x-mention" | "url" | "text";
+      /** Agent id to attach the resulting page to as one of its learning pages
+       *  (agent-scoped ingests). */
+      learningFor?: string;
     }
   | {
       /** Autonomous maintenance, enqueued by the scan cron (Q2). `reconcile` a
@@ -210,6 +225,23 @@ export function parseTask(body: unknown): Task | null {
         ...(staged ? { staged } : {}),
         ...(typeof t.vaultId === "string" && t.vaultId.trim() !== ""
           ? { vaultId: t.vaultId }
+          : {}),
+        ...(t.pageType === "agent-knowledge" || t.pageType === "agent-identity"
+          ? { pageType: t.pageType }
+          : {}),
+        ...(typeof t.triggeredBy === "string" && t.triggeredBy.trim() !== ""
+          ? { triggeredBy: t.triggeredBy }
+          : {}),
+        ...(typeof t.sourceUrl === "string" && t.sourceUrl.trim() !== ""
+          ? { sourceUrl: t.sourceUrl }
+          : {}),
+        ...(t.sourceType === "x-mention" ||
+        t.sourceType === "url" ||
+        t.sourceType === "text"
+          ? { sourceType: t.sourceType }
+          : {}),
+        ...(typeof t.learningFor === "string" && t.learningFor.trim() !== ""
+          ? { learningFor: t.learningFor }
           : {}),
       };
     }

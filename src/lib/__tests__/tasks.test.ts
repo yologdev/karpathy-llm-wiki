@@ -95,6 +95,38 @@ describe("parseTask", () => {
     ).toMatchObject({ kind: "ingest", staged: { key: "raw/uploads/j/text.md", kind: "text" } });
   });
 
+  it("preserves agent ingest fields (pageType, triggeredBy, sourceUrl, sourceType, learningFor)", () => {
+    expect(
+      parseTask({
+        kind: "ingest",
+        content: "note",
+        owner: "alice--yoyo",
+        author: "alice--yoyo",
+        triggeredBy: "alice--yoyo",
+        pageType: "agent-knowledge",
+        sourceUrl: "https://example.com/post",
+        sourceType: "text",
+        learningFor: "alice--yoyo",
+      }),
+    ).toMatchObject({
+      kind: "ingest",
+      pageType: "agent-knowledge",
+      triggeredBy: "alice--yoyo",
+      sourceUrl: "https://example.com/post",
+      sourceType: "text",
+      learningFor: "alice--yoyo",
+    });
+    // Invalid pageType / sourceType are dropped (not trusted from the queue).
+    const bad = parseTask({
+      kind: "ingest",
+      content: "x",
+      pageType: "evil",
+      sourceType: "bogus",
+    });
+    expect(bad).not.toHaveProperty("pageType");
+    expect(bad).not.toHaveProperty("sourceType");
+  });
+
   it("rejects a malformed staged descriptor", () => {
     // Empty key, bad kind, or non-object → staged dropped; with no url/content → null.
     expect(parseTask({ kind: "ingest", staged: { key: "", kind: "pdf" } })).toBeNull();

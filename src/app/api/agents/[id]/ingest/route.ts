@@ -1,7 +1,17 @@
 import { NextResponse } from "next/server";
 import { verifyAgentToken, addAgentLearningPage, getAgent } from "@/lib/agents";
 import { getServicePrincipal } from "@/lib/auth";
-import { ingestUrl, ingest, ingestImage, type IngestOptions } from "@/lib/ingest";
+import {
+  ingestUrl,
+  ingest,
+  ingestImage,
+  deriveTitleFromContent,
+  type IngestOptions,
+} from "@/lib/ingest";
+import { type Task } from "@/lib/tasks";
+import { createIngestJob } from "@/lib/ingest-jobs";
+import { enqueueOrInline } from "@/lib/ingest-async";
+import { stageText } from "@/lib/ingest-staging";
 import { logger } from "@/lib/logger";
 import { addToVault, vaultOwnedBy } from "@/lib/vault";
 
@@ -12,19 +22,16 @@ interface RouteParams {
 /** Page `type` that marks ingested content as the agent's scoped knowledge. */
 const AGENT_KNOWLEDGE_TYPE = "agent-knowledge";
 
+/** Text larger than this is staged to R2 instead of riding in the queue message
+ *  (Cloudflare Queues cap a message at 128 KB). Matches the interactive route. */
+const MAX_INLINE_CONTENT_CHARS = 96000;
+
 /** Pattern matching x.com or twitter.com post URLs. */
 const X_URL_PATTERN = /^https?:\/\/(www\.)?(x\.com|twitter\.com)\//i;
 
-/**
- * Derive `sourceType` from the request inputs.
- * - X/Twitter URLs → "x-mention"
- * - Other URLs → "url"
- * - Text-only (no URL) → "text"
- */
-function deriveSourceType(url: string, _text: string): "x-mention" | "url" | "text" {
-  if (url) {
-    return X_URL_PATTERN.test(url) ? "x-mention" : "url";
-  }
+/** Derive `sourceType`: X/Twitter URL → "x-mention", other URL → "url", else "text". */
+function deriveSourceType(url: string): "x-mention" | "url" | "text" {
+  if (url) return X_URL_PATTERN.test(url) ? "x-mention" : "url";
   return "text";
 }
 
@@ -41,6 +48,12 @@ function deriveSourceType(url: string, _text: string): "x-mention" | "url" | "te
  *     EXIST (404 otherwise), which is how "only ingest for a registered user"
  *     is enforced — a mention from a non-user hits a 404 and is skipped.
  * This route is exempt from the middleware write-gate because it uses a token.
+ *
+ * ASYNC: the ingest is enqueued (Cloudflare Queue) and processed in the
+ * background — the request does NOT block on fetch/LLM. It returns
+ * `{ queued: true, jobId }` immediately (off-Workers it runs inline and also
+ * returns `slug`). The resulting page appears under the agent profile / its vault
+ * once processing finishes; the owner can watch progress in the UI.
  *
  * Body: { url } or { text, title? }, plus an optional `asOwner` flag.
  *   - Default (per-agent token, e.g. openclaw): the page is scoped
@@ -152,72 +165,116 @@ export async function POST(req: Request, { params }: RouteParams) {
       }
     }
 
-    let opts: IngestOptions;
-    if (asOwner) {
-      // Save into the owner's wiki — owned by the human, authored by the agent.
-      const owner = agentRecord!.owner;
-      opts = { author: id, owner, triggeredBy: owner, sourceType: deriveSourceType(url, text) };
-    } else {
-      // Ingest as the agent: scoped type, attributed to the agent.
-      opts = {
-        author: id,
-        owner: id,
-        triggeredBy: id,
-        pageType: AGENT_KNOWLEDGE_TYPE,
-      };
-    }
+    // Attribution: asOwner → the human owner's own page (authored by the agent);
+    // default → agent-scoped knowledge attributed to the agent.
+    const owner = asOwner ? agentRecord!.owner : id;
+    const author = id;
+    const triggeredBy = asOwner ? agentRecord!.owner : id;
+    const pageType: "agent-knowledge" | undefined = asOwner
+      ? undefined
+      : AGENT_KNOWLEDGE_TYPE;
+    const learningFor = asOwner ? undefined : id; // attach to agent learnings
+    // asOwner pages record an explicit sourceType (matches the prior behavior,
+    // incl. x-mention detection); agent-knowledge ingests let the pipeline derive it.
+    const sourceType = asOwner ? deriveSourceType(url) : undefined;
+
     // A caller-provided source URL (e.g. the original X article) is recorded as
-    // the page's provenance so the wiki page links back to it. The `url`/
-    // `imageUrl` paths set their own source, so this only applies to text.
+    // the page's provenance. Only the text path uses it (url/imageUrl carry their
+    // own source).
     const sourceUrl =
       typeof body.sourceUrl === "string" && /^https?:\/\//.test(body.sourceUrl.trim())
         ? body.sourceUrl.trim()
         : undefined;
 
-    const result = imageUrl
-      ? await ingestImage({ imageUrl }, { ...opts, title: title || undefined })
-      : url
-        ? await ingestUrl(url, opts)
-        : await ingest(title || "Untitled", text, { ...opts, sourceUrl });
-
-    // Agent-knowledge ingests attach to the agent's learnings; owner-content
-    // ingests do not (they live in the owner's normal content space).
-    if (!asOwner) {
-      await addAgentLearningPage(id, result.primarySlug);
-    }
-
-    // Vault filing: explicit vaultId → agent's defaultVault → none.
-    const explicitVault =
-      typeof body.vaultId === "string" && body.vaultId.trim().length > 0
-        ? body.vaultId.trim()
-        : undefined;
-    let effectiveVault = explicitVault;
-    if (!effectiveVault) {
-      // Resolve the agent record if not yet loaded (per-agent-token, no asOwner).
+    // Resolve + validate the target vault BEFORE enqueue (ownership is a cheap,
+    // synchronous prefix check): explicit vaultId → agent's defaultVault → none,
+    // and only a vault the agent's owner OWNS is passed to the job (else skipped).
+    let validatedVault: string | undefined;
+    {
+      const explicitVault =
+        typeof body.vaultId === "string" && body.vaultId.trim().length > 0
+          ? body.vaultId.trim()
+          : undefined;
       if (!agentRecord) {
         try { agentRecord = await getAgent(id); } catch { agentRecord = null; }
       }
-      if (agentRecord?.defaultVault) {
-        effectiveVault = agentRecord.defaultVault;
-      }
-    }
-    if (effectiveVault) {
-      // Resolve agent record for ownership check if still missing.
-      if (!agentRecord) {
-        try { agentRecord = await getAgent(id); } catch { agentRecord = null; }
-      }
-      const ownerHandle = agentRecord?.owner;
-      if (ownerHandle && vaultOwnedBy(effectiveVault, ownerHandle)) {
-        try { await addToVault(effectiveVault, result.primarySlug); }
-        catch (e) { logger.warn("agents", `vault filing failed for ${effectiveVault}:`, e); }
-      } else {
-        logger.warn("agents", `skipping vault filing: owner "${ownerHandle}" does not own vault "${effectiveVault}"`);
+      const effectiveVault = explicitVault || agentRecord?.defaultVault || undefined;
+      if (effectiveVault) {
+        const ownerHandle = agentRecord?.owner;
+        if (ownerHandle && vaultOwnedBy(effectiveVault, ownerHandle)) {
+          validatedVault = effectiveVault;
+        } else {
+          logger.warn(
+            "agents",
+            `skipping vault filing: owner "${ownerHandle}" does not own vault "${effectiveVault}"`,
+          );
+        }
       }
     }
 
-    return NextResponse.json({
-      slug: result.primarySlug,
-      deduped: result.deduped ?? false,
+    // The job OWNER (who sees it in the UI) is the human owner when known, else
+    // the agent id (legacy ownerless agent).
+    const jobOwner = agentRecord?.owner ?? id;
+    const displayTitle =
+      (title && title.trim()) ||
+      (text ? deriveTitleFromContent(text) : "") ||
+      url ||
+      imageUrl ||
+      "Untitled";
+    const jobUrl = url || imageUrl || undefined;
+    const jobId = crypto.randomUUID();
+    await createIngestJob({
+      jobId,
+      owner: jobOwner,
+      ...(jobUrl ? { url: jobUrl } : {}),
+      title: displayTitle,
+    });
+
+    // Shared task attribution. Text rides inline if small, else stage to R2.
+    const attribution = {
+      owner,
+      author,
+      triggeredBy,
+      ...(pageType ? { pageType } : {}),
+      ...(sourceType ? { sourceType } : {}),
+      ...(learningFor ? { learningFor } : {}),
+      ...(validatedVault ? { vaultId: validatedVault } : {}),
+      ...(title && title.trim() ? { title: title.trim() } : {}),
+      jobId,
+    };
+    let task: Task;
+    if (imageUrl) {
+      task = { kind: "ingest", source: "image", url: imageUrl, ...attribution };
+    } else if (url) {
+      task = { kind: "ingest", url, ...attribution };
+    } else if (text.length <= MAX_INLINE_CONTENT_CHARS) {
+      task = { kind: "ingest", content: text, ...(sourceUrl ? { sourceUrl } : {}), ...attribution };
+    } else {
+      const key = await stageText(jobId, text);
+      task = { kind: "ingest", staged: { key, kind: "text" }, ...(sourceUrl ? { sourceUrl } : {}), ...attribution };
+    }
+
+    // Enqueue (Workers) or run inline (off-Workers: local dev / tests). The inline
+    // path mirrors the executor's agent post-steps (learning page + vault filing).
+    const opts: IngestOptions = {
+      author,
+      owner,
+      triggeredBy,
+      ...(pageType ? { pageType } : {}),
+      ...(sourceType ? { sourceType } : {}),
+    };
+    return await enqueueOrInline(jobId, task, async () => {
+      const result = imageUrl
+        ? await ingestImage({ imageUrl }, { ...opts, title: title || undefined })
+        : url
+          ? await ingestUrl(url, opts)
+          : await ingest(title || "Untitled", text, { ...opts, sourceUrl });
+      if (learningFor) await addAgentLearningPage(learningFor, result.primarySlug);
+      if (validatedVault) {
+        try { await addToVault(validatedVault, result.primarySlug); }
+        catch (e) { logger.warn("agents", `vault filing failed for ${validatedVault}:`, e); }
+      }
+      return result;
     });
   } catch (err) {
     logger.error("agents", "agent ingest failed:", err);

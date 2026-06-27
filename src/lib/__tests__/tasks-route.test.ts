@@ -98,6 +98,44 @@ describe("POST /api/tasks/run", () => {
     expect(mockedIngest).not.toHaveBeenCalled();
   });
 
+  it("agent ingest: threads pageType/triggeredBy/sourceType to the pipeline", async () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    mockedIngest.mockResolvedValue({ primarySlug: "k" } as any);
+    const res = await run({
+      kind: "ingest",
+      content: "note",
+      title: "N",
+      owner: "alice--yoyo",
+      author: "alice--yoyo",
+      triggeredBy: "alice--yoyo",
+      pageType: "agent-knowledge",
+      sourceType: "text",
+      learningFor: "alice--yoyo", // real addAgentLearningPage is fail-soft (no agent)
+    });
+    expect(res.status).toBe(200);
+    expect(mockedIngest).toHaveBeenCalledWith(
+      "N",
+      "note",
+      expect.objectContaining({
+        owner: "alice--yoyo",
+        author: "alice--yoyo",
+        triggeredBy: "alice--yoyo",
+        pageType: "agent-knowledge",
+        sourceType: "text",
+      }),
+    );
+  });
+
+  it("ingest triggeredBy defaults to author when not provided", async () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    mockedIngestUrl.mockResolvedValue({ primarySlug: "x" } as any);
+    await run({ kind: "ingest", url: "https://e.com", owner: "o", author: "a" });
+    expect(mockedIngestUrl).toHaveBeenCalledWith(
+      "https://e.com",
+      expect.objectContaining({ author: "a", triggeredBy: "a" }),
+    );
+  });
+
   it("routes a URL pdf task (source:pdf) to ingestPdf", async () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     mockedIngestPdf.mockResolvedValue({ primarySlug: "pdf-page" } as any);

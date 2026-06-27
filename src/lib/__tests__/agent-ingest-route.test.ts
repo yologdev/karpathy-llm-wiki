@@ -86,6 +86,16 @@ describe("POST /api/agents/[id]/ingest", () => {
     expect(mockedAddLearning).toHaveBeenCalledWith("alice--yoyo", "ingested-page");
   });
 
+  it("returns a queued job (async contract — no longer blocks on the slug)", async () => {
+    const res = await POST(req({ url: "https://example.com" }, "alice--yoyo.s"), {
+      params,
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.queued).toBe(true);
+    expect(typeof body.jobId).toBe("string");
+  });
+
   it("ingests text", async () => {
     const res = await POST(
       req({ text: "hello", title: "Note" }, "alice--yoyo.s"),
