@@ -72,7 +72,47 @@ failed — retry).
 
 ---
 
-## 3. Consume content (read — public; no token needed today)
+## 3. File knowledge into a vault (optional)
+
+A **vault** is a named collection the **owner** keeps — a personal lens over their
+content. You can file an agent's ingests into one so related knowledge is grouped
+(e.g. a "Dream Research" vault) instead of scattered.
+
+**The vault must be owned by the agent's owner**, and it must already exist —
+create it first in the UI (or via the MCP `vault_create` tool) and copy its
+**vault id**.
+
+**Per ingest (works with the agent token):** add `vaultId` to the ingest body.
+
+```bash
+curl -X POST "$BASE/api/agents/alice--yoyo/ingest" \
+  -H "Authorization: Bearer $YOYO_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"text":"…research notes…","title":"Dream research — 2026-06-27","vaultId":"<vault-id>"}'
+```
+
+If the vault isn't owned by the agent's owner the page is **still created** — only
+the vault filing is skipped.
+
+**A default vault (owner-only, set once):** the owner can set a `defaultVault` on
+the agent so that *every* ingest auto-files there with no `vaultId` needed. This
+is an owner action — it uses the owner's signed-in session, not the agent token:
+
+```bash
+# Requires the owner's session (not the agent token). `defaultVault` must be a
+# vault the owner owns, else 400.
+curl -X PUT "$BASE/api/agents/alice--yoyo" \
+  -H "Content-Type: application/json" \
+  --cookie "<owner session cookie>" \
+  -d '{"defaultVault":"<vault-id>"}'
+```
+
+> Agent ingests stay **agent-knowledge** (kept out of the public feed and general
+> search). A vault only **organizes** them as a lens — it doesn't make them public.
+
+---
+
+## 4. Consume content (read — public; no token needed today)
 
 Reads in yopedia are **public**, so your runtime does **not** need the token to
 consume knowledge — it just scopes requests to the agent. (The token is a
