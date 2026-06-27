@@ -46,6 +46,8 @@ import {
   handleListVaults,
   handleVaultPages,
   handleAgentContext,
+  handleDataviewQuery,
+  handleWikiGraph,
 } from "@/mcp";
 import { readWikiPageWithFrontmatter } from "@/lib/wiki";
 import { canWriteFrontmatter } from "@/lib/authz";
@@ -585,6 +587,52 @@ export const MCP_TOOLS: ToolDef[] = [
     write: false,
     run: (a) =>
       handleAgentContext(a as Parameters<typeof handleAgentContext>[0]),
+  },
+  // -- Knowledge structure (read-only) -------------------------------------
+  {
+    name: "dataview_query",
+    description:
+      "Query yopedia wiki pages by frontmatter fields with structured filters, sort, and limit. " +
+      "Supports operators: eq, neq, gt, lt, gte, lte, contains, exists.",
+    inputSchema: schema({
+      filters: {
+        type: "array",
+        description: "Array of filter predicates (AND semantics — all must match)",
+        items: {
+          type: "object",
+          properties: {
+            field: str("Frontmatter field name (e.g. 'confidence', 'tags', 'created')"),
+            op: {
+              type: "string",
+              description: "Comparison operator",
+              enum: ["eq", "neq", "gt", "lt", "gte", "lte", "contains", "exists"],
+            },
+            value: str("Comparison value (not needed for 'exists' op)"),
+          },
+          required: ["field", "op"],
+        },
+      },
+      sortBy: str("Frontmatter field to sort results by"),
+      sortOrder: str("Sort direction: asc | desc (default asc)"),
+      limit: { type: "number", description: "Maximum number of results (default 50, max 200)" },
+    }),
+    write: false,
+    run: (a) =>
+      handleDataviewQuery(a as Parameters<typeof handleDataviewQuery>[0]),
+  },
+  {
+    name: "wiki_graph",
+    description:
+      "Return the wiki knowledge graph as nodes and edges. Each page is a node (slug, label, tags, " +
+      "linkCount) and each cross-reference link is an edge (source, target). Useful for understanding " +
+      "how concepts are connected, finding clusters, discovering poorly-linked pages, or navigating " +
+      "neighborhoods without reading full page bodies.",
+    inputSchema: schema({
+      scope: str("Optional scope filter. Omit for the commons graph. Use 'vault:<id>' for vault-scoped."),
+    }),
+    write: false,
+    run: (a) =>
+      handleWikiGraph(a as Parameters<typeof handleWikiGraph>[0]),
   },
 ];
 

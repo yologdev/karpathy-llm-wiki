@@ -87,6 +87,8 @@ describe("dispatchMcp — tools/list", () => {
     expect(names).toContain("ingest_url");
     expect(names).toContain("ingest_text");
     expect(names).toContain("agent_context");
+    expect(names).toContain("dataview_query");
+    expect(names).toContain("wiki_graph");
     // Every descriptor carries a schema; the internal `write`/`run` fields are
     // NOT leaked to the wire.
     for (const t of tools) {
@@ -886,5 +888,113 @@ describe("dispatchMcp — agent_context", () => {
     const r = res!.result as { isError?: boolean; content: { text: string }[] };
     expect(r.isError).toBe(true);
     expect(r.content[0].text).toMatch(/agent not found/i);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// dataview_query dispatch
+// ---------------------------------------------------------------------------
+describe("dispatchMcp — dataview_query", () => {
+  it("returns results for a valid query (no auth required)", async () => {
+    // Seed a page so the query has something to find
+    await writeWikiPage(
+      "dv-test-page",
+      "---\ntitle: DV Test\ntags:\n  - testing\nconfidence: 0.9\n---\nDataview test content.",
+    );
+
+    const res = await dispatchMcp(
+      {
+        id: 1,
+        method: "tools/call",
+        params: {
+          name: "dataview_query",
+          arguments: {
+            filters: [{ field: "tags", op: "contains", value: "testing" }],
+            limit: 5,
+          },
+        },
+      },
+      null, // no auth — read-only
+    );
+
+    const r = res!.result as { content: { text: string }[] };
+    expect(r).not.toHaveProperty("isError");
+    const parsed = JSON.parse(r.content[0].text);
+    expect(parsed.results).toBeDefined();
+    expect(Array.isArray(parsed.results)).toBe(true);
+    expect(parsed.total).toBeTypeOf("number");
+  });
+
+  it("returns empty results when no pages match filters", async () => {
+    const res = await dispatchMcp(
+      {
+        id: 1,
+        method: "tools/call",
+        params: {
+          name: "dataview_query",
+          arguments: {
+            filters: [{ field: "tags", op: "contains", value: "nonexistent-tag-xyz" }],
+          },
+        },
+      },
+      null,
+    );
+
+    const r = res!.result as { content: { text: string }[] };
+    expect(r).not.toHaveProperty("isError");
+    const parsed = JSON.parse(r.content[0].text);
+    expect(parsed.results).toEqual([]);
+    expect(parsed.total).toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// wiki_graph dispatch
+// ---------------------------------------------------------------------------
+describe("dispatchMcp — wiki_graph", () => {
+  it("returns graph data (nodes + edges) without auth", async () => {
+    // Seed a couple of pages so the graph is non-trivial
+    await writeWikiPage(
+      "graph-node-a",
+      "---\ntitle: Node A\n---\nSee [[graph-node-b]].",
+    );
+    await writeWikiPage(
+      "graph-node-b",
+      "---\ntitle: Node B\n---\nStandalone page.",
+    );
+
+    const res = await dispatchMcp(
+      {
+        id: 1,
+        method: "tools/call",
+        params: { name: "wiki_graph", arguments: {} },
+      },
+      null, // no auth — read-only
+    );
+
+    const r = res!.result as { content: { text: string }[] };
+    expect(r).not.toHaveProperty("isError");
+    const parsed = JSON.parse(r.content[0].text);
+    expect(parsed.nodes).toBeDefined();
+    expect(Array.isArray(parsed.nodes)).toBe(true);
+    expect(parsed.edges).toBeDefined();
+    expect(Array.isArray(parsed.edges)).toBe(true);
+  });
+
+  it("returns graph with optional scope param", async () => {
+    const res = await dispatchMcp(
+      {
+        id: 1,
+        method: "tools/call",
+        params: { name: "wiki_graph", arguments: { scope: "all" } },
+      },
+      null,
+    );
+
+    const r = res!.result as { content: { text: string }[] };
+    expect(r).not.toHaveProperty("isError");
+    const parsed = JSON.parse(r.content[0].text);
+    expect(parsed.nodes).toBeDefined();
+    expect(parsed.edges).toBeDefined();
   });
 });
