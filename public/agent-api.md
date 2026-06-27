@@ -9,7 +9,7 @@ a **token** for it, and an external runtime uses that token to **ingest content
 into the agent's knowledge**. Reading is open to everyone, so the same runtime
 can **consume** the agent's knowledge over the public API too.
 
-> Base URL in these examples: `https://yopedia.yuanhao-li.workers.dev`
+> Base URL in these examples: `https://yopedia.yolog.dev`
 
 ---
 
