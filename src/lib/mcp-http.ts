@@ -43,6 +43,8 @@ import {
   handleListRevisions,
   handleReadRevision,
   handleRevertRevision,
+  handleListVaults,
+  handleVaultPages,
 } from "@/mcp";
 import { readWikiPageWithFrontmatter } from "@/lib/wiki";
 import { canWriteFrontmatter } from "@/lib/authz";
@@ -524,6 +526,50 @@ export const MCP_TOOLS: ToolDef[] = [
         ...(a as { slug: string; timestamp: number }),
         author: p!.handle,
       }),
+  },
+  // -- Vault tools ----------------------------------------------------------
+  {
+    name: "list_vaults",
+    description:
+      "List named vaults for a user (public, read-only). " +
+      "Defaults to the authenticated caller's vaults when no owner is specified.",
+    inputSchema: schema({
+      owner: str("Owner handle (defaults to your own handle when authenticated)"),
+    }),
+    write: false,
+    run: (a, p) => {
+      const owner = (a as { owner?: string }).owner ?? p?.handle;
+      if (!owner) {
+        return Promise.reject(
+          new Error("owner is required when not authenticated"),
+        );
+      }
+      return handleListVaults({ owner });
+    },
+  },
+  {
+    name: "vault_pages",
+    description:
+      "List enriched page metadata for a named vault (slug, title, summary, tags, confidence). " +
+      "Defaults to the authenticated caller's vaults when no owner is specified.",
+    inputSchema: schema(
+      {
+        owner: str("Owner handle (defaults to your own handle when authenticated)"),
+        vault: str("Vault name"),
+      },
+      ["vault"],
+    ),
+    write: false,
+    run: (a, p) => {
+      const args = a as { owner?: string; vault: string };
+      const owner = args.owner ?? p?.handle;
+      if (!owner) {
+        return Promise.reject(
+          new Error("owner is required when not authenticated"),
+        );
+      }
+      return handleVaultPages({ owner, vault: args.vault });
+    },
   },
 ];
 

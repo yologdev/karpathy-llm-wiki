@@ -733,3 +733,91 @@ describe("dispatchMcp — revert_revision", () => {
     expect(parsed.slug).toBe("rev-revert-test");
   });
 });
+
+describe("dispatchMcp — vault tools", () => {
+  it("list_vaults and vault_pages appear in tools/list", async () => {
+    const res = await dispatchMcp({ id: 1, method: "tools/list" }, null);
+    const tools = (res!.result as { tools: { name: string }[] }).tools;
+    const names = tools.map((t) => t.name);
+    expect(names).toContain("list_vaults");
+    expect(names).toContain("vault_pages");
+  });
+
+  it("list_vaults defaults to caller's handle when no owner arg", async () => {
+    // Create a vault for alice
+    await createVault("alice", "my-research", "public");
+
+    const res = await dispatchMcp(
+      { id: 1, method: "tools/call", params: { name: "list_vaults", arguments: {} } },
+      ALICE,
+    );
+    const r2 = res!.result as { content: { text: string }[] };
+    const parsed = JSON.parse(r2.content[0].text);
+    expect(parsed.vaults).toBeInstanceOf(Array);
+    expect(parsed.vaults.length).toBeGreaterThanOrEqual(1);
+    expect(parsed.vaults.some((v: { name: string }) => v.name === "my-research")).toBe(true);
+  });
+
+  it("list_vaults with explicit owner returns that user's vaults", async () => {
+    await createVault("bob", "bob-notes", "public");
+
+    const res = await dispatchMcp(
+      { id: 1, method: "tools/call", params: { name: "list_vaults", arguments: { owner: "bob" } } },
+      null, // no auth needed for reads
+    );
+    const r2 = res!.result as { content: { text: string }[] };
+    const parsed = JSON.parse(r2.content[0].text);
+    expect(parsed.vaults).toBeInstanceOf(Array);
+    expect(parsed.vaults.some((v: { name: string }) => v.name === "bob-notes")).toBe(true);
+  });
+
+  it("list_vaults without owner or auth returns an error", async () => {
+    const res = await dispatchMcp(
+      { id: 1, method: "tools/call", params: { name: "list_vaults", arguments: {} } },
+      null,
+    );
+    const r2 = res!.result as { isError?: boolean; content: { text: string }[] };
+    expect(r2.isError).toBe(true);
+    expect(r2.content[0].text).toMatch(/owner is required/i);
+  });
+
+  it("vault_pages returns enriched metadata for vault contents", async () => {
+    // Create a page, then a vault, then add the page to the vault
+    await writeWikiPage("vault-test-page", "---\ntitle: Vault Test\ntags: [testing]\nconfidence: 0.9\n---\n# Vault Test\nHello");
+    const vault = await createVault("alice", "test-vault", "public");
+    const { addToVault: addToV } = await import("../vault");
+    await addToV(vault.id, "vault-test-page");
+
+    const res = await dispatchMcp(
+      {
+        id: 1,
+        method: "tools/call",
+        params: { name: "vault_pages", arguments: { vault: "test-vault" } },
+      },
+      ALICE,
+    );
+    const r2 = res!.result as { content: { text: string }[] };
+    const parsed = JSON.parse(r2.content[0].text);
+    expect(parsed.owner).toBe("alice");
+    expect(parsed.vault).toBe("test-vault");
+    expect(parsed.slugs).toContain("vault-test-page");
+    expect(parsed.pages).toBeInstanceOf(Array);
+    expect(parsed.pages.length).toBe(1);
+    expect(parsed.pages[0].slug).toBe("vault-test-page");
+    expect(parsed.pages[0].title).toBe("Vault Test");
+  });
+
+  it("vault_pages without owner or auth returns an error", async () => {
+    const res = await dispatchMcp(
+      {
+        id: 1,
+        method: "tools/call",
+        params: { name: "vault_pages", arguments: { vault: "test-vault" } },
+      },
+      null,
+    );
+    const r2 = res!.result as { isError?: boolean; content: { text: string }[] };
+    expect(r2.isError).toBe(true);
+    expect(r2.content[0].text).toMatch(/owner is required/i);
+  });
+});
