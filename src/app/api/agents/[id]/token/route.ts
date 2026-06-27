@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import {
   generateAgentToken,
   revokeAgentToken,
+  agentTokenInfo,
   assertCanMutateAgent,
   AgentOwnershipError,
 } from "@/lib/agents";
@@ -10,6 +11,38 @@ import { logger } from "@/lib/logger";
 
 interface RouteParams {
   params: Promise<{ id: string }>;
+}
+
+/**
+ * GET /api/agents/[id]/token — report whether a credential is currently set
+ * (and when it was created), so the owner UI can show Rotate/Revoke after a
+ * reload. Owner-gated. NEVER returns the secret — it's shown once at generation.
+ */
+export async function GET(_req: Request, { params }: RouteParams) {
+  try {
+    const { id } = await params;
+    const principal = await getPrincipal();
+    if (!principal) {
+      return NextResponse.json({ error: "Sign in required." }, { status: 401 });
+    }
+    const existing = await assertCanMutateAgent(id, principal.handle);
+    if (!existing) {
+      return NextResponse.json(
+        { error: `Agent "${id}" not found` },
+        { status: 404 },
+      );
+    }
+    return NextResponse.json(await agentTokenInfo(id));
+  } catch (err) {
+    if (err instanceof AgentOwnershipError) {
+      return NextResponse.json({ error: err.message }, { status: 403 });
+    }
+    logger.error("agents", "token info read failed:", err);
+    return NextResponse.json(
+      { error: "Failed to read token status." },
+      { status: 500 },
+    );
+  }
 }
 
 /**

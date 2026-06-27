@@ -217,10 +217,44 @@ export async function generateAgentToken(id: string): Promise<string> {
   const tokenHash = await sha256Hex(secret);
   await getStorage().writeFile(
     agentSecretPath(id),
-    JSON.stringify({ tokenHash }),
+    JSON.stringify({ tokenHash, createdAt: new Date().toISOString() }),
   );
 
   return `${id}.${secret}`;
+}
+
+/**
+ * Non-secret metadata about an agent's credential: whether one is currently set
+ * and when it was created. NEVER returns the secret or its hash (the secret is
+ * shown once at generation and is unrecoverable). The owner UI uses this so that
+ * after a reload it can show "a token is active" and offer Rotate/Revoke, rather
+ * than looking like no token exists.
+ */
+export async function agentTokenInfo(
+  id: string,
+): Promise<{ exists: boolean; createdAt?: string }> {
+  let raw: string;
+  try {
+    raw = await getStorage().readFile(agentSecretPath(id));
+  } catch (err) {
+    if (isEnoent(err)) return { exists: false };
+    throw err; // a real storage failure is OUR problem — let the caller 500
+  }
+  try {
+    const stored = JSON.parse(raw) as {
+      tokenHash?: unknown;
+      createdAt?: unknown;
+    };
+    if (typeof stored.tokenHash !== "string") return { exists: false };
+    return {
+      exists: true,
+      createdAt:
+        typeof stored.createdAt === "string" ? stored.createdAt : undefined,
+    };
+  } catch {
+    // Corrupt secret file: a credential effectively exists (rotating fixes it).
+    return { exists: true };
+  }
 }
 
 /**

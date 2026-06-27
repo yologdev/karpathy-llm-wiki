@@ -22,6 +22,7 @@ import {
   generateAgentToken,
   verifyAgentToken,
   revokeAgentToken,
+  agentTokenInfo,
   addAgentLearningPage,
 } from "../agents";
 import type { UpdateAgentPage } from "../agents";
@@ -1369,6 +1370,30 @@ describe("per-agent credentials", () => {
     const token = await generateAgentToken("alice--yoyo");
     await revokeAgentToken("alice--yoyo");
     expect(await verifyAgentToken(token)).toBeNull();
+  });
+
+  it("agentTokenInfo reports existence + createdAt, never the secret", async () => {
+    await seedAgentRecord();
+    // None yet.
+    expect(await agentTokenInfo("alice--yoyo")).toEqual({ exists: false });
+
+    // After generate: exists, with an ISO createdAt, and no secret leaked.
+    const token = await generateAgentToken("alice--yoyo");
+    const info = await agentTokenInfo("alice--yoyo");
+    expect(info.exists).toBe(true);
+    expect(typeof info.createdAt).toBe("string");
+    expect(Number.isNaN(Date.parse(info.createdAt!))).toBe(false);
+    expect(JSON.stringify(info)).not.toContain(token.split(".")[1]);
+    expect(JSON.stringify(info)).not.toContain("tokenHash");
+
+    // After revoke: gone again.
+    await revokeAgentToken("alice--yoyo");
+    expect(await agentTokenInfo("alice--yoyo")).toEqual({ exists: false });
+  });
+
+  it("agentTokenInfo treats a corrupt secret file as existing (rotate fixes it)", async () => {
+    await getStorage().writeFile("agent-secrets/alice--yoyo.json", "not json{{{");
+    expect(await agentTokenInfo("alice--yoyo")).toEqual({ exists: true });
   });
 
   it("deleting an agent revokes its credential and removes the secret file", async () => {
