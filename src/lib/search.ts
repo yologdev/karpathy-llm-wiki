@@ -15,6 +15,7 @@ import {
   tenantForOwner,
 } from "./wiki";
 import { writeWikiPageWithSideEffects } from "./lifecycle";
+import { mapWithConcurrency, READ_CONCURRENCY } from "./concurrency";
 import { canReadFrontmatter } from "./authz";
 import type { Principal } from "./auth";
 import { getAgent, resolveAgentPages } from "./agents";
@@ -518,18 +519,25 @@ export async function searchWikiContent(
     score: number;
   }> = [];
 
-  for (const entry of allPages) {
-    if (SKIP.has(entry.slug)) continue;
-
-    // Scope filtering: skip pages not in the scope's slug set
-    if (scopeSlugs && !scopeSlugs.has(entry.slug)) continue;
-    // Skip artifacts (always) and, when unscoped, agent-scoped pages.
-    if (excludedSlugs.has(entry.slug)) continue;
-
-    const slug = entry.slug;
-
+  // Cheap index-only filters first (skip-list, scope, artifacts/agent-scoped),
+  // then read the surviving candidates' bodies in parallel (bounded). The read
+  // used to run serially inside this loop — the dominant cost of content search.
+  const candidates = allPages.filter(
+    (entry) =>
+      !SKIP.has(entry.slug) &&
+      !(scopeSlugs && !scopeSlugs.has(entry.slug)) &&
+      !excludedSlugs.has(entry.slug),
+  );
+  const candidatePages = await mapWithConcurrency(
+    candidates,
+    READ_CONCURRENCY,
     // Read via readWikiPage (silo-primary after #749)
-    const page = await readWikiPage(slug);
+    (entry) => readWikiPage(entry.slug),
+  );
+
+  for (let i = 0; i < candidates.length; i++) {
+    const slug = candidates[i].slug;
+    const page = candidatePages[i];
     if (!page) continue;
     const content = page.content;
 
@@ -637,20 +645,26 @@ export async function fuzzySearchWikiContent(
 
   const fuzzyResults: ContentSearchResult[] = [];
 
-  for (const entry of allPages) {
-    if (SKIP.has(entry.slug)) continue;
-    const slug = entry.slug;
-
-    // Scope filtering: skip pages not in the scope's slug set
-    if (scopeSlugs && !scopeSlugs.has(slug)) continue;
-    // Skip artifacts (always) and, when unscoped, agent-scoped pages.
-    if (excludedSlugs.has(slug)) continue;
-
-    // Skip pages already in exact results
-    if (exactSlugs.has(slug)) continue;
-
+  // Cheap index-only filters first (skip-list, scope, artifacts/agent-scoped,
+  // already-exact), then read the survivors' bodies in parallel (bounded). The
+  // read used to run serially inside this loop.
+  const candidates = allPages.filter(
+    (entry) =>
+      !SKIP.has(entry.slug) &&
+      !(scopeSlugs && !scopeSlugs.has(entry.slug)) &&
+      !excludedSlugs.has(entry.slug) &&
+      !exactSlugs.has(entry.slug),
+  );
+  const candidatePages = await mapWithConcurrency(
+    candidates,
+    READ_CONCURRENCY,
     // Read via readWikiPage (silo-primary after #749)
-    const page = await readWikiPage(slug);
+    (entry) => readWikiPage(entry.slug),
+  );
+
+  for (let i = 0; i < candidates.length; i++) {
+    const slug = candidates[i].slug;
+    const page = candidatePages[i];
     if (!page) continue;
     const content = page.content;
 

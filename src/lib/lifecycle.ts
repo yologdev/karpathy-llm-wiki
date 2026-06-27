@@ -23,6 +23,7 @@ import { getStorage } from "./storage";
 import { withFileLock } from "./lock";
 import { escapeRegex } from "./links";
 import { getErrorMessage } from "./errors";
+import { mapWithConcurrency } from "./concurrency";
 import { removeAliasForPage, updateAliasIndexForPage } from "./alias-index";
 import { removeSourceForPage } from "./source-index";
 import { syncCommonsForPage, removeCommonsEntryBySlug, belongsInCommons } from "./commons";
@@ -185,29 +186,6 @@ function stripBacklinksTo(slug: string, content: string): string {
  * Shared lifecycle-op pipeline for write and delete. See the block comment
  * above for the full 5-step shape.
  */
-/**
- * Map over items with bounded concurrency. Keeps the parallelism win on large
- * wikis without firing thousands of simultaneous R2 subrequests. Order-preserving.
- */
-async function mapWithConcurrency<T, R>(
-  items: T[],
-  limit: number,
-  fn: (item: T, index: number) => Promise<R>,
-): Promise<R[]> {
-  const results = new Array<R>(items.length);
-  let next = 0;
-  async function worker(): Promise<void> {
-    while (next < items.length) {
-      const i = next++;
-      results[i] = await fn(items[i], i);
-    }
-  }
-  await Promise.all(
-    Array.from({ length: Math.min(limit, items.length) }, () => worker()),
-  );
-  return results;
-}
-
 /** Max concurrent R2 reads/writes during a page lifecycle op. */
 const LIFECYCLE_CONCURRENCY = 12;
 

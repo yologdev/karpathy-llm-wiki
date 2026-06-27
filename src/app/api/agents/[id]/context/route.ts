@@ -3,6 +3,7 @@ import { getAgent, resolveAgentPages } from "@/lib/agents";
 import { readWikiPageWithFrontmatter } from "@/lib/wiki";
 import { getPrincipal, type Principal } from "@/lib/auth";
 import { canReadFrontmatter } from "@/lib/authz";
+import { mapWithConcurrency, READ_CONCURRENCY } from "@/lib/concurrency";
 import { getErrorMessage } from "@/lib/errors";
 import { logger } from "@/lib/logger";
 
@@ -21,18 +22,23 @@ async function loadPages(
   slugs: string[],
   principal: Principal | null,
 ): Promise<{ content: string; count: number }> {
+  // Read every page in parallel (bounded) — this was a serial per-slug loop and
+  // the dominant latency of the endpoint. Order is preserved so the assembled
+  // context stays stable; unreadable/missing pages drop out below.
+  const pages = await mapWithConcurrency(slugs, READ_CONCURRENCY, (slug) =>
+    readWikiPageWithFrontmatter(slug),
+  );
   const contents: string[] = [];
-  for (const slug of slugs) {
-    const page = await readWikiPageWithFrontmatter(slug);
+  pages.forEach((page, i) => {
     if (page) {
       // Skip pages the caller can't read (an agent's list may reference a
       // third party's private page).
-      if (!canReadFrontmatter(page.frontmatter, principal)) continue;
+      if (!canReadFrontmatter(page.frontmatter, principal)) return;
       contents.push(page.body);
     } else {
-      logger.warn("agents", `Wiki page "${slug}" not found — skipping`);
+      logger.warn("agents", `Wiki page "${slugs[i]}" not found — skipping`);
     }
-  }
+  });
   return {
     content: contents.join(PAGE_SEPARATOR),
     count: contents.length,
