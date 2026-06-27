@@ -8,8 +8,6 @@ vi.mock("../commons", () => ({
 }));
 vi.mock("../wiki", () => ({
   listReadableWikiPages: vi.fn(async () => [] as IndexEntry[]),
-  // Agent pages are `type: agent-*` — mirror the real predicate.
-  isAgentScopedType: (t?: string) => !!t && t.startsWith("agent-"),
 }));
 vi.mock("../vault", () => ({
   getVault: vi.fn(async () => null),
@@ -192,9 +190,24 @@ describe("searchCommons — vault scope", () => {
     const r = await searchCommons(null, { scope: "vault:v1" });
     // Both referenced pages survive (recent sort → newest first); the
     // unreferenced page is excluded. Agent-knowledge is no longer stripped.
-    expect(r.results.map((p) => p.slug).sort()).toEqual([
-      "agent-note",
-      "transformers",
+    // Order asserted directly (newest first) to also pin the recency sort.
+    expect(r.results.map((p) => p.slug)).toEqual(["agent-note", "transformers"]);
+  });
+
+  it("readability is the gate: a vault ref the viewer can't read is excluded", async () => {
+    // The agent-scoped filter was the only secondary layer; now readability
+    // (listReadableWikiPages) is the SOLE gate, so a filed-but-unreadable page
+    // (e.g. someone else's private page) must not surface via the public vault.
+    mockedGetVault.mockResolvedValue({
+      id: "v1",
+      visibility: "public",
+      slugs: ["transformers", "secret"],
+    } as never);
+    mockedReadable.mockResolvedValue([
+      entry("transformers", { title: "Transformers", updated: "2026-06-05" }),
+      // "secret" is in the vault refs but NOT in the readable set → must be dropped.
     ]);
+    const r = await searchCommons(null, { scope: "vault:v1" });
+    expect(r.results.map((p) => p.slug)).toEqual(["transformers"]);
   });
 });

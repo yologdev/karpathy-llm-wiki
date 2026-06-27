@@ -12,9 +12,11 @@
  * visibility-scoped candidate pool, so a search never WIDENS visibility beyond
  * what the scope's pool already allows (same guard as the /query retrieval). For
  * `scope=all` that pool is public + non-agent by construction; for a `vault:<id>`
- * scope it's the viewer's readable vault refs with agent-scoped pages excluded —
- * so a viewer's OWN private page in their public vault stays visible to them (and
- * only them), but no search can surface another user's private page.
+ * scope it's the viewer's readable refs of a PUBLIC vault — INCLUDING agent-knowledge
+ * filed into it. Readability is the only gate: a viewer's OWN private page in their
+ * public vault stays visible to them (and only them), a public vault's
+ * publicly-readable agent-knowledge is visible to all, and no search can surface
+ * another user's private page.
  */
 
 import type { IndexEntry } from "./types";
