@@ -42,4 +42,16 @@ describe("mapWithConcurrency", () => {
     });
     expect(out).toEqual([]);
   });
+
+  it("rejects the whole call when any fn rejects (documented contract)", async () => {
+    // Callers (search, context) rely on a failed read surfacing as an error
+    // rather than being swallowed. Lock that in so a future "skip-on-failure"
+    // refactor can't silently change the contract.
+    await expect(
+      mapWithConcurrency([1, 2, 3], 2, async (n) => {
+        if (n === 2) throw new Error("boom");
+        return n;
+      }),
+    ).rejects.toThrow("boom");
+  });
 });

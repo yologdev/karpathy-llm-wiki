@@ -7,7 +7,11 @@
  * pool. Use it anywhere a `for (… of …) await` loop reads/writes per item.
  */
 
-/** Default cap on concurrent R2 reads/writes for a fan-out over pages. */
+/**
+ * Default cap on concurrent R2 reads/writes for a fan-out over pages. Matches
+ * `lifecycle.ts`'s independent `LIFECYCLE_CONCURRENCY` (kept separate so the two
+ * fan-out classes can be tuned apart); keep them in mind together if you retune.
+ */
 export const READ_CONCURRENCY = 12;
 
 /**
