@@ -71,6 +71,13 @@ describe("GET /api/agents/[id]/token", () => {
     expect(res.status).toBe(403);
     expect(mockedInfo).not.toHaveBeenCalled();
   });
+
+  it("404 when the agent doesn't exist", async () => {
+    mockedAssert.mockResolvedValue(null);
+    const res = await GET(new Request("http://localhost"), { params });
+    expect(res.status).toBe(404);
+    expect(mockedInfo).not.toHaveBeenCalled();
+  });
 });
 
 describe("POST /api/agents/[id]/token", () => {

@@ -21,13 +21,21 @@ export function AgentTokenPanel({ agentId }: { agentId: string }) {
   const [exists, setExists] = useState(false);
   const [createdAt, setCreatedAt] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false);
+  // The status fetch FAILED (couldn't determine existence). Tracked separately
+  // from `exists`: we must NOT fall back to "No token yet"/"Generate" on an
+  // unknown status, or the owner could click Generate and silently rotate away a
+  // live token. Unknown ≠ none.
+  const [statusError, setStatusError] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
         const res = await fetch(`/api/agents/${agentId}/token`);
-        if (!res.ok) return;
+        if (!res.ok) {
+          if (!cancelled) setStatusError(true);
+          return;
+        }
         const data = (await res.json()) as {
           exists?: boolean;
           createdAt?: string;
@@ -37,7 +45,9 @@ export function AgentTokenPanel({ agentId }: { agentId: string }) {
           setCreatedAt(data.createdAt ?? null);
         }
       } catch {
-        // Status is best-effort — the action buttons still work without it.
+        // Network/parse failure → status unknown (not "none"); warn rather than
+        // present Generate as the safe default.
+        if (!cancelled) setStatusError(true);
       } finally {
         if (!cancelled) setLoaded(true);
       }
@@ -56,6 +66,7 @@ export function AgentTokenPanel({ agentId }: { agentId: string }) {
         const body = (await res.json().catch(() => ({}))) as { error?: string };
         throw new Error(body.error ?? `request failed (${res.status})`);
       }
+      setStatusError(false); // the action gives us authoritative state again
       if (method === "POST") {
         const data = (await res.json()) as { token: string };
         setToken(data.token);
@@ -98,10 +109,17 @@ export function AgentTokenPanel({ agentId }: { agentId: string }) {
       </p>
 
       {/* Credential status — survives reload. Hidden while a freshly generated
-          token is on screen (that block already says it all). */}
+          token is on screen (that block already says it all). On an unknown
+          status (fetch failed) we warn rather than claim "no token", so the
+          owner isn't lured into Generate (which would rotate a live token). */}
       {loaded && !token && (
         <p className="mt-3 text-sm">
-          {exists ? (
+          {statusError ? (
+            <span className="text-amber-600 dark:text-amber-400">
+              Couldn&rsquo;t check token status — reload before generating, so you
+              don&rsquo;t rotate an active token by mistake.
+            </span>
+          ) : exists ? (
             <span className="text-foreground/70">
               <span className="text-green-600 dark:text-green-400">●</span>{" "}
               Active token
@@ -142,7 +160,11 @@ export function AgentTokenPanel({ agentId }: { agentId: string }) {
           disabled={busy}
           className="rounded-md border border-foreground/20 px-3 py-1.5 text-sm font-medium hover:bg-foreground/5 disabled:opacity-50"
         >
-          {exists ? "Rotate token" : "Generate token"}
+          {statusError
+            ? "Generate / rotate token"
+            : exists
+              ? "Rotate token"
+              : "Generate token"}
         </button>
         <button
           type="button"

@@ -240,21 +240,23 @@ export async function agentTokenInfo(
     if (isEnoent(err)) return { exists: false };
     throw err; // a real storage failure is OUR problem — let the caller 500
   }
+  let stored: { tokenHash?: unknown; createdAt?: unknown };
   try {
-    const stored = JSON.parse(raw) as {
-      tokenHash?: unknown;
-      createdAt?: unknown;
-    };
-    if (typeof stored.tokenHash !== "string") return { exists: false };
-    return {
-      exists: true,
-      createdAt:
-        typeof stored.createdAt === "string" ? stored.createdAt : undefined,
-    };
-  } catch {
-    // Corrupt secret file: a credential effectively exists (rotating fixes it).
+    stored = JSON.parse(raw);
+  } catch (err) {
+    // A corrupt secret file is OUR data-integrity problem. A credential is
+    // effectively present (rotating fixes it), so report exists:true — but LOG
+    // it, exactly as verifyAgentToken does for the same file, so the corruption
+    // is observable instead of silently shown as a healthy active token.
+    logger.error("agents", `agentTokenInfo: corrupt secret file for "${id}":`, err);
     return { exists: true };
   }
+  if (typeof stored.tokenHash !== "string") return { exists: false };
+  return {
+    exists: true,
+    createdAt:
+      typeof stored.createdAt === "string" ? stored.createdAt : undefined,
+  };
 }
 
 /**
