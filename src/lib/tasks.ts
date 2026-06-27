@@ -70,7 +70,9 @@ export type Task =
       /** Provenance URL for a text ingest (the original source link). */
       sourceUrl?: string;
       /** Explicit source classification (e.g. agent `asOwner` ingests set
-       *  x-mention/url/text); when absent the pipeline derives it. */
+       *  x-mention/url/text); when absent the pipeline derives it. Intentionally a
+       *  SUBSET of `IngestOptions["sourceType"]` — image/pdf/youtube are set
+       *  internally by the ingest functions, never carried over the queue. */
       sourceType?: "x-mention" | "url" | "text";
       /** Agent id to attach the resulting page to as one of its learning pages
        *  (agent-scoped ingests). */

@@ -20,12 +20,22 @@ vi.mock("@/lib/vault", () => ({
   vaultOwnedBy: vi.fn(() => false),
 }));
 
+// Keep parseTask etc. real; only stub the queue producer. Default false ⇒
+// off-Workers, so enqueueOrInline runs the inline path (the existing tests
+// exercise that). Override to true to test the QUEUED (prod) path.
+vi.mock("@/lib/tasks", async (orig) => ({
+  ...(await orig<typeof import("@/lib/tasks")>()),
+  enqueueTask: vi.fn(async () => false),
+}));
+
 import { verifyAgentToken, addAgentLearningPage, getAgent } from "@/lib/agents";
 import { getServicePrincipal } from "@/lib/auth";
 import { ingestUrl, ingest } from "@/lib/ingest";
 import { addToVault, vaultOwnedBy } from "@/lib/vault";
+import { enqueueTask } from "@/lib/tasks";
 import { POST } from "@/app/api/agents/[id]/ingest/route";
 
+const mockedEnqueue = vi.mocked(enqueueTask);
 const mockedVerify = vi.mocked(verifyAgentToken);
 const mockedAddLearning = vi.mocked(addAgentLearningPage);
 const mockedGetAgent = vi.mocked(getAgent);
@@ -49,6 +59,7 @@ function req(body: unknown, token?: string): Request {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mockedEnqueue.mockResolvedValue(false); // default: inline path
   mockedVerify.mockResolvedValue("alice--yoyo");
   mockedServicePrincipal.mockReturnValue(null);
   mockedAddLearning.mockResolvedValue();
@@ -86,7 +97,7 @@ describe("POST /api/agents/[id]/ingest", () => {
     expect(mockedAddLearning).toHaveBeenCalledWith("alice--yoyo", "ingested-page");
   });
 
-  it("returns a queued job (async contract — no longer blocks on the slug)", async () => {
+  it("returns the async response contract { queued, jobId }", async () => {
     const res = await POST(req({ url: "https://example.com" }, "alice--yoyo.s"), {
       params,
     });
@@ -94,6 +105,32 @@ describe("POST /api/agents/[id]/ingest", () => {
     const body = await res.json();
     expect(body.queued).toBe(true);
     expect(typeof body.jobId).toBe("string");
+  });
+
+  it("on Workers (queue available) enqueues the agent Task and does NOT run inline", async () => {
+    // This is the PROD path — assert the producer/consumer field seam directly,
+    // not just the off-Workers inline fallback the other tests exercise.
+    mockedEnqueue.mockResolvedValue(true);
+    const res = await POST(req({ url: "https://example.com" }, "alice--yoyo.s"), {
+      params,
+    });
+    expect(res.status).toBe(200);
+    expect((await res.json()).queued).toBe(true);
+    expect(mockedEnqueue).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: "ingest",
+        url: "https://example.com",
+        owner: "alice--yoyo",
+        author: "alice--yoyo",
+        triggeredBy: "alice--yoyo",
+        pageType: "agent-knowledge",
+        learningFor: "alice--yoyo",
+        jobId: expect.any(String),
+      }),
+    );
+    // Enqueued ⇒ the inline ingest must NOT have run.
+    expect(mockedIngestUrl).not.toHaveBeenCalled();
+    expect(mockedAddLearning).not.toHaveBeenCalled();
   });
 
   it("ingests text", async () => {

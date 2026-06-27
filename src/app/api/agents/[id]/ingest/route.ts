@@ -196,7 +196,19 @@ export async function POST(req: Request, { params }: RouteParams) {
           ? body.vaultId.trim()
           : undefined;
       if (!agentRecord) {
-        try { agentRecord = await getAgent(id); } catch { agentRecord = null; }
+        // Same discrimination as the auth paths above: a malformed id → null
+        // (no vault, no owner), but a real storage error must NOT be swallowed —
+        // it would silently misattribute the job's owner (→ agent id, so the
+        // human can't see it in the UI). Surface it as a 500.
+        try {
+          agentRecord = await getAgent(id);
+        } catch (err) {
+          if (err instanceof Error && err.message.includes("Invalid agent ID")) {
+            agentRecord = null;
+          } else {
+            throw err;
+          }
+        }
       }
       const effectiveVault = explicitVault || agentRecord?.defaultVault || undefined;
       if (effectiveVault) {
@@ -255,7 +267,9 @@ export async function POST(req: Request, { params }: RouteParams) {
     }
 
     // Enqueue (Workers) or run inline (off-Workers: local dev / tests). The inline
-    // path mirrors the executor's agent post-steps (learning page + vault filing).
+    // closure re-runs the same agent post-steps the executor does (learning-page
+    // attach + vault filing), with the same fail-soft posture so the two paths
+    // don't diverge.
     const opts: IngestOptions = {
       author,
       owner,
@@ -269,7 +283,10 @@ export async function POST(req: Request, { params }: RouteParams) {
         : url
           ? await ingestUrl(url, opts)
           : await ingest(title || "Untitled", text, { ...opts, sourceUrl });
-      if (learningFor) await addAgentLearningPage(learningFor, result.primarySlug);
+      if (learningFor) {
+        try { await addAgentLearningPage(learningFor, result.primarySlug); }
+        catch (e) { logger.error("agents", `learning-page attach failed for ${learningFor}:`, e); }
+      }
       if (validatedVault) {
         try { await addToVault(validatedVault, result.primarySlug); }
         catch (e) { logger.warn("agents", `vault filing failed for ${validatedVault}:`, e); }

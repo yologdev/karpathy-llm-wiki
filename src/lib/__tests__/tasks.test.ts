@@ -116,15 +116,22 @@ describe("parseTask", () => {
       sourceType: "text",
       learningFor: "alice--yoyo",
     });
-    // Invalid pageType / sourceType are dropped (not trusted from the queue).
+    // Invalid pageType / sourceType, and empty/whitespace string fields, are
+    // dropped (not trusted from the queue).
     const bad = parseTask({
       kind: "ingest",
       content: "x",
       pageType: "evil",
       sourceType: "bogus",
+      triggeredBy: "",
+      sourceUrl: "   ",
+      learningFor: "",
     });
     expect(bad).not.toHaveProperty("pageType");
     expect(bad).not.toHaveProperty("sourceType");
+    expect(bad).not.toHaveProperty("triggeredBy");
+    expect(bad).not.toHaveProperty("sourceUrl");
+    expect(bad).not.toHaveProperty("learningFor");
   });
 
   it("rejects a malformed staged descriptor", () => {

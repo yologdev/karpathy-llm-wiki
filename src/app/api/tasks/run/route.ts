@@ -160,13 +160,19 @@ export async function POST(req: Request) {
       });
     }
 
-    // Agent-scoped ingest: attach the page to the agent's learnings (fail-soft;
-    // addAgentLearningPage already no-ops + logs if the agent is gone).
+    // Agent-scoped ingest: attach the page to the agent's learnings. Fail-soft —
+    // the job is already `done` and the page exists; we won't fail the ingest over
+    // this. But a THROW here means the page is orphaned from the agent (it won't
+    // surface under the profile / `agent:` scope), so log it at error (matching
+    // addAgentLearningPage's own severity for the missing-agent case).
     if (task.learningFor) {
       try {
         await addAgentLearningPage(task.learningFor, result.primarySlug);
       } catch (err) {
-        logger.warn("tasks", `learning-page attach failed for agent="${task.learningFor}" slug="${result.primarySlug}": ${(err as Error).message}`);
+        logger.error(
+          "tasks",
+          `learning-page attach failed for agent="${task.learningFor}" slug="${result.primarySlug}": ${getErrorMessage(err)}`,
+        );
       }
     }
 

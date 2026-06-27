@@ -10,6 +10,12 @@ vi.mock("@/lib/ingest", () => ({
   reingest: vi.fn(),
 }));
 vi.mock("@/lib/lint-fix", () => ({ fixLintIssue: vi.fn() }));
+// Keep agentIdFor / DEFAULT_AGENT_NAME real (the reconcile path uses them);
+// only stub addAgentLearningPage so we can assert the learning attach + fail-soft.
+vi.mock("@/lib/agents", async (orig) => ({
+  ...(await orig<typeof import("@/lib/agents")>()),
+  addAgentLearningPage: vi.fn(async () => {}),
+}));
 vi.mock("@/lib/ingest-jobs", () => ({ updateIngestJob: vi.fn(async () => ({})) }));
 vi.mock("@/lib/ingest-staging", () => ({
   readStagedBytes: vi.fn(async () => new Uint8Array([1, 2, 3]).buffer),
@@ -42,6 +48,9 @@ const mockedDeleteStaged = vi.mocked(deleteStaged);
 
 import { addToVault } from "@/lib/vault";
 const mockedAddToVault = vi.mocked(addToVault);
+
+import { addAgentLearningPage } from "@/lib/agents";
+const mockedAddLearning = vi.mocked(addAgentLearningPage);
 
 async function run(body: unknown) {
   const { POST } = await import("@/app/api/tasks/run/route");
@@ -124,6 +133,33 @@ describe("POST /api/tasks/run", () => {
         sourceType: "text",
       }),
     );
+  });
+
+  it("attaches the page to the agent's learnings on success (learningFor)", async () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    mockedIngest.mockResolvedValue({ primarySlug: "k" } as any);
+    const res = await run({
+      kind: "ingest",
+      content: "note",
+      owner: "alice--yoyo",
+      author: "alice--yoyo",
+      pageType: "agent-knowledge",
+      learningFor: "alice--yoyo",
+    });
+    expect(res.status).toBe(200);
+    expect(mockedAddLearning).toHaveBeenCalledWith("alice--yoyo", "k");
+  });
+
+  it("learning-page attach failure is fail-soft (the ingest still completes)", async () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    mockedIngest.mockResolvedValue({ primarySlug: "k" } as any);
+    mockedAddLearning.mockRejectedValueOnce(new Error("storage down"));
+    const res = await run({
+      kind: "ingest",
+      content: "note",
+      learningFor: "alice--yoyo",
+    });
+    expect(res.status).toBe(200); // not failed by the orphan
   });
 
   it("ingest triggeredBy defaults to author when not provided", async () => {

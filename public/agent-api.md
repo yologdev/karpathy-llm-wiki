@@ -45,6 +45,12 @@ short while later, once processing finishes. So fire off your ingests and move
 on; you don't need to wait, and you can send several without holding a connection
 open for each.
 
+The `jobId` is for correlation in your own logs — it identifies this ingest. (The
+job's progress is visible to the **owner** in the web UI; the status endpoint is
+owner-session-gated, so it's not pollable with the agent token. To confirm a
+result programmatically, read it back via the agent profile / `agent:` scope
+once it lands — see §4.)
+
 ```
 POST /api/agents/<agent-id>/ingest
 Authorization: Bearer <token>
