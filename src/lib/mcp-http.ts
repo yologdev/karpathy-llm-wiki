@@ -45,6 +45,9 @@ import {
   handleRevertRevision,
   handleListVaults,
   handleVaultPages,
+  handleVaultCurate,
+  handleVaultUncurate,
+  handleVaultCreate,
   handleAgentContext,
   handleDataviewQuery,
   handleWikiGraph,
@@ -572,6 +575,54 @@ export const MCP_TOOLS: ToolDef[] = [
         );
       }
       return handleVaultPages({ owner, vault: args.vault });
+    },
+  },
+  {
+    name: "vault_curate",
+    description:
+      "Curate a commons page into one of your named vaults. " +
+      "Auto-creates the vault on first use.",
+    inputSchema: schema(
+      {
+        slug: str("Page slug to curate"),
+        vault: str("Vault name"),
+      },
+      ["slug", "vault"],
+    ),
+    write: true,
+    run: (a, p) => {
+      const args = a as { slug: string; vault: string };
+      return handleVaultCurate({ slug: args.slug, owner: p!.handle, vault: args.vault });
+    },
+  },
+  {
+    name: "vault_create",
+    description: "Create a new named vault.",
+    inputSchema: schema(
+      { name: str("Vault name") },
+      ["name"],
+    ),
+    write: true,
+    run: (a, p) => {
+      const args = a as { name: string };
+      return handleVaultCreate({ owner: p!.handle, name: args.name });
+    },
+  },
+  {
+    name: "vault_uncurate",
+    description:
+      "Remove a curated page from one of your named vaults.",
+    inputSchema: schema(
+      {
+        slug: str("Page slug to remove"),
+        vault: str("Vault name"),
+      },
+      ["slug", "vault"],
+    ),
+    write: true,
+    run: (a, p) => {
+      const args = a as { slug: string; vault: string };
+      return handleVaultUncurate({ slug: args.slug, owner: p!.handle, vault: args.vault });
     },
   },
   // -- Agent context --------------------------------------------------------

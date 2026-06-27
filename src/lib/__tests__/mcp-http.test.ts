@@ -823,6 +823,115 @@ describe("dispatchMcp — vault tools", () => {
     expect(r2.isError).toBe(true);
     expect(r2.content[0].text).toMatch(/owner is required/i);
   });
+
+  it("vault_curate, vault_create, vault_uncurate appear in tools/list", async () => {
+    const res = await dispatchMcp({ id: 1, method: "tools/list" }, null);
+    const tools = (res!.result as { tools: { name: string }[] }).tools;
+    const names = tools.map((t) => t.name);
+    expect(names).toContain("vault_curate");
+    expect(names).toContain("vault_create");
+    expect(names).toContain("vault_uncurate");
+  });
+
+  it("vault_curate requires authentication", async () => {
+    const res = await dispatchMcp(
+      {
+        id: 1,
+        method: "tools/call",
+        params: { name: "vault_curate", arguments: { slug: "test", vault: "inbox" } },
+      },
+      null,
+    );
+    const r2 = res!.result as { isError?: boolean; content: { text: string }[] };
+    expect(r2.isError).toBe(true);
+    expect(r2.content[0].text).toMatch(/authentication required/i);
+  });
+
+  it("vault_create requires authentication", async () => {
+    const res = await dispatchMcp(
+      {
+        id: 1,
+        method: "tools/call",
+        params: { name: "vault_create", arguments: { name: "inbox" } },
+      },
+      null,
+    );
+    const r2 = res!.result as { isError?: boolean; content: { text: string }[] };
+    expect(r2.isError).toBe(true);
+    expect(r2.content[0].text).toMatch(/authentication required/i);
+  });
+
+  it("vault_uncurate requires authentication", async () => {
+    const res = await dispatchMcp(
+      {
+        id: 1,
+        method: "tools/call",
+        params: { name: "vault_uncurate", arguments: { slug: "test", vault: "inbox" } },
+      },
+      null,
+    );
+    const r2 = res!.result as { isError?: boolean; content: { text: string }[] };
+    expect(r2.isError).toBe(true);
+    expect(r2.content[0].text).toMatch(/authentication required/i);
+  });
+
+  it("vault_curate forces owner from principal (ignores caller-supplied owner)", async () => {
+    // Create a page for curation
+    await writeWikiPage("curate-me", "---\ntitle: Curate Me\nvisibility: public\n---\n# Curate Me\nContent");
+
+    const res = await dispatchMcp(
+      {
+        id: 1,
+        method: "tools/call",
+        params: {
+          name: "vault_curate",
+          arguments: { slug: "curate-me", vault: "research", owner: "evil-hacker" },
+        },
+      },
+      ALICE,
+    );
+    const r2 = res!.result as { content: { text: string }[] };
+    const parsed = JSON.parse(r2.content[0].text);
+    expect(parsed.curated).toBe(true);
+    expect(parsed.owner).toBe("alice"); // forced from principal, not "evil-hacker"
+    expect(parsed.vault).toBe("research");
+  });
+
+  it("vault_create forces owner from principal", async () => {
+    const res = await dispatchMcp(
+      {
+        id: 1,
+        method: "tools/call",
+        params: {
+          name: "vault_create",
+          arguments: { name: "my-new-vault", owner: "evil-hacker" },
+        },
+      },
+      ALICE,
+    );
+    const r2 = res!.result as { content: { text: string }[] };
+    const parsed = JSON.parse(r2.content[0].text);
+    expect(parsed.vault).toBeDefined();
+    expect(parsed.vault.owner).toBe("alice"); // forced from principal
+  });
+
+  it("vault_uncurate forces owner from principal", async () => {
+    const res = await dispatchMcp(
+      {
+        id: 1,
+        method: "tools/call",
+        params: {
+          name: "vault_uncurate",
+          arguments: { slug: "some-slug", vault: "inbox", owner: "evil-hacker" },
+        },
+      },
+      ALICE,
+    );
+    const r2 = res!.result as { content: { text: string }[] };
+    const parsed = JSON.parse(r2.content[0].text);
+    expect(parsed.curated).toBe(false);
+    expect(parsed.owner).toBe("alice"); // forced from principal
+  });
 });
 
 describe("dispatchMcp — agent_context", () => {
