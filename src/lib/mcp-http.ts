@@ -40,6 +40,9 @@ import {
   handleCreateDiscussion,
   handleAddComment,
   handleResolveDiscussion,
+  handleListRevisions,
+  handleReadRevision,
+  handleRevertRevision,
 } from "@/mcp";
 import { readWikiPageWithFrontmatter } from "@/lib/wiki";
 import { canWriteFrontmatter } from "@/lib/authz";
@@ -474,6 +477,53 @@ export const MCP_TOOLS: ToolDef[] = [
       handleResolveDiscussion(
         a as Parameters<typeof handleResolveDiscussion>[0],
       ),
+  },
+  // -- Revision tools -----------------------------------------------------
+  {
+    name: "list_revisions",
+    description:
+      "List revision history for a wiki page (public, read-only). Returns timestamps and metadata.",
+    inputSchema: schema(
+      { slug: str("Slug of the wiki page") },
+      ["slug"],
+    ),
+    write: false,
+    run: (a) =>
+      handleListRevisions(a as Parameters<typeof handleListRevisions>[0]),
+  },
+  {
+    name: "read_revision",
+    description:
+      "Read the content of a specific revision by slug and timestamp (public, read-only). " +
+      "Use list_revisions first to discover available timestamps.",
+    inputSchema: schema(
+      {
+        slug: str("Slug of the wiki page"),
+        timestamp: { type: "number", description: "Revision timestamp (from list_revisions)" },
+      },
+      ["slug", "timestamp"],
+    ),
+    write: false,
+    run: (a) =>
+      handleReadRevision(a as Parameters<typeof handleReadRevision>[0]),
+  },
+  {
+    name: "revert_revision",
+    description:
+      "Revert a wiki page to a previous revision. Restores the page content from the specified timestamp.",
+    inputSchema: schema(
+      {
+        slug: str("Slug of the wiki page to revert"),
+        timestamp: { type: "number", description: "Revision timestamp to revert to (from list_revisions)" },
+      },
+      ["slug", "timestamp"],
+    ),
+    write: true,
+    run: (a, p) =>
+      handleRevertRevision({
+        ...(a as { slug: string; timestamp: number }),
+        author: p!.handle,
+      }),
   },
 ];
 

@@ -10,7 +10,8 @@ import {
   MCP_SERVER_INFO,
   _internal,
 } from "../mcp-http";
-import { ensureDirectories } from "../wiki";
+import { ensureDirectories, writeWikiPage } from "../wiki";
+import { saveRevision } from "../revisions";
 import { _resetStorage } from "../storage";
 import { createVault, vaultSlugs } from "../vault";
 import { registerAgent } from "../agents";
@@ -591,5 +592,144 @@ describe("dispatchMcp — resolve_discussion", () => {
     const r = res!.result as { isError?: boolean; content: { text: string }[] };
     expect(r.isError).toBe(true);
     expect(r.content[0].text).toMatch(/authentication required/i);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Revision tools
+// ---------------------------------------------------------------------------
+
+describe("dispatchMcp — list_revisions", () => {
+  it("tools/list returns list_revisions", async () => {
+    const res = await dispatchMcp({ id: 1, method: "tools/list" }, null);
+    const tools = (res!.result as { tools: { name: string }[] }).tools;
+    expect(tools.map((t) => t.name)).toContain("list_revisions");
+  });
+
+  it("returns revisions for a valid slug without auth (read-only)", async () => {
+    // Create a page then update it so a revision exists
+    await writeWikiPage("rev-list-test", "# Rev\nOriginal content");
+    await saveRevision("rev-list-test", "# Rev\nOriginal content");
+    await writeWikiPage("rev-list-test", "# Rev\nUpdated content");
+    const res = await dispatchMcp(
+      {
+        id: 1,
+        method: "tools/call",
+        params: { name: "list_revisions", arguments: { slug: "rev-list-test" } },
+      },
+      null,
+    );
+    const r = res!.result as { isError?: boolean; content: { text: string }[] };
+    expect(r.isError).toBeFalsy();
+    const parsed = JSON.parse(r.content[0].text);
+    expect(parsed.slug).toBe("rev-list-test");
+    expect(parsed.revisions.length).toBeGreaterThanOrEqual(1);
+  });
+});
+
+describe("dispatchMcp — read_revision", () => {
+  it("tools/list returns read_revision", async () => {
+    const res = await dispatchMcp({ id: 1, method: "tools/list" }, null);
+    const tools = (res!.result as { tools: { name: string }[] }).tools;
+    expect(tools.map((t) => t.name)).toContain("read_revision");
+  });
+
+  it("returns revision content for a valid slug + timestamp without auth", async () => {
+    // Set up a page with a revision
+    await writeWikiPage("rev-read-test", "# Rev\nFirst version");
+    await saveRevision("rev-read-test", "# Rev\nFirst version");
+    await writeWikiPage("rev-read-test", "# Rev\nSecond version");
+
+    // Get the timestamp from list_revisions
+    const listRes = await dispatchMcp(
+      {
+        id: 1,
+        method: "tools/call",
+        params: { name: "list_revisions", arguments: { slug: "rev-read-test" } },
+      },
+      null,
+    );
+    const listParsed = JSON.parse(
+      (listRes!.result as { content: { text: string }[] }).content[0].text,
+    );
+    const ts = listParsed.revisions[0].timestamp;
+
+    // Read that revision
+    const res = await dispatchMcp(
+      {
+        id: 2,
+        method: "tools/call",
+        params: { name: "read_revision", arguments: { slug: "rev-read-test", timestamp: ts } },
+      },
+      null,
+    );
+    const r = res!.result as { isError?: boolean; content: { text: string }[] };
+    expect(r.isError).toBeFalsy();
+    const parsed = JSON.parse(r.content[0].text);
+    expect(parsed.slug).toBe("rev-read-test");
+    expect(parsed.content).toContain("First version");
+  });
+});
+
+describe("dispatchMcp — revert_revision", () => {
+  it("tools/list returns revert_revision", async () => {
+    const res = await dispatchMcp({ id: 1, method: "tools/list" }, null);
+    const tools = (res!.result as { tools: { name: string }[] }).tools;
+    expect(tools.map((t) => t.name)).toContain("revert_revision");
+  });
+
+  it("rejects revert_revision without auth (write-gated)", async () => {
+    const res = await dispatchMcp(
+      {
+        id: 1,
+        method: "tools/call",
+        params: {
+          name: "revert_revision",
+          arguments: { slug: "test", timestamp: 1234567890 },
+        },
+      },
+      null,
+    );
+    const r = res!.result as { isError?: boolean; content: { text: string }[] };
+    expect(r.isError).toBe(true);
+    expect(r.content[0].text).toMatch(/authentication required/i);
+  });
+
+  it("passes principal.handle as author to handleRevertRevision", async () => {
+    // Create a page with a revision to revert to
+    await writeWikiPage("rev-revert-test", "# Revert\nOriginal");
+    await saveRevision("rev-revert-test", "# Revert\nOriginal");
+    await writeWikiPage("rev-revert-test", "# Revert\nChanged");
+
+    // Get the timestamp
+    const listRes = await dispatchMcp(
+      {
+        id: 1,
+        method: "tools/call",
+        params: { name: "list_revisions", arguments: { slug: "rev-revert-test" } },
+      },
+      null,
+    );
+    const listParsed = JSON.parse(
+      (listRes!.result as { content: { text: string }[] }).content[0].text,
+    );
+    const ts = listParsed.revisions[0].timestamp;
+
+    // Revert as ALICE
+    const res = await dispatchMcp(
+      {
+        id: 2,
+        method: "tools/call",
+        params: {
+          name: "revert_revision",
+          arguments: { slug: "rev-revert-test", timestamp: ts },
+        },
+      },
+      ALICE,
+    );
+    const r = res!.result as { isError?: boolean; content: { text: string }[] };
+    expect(r.isError).toBeFalsy();
+    const parsed = JSON.parse(r.content[0].text);
+    expect(parsed.slug).toBe("rev-revert-test");
   });
 });
