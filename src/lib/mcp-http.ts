@@ -47,6 +47,7 @@ import {
   handleVaultPages,
   handleAgentContext,
 } from "@/mcp";
+import { mergePages } from "@/lib/merge";
 import { readWikiPageWithFrontmatter } from "@/lib/wiki";
 import { canWriteFrontmatter } from "@/lib/authz";
 import { addToVault } from "@/lib/vault";
@@ -393,6 +394,29 @@ export const MCP_TOOLS: ToolDef[] = [
       handleReconcilePage({
         ...(a as { pageSlug: string; threadIndex: number }),
         author: p!.handle,
+      }),
+  },
+  {
+    name: "merge_pages",
+    description:
+      "Merge one wiki page into another: folds both bodies into the target (LLM reconcile), " +
+      "unions their sources/aliases, re-points links, records the absorbed slug as an alias " +
+      "of the survivor so its URL redirects, then deletes the absorbed page. " +
+      "Use to fix duplicate-entity lint issues.",
+    inputSchema: schema(
+      {
+        from: str("Slug of the page to absorb (will be deleted)"),
+        into: str("Slug of the surviving canonical page"),
+      },
+      ["from", "into"],
+    ),
+    write: true,
+    run: (a, p) =>
+      mergePages({
+        from: (a as { from: string }).from,
+        into: (a as { into: string }).into,
+        actor: p!.handle,
+        bypassOwnerCheck: false,
       }),
   },
   // -- Discussion tools ---------------------------------------------------
