@@ -176,7 +176,7 @@ describe("searchCommons — vault scope", () => {
     expect(r.results).toEqual([]);
   });
 
-  it("intersects a public vault's refs with readable pages and excludes agent pages", async () => {
+  it("intersects a public vault's refs with readable pages, INCLUDING filed agent-knowledge", async () => {
     mockedGetVault.mockResolvedValue({
       id: "v1",
       visibility: "public",
@@ -184,11 +184,17 @@ describe("searchCommons — vault scope", () => {
     } as never);
     mockedReadable.mockResolvedValue([
       entry("transformers", { title: "Transformers", updated: "2026-06-05" }),
+      // Agent-knowledge deliberately filed into the vault — must now show (it's
+      // in the vault's refs and readable). Readability is the only gate.
       entry("agent-note", { type: "agent-knowledge", updated: "2026-06-06" }),
       entry("unreferenced", { updated: "2026-06-07" }),
     ]);
     const r = await searchCommons(null, { scope: "vault:v1" });
-    // Only the referenced, non-agent page survives.
-    expect(r.results.map((p) => p.slug)).toEqual(["transformers"]);
+    // Both referenced pages survive (recent sort → newest first); the
+    // unreferenced page is excluded. Agent-knowledge is no longer stripped.
+    expect(r.results.map((p) => p.slug).sort()).toEqual([
+      "agent-note",
+      "transformers",
+    ]);
   });
 });
