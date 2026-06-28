@@ -52,6 +52,8 @@ import {
   handleAgentContext,
   handleDataviewQuery,
   handleWikiGraph,
+  handleActivityTrail,
+  handleIngestHistory,
 } from "@/mcp";
 import { mergePages } from "@/lib/merge";
 import { readWikiPageWithFrontmatter } from "@/lib/wiki";
@@ -732,6 +734,33 @@ export const MCP_TOOLS: ToolDef[] = [
     write: false,
     run: (a) =>
       handleWikiGraph(a as Parameters<typeof handleWikiGraph>[0]),
+  },
+  // -- Activity awareness (read-only) ----------------------------------------
+  {
+    name: "activity_trail",
+    description:
+      "View recent wiki activity — ingests, re-ingests, and edits — with timestamps and actor " +
+      "attribution. Returns a JSON array of TrailEvent objects sorted by most recent first. " +
+      "Each event includes ts (epoch ms), when (ISO date), actor, action, slug, and title.",
+    inputSchema: schema({
+      limit: { type: "number", description: "Max events to return (default 20)" },
+    }),
+    write: false,
+    run: (a) =>
+      handleActivityTrail(a as Parameters<typeof handleActivityTrail>[0]),
+  },
+  {
+    name: "ingest_history",
+    description:
+      "View ingest ledger entries for provenance auditing. Returns structured JSON array of past " +
+      "ingest operations, most recent first. Each entry includes ingest_id, source_type, source_url, " +
+      "primary_slug, related_slugs, timestamps, and status.",
+    inputSchema: schema({
+      limit: { type: "number", description: "Max entries to return (default 50)" },
+    }),
+    write: false,
+    run: (a) =>
+      handleIngestHistory(a as Parameters<typeof handleIngestHistory>[0]),
   },
 ];
 

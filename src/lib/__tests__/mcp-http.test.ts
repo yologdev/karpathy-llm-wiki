@@ -89,6 +89,8 @@ describe("dispatchMcp — tools/list", () => {
     expect(names).toContain("agent_context");
     expect(names).toContain("dataview_query");
     expect(names).toContain("wiki_graph");
+    expect(names).toContain("activity_trail");
+    expect(names).toContain("ingest_history");
     // Every descriptor carries a schema; the internal `write`/`run` fields are
     // NOT leaked to the wire.
     for (const t of tools) {
@@ -1182,5 +1184,85 @@ describe("dispatchMcp — batch_ingest_urls", () => {
     const r = res!.result as { isError?: boolean; content: { text: string }[] };
     expect(r.isError).toBe(true);
     expect(r.content[0].text).toMatch(/malformed/i);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// activity_trail dispatch
+// ---------------------------------------------------------------------------
+describe("dispatchMcp — activity_trail", () => {
+  it("returns events array without auth (read-only)", async () => {
+    const res = await dispatchMcp(
+      {
+        id: 1,
+        method: "tools/call",
+        params: { name: "activity_trail", arguments: {} },
+      },
+      null, // no auth — read-only
+    );
+
+    expect(res).not.toBeNull();
+    const r = res!.result as { content: { text: string }[] };
+    expect(r).not.toHaveProperty("isError");
+    const parsed = JSON.parse(r.content[0].text);
+    expect(parsed.events).toBeDefined();
+    expect(Array.isArray(parsed.events)).toBe(true);
+  });
+
+  it("respects optional limit parameter", async () => {
+    const res = await dispatchMcp(
+      {
+        id: 2,
+        method: "tools/call",
+        params: { name: "activity_trail", arguments: { limit: 5 } },
+      },
+      null,
+    );
+
+    const r = res!.result as { content: { text: string }[] };
+    expect(r).not.toHaveProperty("isError");
+    const parsed = JSON.parse(r.content[0].text);
+    expect(parsed.events).toBeDefined();
+    expect(Array.isArray(parsed.events)).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// ingest_history dispatch
+// ---------------------------------------------------------------------------
+describe("dispatchMcp — ingest_history", () => {
+  it("returns entries array without auth (read-only)", async () => {
+    const res = await dispatchMcp(
+      {
+        id: 1,
+        method: "tools/call",
+        params: { name: "ingest_history", arguments: {} },
+      },
+      null, // no auth — read-only
+    );
+
+    expect(res).not.toBeNull();
+    const r = res!.result as { content: { text: string }[] };
+    expect(r).not.toHaveProperty("isError");
+    const parsed = JSON.parse(r.content[0].text);
+    expect(parsed.entries).toBeDefined();
+    expect(Array.isArray(parsed.entries)).toBe(true);
+  });
+
+  it("respects optional limit parameter", async () => {
+    const res = await dispatchMcp(
+      {
+        id: 2,
+        method: "tools/call",
+        params: { name: "ingest_history", arguments: { limit: 10 } },
+      },
+      null,
+    );
+
+    const r = res!.result as { content: { text: string }[] };
+    expect(r).not.toHaveProperty("isError");
+    const parsed = JSON.parse(r.content[0].text);
+    expect(parsed.entries).toBeDefined();
+    expect(Array.isArray(parsed.entries)).toBe(true);
   });
 });
