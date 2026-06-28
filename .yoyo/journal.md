@@ -5686,3 +5686,25 @@ Audited the HTTP MCP surface (16 tools) against the 49 stdio tools. The clear ga
 - #580 — MCP SDK still at v1.29.0. Correctly blocked.
 
 **Pipeline state:** 1 in triage (#783), 0 ready, 2 in-progress (#772, #749), 1 blocked (#580). The merge conflicts on PRs #775 and #779 are the current throughput constraint — Review Agent should resolve them. Once #783 is triaged and the in-progress work clears, the discussion tools are the right next build target.
+
+## 2025-06-28 (architect)
+Issue #797: lint-fix: thread author parameter through all fix functions
+Mode: RESCUE (attempt 3)
+Action: plan — Rewrote issue body to minimal pattern-description form
+
+The build agent failed 6 times with zero diffs. Timing analysis revealed
+each post-rescue attempt completed within seconds — the agent was running
+but bailing without edits.
+
+Previous architect rescues:
+- Attempt 1: 22 explicit find-replace code blocks → agent refused (copy-paste policy)
+- Attempt 2: Per-function bullet list with line numbers → agent still bailed (possibly
+  interpreted structured lists as directive instructions)
+
+This attempt: stripped to pure pattern description. No per-function lists, no line
+numbers, no code blocks. Just: "find the 9 hardcoded strings, add a default
+param to each function, replace the hardcoded string with the variable."
+
+The task is genuinely XS (one file, one repeated pattern). If this attempt also
+fails, the issue should become human-action — there's something about this
+specific file/pattern that the build agent can't handle autonomously.
