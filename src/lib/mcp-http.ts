@@ -25,6 +25,7 @@ import {
   handleListPages,
   handleQueryWiki,
   handleIngestUrl,
+  handleBatchIngest,
   handleIngestText,
   handleReingest,
   handleCreatePage,
@@ -207,6 +208,29 @@ export const MCP_TOOLS: ToolDef[] = [
     run: (a, p) =>
       handleIngestUrl(
         attributed(a, p!.handle) as Parameters<typeof handleIngestUrl>[0],
+      ),
+  },
+  {
+    name: "batch_ingest_urls",
+    description:
+      "Ingest multiple URLs in one call. Validates all URLs upfront (rejects the batch if any are malformed), " +
+      "then ingests sequentially and returns per-URL success/failure results.",
+    inputSchema: schema(
+      {
+        urls: {
+          type: "array",
+          items: { type: "string" },
+          description: "URLs to ingest (required)",
+        },
+        tags: { type: "array", items: { type: "string" }, description: "Optional tags applied to all URLs" },
+        vaultId: str("Optional vault ID to file results into"),
+      },
+      ["urls"],
+    ),
+    write: true,
+    run: (a, p) =>
+      handleBatchIngest(
+        attributed(a, p!.handle) as Parameters<typeof handleBatchIngest>[0],
       ),
   },
   {

@@ -134,7 +134,7 @@ describe("dispatchMcp — tools/call auth gating", () => {
     const writes = MCP_TOOLS.filter((t) => t.write).map((t) => t.name);
     const reads = MCP_TOOLS.filter((t) => !t.write).map((t) => t.name);
     expect(writes).toEqual(
-      expect.arrayContaining(["ingest_url", "ingest_text", "create_page", "save_query_answer", "reingest", "update_metadata", "fix_lint_issue", "reconcile_page", "merge_pages"]),
+      expect.arrayContaining(["ingest_url", "batch_ingest_urls", "ingest_text", "create_page", "save_query_answer", "reingest", "update_metadata", "fix_lint_issue", "reconcile_page", "merge_pages"]),
     );
     expect(reads).toEqual(
       expect.arrayContaining(["search_wiki", "read_page", "list_pages", "query_wiki", "lint_wiki"]),
@@ -1137,5 +1137,50 @@ describe("dispatchMcp — wiki_graph", () => {
     const parsed = JSON.parse(r.content[0].text);
     expect(parsed.nodes).toBeDefined();
     expect(parsed.edges).toBeDefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// batch_ingest_urls dispatch
+// ---------------------------------------------------------------------------
+describe("dispatchMcp — batch_ingest_urls", () => {
+  it("is listed in tools/list", async () => {
+    const res = await dispatchMcp({ id: 1, method: "tools/list" }, null);
+    const tools = (res!.result as { tools: { name: string }[] }).tools;
+    expect(tools.map((t) => t.name)).toContain("batch_ingest_urls");
+  });
+
+  it("blocks unauthenticated calls (write-gated)", async () => {
+    const res = await dispatchMcp(
+      {
+        id: 1,
+        method: "tools/call",
+        params: {
+          name: "batch_ingest_urls",
+          arguments: { urls: ["https://example.com"] },
+        },
+      },
+      null, // no auth
+    );
+    const r = res!.result as { isError?: boolean; content: { text: string }[] };
+    expect(r.isError).toBe(true);
+    expect(r.content[0].text).toMatch(/authentication required/i);
+  });
+
+  it("rejects batch with malformed URLs (upfront validation)", async () => {
+    const res = await dispatchMcp(
+      {
+        id: 1,
+        method: "tools/call",
+        params: {
+          name: "batch_ingest_urls",
+          arguments: { urls: ["not-a-url", "also bad"] },
+        },
+      },
+      ALICE,
+    );
+    const r = res!.result as { isError?: boolean; content: { text: string }[] };
+    expect(r.isError).toBe(true);
+    expect(r.content[0].text).toMatch(/malformed/i);
   });
 });
