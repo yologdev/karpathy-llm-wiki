@@ -91,6 +91,8 @@ describe("dispatchMcp — tools/list", () => {
     expect(names).toContain("wiki_graph");
     expect(names).toContain("activity_trail");
     expect(names).toContain("ingest_history");
+    expect(names).toContain("list_contributors");
+    expect(names).toContain("get_contributor");
     // Every descriptor carries a schema; the internal `write`/`run` fields are
     // NOT leaked to the wire.
     for (const t of tools) {
@@ -1268,6 +1270,63 @@ describe("dispatchMcp — ingest_history", () => {
     const parsed = JSON.parse(r.content[0].text);
     expect(parsed.entries).toBeDefined();
     expect(Array.isArray(parsed.entries)).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// list_contributors dispatch
+// ---------------------------------------------------------------------------
+describe("dispatchMcp — list_contributors", () => {
+  it("is registered as a read-only tool", () => {
+    const tool = MCP_TOOLS.find((t) => t.name === "list_contributors");
+    expect(tool).toBeDefined();
+    expect(tool!.write).toBe(false);
+  });
+
+  it("returns contributors array without auth (read-only)", async () => {
+    const res = await dispatchMcp(
+      {
+        id: 1,
+        method: "tools/call",
+        params: { name: "list_contributors", arguments: {} },
+      },
+      null, // no auth — read-only
+    );
+
+    expect(res).not.toBeNull();
+    const r = res!.result as { content: { text: string }[] };
+    expect(r).not.toHaveProperty("isError");
+    const parsed = JSON.parse(r.content[0].text);
+    expect(parsed.contributors).toBeDefined();
+    expect(Array.isArray(parsed.contributors)).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// get_contributor dispatch
+// ---------------------------------------------------------------------------
+describe("dispatchMcp — get_contributor", () => {
+  it("is registered as a read-only tool", () => {
+    const tool = MCP_TOOLS.find((t) => t.name === "get_contributor");
+    expect(tool).toBeDefined();
+    expect(tool!.write).toBe(false);
+  });
+
+  it("returns an error for unknown contributor (read-only, no auth needed)", async () => {
+    const res = await dispatchMcp(
+      {
+        id: 1,
+        method: "tools/call",
+        params: { name: "get_contributor", arguments: { handle: "nonexistent-user" } },
+      },
+      null, // no auth — read-only
+    );
+
+    expect(res).not.toBeNull();
+    const r = res!.result as { isError?: boolean; content: { text: string }[] };
+    // Unknown handles throw from handleGetContributor, surfaced as isError
+    expect(r.isError).toBe(true);
+    expect(r.content[0].text).toContain("nonexistent-user");
   });
 });
 
