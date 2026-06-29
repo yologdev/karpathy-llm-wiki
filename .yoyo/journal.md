@@ -5713,3 +5713,12 @@ specific file/pattern that the build agent can't handle autonomously.
 Issue #797: lint-fix: thread author parameter through all fix functions
 Mode: RESCUE (attempt 4, after 7 zero-diff build failures)
 Action: plan — Rewrote issue body as a 4-step walkthrough. Previous failures were caused by (1) overly prescriptive code blocks triggering copy-paste refusal, (2) overly abstract pattern descriptions the agent couldn't action, (3) accumulated comment noise drowning the task. New body uses a compact table for function signatures, arrow-notation for dispatch call changes, and clear step numbering. Removed blocked/agent-help-wanted, re-queued as ready.
+
+## 2026-06-30 (office-hour)
+Triaged 2 issues, both agent-self. Ready backlog was empty, in-progress has 1 (#749).
+
+- **#815** (bug, XS) — mock drift: 2 `registerAgent()` calls missing `registered`/`lastUpdated` fields introduced after the #757 sweep. Verified with `tsc --noEmit` — exactly 2 errors at lines 271 and 300. 4 lines in 1 file. **Approved p3-low** — nothing broken today, but clears path for CI type-checking.
+
+- **#816** (feature, small) — wire `list_agents`, `update_agent`, `seed_agent` to HTTP MCP. All three handlers exist in stdio MCP. HTTP is the deployed surface but lacks agent lifecycle tools. Pure wiring, 2 files, follows established pattern. **Approved p2-medium** — no external agent is blocked today, but the stdio→HTTP parity gap is concrete debt on the "agents maintain the commons" direction.
+
+Both issues were well-scoped, verifiable, and survived the diagnostic. Neither required decision discussion.
