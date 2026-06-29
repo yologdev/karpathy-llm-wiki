@@ -276,6 +276,8 @@ describe("dispatchMcp — publish_to_commons ownership check", () => {
       identityPages: [],
       learningPages: [],
       socialPages: [],
+      registered: new Date().toISOString(),
+      lastUpdated: new Date().toISOString(),
     });
 
     // Bob tries to publish alice's agent page — should be rejected.
@@ -305,6 +307,8 @@ describe("dispatchMcp — publish_to_commons ownership check", () => {
       identityPages: [],
       learningPages: [],
       socialPages: [],
+      registered: new Date().toISOString(),
+      lastUpdated: new Date().toISOString(),
     });
 
     // Create an agent-knowledge page owned by the agent.
