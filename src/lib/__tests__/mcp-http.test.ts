@@ -1270,3 +1270,152 @@ describe("dispatchMcp — ingest_history", () => {
     expect(Array.isArray(parsed.entries)).toBe(true);
   });
 });
+
+// ---------------------------------------------------------------------------
+// list_agents dispatch
+// ---------------------------------------------------------------------------
+describe("dispatchMcp — list_agents", () => {
+  it("is registered as a read-only tool", () => {
+    const tool = MCP_TOOLS.find((t) => t.name === "list_agents");
+    expect(tool).toBeDefined();
+    expect(tool!.write).toBe(false);
+  });
+
+  it("returns agents array without auth (read-only)", async () => {
+    // Register a test agent so there's something to list.
+    await registerAgent({
+      id: "alice--yoyo",
+      name: "yoyo",
+      description: "Alice's agent",
+      owner: "alice",
+      identityPages: [],
+      learningPages: [],
+      socialPages: [],
+      registered: new Date().toISOString(),
+      lastUpdated: new Date().toISOString(),
+    });
+
+    const res = await dispatchMcp(
+      {
+        id: 1,
+        method: "tools/call",
+        params: { name: "list_agents", arguments: {} },
+      },
+      null, // no auth — read-only
+    );
+
+    expect(res).not.toBeNull();
+    const r = res!.result as { content: { text: string }[] };
+    expect(r).not.toHaveProperty("isError");
+    const parsed = JSON.parse(r.content[0].text);
+    expect(parsed.agents).toBeDefined();
+    expect(Array.isArray(parsed.agents)).toBe(true);
+    expect(parsed.agents.length).toBeGreaterThanOrEqual(1);
+    expect(parsed.agents[0]).toHaveProperty("id");
+    expect(parsed.agents[0]).toHaveProperty("name");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// update_agent dispatch
+// ---------------------------------------------------------------------------
+describe("dispatchMcp — update_agent", () => {
+  it("rejects unauthenticated calls", async () => {
+    const res = await dispatchMcp(
+      {
+        id: 1,
+        method: "tools/call",
+        params: { name: "update_agent", arguments: { name: "new-name" } },
+      },
+      null, // no auth
+    );
+
+    const r = res!.result as { isError?: boolean; content: { text: string }[] };
+    expect(r.isError).toBe(true);
+    expect(r.content[0].text).toContain("Authentication required");
+  });
+
+  it("updates an agent profile when called by the owner", async () => {
+    await registerAgent({
+      id: "alice--yoyo",
+      name: "yoyo",
+      description: "Alice's agent",
+      owner: "alice",
+      identityPages: [],
+      learningPages: [],
+      socialPages: [],
+      registered: new Date().toISOString(),
+      lastUpdated: new Date().toISOString(),
+    });
+
+    const res = await dispatchMcp(
+      {
+        id: 1,
+        method: "tools/call",
+        params: {
+          name: "update_agent",
+          arguments: { description: "Updated description" },
+        },
+      },
+      ALICE,
+    );
+
+    const r = res!.result as { content: { text: string }[] };
+    expect(r).not.toHaveProperty("isError");
+    const parsed = JSON.parse(r.content[0].text);
+    expect(parsed.description).toBe("Updated description");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// seed_agent dispatch
+// ---------------------------------------------------------------------------
+describe("dispatchMcp — seed_agent", () => {
+  it("rejects unauthenticated calls", async () => {
+    const res = await dispatchMcp(
+      {
+        id: 1,
+        method: "tools/call",
+        params: {
+          name: "seed_agent",
+          arguments: {
+            agent_id: "test-bot",
+            name: "test-bot",
+            description: "A test bot",
+            sections: [],
+          },
+        },
+      },
+      null, // no auth
+    );
+
+    const r = res!.result as { isError?: boolean; content: { text: string }[] };
+    expect(r.isError).toBe(true);
+    expect(r.content[0].text).toContain("Authentication required");
+  });
+
+  it("seeds a new agent when authenticated", async () => {
+    const res = await dispatchMcp(
+      {
+        id: 1,
+        method: "tools/call",
+        params: {
+          name: "seed_agent",
+          arguments: {
+            agent_id: "test-bot",
+            name: "test-bot",
+            description: "A test bot",
+            sections: [],
+          },
+        },
+      },
+      ALICE,
+    );
+
+    const r = res!.result as { content: { text: string }[] };
+    expect(r).not.toHaveProperty("isError");
+    const parsed = JSON.parse(r.content[0].text);
+    expect(parsed.name).toBe("test-bot");
+    expect(parsed.owner).toBe("alice");
+  });
+});

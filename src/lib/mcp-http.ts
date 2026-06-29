@@ -50,6 +50,9 @@ import {
   handleVaultUncurate,
   handleVaultCreate,
   handleAgentContext,
+  handleListAgents,
+  handleUpdateAgent,
+  handleSeedAgent,
   handleDataviewQuery,
   handleWikiGraph,
   handleActivityTrail,
@@ -59,7 +62,7 @@ import { mergePages } from "@/lib/merge";
 import { readWikiPageWithFrontmatter } from "@/lib/wiki";
 import { canWriteFrontmatter } from "@/lib/authz";
 import { addToVault } from "@/lib/vault";
-import { getAgent } from "@/lib/agents";
+import { getAgent, agentIdFor } from "@/lib/agents";
 import { logger } from "@/lib/logger";
 import type { Principal } from "@/lib/auth";
 
@@ -688,6 +691,90 @@ export const MCP_TOOLS: ToolDef[] = [
     write: false,
     run: (a) =>
       handleAgentContext(a as Parameters<typeof handleAgentContext>[0]),
+  },
+  {
+    name: "list_agents",
+    description:
+      "List all registered agents with their IDs, names, descriptions, and timestamps.",
+    inputSchema: schema({}),
+    write: false,
+    run: () => handleListAgents(),
+  },
+  {
+    name: "update_agent",
+    description:
+      "Update the authenticated caller's agent profile — modify name, description, " +
+      "add or remove pages. The agent_id is scoped to the caller's identity.",
+    inputSchema: schema({
+      name: str("New display name"),
+      description: str("New description"),
+      addPages: {
+        type: "array",
+        description: "Pages to create and add to the agent profile",
+        items: {
+          type: "object",
+          properties: {
+            slug: str("Wiki page slug for this section"),
+            title: str("Page title"),
+            type: { type: "string", description: "Section type", enum: ["identity", "learnings", "social"] },
+            content: str("Markdown content for this section"),
+          },
+          required: ["slug", "title", "type", "content"],
+        },
+      },
+      removePages: {
+        type: "array",
+        description: "Page slugs to remove from the agent profile (does not delete wiki pages)",
+        items: { type: "string" },
+      },
+    }),
+    write: true,
+    run: async (a, p) => {
+      // Resolve the caller's agent id from their principal and verify ownership.
+      const agentId = agentIdFor(p!.handle);
+      const agent = await getAgent(agentId);
+      if (!agent) throw new Error(`Agent not found: ${agentId}`);
+      if (agent.owner && agent.owner !== p!.handle) {
+        throw new Error(
+          `Ownership mismatch: only the agent's owner can update its profile.`,
+        );
+      }
+      return handleUpdateAgent({ ...a, agent_id: agentId } as Parameters<typeof handleUpdateAgent>[0]);
+    },
+  },
+  {
+    name: "seed_agent",
+    description:
+      "Bootstrap (create or re-seed) an agent profile with identity, learnings, " +
+      "and social sections. The owner is set to the authenticated caller.",
+    inputSchema: schema(
+      {
+        agent_id: str("Agent ID (e.g. 'yoyo')"),
+        name: str("Display name"),
+        description: str("Agent description"),
+        sections: {
+          type: "array",
+          description: "Content sections to create as wiki pages",
+          items: {
+            type: "object",
+            properties: {
+              slug: str("Wiki page slug for this section"),
+              title: str("Page title"),
+              type: { type: "string", description: "Section type", enum: ["identity", "learnings", "social"] },
+              content: str("Markdown content for this section"),
+            },
+            required: ["slug", "title", "type", "content"],
+          },
+        },
+      },
+      ["agent_id", "name", "description", "sections"],
+    ),
+    write: true,
+    run: (a, p) => {
+      // Stamp the authenticated caller as owner.
+      const args = { ...a, owner: p!.handle } as Parameters<typeof handleSeedAgent>[0];
+      return handleSeedAgent(args);
+    },
   },
   // -- Knowledge structure (read-only) -------------------------------------
   {
