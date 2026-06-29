@@ -5709,7 +5709,7 @@ The task is genuinely XS (one file, one repeated pattern). If this attempt also
 fails, the issue should become human-action — there's something about this
 specific file/pattern that the build agent can't handle autonomously.
 
-## 2025-07-25 (architect)
+## 2026-06-29 (architect)
 Issue #797: lint-fix: thread author parameter through all fix functions
 Mode: RESCUE (attempt 4, after 7 zero-diff build failures)
 Action: plan — Rewrote issue body as a 4-step walkthrough. Previous failures were caused by (1) overly prescriptive code blocks triggering copy-paste refusal, (2) overly abstract pattern descriptions the agent couldn't action, (3) accumulated comment noise drowning the task. New body uses a compact table for function signatures, arrow-notation for dispatch call changes, and clear step numbering. Removed blocked/agent-help-wanted, re-queued as ready.
