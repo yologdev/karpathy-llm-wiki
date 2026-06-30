@@ -93,6 +93,10 @@ describe("dispatchMcp — tools/list", () => {
     expect(names).toContain("ingest_history");
     expect(names).toContain("list_contributors");
     expect(names).toContain("get_contributor");
+    expect(names).toContain("delete_agent");
+    expect(names).toContain("vault_delete");
+    expect(names).toContain("vault_rename");
+    expect(names).toContain("query_history");
     // Every descriptor carries a schema; the internal `write`/`run` fields are
     // NOT leaked to the wire.
     for (const t of tools) {
@@ -138,10 +142,10 @@ describe("dispatchMcp — tools/call auth gating", () => {
     const writes = MCP_TOOLS.filter((t) => t.write).map((t) => t.name);
     const reads = MCP_TOOLS.filter((t) => !t.write).map((t) => t.name);
     expect(writes).toEqual(
-      expect.arrayContaining(["ingest_url", "batch_ingest_urls", "ingest_text", "create_page", "update_page", "delete_page", "save_query_answer", "reingest", "update_metadata", "fix_lint_issue", "reconcile_page", "merge_pages"]),
+      expect.arrayContaining(["ingest_url", "batch_ingest_urls", "ingest_text", "create_page", "update_page", "delete_page", "save_query_answer", "reingest", "update_metadata", "fix_lint_issue", "reconcile_page", "merge_pages", "delete_agent", "vault_delete", "vault_rename"]),
     );
     expect(reads).toEqual(
-      expect.arrayContaining(["search_wiki", "read_page", "list_pages", "query_wiki", "lint_wiki"]),
+      expect.arrayContaining(["search_wiki", "read_page", "list_pages", "query_wiki", "lint_wiki", "query_history"]),
     );
   });
 
@@ -1631,5 +1635,233 @@ describe("dispatchMcp — seed_agent", () => {
     const parsed = JSON.parse(r.content[0].text);
     expect(parsed.name).toBe("test-bot");
     expect(parsed.owner).toBe("alice");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// delete_agent dispatch
+// ---------------------------------------------------------------------------
+describe("dispatchMcp — delete_agent", () => {
+  it("rejects unauthenticated calls", async () => {
+    const res = await dispatchMcp(
+      {
+        id: 1,
+        method: "tools/call",
+        params: { name: "delete_agent", arguments: { agent_id: "alice--yoyo" } },
+      },
+      null,
+    );
+    const r = res!.result as { isError?: boolean; content: { text: string }[] };
+    expect(r.isError).toBe(true);
+    expect(r.content[0].text).toMatch(/authentication required/i);
+  });
+
+  it("deletes an agent when called by the owner", async () => {
+    await registerAgent({
+      id: "alice--yoyo",
+      name: "yoyo",
+      description: "Alice's agent",
+      owner: "alice",
+      identityPages: [],
+      learningPages: [],
+      socialPages: [],
+      registered: new Date().toISOString(),
+      lastUpdated: new Date().toISOString(),
+    });
+
+    const res = await dispatchMcp(
+      {
+        id: 1,
+        method: "tools/call",
+        params: { name: "delete_agent", arguments: { agent_id: "alice--yoyo" } },
+      },
+      ALICE,
+    );
+    const r = res!.result as { content: { text: string }[] };
+    expect(r).not.toHaveProperty("isError");
+    const parsed = JSON.parse(r.content[0].text);
+    expect(parsed.deleted).toBe(true);
+  });
+
+  it("rejects delete_agent when caller does not own the agent (cross-user)", async () => {
+    await registerAgent({
+      id: "alice--yoyo",
+      name: "yoyo",
+      description: "Alice's agent",
+      owner: "alice",
+      identityPages: [],
+      learningPages: [],
+      socialPages: [],
+      registered: new Date().toISOString(),
+      lastUpdated: new Date().toISOString(),
+    });
+
+    // Bob tries to delete Alice's agent
+    const res = await dispatchMcp(
+      {
+        id: 1,
+        method: "tools/call",
+        params: { name: "delete_agent", arguments: { agent_id: "alice--yoyo" } },
+      },
+      BOB,
+    );
+    const r = res!.result as { isError?: boolean; content: { text: string }[] };
+    expect(r.isError).toBe(true);
+    expect(r.content[0].text).toMatch(/cannot modify/i);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// vault_delete dispatch
+// ---------------------------------------------------------------------------
+describe("dispatchMcp — vault_delete", () => {
+  it("rejects unauthenticated calls", async () => {
+    const res = await dispatchMcp(
+      {
+        id: 1,
+        method: "tools/call",
+        params: { name: "vault_delete", arguments: { vault_id: "alice--inbox" } },
+      },
+      null,
+    );
+    const r = res!.result as { isError?: boolean; content: { text: string }[] };
+    expect(r.isError).toBe(true);
+    expect(r.content[0].text).toMatch(/authentication required/i);
+  });
+
+  it("deletes a vault when called by the owner", async () => {
+    const vault = await createVault("alice", "to-delete", "public");
+
+    const res = await dispatchMcp(
+      {
+        id: 1,
+        method: "tools/call",
+        params: { name: "vault_delete", arguments: { vault_id: vault.id } },
+      },
+      ALICE,
+    );
+    const r = res!.result as { content: { text: string }[] };
+    expect(r).not.toHaveProperty("isError");
+    const parsed = JSON.parse(r.content[0].text);
+    expect(parsed.deleted).toBe(true);
+  });
+
+  it("rejects vault_delete when caller does not own the vault (cross-user)", async () => {
+    const vault = await createVault("alice", "private-vault", "public");
+
+    // Bob tries to delete Alice's vault
+    const res = await dispatchMcp(
+      {
+        id: 1,
+        method: "tools/call",
+        params: { name: "vault_delete", arguments: { vault_id: vault.id } },
+      },
+      BOB,
+    );
+    const r = res!.result as { isError?: boolean; content: { text: string }[] };
+    expect(r.isError).toBe(true);
+    expect(r.content[0].text).toMatch(/permission denied/i);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// vault_rename dispatch
+// ---------------------------------------------------------------------------
+describe("dispatchMcp — vault_rename", () => {
+  it("rejects unauthenticated calls", async () => {
+    const res = await dispatchMcp(
+      {
+        id: 1,
+        method: "tools/call",
+        params: { name: "vault_rename", arguments: { vault_id: "alice--inbox", name: "new-name" } },
+      },
+      null,
+    );
+    const r = res!.result as { isError?: boolean; content: { text: string }[] };
+    expect(r.isError).toBe(true);
+    expect(r.content[0].text).toMatch(/authentication required/i);
+  });
+
+  it("renames a vault when called by the owner", async () => {
+    const vault = await createVault("alice", "old-name", "public");
+
+    const res = await dispatchMcp(
+      {
+        id: 1,
+        method: "tools/call",
+        params: { name: "vault_rename", arguments: { vault_id: vault.id, name: "new-name" } },
+      },
+      ALICE,
+    );
+    const r = res!.result as { content: { text: string }[] };
+    expect(r).not.toHaveProperty("isError");
+    const parsed = JSON.parse(r.content[0].text);
+    expect(parsed.renamed).toBe(true);
+    expect(parsed.name).toBe("new-name");
+  });
+
+  it("rejects vault_rename when caller does not own the vault (cross-user)", async () => {
+    const vault = await createVault("alice", "alice-vault", "public");
+
+    // Bob tries to rename Alice's vault
+    const res = await dispatchMcp(
+      {
+        id: 1,
+        method: "tools/call",
+        params: { name: "vault_rename", arguments: { vault_id: vault.id, name: "stolen-vault" } },
+      },
+      BOB,
+    );
+    const r = res!.result as { isError?: boolean; content: { text: string }[] };
+    expect(r.isError).toBe(true);
+    expect(r.content[0].text).toMatch(/permission denied/i);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// query_history dispatch
+// ---------------------------------------------------------------------------
+describe("dispatchMcp — query_history", () => {
+  it("query_history is read-only (no auth required)", () => {
+    const tool = MCP_TOOLS.find((t) => t.name === "query_history");
+    expect(tool).toBeDefined();
+    expect(tool!.write).toBe(false);
+  });
+
+  it("returns entries for a valid owner", async () => {
+    const res = await dispatchMcp(
+      {
+        id: 1,
+        method: "tools/call",
+        params: { name: "query_history", arguments: { owner: "alice" } },
+      },
+      null, // no auth — read-only
+    );
+    const r = res!.result as { content: { text: string }[] };
+    expect(r).not.toHaveProperty("isError");
+    const parsed = JSON.parse(r.content[0].text);
+    expect(parsed.entries).toBeDefined();
+    expect(Array.isArray(parsed.entries)).toBe(true);
+  });
+
+  it("returns entries with optional limit param", async () => {
+    const res = await dispatchMcp(
+      {
+        id: 1,
+        method: "tools/call",
+        params: { name: "query_history", arguments: { owner: "alice", limit: 5 } },
+      },
+      null,
+    );
+    const r = res!.result as { content: { text: string }[] };
+    expect(r).not.toHaveProperty("isError");
+    const parsed = JSON.parse(r.content[0].text);
+    expect(parsed.entries).toBeDefined();
+  });
+
+  it("tools/list includes query_history", async () => {
+    const res = await dispatchMcp({ id: 1, method: "tools/list" }, null);
+    const tools = (res!.result as { tools: { name: string }[] }).tools;
+    expect(tools.map((t) => t.name)).toContain("query_history");
   });
 });

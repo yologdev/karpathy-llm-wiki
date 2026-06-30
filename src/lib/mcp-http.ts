@@ -51,10 +51,14 @@ import {
   handleVaultCurate,
   handleVaultUncurate,
   handleVaultCreate,
+  handleVaultRename,
+  handleVaultDelete,
   handleAgentContext,
   handleListAgents,
   handleUpdateAgent,
+  handleDeleteAgent,
   handleSeedAgent,
+  handleQueryHistory,
   handleDataviewQuery,
   handleWikiGraph,
   handleActivityTrail,
@@ -65,8 +69,8 @@ import {
 import { mergePages } from "@/lib/merge";
 import { readWikiPageWithFrontmatter } from "@/lib/wiki";
 import { canWriteFrontmatter } from "@/lib/authz";
-import { addToVault } from "@/lib/vault";
-import { getAgent, agentIdFor } from "@/lib/agents";
+import { addToVault, vaultOwnedBy } from "@/lib/vault";
+import { getAgent, agentIdFor, assertCanMutateAgent } from "@/lib/agents";
 import { logger } from "@/lib/logger";
 import type { Principal } from "@/lib/auth";
 
@@ -821,6 +825,68 @@ export const MCP_TOOLS: ToolDef[] = [
       const args = { ...a, owner: p!.handle } as Parameters<typeof handleSeedAgent>[0];
       return handleSeedAgent(args);
     },
+  },
+  {
+    name: "delete_agent",
+    description:
+      "Delete the authenticated caller's agent profile. The agent_id must belong to the caller.",
+    inputSchema: schema({ agent_id: str("Agent ID to delete") }, ["agent_id"]),
+    write: true,
+    run: async (a, p) => {
+      const agentId = String(a.agent_id);
+      await assertCanMutateAgent(agentId, p!.handle);
+      return handleDeleteAgent({ agent_id: agentId });
+    },
+  },
+  // -- Vault lifecycle (write-gated) ----------------------------------------
+  {
+    name: "vault_delete",
+    description:
+      "Delete a vault owned by the authenticated caller. The vault_id must belong to the caller.",
+    inputSchema: schema({ vault_id: str("Vault ID to delete") }, ["vault_id"]),
+    write: true,
+    run: async (a, p) => {
+      const vaultId = String(a.vault_id);
+      if (!vaultOwnedBy(vaultId, p!.handle)) {
+        throw new Error(
+          `Permission denied: vault "${vaultId}" is not owned by @${p!.handle}.`,
+        );
+      }
+      return handleVaultDelete({ vault_id: vaultId });
+    },
+  },
+  {
+    name: "vault_rename",
+    description:
+      "Rename a vault owned by the authenticated caller.",
+    inputSchema: schema(
+      { vault_id: str("Vault ID to rename"), name: str("New vault name") },
+      ["vault_id", "name"],
+    ),
+    write: true,
+    run: async (a, p) => {
+      const vaultId = String(a.vault_id);
+      if (!vaultOwnedBy(vaultId, p!.handle)) {
+        throw new Error(
+          `Permission denied: vault "${vaultId}" is not owned by @${p!.handle}.`,
+        );
+      }
+      return handleVaultRename({ vault_id: vaultId, name: String(a.name) });
+    },
+  },
+  // -- Query history (read-only) --------------------------------------------
+  {
+    name: "query_history",
+    description:
+      "View past query history for an owner. Returns a JSON array of recent queries with " +
+      "timestamps, questions, answers, and save status.",
+    inputSchema: schema({
+      owner: str("Owner handle to look up history for"),
+      limit: { type: "number", description: "Max entries to return (default 20)" },
+    }, ["owner"]),
+    write: false,
+    run: (a) =>
+      handleQueryHistory(a as Parameters<typeof handleQueryHistory>[0]),
   },
   // -- Knowledge structure (read-only) -------------------------------------
   {
