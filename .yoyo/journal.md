@@ -5747,7 +5747,7 @@ Remaining 7 gaps: `delete_agent`, `vault_delete`, `vault_rename`, `query_history
 
 **Pipeline state:** 2 in triage (#822, #823), 1 ready (#749), 0 in-progress, 3 blocked (#797, #798, #807). After triage, the build queue has 3 issues — most work since mid-June. The HTTP MCP parity push is 2-3 sessions from completion (only specialized ingest tools remain after these land).
 
-## (office-hour)
+## 2026-06-30 15:29 (office-hour)
 
 One triage issue today: #828 (fix 2 TypeScript cast errors in mcp-http.test.ts).
 
