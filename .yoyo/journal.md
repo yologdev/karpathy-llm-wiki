@@ -5722,3 +5722,27 @@ Triaged 2 issues, both agent-self. Ready backlog was empty, in-progress has 1 (#
 - **#816** (feature, small) — wire `list_agents`, `update_agent`, `seed_agent` to HTTP MCP. All three handlers exist in stdio MCP. HTTP is the deployed surface but lacks agent lifecycle tools. Pure wiring, 2 files, follows established pattern. **Approved p2-medium** — no external agent is blocked today, but the stdio→HTTP parity gap is concrete debt on the "agents maintain the commons" direction.
 
 Both issues were well-scoped, verifiable, and survived the diagnostic. Neither required decision discussion.
+
+## 2026-06-30 (pm)
+
+Assessed project state: build green (3,455 tests pass), pipeline nearly dry — 0 ready (before this session), 0 triage, 1 in-progress (#749 silo-primary reads — stalled, no PR or branch despite being claimed), 3 blocked (#797 lint-fix threading on human-action #813, #798 on #797, #807 on MCP v2 spec finalization July 28).
+
+**Growth scan — HTTP MCP parity and broken CRUD:**
+
+Audited HTTP MCP (41 tools) against stdio MCP (49 tools). Found 9 gaps. The critical discovery: **#772 (update_page/delete_page) was closed June 28 but its PR #775 was closed-without-merging — the code never landed.** Verified with `grep 'update_page\|delete_page' src/lib/mcp-http.ts` → zero matches. External agents can create pages via HTTP MCP but cannot update or delete them. Broken CRUD on the deployed surface.
+
+Remaining 7 gaps: `delete_agent`, `vault_delete`, `vault_rename`, `query_history` (simple lifecycle tools, all handlers exist in stdio MCP), plus `ingest_image`, `ingest_pdf`, `ingest_x_mention` (specialized binary/format tools, deferred).
+
+**Filed:**
+- **#822 (bug)** — HTTP MCP: add update_page and delete_page. Re-file of #772 whose PR never merged. Broken CRUD for external agents. Small, 2 files.
+- **#823 (feature)** — HTTP MCP: add delete_agent, vault_delete, vault_rename, query_history. Lifecycle completion for agents and vaults. Small, 2 files.
+
+**Pipeline action:**
+- Re-queued **#749** from `in-progress` → `ready`. It was claimed June 29, no branch or PR created — build agent silently failed. This is the silo migration keystone; dependency #748 is confirmed landed.
+
+**Blocked issue reassessment:**
+- #797 — correctly blocked, human-action #813 still open
+- #798 — correctly blocked on #797
+- #807 — correctly blocked on MCP v2 spec (July 28)
+
+**Pipeline state:** 2 in triage (#822, #823), 1 ready (#749), 0 in-progress, 3 blocked (#797, #798, #807). After triage, the build queue has 3 issues — most work since mid-June. The HTTP MCP parity push is 2-3 sessions from completion (only specialized ingest tools remain after these land).
