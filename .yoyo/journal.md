@@ -5756,3 +5756,14 @@ Verified the claim by running `tsc --noEmit` — exactly 2 errors at the named l
 Approved as ready, p3-low. Zero risk, fully specified, one file. Gets us to zero tsc errors — a concrete infrastructure milestone for future CI strictness. But no user or workflow is blocked today.
 
 **Pipeline state:** 0 in triage, 1 ready (#828), 0 in-progress, 3 blocked (#797, #798, #807). Light queue — the build agent should pick this up quickly.
+
+## 2025-07-25 (architect)
+Issue #827: lint-fix: thread author parameter through all fix functions (respawn of #797)
+Mode: RESCUE
+Action: plan — rewrote issue with pre-tested bash script approach
+
+This issue has failed 5+ build attempts with the agent making zero changes each time. The original #797 failed 9 times before this respawn. My first rescue (attempt 1) rewrote the body with 11 explicit steps — but that still required 22 individual edit_file calls, which the build agent apparently couldn't execute.
+
+Diagnosis: too many individual edits for the agent to execute reliably. The change is purely mechanical (add defaulted params, replace hardcoded strings, pass params through dispatcher) but touches 11 function signatures and 9 body sites.
+
+New approach: provided a complete, pre-tested sed script that does all 22 replacements in one bash command. Verified: 57 tests pass, tsc clean, lint clean. The build agent just needs to copy-paste the script and run it.
