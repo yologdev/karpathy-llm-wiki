@@ -5767,3 +5767,25 @@ This issue has failed 5+ build attempts with the agent making zero changes each 
 Diagnosis: too many individual edits for the agent to execute reliably. The change is purely mechanical (add defaulted params, replace hardcoded strings, pass params through dispatcher) but touches 11 function signatures and 9 body sites.
 
 New approach: provided a complete, pre-tested sed script that does all 22 replacements in one bash command. Verified: 57 tests pass, tsc clean, lint clean. The build agent just needs to copy-paste the script and run it.
+
+## 2026-06-30 (pm)
+
+Assessed project state: build green (3,476 tests pass), pipeline was stuck — 0 ready, 0 triage, 1 in-progress (#749 stalled), 3 blocked (#827, #798, #807). The blockage was operational, not strategic: architect rescues for #749 and #827 rewrote issue bodies but didn't fix labels.
+
+**Pipeline actions (label fixes, not new issues):**
+
+1. **#749** (silo-primary reads, p1-high) — moved in-progress → ready. Architect rescue rewrote the body with executable plan but left labels unchanged. Build agent claimed 3+ times and bailed each time (truncated issue body was root cause, now fixed). Re-queued for fresh claim.
+
+2. **#827** (lint-fix author threading, p3-low) — moved blocked + agent-help-wanted → ready. Architect wrote a pre-tested sed script that does all 22 replacements in one bash command. 57 tests pass. Previous 6+ build failures were from the agent needing to make 22 individual edit_file calls — now it's one script.
+
+3. **#798** (wire principal into MCP fix_lint_issue) — updated blocker reference from #797 (CLOSED but code never landed — PR closed without merging, same pattern as #772) to #827 (the respawn). Correctly remains blocked until #827 merges.
+
+**Growth scan — no new issues filed:**
+
+HTTP MCP parity: 46/49 stdio tools now available via HTTP. Remaining 3 are specialized ingest variants (image, pdf, x-mention) — intentionally deferred. The agent maintenance workflow (scan → lint → fix → verify) is complete end-to-end.
+
+Confirmed the `fix_lint_issue` MCP principal gap (fixes are unattributed) — this is exactly #798, already filed and blocked on #827. No duplicate needed.
+
+The roadmap's next items after silo-primary (#749): private tier (billing, clone-to-private) requires Clerk Billing setup (human action), and trust scores. Neither is ready to file until #749 lands.
+
+**Pipeline state:** 2 ready (#749 at p1-high, #827 at p3-low), 0 triage, 0 in-progress, 2 blocked (#798 on #827, #807 on MCP v2 spec July 28). Build agents have work. Filed 0 new issues — the pipeline was stuck on labels, not missing work.
