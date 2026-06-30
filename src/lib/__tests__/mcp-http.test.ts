@@ -138,7 +138,7 @@ describe("dispatchMcp — tools/call auth gating", () => {
     const writes = MCP_TOOLS.filter((t) => t.write).map((t) => t.name);
     const reads = MCP_TOOLS.filter((t) => !t.write).map((t) => t.name);
     expect(writes).toEqual(
-      expect.arrayContaining(["ingest_url", "batch_ingest_urls", "ingest_text", "create_page", "save_query_answer", "reingest", "update_metadata", "fix_lint_issue", "reconcile_page", "merge_pages"]),
+      expect.arrayContaining(["ingest_url", "batch_ingest_urls", "ingest_text", "create_page", "update_page", "delete_page", "save_query_answer", "reingest", "update_metadata", "fix_lint_issue", "reconcile_page", "merge_pages"]),
     );
     expect(reads).toEqual(
       expect.arrayContaining(["search_wiki", "read_page", "list_pages", "query_wiki", "lint_wiki"]),
@@ -264,6 +264,161 @@ describe("dispatchMcp — update_metadata", () => {
     const page = await readFm("meta-test");
     expect(page!.frontmatter.disputed).toBe(true);
     expect(page!.frontmatter.confidence).toBe(0.5);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// update_page
+// ---------------------------------------------------------------------------
+describe("dispatchMcp — update_page", () => {
+  it("tools/list returns update_page with correct schema", async () => {
+    const res = await dispatchMcp({ id: 1, method: "tools/list" }, null);
+    const tools = (res!.result as { tools: { name: string; inputSchema: { required?: string[] } }[] }).tools;
+    const tool = tools.find((t) => t.name === "update_page");
+    expect(tool).toBeDefined();
+    expect(tool!.inputSchema.required).toEqual(expect.arrayContaining(["slug", "content"]));
+  });
+
+  it("rejects update_page without auth (write-gated)", async () => {
+    const res = await dispatchMcp(
+      {
+        id: 1,
+        method: "tools/call",
+        params: { name: "update_page", arguments: { slug: "test", content: "# New\n\nBody." } },
+      },
+      null,
+    );
+    const r = res!.result as { isError?: boolean; content: { text: string }[] };
+    expect(r.isError).toBe(true);
+    expect(r.content[0].text).toMatch(/authentication required/i);
+  });
+
+  it("updates a page owned by the caller (ACL + success)", async () => {
+    const { writeWikiPage, serializeFrontmatter } = await import("../wiki");
+    // Use agent-scoped type so the page is NOT commons (commons body writes are
+    // agent-only via service principals — the realm gate is intentional).
+    const fm = { title: "Update Test", owner: "alice", created: "2025-01-01", type: "agent-knowledge" };
+    await writeWikiPage("update-test", serializeFrontmatter(fm, "# Update Test\n\nOld body."));
+
+    const res = await dispatchMcp(
+      {
+        id: 1,
+        method: "tools/call",
+        params: {
+          name: "update_page",
+          arguments: { slug: "update-test", content: "# Update Test\n\nNew body." },
+        },
+      },
+      ALICE,
+    );
+    const r = res!.result as { isError?: boolean; content: { text: string }[] };
+    expect(r.isError).toBeFalsy();
+    const parsed = JSON.parse(r.content[0].text);
+    expect(parsed.updated).toBe(true);
+    expect(parsed.slug).toBe("update-test");
+
+    // Verify the content was actually updated.
+    const { readWikiPageWithFrontmatter: readFm } = await import("../wiki");
+    const page = await readFm("update-test");
+    expect(page).not.toBeNull();
+    expect(page!.body).toContain("New body.");
+  });
+
+  it("rejects update_page when caller cannot write the page (ACL)", async () => {
+    const { writeWikiPage, serializeFrontmatter } = await import("../wiki");
+    const fm = { title: "Alice Only", owner: "alice", created: "2025-01-01", visibility: "private" };
+    await writeWikiPage("alice-only", serializeFrontmatter(fm as Record<string, unknown>, "# Alice Only\n\nPrivate."));
+
+    const res = await dispatchMcp(
+      {
+        id: 1,
+        method: "tools/call",
+        params: {
+          name: "update_page",
+          arguments: { slug: "alice-only", content: "# Hacked\n\nEvil." },
+        },
+      },
+      BOB,
+    );
+    const r = res!.result as { isError?: boolean; content: { text: string }[] };
+    expect(r.isError).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// delete_page
+// ---------------------------------------------------------------------------
+describe("dispatchMcp — delete_page", () => {
+  it("tools/list returns delete_page with correct schema", async () => {
+    const res = await dispatchMcp({ id: 1, method: "tools/list" }, null);
+    const tools = (res!.result as { tools: { name: string; inputSchema: { required?: string[] } }[] }).tools;
+    const tool = tools.find((t) => t.name === "delete_page");
+    expect(tool).toBeDefined();
+    expect(tool!.inputSchema.required).toEqual(expect.arrayContaining(["slug"]));
+  });
+
+  it("rejects delete_page without auth (write-gated)", async () => {
+    const res = await dispatchMcp(
+      {
+        id: 1,
+        method: "tools/call",
+        params: { name: "delete_page", arguments: { slug: "test" } },
+      },
+      null,
+    );
+    const r = res!.result as { isError?: boolean; content: { text: string }[] };
+    expect(r.isError).toBe(true);
+    expect(r.content[0].text).toMatch(/authentication required/i);
+  });
+
+  it("deletes a page owned by the caller (ACL + success)", async () => {
+    const { writeWikiPage, serializeFrontmatter, readWikiPage } = await import("../wiki");
+    // Use agent-scoped type so the page is NOT commons (commons delete writes
+    // require a service principal — the realm gate is intentional).
+    const fm = { title: "Delete Test", owner: "alice", created: "2025-01-01", type: "agent-knowledge" };
+    await writeWikiPage("delete-test", serializeFrontmatter(fm, "# Delete Test\n\nWill be deleted."));
+
+    // Confirm the page exists.
+    expect(await readWikiPage("delete-test")).toBeTruthy();
+
+    const res = await dispatchMcp(
+      {
+        id: 1,
+        method: "tools/call",
+        params: {
+          name: "delete_page",
+          arguments: { slug: "delete-test" },
+        },
+      },
+      ALICE,
+    );
+    const r = res!.result as { isError?: boolean; content: { text: string }[] };
+    expect(r.isError).toBeFalsy();
+    const parsed = JSON.parse(r.content[0].text);
+    expect(parsed.slug).toBe("delete-test");
+
+    // Verify the page was actually deleted.
+    expect(await readWikiPage("delete-test")).toBeNull();
+  });
+
+  it("rejects delete_page when caller cannot write the page (ACL)", async () => {
+    const { writeWikiPage, serializeFrontmatter } = await import("../wiki");
+    const fm = { title: "Alice Private", owner: "alice", created: "2025-01-01", visibility: "private" };
+    await writeWikiPage("alice-private", serializeFrontmatter(fm as Record<string, unknown>, "# Alice Private\n\nPrivate."));
+
+    const res = await dispatchMcp(
+      {
+        id: 1,
+        method: "tools/call",
+        params: {
+          name: "delete_page",
+          arguments: { slug: "alice-private" },
+        },
+      },
+      BOB,
+    );
+    const r = res!.result as { isError?: boolean; content: { text: string }[] };
+    expect(r.isError).toBe(true);
   });
 });
 

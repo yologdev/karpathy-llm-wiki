@@ -29,6 +29,8 @@ import {
   handleIngestText,
   handleReingest,
   handleCreatePage,
+  handleUpdatePage,
+  handleDeletePage,
   handleSaveQueryAnswer,
   handleMaintenanceScan,
   handlePublishToCommons,
@@ -273,6 +275,48 @@ export const MCP_TOOLS: ToolDef[] = [
       handleCreatePage(
         attributed(a, p!.handle) as Parameters<typeof handleCreatePage>[0],
       ),
+  },
+  {
+    name: "update_page",
+    description:
+      "Update an existing wiki page's content (markdown). Merges caller-supplied " +
+      "frontmatter with the existing page's metadata. Requires write permission on the page.",
+    inputSchema: schema(
+      {
+        slug: str("Slug of the page to update"),
+        content: str("New markdown body"),
+      },
+      ["slug", "content"],
+    ),
+    write: true,
+    run: (a, p) => {
+      const { author, ...rest } = attributed(a, p!.handle) as Record<string, unknown>;
+      return handleUpdatePage({
+        ...(rest as { slug: string; content: string; owner?: string }),
+        author: author as string,
+        principal: p,
+      });
+    },
+  },
+  {
+    name: "delete_page",
+    description:
+      "Delete a wiki page. Requires write permission on the page.",
+    inputSchema: schema(
+      {
+        slug: str("Slug of the page to delete"),
+      },
+      ["slug"],
+    ),
+    write: true,
+    run: (a, p) => {
+      const { author } = attributed(a, p!.handle) as Record<string, unknown>;
+      return handleDeletePage({
+        slug: (a as { slug: string }).slug,
+        author: author as string,
+        principal: p,
+      });
+    },
   },
   {
     name: "save_query_answer",
