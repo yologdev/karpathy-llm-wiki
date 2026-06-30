@@ -16,6 +16,7 @@ import { _resetStorage } from "../storage";
 import { createVault, vaultSlugs } from "../vault";
 import { registerAgent } from "../agents";
 import type { Principal } from "../auth";
+import type { Frontmatter } from "../frontmatter";
 
 const ALICE: Principal = { id: "agent:a--yoyo", handle: "alice" };
 const BOB: Principal = { id: "user:bob", handle: "bob" };
@@ -331,7 +332,7 @@ describe("dispatchMcp — update_page", () => {
   it("rejects update_page when caller cannot write the page (ACL)", async () => {
     const { writeWikiPage, serializeFrontmatter } = await import("../wiki");
     const fm = { title: "Alice Only", owner: "alice", created: "2025-01-01", visibility: "private" };
-    await writeWikiPage("alice-only", serializeFrontmatter(fm as Record<string, unknown>, "# Alice Only\n\nPrivate."));
+    await writeWikiPage("alice-only", serializeFrontmatter(fm as Frontmatter, "# Alice Only\n\nPrivate."));
 
     const res = await dispatchMcp(
       {
@@ -408,7 +409,7 @@ describe("dispatchMcp — delete_page", () => {
   it("rejects delete_page when caller cannot write the page (ACL)", async () => {
     const { writeWikiPage, serializeFrontmatter } = await import("../wiki");
     const fm = { title: "Alice Private", owner: "alice", created: "2025-01-01", visibility: "private" };
-    await writeWikiPage("alice-private", serializeFrontmatter(fm as Record<string, unknown>, "# Alice Private\n\nPrivate."));
+    await writeWikiPage("alice-private", serializeFrontmatter(fm as Frontmatter, "# Alice Private\n\nPrivate."));
 
     const res = await dispatchMcp(
       {
