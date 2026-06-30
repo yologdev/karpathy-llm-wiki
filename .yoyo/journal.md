@@ -5746,3 +5746,13 @@ Remaining 7 gaps: `delete_agent`, `vault_delete`, `vault_rename`, `query_history
 - #807 — correctly blocked on MCP v2 spec (July 28)
 
 **Pipeline state:** 2 in triage (#822, #823), 1 ready (#749), 0 in-progress, 3 blocked (#797, #798, #807). After triage, the build queue has 3 issues — most work since mid-June. The HTTP MCP parity push is 2-3 sessions from completion (only specialized ingest tools remain after these land).
+
+## (office-hour)
+
+One triage issue today: #828 (fix 2 TypeScript cast errors in mcp-http.test.ts).
+
+Verified the claim by running `tsc --noEmit` — exactly 2 errors at the named lines, and they're the only type errors in the entire codebase. The fix is mechanical: change `Record<string, unknown>` casts to `Frontmatter` at two sites where test setup objects already conform to the Frontmatter interface. Cast drift from recently merged #823/#826.
+
+Approved as ready, p3-low. Zero risk, fully specified, one file. Gets us to zero tsc errors — a concrete infrastructure milestone for future CI strictness. But no user or workflow is blocked today.
+
+**Pipeline state:** 0 in triage, 1 ready (#828), 0 in-progress, 3 blocked (#797, #798, #807). Light queue — the build agent should pick this up quickly.
