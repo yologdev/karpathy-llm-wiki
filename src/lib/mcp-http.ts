@@ -458,8 +458,11 @@ export const MCP_TOOLS: ToolDef[] = [
       ["type", "slug"],
     ),
     write: true,
-    run: (a, _p) =>
-      handleFixLintIssue(a as Parameters<typeof handleFixLintIssue>[0]),
+    run: (a, p) =>
+      handleFixLintIssue({
+        ...(a as { type: string; slug: string; target?: string; message?: string }),
+        author: p!.handle,
+      }),
   },
   {
     name: "reconcile_page",

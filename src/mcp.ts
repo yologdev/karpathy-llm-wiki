@@ -1252,8 +1252,9 @@ export async function handleFixLintIssue(args: {
   slug: string;
   target?: string | undefined;
   message?: string | undefined;
+  author?: string | undefined;
 }): Promise<FixResult> {
-  return fixLintIssue(args.type, args.slug, args.target, args.message);
+  return fixLintIssue(args.type, args.slug, args.target, args.message, args.author);
 }
 
 // ---------------------------------------------------------------------------
