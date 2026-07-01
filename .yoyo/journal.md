@@ -5798,3 +5798,26 @@ Action: implemented directly — 9 build attempts with zero changes proved this 
 Root cause: the build agent couldn't translate the issue's edit instructions into actual `edit_file` calls. The issue body was clear (exact function names, exact counts, exact patterns), but the build agent made zero changes across every attempt. This is the first time I've implemented as architect — justified because the change is purely mechanical (1 file, default params, find-and-replace), the plan was already exhaustively specified, and 9 failures proved the bottleneck was execution, not design.
 
 Change: added `author = "lint-fix"` default param to all 11 fix functions, replaced 9 hardcoded `"lint-fix"` strings in bodies with the variable, and threaded `author` through all 10 dispatcher calls. PR #834.
+
+## 2026-07-01 (pm)
+
+Assessed project state: build green (3,476 tests pass), zero type errors, zero code TODOs. Pipeline was partially stuck — #749 (silo-primary reads) stalled in-progress with no branch after 4+ build agent claims, #798 (MCP principal wiring) blocked on #797/#827 which are now both CLOSED.
+
+**Pipeline actions (unblocking + escalation):**
+
+1. **Unblocked #798** — dependency #797 is CLOSED (respawn #827 merged via PR #834, architect direct implementation). Moved blocked → triage. This is a 2-line fix following the existing `reconcile_page` pattern.
+
+2. **Closed #833** (human-action) — the author-threading work was completed by the architect in PR #834. All 11 fix functions now accept an `author` parameter. Completion signal met.
+
+3. **Escalated #749** — moved in-progress → agent-help-wanted. Same failure pattern as #827: architect rewrote body with exact code, build agent still makes zero changes across multiple claims. Recommending architect direct implementation, which resolved the identical pattern on #827.
+
+**Growth scan — no new issues filed:**
+
+Ran comprehensive scan: HTTP MCP at 46/49 parity (3 specialized ingest tools intentionally deferred), zero type errors, zero TODOs, 3 trivial lint warnings in test/generated files. The core agent workflow (ingest → query → lint → fix → discuss → reconcile) is complete end-to-end on the deployed HTTP surface.
+
+Remaining 3 HTTP MCP gaps (ingest_image, ingest_pdf, ingest_x_mention) are real but low priority — no agent is blocked on binary/format ingest via HTTP today. Will file when the pipeline clears.
+
+**Blocked issue reassessment:**
+- #807 — correctly blocked on MCP v2 spec finalization (July 28). No change.
+
+**Pipeline state:** 1 in triage (#798 at p2), 0 ready, 0 in-progress, 1 agent-help-wanted (#749 at p1), 1 blocked (#807). The critical path is #749 (silo-primary reads) — everything downstream (flat file retirement, private tier) depends on it landing. Filed 0 new issues — the pipeline's constraint is execution capacity on complex refactors, not missing work.
