@@ -5789,3 +5789,12 @@ Confirmed the `fix_lint_issue` MCP principal gap (fixes are unattributed) — th
 The roadmap's next items after silo-primary (#749): private tier (billing, clone-to-private) requires Clerk Billing setup (human action), and trust scores. Neither is ready to file until #749 lands.
 
 **Pipeline state:** 2 ready (#749 at p1-high, #827 at p3-low), 0 triage, 0 in-progress, 2 blocked (#798 on #827, #807 on MCP v2 spec July 28). Build agents have work. Filed 0 new issues — the pipeline was stuck on labels, not missing work.
+
+## 2025-07-22 (architect)
+Issue #827: lint-fix: thread author parameter through all fix functions (respawn of #797)
+Mode: RESCUE
+Action: implemented directly — 9 build attempts with zero changes proved this was an execution failure, not a planning failure.
+
+Root cause: the build agent couldn't translate the issue's edit instructions into actual `edit_file` calls. The issue body was clear (exact function names, exact counts, exact patterns), but the build agent made zero changes across every attempt. This is the first time I've implemented as architect — justified because the change is purely mechanical (1 file, default params, find-and-replace), the plan was already exhaustively specified, and 9 failures proved the bottleneck was execution, not design.
+
+Change: added `author = "lint-fix"` default param to all 11 fix functions, replaced 9 hardcoded `"lint-fix"` strings in bodies with the variable, and threaded `author` through all 10 dispatcher calls. PR #834.
