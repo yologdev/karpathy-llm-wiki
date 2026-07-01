@@ -45,7 +45,7 @@ export class FixNotFoundError extends Error {
  * Reads the page, extracts a summary, and writes it through the lifecycle
  * pipeline so that the index entry is created.
  */
-export async function fixOrphanPage(slug: string): Promise<FixResult> {
+export async function fixOrphanPage(slug: string, author = "lint-fix"): Promise<FixResult> {
   if (!slug) {
     throw new FixValidationError("Missing required field: slug");
   }
@@ -67,7 +67,7 @@ export async function fixOrphanPage(slug: string): Promise<FixResult> {
     logOp: "edit",
     logDetails: () => "auto-fix: added orphan page to index",
     crossRefSource: null,
-    author: "lint-fix",
+    author,
   });
 
   return {
@@ -82,7 +82,7 @@ export async function fixOrphanPage(slug: string): Promise<FixResult> {
  *
  * If the slug is not found in the index, returns a no-op success result.
  */
-export async function fixStaleIndex(slug: string): Promise<FixResult> {
+export async function fixStaleIndex(slug: string, _author = "lint-fix"): Promise<FixResult> {
   if (!slug) {
     throw new FixValidationError("Missing required field: slug");
   }
@@ -129,12 +129,12 @@ export async function fixStaleIndex(slug: string): Promise<FixResult> {
 /**
  * Fix an empty-page lint issue by deleting the page entirely.
  */
-export async function fixEmptyPage(slug: string): Promise<FixResult> {
+export async function fixEmptyPage(slug: string, author = "lint-fix"): Promise<FixResult> {
   if (!slug) {
     throw new FixValidationError("Missing required field: slug");
   }
 
-  await deleteWikiPage(slug, "lint-fix");
+  await deleteWikiPage(slug, author);
 
   return {
     success: true,
@@ -153,6 +153,7 @@ export async function fixEmptyPage(slug: string): Promise<FixResult> {
 export async function fixMissingCrossRef(
   slug: string,
   targetSlug: string,
+  author = "lint-fix",
 ): Promise<FixResult> {
   if (!slug || !targetSlug) {
     throw new FixValidationError(
@@ -241,7 +242,7 @@ export async function fixMissingCrossRef(
     logOp: "edit",
     logDetails: () => `auto-fix: added cross-reference to ${targetSlug}.md`,
     crossRefSource: null, // skip cross-ref discovery — we're adding a specific link
-    author: "lint-fix",
+    author,
   });
 
   return {
@@ -263,6 +264,7 @@ export async function fixContradiction(
   slug: string,
   targetSlug: string,
   message: string,
+  author = "lint-fix",
 ): Promise<FixResult> {
   if (!slug || !targetSlug) {
     throw new FixValidationError(
@@ -305,7 +307,7 @@ export async function fixContradiction(
     logDetails: () =>
       `auto-fix: resolved contradiction with ${targetSlug}.md`,
     crossRefSource: null,
-    author: "lint-fix",
+    author,
   });
 
   return {
@@ -327,6 +329,7 @@ export async function fixContradiction(
  */
 export async function fixMissingConceptPage(
   message: string,
+  author = "lint-fix",
 ): Promise<FixResult> {
   // Extract concept name from the lint message format:
   //   Concept "X" is mentioned in slug-a, slug-b but has no dedicated page. <reason>
@@ -386,7 +389,7 @@ export async function fixMissingConceptPage(
     logDetails: () =>
       `auto-fix: created stub page for missing concept "${concept}"`,
     crossRefSource: content,
-    author: "lint-fix",
+    author,
   });
 
   return {
@@ -404,6 +407,7 @@ export async function fixMissingConceptPage(
 export async function fixBrokenLink(
   slug: string,
   targetSlug: string,
+  author = "lint-fix",
 ): Promise<FixResult> {
   if (!slug) {
     throw new FixValidationError("Missing required field: slug");
@@ -447,7 +451,7 @@ export async function fixBrokenLink(
     logDetails: () =>
       `auto-fix: removed broken link(s) to "${targetSlug}.md"`,
     crossRefSource: null,
-    author: "lint-fix",
+    author,
   });
 
   return {
@@ -464,7 +468,7 @@ export async function fixBrokenLink(
  * Reads the page, updates the `expiry` and `valid_from` frontmatter fields,
  * and writes back.
  */
-export async function fixStalePage(slug: string): Promise<FixResult> {
+export async function fixStalePage(slug: string, author = "lint-fix"): Promise<FixResult> {
   if (!slug) {
     throw new FixValidationError("Missing required field: slug");
   }
@@ -495,7 +499,7 @@ export async function fixStalePage(slug: string): Promise<FixResult> {
     logDetails: () =>
       `auto-fix: extended expiry to ${expiryStr}, verified as of ${validFromStr}`,
     crossRefSource: null,
-    author: "lint-fix",
+    author,
   });
 
   return {
@@ -522,7 +526,7 @@ export async function fixStalePage(slug: string): Promise<FixResult> {
  * Does NOT add `supersedes` or `aliases` — those are page-specific with no
  * sensible default.
  */
-export async function fixUnmigratedPage(slug: string): Promise<FixResult> {
+export async function fixUnmigratedPage(slug: string, author = "lint-fix"): Promise<FixResult> {
   if (!slug) {
     throw new FixValidationError("Missing required field: slug");
   }
@@ -590,7 +594,7 @@ export async function fixUnmigratedPage(slug: string): Promise<FixResult> {
         ? `auto-fix: added yopedia defaults: ${added.join(", ")}`
         : `auto-fix: unmigrated page already has all yopedia fields`,
     crossRefSource: null,
-    author: "lint-fix",
+    author,
   });
 
   return {
@@ -608,7 +612,7 @@ export async function fixUnmigratedPage(slug: string): Promise<FixResult> {
  * Re-verifies the target is still missing before clearing (idempotent / safe
  * under queue retry), so a now-valid reference is never dropped.
  */
-export async function fixSupersededDangling(slug: string): Promise<FixResult> {
+export async function fixSupersededDangling(slug: string, author = "lint-fix"): Promise<FixResult> {
   if (!slug) {
     throw new FixValidationError("Missing required field: slug");
   }
@@ -643,7 +647,7 @@ export async function fixSupersededDangling(slug: string): Promise<FixResult> {
     logOp: "edit",
     logDetails: () => `auto-fix: cleared dangling supersedes "${supersedes}"`,
     crossRefSource: null,
-    author: "lint-fix",
+    author,
   });
 
   return {
@@ -668,26 +672,27 @@ export async function fixLintIssue(
   slug: string,
   targetSlug?: string,
   message?: string,
+  author = "lint-fix",
 ): Promise<FixResult> {
   switch (type) {
     case "orphan-page":
-      return fixOrphanPage(slug);
+      return fixOrphanPage(slug, author);
     case "stale-index":
-      return fixStaleIndex(slug);
+      return fixStaleIndex(slug, author);
     case "empty-page":
-      return fixEmptyPage(slug);
+      return fixEmptyPage(slug, author);
     case "missing-crossref":
-      return fixMissingCrossRef(slug, targetSlug ?? "");
+      return fixMissingCrossRef(slug, targetSlug ?? "", author);
     case "contradiction":
-      return fixContradiction(slug, targetSlug ?? "", message ?? "");
+      return fixContradiction(slug, targetSlug ?? "", message ?? "", author);
     case "missing-concept-page":
-      return fixMissingConceptPage(message ?? "");
+      return fixMissingConceptPage(message ?? "", author);
     case "broken-link":
-      return fixBrokenLink(slug, targetSlug ?? "");
+      return fixBrokenLink(slug, targetSlug ?? "", author);
     case "stale-page":
-      return fixStalePage(slug);
+      return fixStalePage(slug, author);
     case "unmigrated-page":
-      return fixUnmigratedPage(slug);
+      return fixUnmigratedPage(slug, author);
     case "low-confidence":
       throw new FixValidationError(
         "Low-confidence pages cannot be auto-fixed. Ingest additional sources about this topic to improve confidence.",
@@ -712,7 +717,7 @@ export async function fixLintIssue(
       );
     case "supersedes-dangling":
       // Auto-fixable: clear the dead reference (re-verified missing first).
-      return fixSupersededDangling(slug);
+      return fixSupersededDangling(slug, author);
     case "incomplete-coverage":
       throw new FixValidationError(
         "Incomplete coverage cannot be auto-fixed. Re-ingest the source URL to refresh the page content.",
