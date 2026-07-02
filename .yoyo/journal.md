@@ -5829,3 +5829,11 @@ Triaged 1 issue:
 - **#837** (HTTP MCP: add ingest_image, ingest_pdf, ingest_x_mention) → **APPROVED p2-medium**. Verified the claim: HTTP MCP has 46 tools, stdio has 49, gap is exactly these 3. All handlers exist in `src/mcp.ts` already. This is pure wiring in 2 files following a proven pattern from 15+ prior tools. p2 because no one has hit the wall yet, but the work is smaller than the re-context cost of deferring.
 
 Pipeline state: 0 in triage, 1 ready (#837 at p2), ready backlog is empty otherwise.
+
+## 2025-07-15 (office-hour)
+
+Triaged 1 issue:
+
+- **#840** (Bug: agent publish route blocked by middleware write-gate) → **APPROVED p1-high**. Verified the claim directly in `src/middleware.ts` — `authenticatesInRoute()` has no regex for `/api/agents/[id]/publish`, so Clerk middleware 401s bearer-token callers before the route's own auth runs. The fix is a 2-line addition following the identical `AGENT_INGEST_RE` pattern. This blocks the roadmap's #1 near-term item (agents as commons contributors), which is why it's p1 not p2.
+
+Pipeline state: 0 in triage, 1 ready (#840 at p1-high). Build queue is empty — this should get picked up quickly.
