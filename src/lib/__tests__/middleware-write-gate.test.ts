@@ -22,6 +22,7 @@ describe("write-gate in-route auth exemptions", () => {
     expect(authenticatesInRoute("/api/ingest/reingest")).toBe(true);
     expect(authenticatesInRoute("/api/agents/seed")).toBe(true);
     expect(authenticatesInRoute("/api/agents/alice--yoyo/ingest")).toBe(true);
+    expect(authenticatesInRoute("/api/agents/alice--yoyo/publish")).toBe(true);
     expect(authenticatesInRoute("/api/admin/migrate")).toBe(true);
     expect(authenticatesInRoute("/api/admin/reset")).toBe(true);
     expect(authenticatesInRoute("/api/admin/rebuild-embeddings")).toBe(true);

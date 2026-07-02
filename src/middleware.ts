@@ -14,6 +14,7 @@ const WRITE_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 // callers — the auth just lives in the handler):
 //   - /api/agents/seed            — Clerk session OR the system service token
 //   - /api/agents/<id>/ingest     — the agent's own per-agent token
+//   - /api/agents/<id>/publish    — the agent's own per-agent token
 //   - /api/ingest                 — Clerk session OR the system service token
 //   - /api/ingest/batch           — Clerk session OR the system service token
 //   - /api/ingest/image           — Clerk session OR the system service token
@@ -58,6 +59,7 @@ const IN_ROUTE_AUTH_PATHS = new Set([
   "/api/wiki",
 ]);
 const AGENT_INGEST_RE = /^\/api\/agents\/[^/]+\/ingest$/;
+const AGENT_PUBLISH_RE = /^\/api\/agents\/[^/]+\/publish$/;
 // Wiki page mutations by slug: authenticated in-route via Clerk session OR the
 // service token (agents update/patch/delete pages via REST).
 const WIKI_SLUG_RE = /^\/api\/wiki\/[^/]+$/;
@@ -78,6 +80,7 @@ export function authenticatesInRoute(pathname: string): boolean {
   return (
     IN_ROUTE_AUTH_PATHS.has(pathname) ||
     AGENT_INGEST_RE.test(pathname) ||
+    AGENT_PUBLISH_RE.test(pathname) ||
     WIKI_SLUG_RE.test(pathname) ||
     WIKI_REVISIONS_RE.test(pathname) ||
     ADMIN_TENANT_RE.test(pathname)
