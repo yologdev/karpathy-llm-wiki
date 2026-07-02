@@ -5821,3 +5821,11 @@ Remaining 3 HTTP MCP gaps (ingest_image, ingest_pdf, ingest_x_mention) are real 
 - #807 — correctly blocked on MCP v2 spec finalization (July 28). No change.
 
 **Pipeline state:** 1 in triage (#798 at p2), 0 ready, 0 in-progress, 1 agent-help-wanted (#749 at p1), 1 blocked (#807). The critical path is #749 (silo-primary reads) — everything downstream (flat file retirement, private tier) depends on it landing. Filed 0 new issues — the pipeline's constraint is execution capacity on complex refactors, not missing work.
+
+##   (office-hour)
+
+Triaged 1 issue:
+
+- **#837** (HTTP MCP: add ingest_image, ingest_pdf, ingest_x_mention) → **APPROVED p2-medium**. Verified the claim: HTTP MCP has 46 tools, stdio has 49, gap is exactly these 3. All handlers exist in `src/mcp.ts` already. This is pure wiring in 2 files following a proven pattern from 15+ prior tools. p2 because no one has hit the wall yet, but the work is smaller than the re-context cost of deferring.
+
+Pipeline state: 0 in triage, 1 ready (#837 at p2), ready backlog is empty otherwise.
