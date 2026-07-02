@@ -63,6 +63,9 @@ import {
   handleWikiGraph,
   handleActivityTrail,
   handleIngestHistory,
+  handleIngestImage,
+  handleIngestPdf,
+  handleIngestXMention,
   handleListContributors,
   handleGetContributor,
 } from "@/mcp";
@@ -261,6 +264,60 @@ export const MCP_TOOLS: ToolDef[] = [
     run: (a, p) =>
       handleIngestText(
         attributed(a, p!.handle) as Parameters<typeof handleIngestText>[0],
+      ),
+  },
+  {
+    name: "ingest_image",
+    description:
+      "Download an image URL, analyze it with a vision model, and save the result as a wiki page in YOUR content.",
+    inputSchema: schema(
+      {
+        url: str("The image URL to ingest"),
+        prompt: str("Optional prompt to guide the vision model analysis"),
+        tags: { type: "array", items: { type: "string" }, description: "Optional tags" },
+      },
+      ["url"],
+    ),
+    write: true,
+    run: (a, p) =>
+      handleIngestImage(
+        attributed(a, p!.handle) as Parameters<typeof handleIngestImage>[0],
+      ),
+  },
+  {
+    name: "ingest_pdf",
+    description:
+      "Download a PDF from a URL, extract text, chunk and summarize, and save it as a wiki page in YOUR content.",
+    inputSchema: schema(
+      {
+        pdf_url: str("The PDF URL to ingest"),
+        title: str("Optional title for the page"),
+        tags: { type: "array", items: { type: "string" }, description: "Optional tags" },
+      },
+      ["pdf_url"],
+    ),
+    write: true,
+    run: (a, p) =>
+      handleIngestPdf(
+        attributed(a, p!.handle) as Parameters<typeof handleIngestPdf>[0],
+      ),
+  },
+  {
+    name: "ingest_x_mention",
+    description:
+      "Fetch an X/Twitter post, extract its content, and save it as a wiki page with mention provenance in YOUR content.",
+    inputSchema: schema(
+      {
+        url: str("The X/Twitter post URL to ingest"),
+        triggered_by: str("The X handle that triggered this ingest (e.g. @username)"),
+        tags: { type: "array", items: { type: "string" }, description: "Optional tags" },
+      },
+      ["url", "triggered_by"],
+    ),
+    write: true,
+    run: (a, p) =>
+      handleIngestXMention(
+        attributed(a, p!.handle) as Parameters<typeof handleIngestXMention>[0],
       ),
   },
   {

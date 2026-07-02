@@ -98,6 +98,9 @@ describe("dispatchMcp — tools/list", () => {
     expect(names).toContain("vault_delete");
     expect(names).toContain("vault_rename");
     expect(names).toContain("query_history");
+    expect(names).toContain("ingest_image");
+    expect(names).toContain("ingest_pdf");
+    expect(names).toContain("ingest_x_mention");
     // Every descriptor carries a schema; the internal `write`/`run` fields are
     // NOT leaked to the wire.
     for (const t of tools) {
@@ -143,7 +146,7 @@ describe("dispatchMcp — tools/call auth gating", () => {
     const writes = MCP_TOOLS.filter((t) => t.write).map((t) => t.name);
     const reads = MCP_TOOLS.filter((t) => !t.write).map((t) => t.name);
     expect(writes).toEqual(
-      expect.arrayContaining(["ingest_url", "batch_ingest_urls", "ingest_text", "create_page", "update_page", "delete_page", "save_query_answer", "reingest", "update_metadata", "fix_lint_issue", "reconcile_page", "merge_pages", "delete_agent", "vault_delete", "vault_rename"]),
+      expect.arrayContaining(["ingest_url", "batch_ingest_urls", "ingest_text", "ingest_image", "ingest_pdf", "ingest_x_mention", "create_page", "update_page", "delete_page", "save_query_answer", "reingest", "update_metadata", "fix_lint_issue", "reconcile_page", "merge_pages", "delete_agent", "vault_delete", "vault_rename"]),
     );
     expect(reads).toEqual(
       expect.arrayContaining(["search_wiki", "read_page", "list_pages", "query_wiki", "lint_wiki", "query_history"]),
@@ -1864,5 +1867,101 @@ describe("dispatchMcp — query_history", () => {
     const res = await dispatchMcp({ id: 1, method: "tools/list" }, null);
     const tools = (res!.result as { tools: { name: string }[] }).tools;
     expect(tools.map((t) => t.name)).toContain("query_history");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// ingest_image dispatch
+// ---------------------------------------------------------------------------
+describe("dispatchMcp — ingest_image", () => {
+  it("ingest_image is write-gated", () => {
+    const tool = MCP_TOOLS.find((t) => t.name === "ingest_image");
+    expect(tool).toBeDefined();
+    expect(tool!.write).toBe(true);
+  });
+
+  it("blocks unauthenticated calls", async () => {
+    const res = await dispatchMcp(
+      {
+        id: 1,
+        method: "tools/call",
+        params: { name: "ingest_image", arguments: { url: "https://example.com/img.png" } },
+      },
+      null,
+    );
+    const r = res!.result as { isError?: boolean; content: { text: string }[] };
+    expect(r.isError).toBe(true);
+    expect(r.content[0].text).toMatch(/authentication required/i);
+  });
+
+  it("tools/list includes ingest_image", async () => {
+    const res = await dispatchMcp({ id: 1, method: "tools/list" }, null);
+    const tools = (res!.result as { tools: { name: string }[] }).tools;
+    expect(tools.map((t) => t.name)).toContain("ingest_image");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// ingest_pdf dispatch
+// ---------------------------------------------------------------------------
+describe("dispatchMcp — ingest_pdf", () => {
+  it("ingest_pdf is write-gated", () => {
+    const tool = MCP_TOOLS.find((t) => t.name === "ingest_pdf");
+    expect(tool).toBeDefined();
+    expect(tool!.write).toBe(true);
+  });
+
+  it("blocks unauthenticated calls", async () => {
+    const res = await dispatchMcp(
+      {
+        id: 1,
+        method: "tools/call",
+        params: { name: "ingest_pdf", arguments: { pdf_url: "https://example.com/doc.pdf" } },
+      },
+      null,
+    );
+    const r = res!.result as { isError?: boolean; content: { text: string }[] };
+    expect(r.isError).toBe(true);
+    expect(r.content[0].text).toMatch(/authentication required/i);
+  });
+
+  it("tools/list includes ingest_pdf", async () => {
+    const res = await dispatchMcp({ id: 1, method: "tools/list" }, null);
+    const tools = (res!.result as { tools: { name: string }[] }).tools;
+    expect(tools.map((t) => t.name)).toContain("ingest_pdf");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// ingest_x_mention dispatch
+// ---------------------------------------------------------------------------
+describe("dispatchMcp — ingest_x_mention", () => {
+  it("ingest_x_mention is write-gated", () => {
+    const tool = MCP_TOOLS.find((t) => t.name === "ingest_x_mention");
+    expect(tool).toBeDefined();
+    expect(tool!.write).toBe(true);
+  });
+
+  it("blocks unauthenticated calls", async () => {
+    const res = await dispatchMcp(
+      {
+        id: 1,
+        method: "tools/call",
+        params: {
+          name: "ingest_x_mention",
+          arguments: { url: "https://x.com/user/status/123", triggered_by: "@alice" },
+        },
+      },
+      null,
+    );
+    const r = res!.result as { isError?: boolean; content: { text: string }[] };
+    expect(r.isError).toBe(true);
+    expect(r.content[0].text).toMatch(/authentication required/i);
+  });
+
+  it("tools/list includes ingest_x_mention", async () => {
+    const res = await dispatchMcp({ id: 1, method: "tools/list" }, null);
+    const tools = (res!.result as { tools: { name: string }[] }).tools;
+    expect(tools.map((t) => t.name)).toContain("ingest_x_mention");
   });
 });
