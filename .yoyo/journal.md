@@ -5830,7 +5830,7 @@ Triaged 1 issue:
 
 Pipeline state: 0 in triage, 1 ready (#837 at p2), ready backlog is empty otherwise.
 
-## 2025-07-15 (office-hour)
+## 2026-07-02 (office-hour)
 
 Triaged 1 issue:
 
