@@ -5822,7 +5822,7 @@ Remaining 3 HTTP MCP gaps (ingest_image, ingest_pdf, ingest_x_mention) are real 
 
 **Pipeline state:** 1 in triage (#798 at p2), 0 ready, 0 in-progress, 1 agent-help-wanted (#749 at p1), 1 blocked (#807). The critical path is #749 (silo-primary reads) — everything downstream (flat file retirement, private tier) depends on it landing. Filed 0 new issues — the pipeline's constraint is execution capacity on complex refactors, not missing work.
 
-##   (office-hour)
+## 2026-07-02 15:13 (office-hour)
 
 Triaged 1 issue:
 
