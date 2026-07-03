@@ -343,6 +343,28 @@ describe("scanForMaintenance", () => {
       targetSlug: "artificial-intelligence",
     });
   });
+
+  it("enqueues a staleness task for a low-confidence page with a source_url", async () => {
+    await seed("low-conf", { confidence: 0.4, source_url: "https://example.com/src" });
+    const tasks = await scanForMaintenance();
+    expect(tasks).toContainEqual({ kind: "maintain", op: "staleness", slug: "low-conf" });
+  });
+
+  it("does NOT enqueue a task for a low-confidence page without a source_url", async () => {
+    await seed("low-conf-nosrc", { confidence: 0.4 });
+    const tasks = await scanForMaintenance();
+    expect(tasks).not.toContainEqual(
+      expect.objectContaining({ slug: "low-conf-nosrc", op: "staleness" }),
+    );
+  });
+
+  it("does NOT enqueue a low-confidence task for a page above the threshold", async () => {
+    await seed("high-conf", { confidence: 0.7, source_url: "https://example.com/src" });
+    const tasks = await scanForMaintenance();
+    expect(tasks).not.toContainEqual(
+      expect.objectContaining({ slug: "high-conf", op: "staleness" }),
+    );
+  });
 });
 
 describe("rebuildDerivedIndexes — commons index (#398)", () => {

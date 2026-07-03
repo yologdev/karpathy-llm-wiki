@@ -8,7 +8,9 @@
  *     is from a HUMAN (so yoyo hasn't already answered and is waiting) → run the
  *     same `reconcileFromTalk` as the on-demand button.
  *   - **staleness**: a page past its `expiry` with a `source_url` → re-ingest
- *     from the source (the reconcile-on-merge step refreshes it).
+ *     from the source (the reconcile-on-merge step refreshes it). Also used for
+ *     low-confidence pages (below `LOW_CONFIDENCE_THRESHOLD`) that have a
+ *     `source_url` — re-ingesting re-synthesizes and may raise confidence.
  *   - **fix** (deterministic, no LLM): backfill a legacy page missing all
  *     yopedia schema fields (`unmigrated-page`); clear a dangling `supersedes`
  *     reference (`supersedes-dangling`); drop an index entry whose page file is
@@ -27,7 +29,7 @@
  */
 
 import { listWikiPages, readWikiPageWithFrontmatter } from "./wiki";
-import { getOnDiskSlugs, checkMissingCrossRefs } from "./lint-checks";
+import { getOnDiskSlugs, checkMissingCrossRefs, LOW_CONFIDENCE_THRESHOLD } from "./lint-checks";
 import { listThreads } from "./talk";
 import { isAgentHandle } from "./agents";
 import { extractWikiLinks } from "./links";
@@ -180,6 +182,19 @@ export async function scanForMaintenance(
       } else {
         tasks.push({ kind: "maintain", op: "fix", slug: entry.slug, lintType: "stale-page" });
       }
+      continue;
+    }
+
+    // (4) Low-confidence pages with a source_url → re-ingest to re-synthesize
+    //     and potentially raise confidence.
+    const confidence = fm.confidence;
+    if (
+      typeof confidence === "number" &&
+      confidence < LOW_CONFIDENCE_THRESHOLD &&
+      typeof sourceUrl === "string" &&
+      sourceUrl.trim() !== ""
+    ) {
+      tasks.push({ kind: "maintain", op: "staleness", slug: entry.slug });
     }
   }
 
