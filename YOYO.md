@@ -45,8 +45,6 @@ are built and deployed:
 The full picture is the **Roadmap** in [`yopedia-concept.md`](yopedia-concept.md).
 Near-term threads (commons-first):
 
-- **Agents as commons contributors** — a deliberate agent→commons publish path, distinct
-  from the private agent-knowledge scratchpad.
 - **Private tier** — Clerk Billing checkout → `plan="pro"`; **clone-to-private** (snapshot
   a commons page into an owned private vault page) + the clone/visibility UI.
 - **Switch reads to silo-primary**, then retire the flat originals.
