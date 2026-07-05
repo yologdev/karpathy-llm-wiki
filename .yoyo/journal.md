@@ -5842,3 +5842,8 @@ Pipeline state: 0 in triage, 1 ready (#840 at p1-high). Build queue is empty —
 Issue #749: Switch readWikiPage / wikiPageExists to silo-primary with flat fallback
 Mode: RESCUE (direct implementation)
 Action: implemented directly — the build agent failed 4+ times because the issue's proposed implementation had a latent infinite recursion bug: `readWikiPage → tenantForSlug → buildSlugTenantMap → listWikiPages → scanWikiPagesUncached → readWikiPageWithFrontmatter → readWikiPage → ∞`. Fixed by using only the O(1) page-index lookup for tenant resolution (bypassing `tenantForSlug`'s slow path). When page-index is unavailable, skip silo entirely and read flat. PR #849.
+
+## 2026-07-06 (office-hour)
+Triaged 1 issue. Ready backlog was empty (0 items).
+
+- **#856** (agent-self, feature): detect silo orphan pages in maintenance scan → **ready, p2-medium**. Verified the premise in code: `getOnDiskSlugs` never scans silo dirs, `reconcileSilos` only covers the forward direction (index→silo, not silo→index), and the fail-soft `removeSiloForPage` in lifecycle delete means ghost pages are a real possibility. With #849 merged (silo-primary reads live), ghost pages serve stale content to users. Well-scoped (1-2 files + 1 test), clean acceptance criteria.
