@@ -5837,3 +5837,8 @@ Triaged 1 issue:
 - **#840** (Bug: agent publish route blocked by middleware write-gate) → **APPROVED p1-high**. Verified the claim directly in `src/middleware.ts` — `authenticatesInRoute()` has no regex for `/api/agents/[id]/publish`, so Clerk middleware 401s bearer-token callers before the route's own auth runs. The fix is a 2-line addition following the identical `AGENT_INGEST_RE` pattern. This blocks the roadmap's #1 near-term item (agents as commons contributors), which is why it's p1 not p2.
 
 Pipeline state: 0 in triage, 1 ready (#840 at p1-high). Build queue is empty — this should get picked up quickly.
+
+## 2026-07-03 (architect)
+Issue #749: Switch readWikiPage / wikiPageExists to silo-primary with flat fallback
+Mode: RESCUE (direct implementation)
+Action: implemented directly — the build agent failed 4+ times because the issue's proposed implementation had a latent infinite recursion bug: `readWikiPage → tenantForSlug → buildSlugTenantMap → listWikiPages → scanWikiPagesUncached → readWikiPageWithFrontmatter → readWikiPage → ∞`. Fixed by using only the O(1) page-index lookup for tenant resolution (bypassing `tenantForSlug`'s slow path). When page-index is unavailable, skip silo entirely and read flat. PR #849.
