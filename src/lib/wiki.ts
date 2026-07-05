@@ -337,13 +337,14 @@ export async function readWikiPage(slug: string): Promise<WikiPage | null> {
   }
 
   const storage = getStorage();
-  const filePath = `${getWikiDir()}/${slug}.md`;
+  const flatPath = `${getWikiDir()}/${slug}.md`;
 
   // Silo-primary: try tenant path first. We use ONLY the O(1) page-index
   // lookup — NOT tenantForSlug() — because its slow path triggers
   // listWikiPages → scanWikiPagesUncached → readWikiPageWithFrontmatter →
   // readWikiPage → infinite recursion.
   let content: string | null = null;
+  let actualPath: string = flatPath; // track where content was actually read from
   const pageIdx = await getPageIndex();
   if (pageIdx) {
     const entry = pageIdx[slug];
@@ -351,6 +352,8 @@ export async function readWikiPage(slug: string): Promise<WikiPage | null> {
     const siloPath = tenantWikiRelPath(tenant, `${slug}.md`);
     try {
       content = await storage.readFile(siloPath);
+      // Content came from the silo — resolve the absolute path
+      actualPath = path.join(getDataDir(), siloPath);
     } catch (e) {
       if (!isEnoent(e)) {
         logger.warn("wiki", `silo read failed for "${slug}", falling back to flat:`, e);
@@ -363,6 +366,7 @@ export async function readWikiPage(slug: string): Promise<WikiPage | null> {
   if (content === null) {
     try {
       content = await storage.readFile(wikiRelPath(`${slug}.md`));
+      actualPath = flatPath;
     } catch (err) {
       if (!isEnoent(err)) {
         logger.warn("wiki", `readWikiPage failed for "${slug}":`, err);
@@ -377,7 +381,7 @@ export async function readWikiPage(slug: string): Promise<WikiPage | null> {
   // Derive title from the first markdown heading, falling back to the slug.
   const titleMatch = content.match(/^#\s+(.+)$/m);
   const title = titleMatch ? titleMatch[1].trim() : slug;
-  const result: WikiPage = { slug, title, content, path: filePath };
+  const result: WikiPage = { slug, title, content, path: actualPath };
 
   if (pageCache !== null) {
     pageCache.set(slug, result);

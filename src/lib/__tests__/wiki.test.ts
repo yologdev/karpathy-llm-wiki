@@ -2091,6 +2091,10 @@ describe("silo-primary reads", () => {
     expect(page).not.toBeNull();
     expect(page!.title).toBe("Silo");
     expect(page!.content).toContain("Silo content.");
+    // path must reflect the silo location, not the flat one
+    expect(page!.path).toBe(
+      path.join(tmpDir, "tenants", "alice", "wiki", "silo-test.md"),
+    );
   });
 
   it("readWikiPage falls back to flat when silo file is missing", async () => {
@@ -2108,6 +2112,10 @@ describe("silo-primary reads", () => {
     expect(page).not.toBeNull();
     expect(page!.title).toBe("Flat Only");
     expect(page!.content).toContain("Still on flat.");
+    // path must reflect the flat location since silo was missing
+    expect(page!.path).toBe(
+      path.join(tmpDir, "wiki", "flat-only.md"),
+    );
   });
 
   it("readWikiPage reads from flat when page-index is absent", async () => {
@@ -2122,6 +2130,10 @@ describe("silo-primary reads", () => {
     expect(page).not.toBeNull();
     expect(page!.title).toBe("No Index");
     expect(page!.content).toContain("Direct flat read.");
+    // path must reflect the flat location since no page-index existed
+    expect(page!.path).toBe(
+      path.join(tmpDir, "wiki", "no-index.md"),
+    );
   });
 
   it("wikiPageExists returns true from silo path", async () => {
