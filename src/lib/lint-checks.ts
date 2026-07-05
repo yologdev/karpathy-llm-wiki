@@ -10,6 +10,7 @@ import { findDuplicateEntities } from "./alias-index";
 import { parseSources } from "./sources";
 import { getDiscussionStatsForSlugs, getDiscussionStats } from "./talk";
 import { listRawSources, readRawSource } from "./raw";
+import { getPageIndex } from "./page-index";
 
 /** All known lint check types (const tuple for Zod enum compatibility). */
 export const ALL_CHECK_TYPES = [
@@ -35,9 +36,27 @@ export const ALL_CHECK_TYPES = [
 export const INFRASTRUCTURE_FILES = new Set(["index.md", "log.md"]);
 
 /**
- * Get all content page slugs that exist on disk (excluding infrastructure files).
+ * Get all content page slugs known to the system.
+ *
+ * Primary path: read from the `_idx:pages` page-index (O(1) KV read), which
+ * aligns lint with the silo-primary read path used by `readWikiPage` /
+ * `listWikiPages`.
+ *
+ * Fallback (page-index not yet seeded): list `.md` files from the flat wiki
+ * directory, excluding infrastructure files. This preserves correct orphan /
+ * stale-index detection before the first `rebuildPageIndex()` run.
+ *
+ * The `_wikiDir` parameter is kept for call-site compatibility.
  */
 export async function getOnDiskSlugs(_wikiDir: string): Promise<string[]> {
+  try {
+    const idx = await getPageIndex();
+    if (idx) return Object.keys(idx);
+  } catch (err) {
+    logger.warn("lint", "page-index read failed; falling back to listFiles", err);
+  }
+
+  // Fallback: list flat wiki directory
   let entries: FileEntry[];
   try {
     entries = await getStorage().listFiles(wikiRelPath(""));

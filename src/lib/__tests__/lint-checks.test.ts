@@ -72,7 +72,19 @@ afterEach(async () => {
 // getOnDiskSlugs
 // ---------------------------------------------------------------------------
 describe("getOnDiskSlugs", () => {
-  it("returns slugs from .md files excluding index.md and log.md", async () => {
+  it("returns slugs from page-index when seeded", async () => {
+    // Seed the page-index with two content pages
+    const { getStorage } = await import("../storage");
+    await getStorage().putIndex("pages", {
+      alpha: { slug: "alpha", title: "Alpha", summary: "A page" },
+      beta: { slug: "beta", title: "Beta", summary: "B page" },
+    });
+
+    const slugs = await getOnDiskSlugs("");
+    expect(slugs.sort()).toEqual(["alpha", "beta"]);
+  });
+
+  it("returns slugs from .md files excluding index.md and log.md (fallback)", async () => {
     const wikiDir = process.env.WIKI_DIR!;
     await fs.writeFile(path.join(wikiDir, "alpha.md"), "# Alpha\n\nContent");
     await fs.writeFile(path.join(wikiDir, "beta.md"), "# Beta\n\nContent");
@@ -88,7 +100,7 @@ describe("getOnDiskSlugs", () => {
     expect(slugs).toEqual([]);
   });
 
-  it("ignores non-.md files", async () => {
+  it("ignores non-.md files (fallback)", async () => {
     const wikiDir = process.env.WIKI_DIR!;
     await fs.writeFile(path.join(wikiDir, "page.md"), "# Page\n\nContent");
     await fs.writeFile(path.join(wikiDir, "readme.txt"), "Not a wiki page");

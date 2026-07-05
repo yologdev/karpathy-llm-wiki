@@ -4,6 +4,7 @@ import os from "os";
 import path from "path";
 import { writeWikiPage, updateIndex, ensureDirectories, readLog } from "../wiki";
 import type { IndexEntry } from "../types";
+import { _resetStorage } from "../storage";
 
 // Mock the LLM module so lint never calls the real API
 vi.mock("../llm", () => ({
@@ -40,13 +41,17 @@ import { saveRawSource } from "../raw";
 let tmpDir: string;
 let originalWikiDir: string | undefined;
 let originalRawDir: string | undefined;
+let originalDataDir: string | undefined;
 
 beforeEach(async () => {
   tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "lint-test-"));
   originalWikiDir = process.env.WIKI_DIR;
   originalRawDir = process.env.RAW_DIR;
+  originalDataDir = process.env.DATA_DIR;
   process.env.WIKI_DIR = path.join(tmpDir, "wiki");
   process.env.RAW_DIR = path.join(tmpDir, "raw");
+  process.env.DATA_DIR = tmpDir;
+  _resetStorage();
 
   // Default: no LLM key
   mockedHasLLMKey.mockReturnValue(false);
@@ -65,6 +70,12 @@ afterEach(async () => {
   } else {
     process.env.RAW_DIR = originalRawDir;
   }
+  if (originalDataDir === undefined) {
+    delete process.env.DATA_DIR;
+  } else {
+    process.env.DATA_DIR = originalDataDir;
+  }
+  _resetStorage();
   await fs.rm(tmpDir, { recursive: true, force: true });
 });
 
