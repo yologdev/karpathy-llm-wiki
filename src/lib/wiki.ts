@@ -291,8 +291,30 @@ export async function wikiPageExists(slug: string): Promise<boolean> {
   } catch {
     return false;
   }
+  const storage = getStorage();
+
+  // Silo-primary: try tenant path first (O(1) page-index lookup only —
+  // we must NOT call tenantForSlug here because its slow path triggers
+  // listWikiPages → scanWikiPagesUncached → readWikiPage → infinite loop).
+  const pageIdx = await getPageIndex();
+  if (pageIdx) {
+    const entry = pageIdx[slug];
+    const tenant = tenantForOwner(entry?.owner);
+    const siloPath = tenantWikiRelPath(tenant, `${slug}.md`);
+    try {
+      await storage.readFile(siloPath);
+      return true;
+    } catch (e) {
+      if (!isEnoent(e)) {
+        logger.warn("wiki", `silo existence check failed for "${slug}", falling back to flat:`, e);
+      }
+      // Fall through to flat
+    }
+  }
+
+  // Flat fallback
   try {
-    await getStorage().readFile(wikiRelPath(`${slug}.md`));
+    await storage.readFile(wikiRelPath(`${slug}.md`));
     return true;
   } catch (err) {
     if (isEnoent(err)) return false;
@@ -314,31 +336,54 @@ export async function readWikiPage(slug: string): Promise<WikiPage | null> {
     return pageCache.get(slug) ?? null;
   }
 
-  const storagePath = wikiRelPath(`${slug}.md`);
+  const storage = getStorage();
   const filePath = `${getWikiDir()}/${slug}.md`;
-  try {
-    const content = await getStorage().readFile(storagePath);
-    // Derive title from the first markdown heading, falling back to the slug.
-    const titleMatch = content.match(/^#\s+(.+)$/m);
-    const title = titleMatch ? titleMatch[1].trim() : slug;
-    const result: WikiPage = { slug, title, content, path: filePath };
 
-    // Store in cache (when active)
-    if (pageCache !== null) {
-      pageCache.set(slug, result);
+  // Silo-primary: try tenant path first. We use ONLY the O(1) page-index
+  // lookup — NOT tenantForSlug() — because its slow path triggers
+  // listWikiPages → scanWikiPagesUncached → readWikiPageWithFrontmatter →
+  // readWikiPage → infinite recursion.
+  let content: string | null = null;
+  const pageIdx = await getPageIndex();
+  if (pageIdx) {
+    const entry = pageIdx[slug];
+    const tenant = tenantForOwner(entry?.owner);
+    const siloPath = tenantWikiRelPath(tenant, `${slug}.md`);
+    try {
+      content = await storage.readFile(siloPath);
+    } catch (e) {
+      if (!isEnoent(e)) {
+        logger.warn("wiki", `silo read failed for "${slug}", falling back to flat:`, e);
+      }
+      // Fall through to flat fallback
     }
-
-    return result;
-  } catch (err) {
-    if (!isEnoent(err)) {
-      logger.warn("wiki", `readWikiPage failed for "${slug}":`, err);
-    }
-    // Store negative result in cache too (when active)
-    if (pageCache !== null) {
-      pageCache.set(slug, null);
-    }
-    return null;
   }
+
+  // Flat fallback
+  if (content === null) {
+    try {
+      content = await storage.readFile(wikiRelPath(`${slug}.md`));
+    } catch (err) {
+      if (!isEnoent(err)) {
+        logger.warn("wiki", `readWikiPage failed for "${slug}":`, err);
+      }
+      if (pageCache !== null) {
+        pageCache.set(slug, null);
+      }
+      return null;
+    }
+  }
+
+  // Derive title from the first markdown heading, falling back to the slug.
+  const titleMatch = content.match(/^#\s+(.+)$/m);
+  const title = titleMatch ? titleMatch[1].trim() : slug;
+  const result: WikiPage = { slug, title, content, path: filePath };
+
+  if (pageCache !== null) {
+    pageCache.set(slug, result);
+  }
+
+  return result;
 }
 
 /**

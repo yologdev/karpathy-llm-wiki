@@ -2064,3 +2064,91 @@ describe("deleteWikiPage — orphaned comma cleanup", () => {
     expect(ref!.content).not.toMatch(/\*\*See also:\*\*\s*,/);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Silo-primary reads — verifies readWikiPage and wikiPageExists prefer the
+// silo path when the page-index is seeded, falling back to flat otherwise.
+// ---------------------------------------------------------------------------
+describe("silo-primary reads", () => {
+  it("readWikiPage reads from silo when page-index exists", async () => {
+    // Write DIFFERENT content to flat and silo paths
+    const storage = (await import("../storage")).getStorage();
+    await storage.writeFile(
+      `wiki/silo-test.md`,
+      "# Flat\n\nFlat content.",
+    );
+    // Seed the page index with an owner so tenantForOwner resolves a tenant
+    await storage.putIndex("pages", {
+      "silo-test": { slug: "silo-test", title: "Silo Test", summary: "test", owner: "alice" },
+    });
+    // Write to the silo path (tenant = "alice")
+    await storage.writeFile(
+      `tenants/alice/wiki/silo-test.md`,
+      "# Silo\n\nSilo content.",
+    );
+
+    const page = await readWikiPage("silo-test");
+    expect(page).not.toBeNull();
+    expect(page!.title).toBe("Silo");
+    expect(page!.content).toContain("Silo content.");
+  });
+
+  it("readWikiPage falls back to flat when silo file is missing", async () => {
+    const storage = (await import("../storage")).getStorage();
+    await storage.writeFile(
+      `wiki/flat-only.md`,
+      "# Flat Only\n\nStill on flat.",
+    );
+    // Seed page index — silo path will 404
+    await storage.putIndex("pages", {
+      "flat-only": { slug: "flat-only", title: "Flat Only", summary: "s", owner: "bob" },
+    });
+
+    const page = await readWikiPage("flat-only");
+    expect(page).not.toBeNull();
+    expect(page!.title).toBe("Flat Only");
+    expect(page!.content).toContain("Still on flat.");
+  });
+
+  it("readWikiPage reads from flat when page-index is absent", async () => {
+    // No page index seeded — getPageIndex() returns null
+    const storage = (await import("../storage")).getStorage();
+    await storage.writeFile(
+      `wiki/no-index.md`,
+      "# No Index\n\nDirect flat read.",
+    );
+
+    const page = await readWikiPage("no-index");
+    expect(page).not.toBeNull();
+    expect(page!.title).toBe("No Index");
+    expect(page!.content).toContain("Direct flat read.");
+  });
+
+  it("wikiPageExists returns true from silo path", async () => {
+    const storage = (await import("../storage")).getStorage();
+    await storage.putIndex("pages", {
+      "exists-silo": { slug: "exists-silo", title: "E", summary: "e", owner: "carol" },
+    });
+    await storage.writeFile(
+      `tenants/carol/wiki/exists-silo.md`,
+      "# Exists\n\nHere.",
+    );
+
+    const exists = await (await import("../wiki")).wikiPageExists("exists-silo");
+    expect(exists).toBe(true);
+  });
+
+  it("wikiPageExists falls back to flat when silo missing", async () => {
+    const storage = (await import("../storage")).getStorage();
+    await storage.putIndex("pages", {
+      "exists-flat": { slug: "exists-flat", title: "E", summary: "e", owner: "dave" },
+    });
+    await storage.writeFile(
+      `wiki/exists-flat.md`,
+      "# Exists\n\nFlat.",
+    );
+
+    const exists = await (await import("../wiki")).wikiPageExists("exists-flat");
+    expect(exists).toBe(true);
+  });
+});
