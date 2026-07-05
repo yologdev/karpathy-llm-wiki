@@ -175,4 +175,47 @@ describe("reconcileSilos", () => {
       true,
     );
   });
+
+  it("detects and re-syncs stale silo content", async () => {
+    const storage = getStorage();
+
+    // Write a page and sync it to the silo.
+    await writeWikiPage(
+      "stale-page",
+      "---\nowner: frank\n---\n# Stale\n\nOriginal content.",
+    );
+    await updateIndex([
+      { slug: "stale-page", title: "Stale", summary: "Original" },
+    ]);
+    await syncSiloForPage("stale-page", "frank");
+
+    // Verify silo matches flat.
+    expect(await storage.readFile("tenants/frank/wiki/stale-page.md")).toContain(
+      "Original content.",
+    );
+
+    // Simulate stale silo: update flat WITHOUT re-syncing to silo.
+    await writeWikiPage(
+      "stale-page",
+      "---\nowner: frank\n---\n# Stale\n\nUpdated content.",
+    );
+
+    // Silo still has old content.
+    expect(await storage.readFile("tenants/frank/wiki/stale-page.md")).toContain(
+      "Original content.",
+    );
+
+    // reconcileSilos should detect the divergence and repair it.
+    const result = await reconcileSilos();
+    expect(result.total).toBe(1);
+    expect(result.synced).toBe(0);
+    expect(result.stale).toBe(1);
+    expect(result.alreadyCurrent).toBe(0);
+    expect(result.errors).toEqual([]);
+
+    // Silo should now have the updated content.
+    expect(await storage.readFile("tenants/frank/wiki/stale-page.md")).toContain(
+      "Updated content.",
+    );
+  });
 });

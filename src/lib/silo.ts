@@ -164,7 +164,10 @@ export async function removeSiloForPage(
 /** Summary returned by {@link reconcileSilos}. */
 export interface ReconcileResult {
   total: number;
+  /** Pages whose silo copy was missing and freshly synced. */
   synced: number;
+  /** Pages whose silo copy existed but had stale content — re-synced. */
+  stale: number;
   alreadyCurrent: number;
   errors: string[];
 }
@@ -188,6 +191,7 @@ export async function reconcileSilos(): Promise<ReconcileResult> {
   const result: ReconcileResult = {
     total: 0,
     synced: 0,
+    stale: 0,
     alreadyCurrent: 0,
     errors: [],
   };
@@ -197,13 +201,22 @@ export async function reconcileSilos(): Promise<ReconcileResult> {
     result.total++;
     const tenant = tenantForOwner(page.owner);
     try {
+      const flatPath = wikiRelPath(`${page.slug}.md`);
       const siloPath = tenantWikiRelPath(tenant, `${page.slug}.md`);
       const exists = await storage.fileExists(siloPath);
       if (!exists) {
         await syncSiloForPage(page.slug, tenant);
         result.synced++;
       } else {
-        result.alreadyCurrent++;
+        // Silo exists — compare content to detect staleness.
+        const flatContent = await storage.readFile(flatPath);
+        const siloContent = await storage.readFile(siloPath);
+        if (flatContent !== siloContent) {
+          await syncSiloForPage(page.slug, tenant);
+          result.stale++;
+        } else {
+          result.alreadyCurrent++;
+        }
       }
     } catch (e) {
       result.errors.push(`${page.slug}: ${String(e)}`);
