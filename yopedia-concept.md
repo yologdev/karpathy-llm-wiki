@@ -177,14 +177,14 @@ namespace `tenants/<handle>/{wiki,raw,discuss}/`.
   public page to its `/wiki/<slug>` home), scoped query/graph **including the `vault:<id>`
   vault lens**, the live **silo mirror** (every page mirrored to its tenant folder on
   write — a self-contained, Obsidian-servable vault), per-tenant **export** ("download my
-  vault"), and **delete-tenant**. Reads are still served from the shared layer; the silo
-  is kept current but not yet the read primary.
+  vault"), and **delete-tenant**. **Reads are silo-primary** — `readWikiPage` and
+  `wikiPageExists` try the tenant silo path first (using O(1) page-index lookup for
+  tenant resolution) and fall back to flat.
 - **Why it matters:** strong *physical* isolation for the paid-private tier (a missed
   `canReadPage` check can't cross a prefix — defense in depth), per-tenant scoped
   query/graph, and clean per-tenant data ops (export / delete / quota one tenant without
   scanning others).
-- **Pending:** switching reads to silo-primary, **Clerk Billing**, and the
-  **clone-to-private** / private-vault flow.
+- **Pending:** **Clerk Billing** and the **clone-to-private** / private-vault flow.
 
 **"Growing in public" is about the *product*, not user data** — yoyo building the
 yopedia repo autonomously (commits, journal, issues). It is orthogonal to whether a
@@ -281,12 +281,12 @@ public vaults + curation + the `vault:<id>` Browse/Query/Graph lens; commons-glo
 X-mention loop; the **realm-aware write model** — commons pages block human prose-edits,
 talk is the human steering surface, owner-only writes for private/vault pages enforced;
 **agents as commons contributors** — `publish_to_commons` MCP tool + REST endpoint with
-agent-token auth.)*
+agent-token auth; **silo-primary reads** — reads resolve tenant via O(1) page-index
+lookup, try silo first, fall back to flat.)*
 
 - **Private tier (billing).** Clerk Billing checkout → `plan="pro"`; **private-vault
   creation** + **clone-to-private** (snapshot a commons page into an owned private vault
   page); the clone/visibility UI.
-- **Switch reads to silo-primary**, then retire the flat originals.
 - **Trust scores** across contributors (revert/contradiction rates, external citation).
 - **Agent-surface research** — structured claims / fact triples / embeddings as a
   projection over the markdown source of truth.
