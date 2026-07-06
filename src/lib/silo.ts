@@ -169,6 +169,8 @@ export interface ReconcileResult {
   /** Pages whose silo copy existed but had stale content — re-synced. */
   stale: number;
   alreadyCurrent: number;
+  /** Silo pages with no corresponding index entry — cleaned up. */
+  removed: number;
   errors: string[];
 }
 
@@ -193,6 +195,7 @@ export async function reconcileSilos(): Promise<ReconcileResult> {
     synced: 0,
     stale: 0,
     alreadyCurrent: 0,
+    removed: 0,
     errors: [],
   };
 
@@ -223,5 +226,43 @@ export async function reconcileSilos(): Promise<ReconcileResult> {
       logger.warn("silo", `reconcile failed for "${page.slug}":`, e);
     }
   }
+
+  // ── Reverse pass: find silo files with no index entry (ghosts) ──
+  const pageSlugs = new Set(pages.map((p) => p.slug));
+  try {
+    const tenantDirs = await listSafe("tenants");
+    for (const td of tenantDirs) {
+      if (!td.isDirectory) continue;
+      const tenant = td.name;
+      let wikiPrefix: string;
+      try {
+        wikiPrefix = tenantWikiRelPath(tenant, "");
+      } catch {
+        continue; // invalid tenant dir name — skip
+      }
+      let siloFiles: Awaited<ReturnType<typeof listSafe>>;
+      try {
+        siloFiles = await listSafe(wikiPrefix);
+      } catch {
+        continue;
+      }
+      for (const f of siloFiles) {
+        if (f.isDirectory || !f.name.endsWith(".md")) continue;
+        const slug = f.name.replace(/\.md$/, "");
+        if (SKIP.has(slug)) continue;
+        if (pageSlugs.has(slug)) continue;
+        try {
+          await removeSiloForPage(slug, tenant);
+          result.removed++;
+        } catch (e) {
+          result.errors.push(`reverse-orphan ${tenant}/${slug}: ${String(e)}`);
+          logger.warn("silo", `reverse-orphan cleanup failed for "${tenant}/${slug}":`, e);
+        }
+      }
+    }
+  } catch (e) {
+    logger.warn("silo", "reverse-orphan scan failed:", e);
+  }
+
   return result;
 }
