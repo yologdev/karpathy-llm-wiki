@@ -415,15 +415,23 @@ export async function readWikiPageWithFrontmatter(
   return { ...page, title, frontmatter: data, body };
 }
 
-/** Write (or overwrite) a wiki page. Ensures the wiki directory exists first. Throws on invalid slug. */
+/** Write (or overwrite) a wiki page. Ensures the wiki directory exists first. Throws on invalid slug.
+ *
+ * When `tenant` is provided, writes to the tenant silo path
+ * (`tenants/<tenant>/wiki/<slug>.md`) instead of the flat path. Existing
+ * callers that omit `tenant` are unaffected — backward compatible.
+ */
 export async function writeWikiPage(
   slug: string,
   content: string,
   author?: string,
   reason?: string,
+  tenant?: string,
 ): Promise<void> {
   validateSlug(slug);
-  const storagePath = wikiRelPath(`${slug}.md`);
+  const storagePath = tenant
+    ? tenantWikiRelPath(tenant, `${slug}.md`)
+    : wikiRelPath(`${slug}.md`);
   const storage = getStorage();
 
   // Snapshot the current content as a revision before overwriting.
@@ -431,7 +439,7 @@ export async function writeWikiPage(
   // a previous version to save).
   try {
     const existing = await storage.readFile(storagePath);
-    await saveRevision(slug, existing, author, reason);
+    await saveRevision(slug, existing, author, reason, tenant);
   } catch (err) {
     // File doesn't exist yet — first write, no revision needed.
     if (!isEnoent(err)) {

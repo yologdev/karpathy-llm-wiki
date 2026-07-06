@@ -1,4 +1,4 @@
-import { getWikiDir, wikiRelPath, validateSlug } from "./wiki";
+import { getWikiDir, wikiRelPath, validateSlug, tenantWikiRelPath } from "./wiki";
 import { getStorage } from "./storage";
 import { isEnoent } from "./errors";
 import { logger } from "./logger";
@@ -52,6 +52,16 @@ function revisionsRelPath(...segments: string[]): string {
   return wikiRelPath([REVISIONS_DIR_NAME, ...segments].join("/"));
 }
 
+/**
+ * Compute a storage-relative path for a revision file in a tenant silo.
+ *
+ * Mirrors {@link revisionsRelPath} but routes through `tenantWikiRelPath`
+ * so revisions land under `tenants/<tenant>/wiki/.revisions/<slug>/`.
+ */
+function tenantRevisionsRelPath(tenant: string, ...segments: string[]): string {
+  return tenantWikiRelPath(tenant, [REVISIONS_DIR_NAME, ...segments].join("/"));
+}
+
 // ---------------------------------------------------------------------------
 // Monotonic timestamp — ensures unique filenames even when multiple
 // revisions are saved within the same millisecond.
@@ -79,27 +89,34 @@ function uniqueTimestamp(): number {
  * When `author` or `reason` is provided, a JSON sidecar (`<timestamp>.meta.json`)
  * is written alongside the `.md` file to record attribution and edit summary
  * without changing the markdown file format.
+ *
+ * When `tenant` is provided, revisions are stored in the tenant silo path
+ * (`tenants/<tenant>/wiki/.revisions/<slug>/`) instead of the flat path.
  */
 export async function saveRevision(
   slug: string,
   content: string,
   author?: string,
   reason?: string,
+  tenant?: string,
 ): Promise<void> {
   validateSlug(slug);
   const storage = getStorage();
   const timestamp = uniqueTimestamp();
-  await storage.writeFile(revisionsRelPath(slug, `${timestamp}.md`), content);
+  const relPath = tenant
+    ? tenantRevisionsRelPath(tenant, slug, `${timestamp}.md`)
+    : revisionsRelPath(slug, `${timestamp}.md`);
+  await storage.writeFile(relPath, content);
 
   // Write attribution/reason as a JSON sidecar when provided.
   if (author !== undefined || reason !== undefined) {
     const meta: Record<string, string> = {};
     if (author !== undefined) meta.author = author;
     if (reason !== undefined) meta.reason = reason;
-    await storage.writeFile(
-      revisionsRelPath(slug, `${timestamp}.meta.json`),
-      JSON.stringify(meta),
-    );
+    const metaRelPath = tenant
+      ? tenantRevisionsRelPath(tenant, slug, `${timestamp}.meta.json`)
+      : revisionsRelPath(slug, `${timestamp}.meta.json`);
+    await storage.writeFile(metaRelPath, JSON.stringify(meta));
   }
 }
 

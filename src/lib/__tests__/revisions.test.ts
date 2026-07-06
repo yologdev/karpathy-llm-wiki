@@ -479,3 +479,50 @@ describe("readRevisionMeta", () => {
     await expect(readRevisionMeta("BAD SLUG!", 123)).rejects.toThrow(/invalid slug/i);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Tenant-aware saveRevision
+// ---------------------------------------------------------------------------
+describe("saveRevision with tenant parameter", () => {
+  it("writes revision to tenant silo path", async () => {
+    await ensureDirectories();
+    const storage = (await import("../storage")).getStorage();
+
+    await saveRevision("silo-page", "# V1\n\nContent.", "yoyo", "initial", "alice");
+
+    // Revision should exist in silo path
+    const entries = await storage.listFiles("tenants/alice/wiki/.revisions/silo-page");
+    const mdFiles = entries.filter((e: { name: string }) => e.name.endsWith(".md") && !e.name.endsWith(".meta.json"));
+    expect(mdFiles.length).toBe(1);
+
+    // Content should match
+    const content = await storage.readFile(`tenants/alice/wiki/.revisions/silo-page/${mdFiles[0].name}`);
+    expect(content).toBe("# V1\n\nContent.");
+
+    // Meta sidecar should also be in silo
+    const metaFiles = entries.filter((e: { name: string }) => e.name.endsWith(".meta.json"));
+    expect(metaFiles.length).toBe(1);
+    const meta = JSON.parse(await storage.readFile(`tenants/alice/wiki/.revisions/silo-page/${metaFiles[0].name}`));
+    expect(meta.author).toBe("yoyo");
+    expect(meta.reason).toBe("initial");
+
+    // No flat revisions should exist
+    const flatEntries = await storage.listFiles("wiki/.revisions/silo-page");
+    expect(flatEntries.length).toBe(0);
+  });
+
+  it("writes revision to flat path when tenant is omitted (backward compat)", async () => {
+    await ensureDirectories();
+    const storage = (await import("../storage")).getStorage();
+
+    await saveRevision("flat-page", "# V1\n\nContent.", "yoyo", "initial");
+
+    // Revision should exist in flat path
+    const entries = await storage.listFiles("wiki/.revisions/flat-page");
+    const mdFiles = entries.filter((e: { name: string }) => e.name.endsWith(".md") && !e.name.endsWith(".meta.json"));
+    expect(mdFiles.length).toBe(1);
+
+    const content = await storage.readFile(`wiki/.revisions/flat-page/${mdFiles[0].name}`);
+    expect(content).toBe("# V1\n\nContent.");
+  });
+});

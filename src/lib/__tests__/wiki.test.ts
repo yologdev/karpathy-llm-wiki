@@ -2164,3 +2164,62 @@ describe("silo-primary reads", () => {
     expect(exists).toBe(true);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Tenant-aware writeWikiPage
+// ---------------------------------------------------------------------------
+describe("writeWikiPage with tenant parameter", () => {
+  it("writes to tenant silo path when tenant is provided", async () => {
+    await ensureDirectories();
+    await writeWikiPage("silo-write", "# Silo\n\nContent.", undefined, undefined, "alice");
+
+    // The file should exist at the silo path
+    const storage = (await import("../storage")).getStorage();
+    const content = await storage.readFile("tenants/alice/wiki/silo-write.md");
+    expect(content).toBe("# Silo\n\nContent.");
+
+    // The file should NOT exist at the flat path
+    let flatExists = true;
+    try {
+      await storage.readFile("wiki/silo-write.md");
+    } catch {
+      flatExists = false;
+    }
+    expect(flatExists).toBe(false);
+  });
+
+  it("writes to flat path when tenant is omitted (backward compat)", async () => {
+    await ensureDirectories();
+    await writeWikiPage("flat-write", "# Flat\n\nContent.");
+
+    const storage = (await import("../storage")).getStorage();
+    const content = await storage.readFile("wiki/flat-write.md");
+    expect(content).toBe("# Flat\n\nContent.");
+  });
+
+  it("saves revision to tenant silo when overwriting with tenant", async () => {
+    await ensureDirectories();
+    const storage = (await import("../storage")).getStorage();
+
+    // First write — no revision expected
+    await writeWikiPage("silo-rev", "# V1\n\nFirst.", undefined, undefined, "alice");
+
+    // Overwrite — should create a revision in the silo revisions dir
+    await writeWikiPage("silo-rev", "# V2\n\nSecond.", "yoyo", "update", "alice");
+
+    // Verify the revision ended up in the silo revisions directory
+    const revDir = "tenants/alice/wiki/.revisions/silo-rev";
+    const entries = await storage.listFiles(revDir);
+    const mdFiles = entries.filter((e: { name: string }) => e.name.endsWith(".md"));
+    expect(mdFiles.length).toBe(1);
+
+    // The revision content should be V1
+    const revContent = await storage.readFile(`${revDir}/${mdFiles[0].name}`);
+    expect(revContent).toBe("# V1\n\nFirst.");
+
+    // No flat revisions should exist
+    const flatEntries = await storage.listFiles("wiki/.revisions/silo-rev");
+    const flatMdFiles = flatEntries.filter((e: { name: string }) => e.name.endsWith(".md"));
+    expect(flatMdFiles.length).toBe(0);
+  });
+});
