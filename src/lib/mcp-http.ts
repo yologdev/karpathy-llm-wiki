@@ -11,9 +11,8 @@
  * `tools/call`.
  *
  * Tool handlers are REUSED from the stdio server (`@/mcp`) — single source of
- * truth, no parallel write-path to drift (see `.yoyo/learnings.md`). We expose a
- * curated subset (read + ingestion/query), not all 43 tools: smaller surface,
- * less agent context.
+ * truth, no parallel write-path to drift (see `.yoyo/learnings.md`). All 49
+ * tools are exposed — full parity with the stdio MCP server.
  *
  * Auth/attribution lives in the route (`src/app/api/mcp/route.ts`): a Bearer
  * token resolves to an `owner` handle; WRITE tools require it and attribute the

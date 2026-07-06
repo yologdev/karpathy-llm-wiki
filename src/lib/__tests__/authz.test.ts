@@ -8,7 +8,6 @@ import {
   canWriteFrontmatter,
   isAdmin,
 } from "../authz";
-import type { WriteKind } from "../authz";
 import { agentOwnerHandle } from "../agents";
 import type { IndexEntry } from "../types";
 
