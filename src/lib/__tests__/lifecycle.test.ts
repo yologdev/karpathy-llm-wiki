@@ -787,6 +787,56 @@ describe("per-tenant silo mirror", () => {
       await getStorage().fileExists("tenants/bob/wiki/doomed.md"),
     ).toBe(false);
   });
+
+  it("backlink-strip syncs the stripped page's silo copy", async () => {
+    // Page B links to page A. Deleting A should strip the backlink from B
+    // AND sync B's silo copy so silo-primary reads see the stripped content.
+    const contentB = serializeFrontmatter(
+      { owner: "carol" },
+      "# Page B\n\nSee [Page A](page-a.md).\n",
+    );
+    const contentA = serializeFrontmatter(
+      { owner: "carol" },
+      "# Page A\n\nTarget page.\n",
+    );
+
+    await writeWikiPageWithSideEffects({
+      slug: "page-b",
+      title: "Page B",
+      content: contentB,
+      summary: "links to A",
+      logOp: "ingest",
+      crossRefSource: null,
+    });
+    await writeWikiPageWithSideEffects({
+      slug: "page-a",
+      title: "Page A",
+      content: contentA,
+      summary: "target",
+      logOp: "ingest",
+      crossRefSource: null,
+    });
+
+    // Verify B's silo has the backlink before deletion.
+    const siloBefore = await getStorage().readFile(
+      "tenants/carol/wiki/page-b.md",
+    );
+    expect(siloBefore).toContain("page-a.md");
+
+    // Delete page A — this strips the backlink from page B.
+    await deleteWikiPage("page-a");
+
+    // Flat copy of B should no longer reference page-a.
+    const flatB = await readWikiPage("page-b");
+    expect(flatB).not.toBeNull();
+    expect(flatB!.content).not.toContain("page-a.md");
+
+    // Silo copy of B should ALSO no longer reference page-a.
+    const siloAfter = await getStorage().readFile(
+      "tenants/carol/wiki/page-b.md",
+    );
+    expect(siloAfter).not.toContain("page-a.md");
+  });
 });
 
 // ===========================================================================

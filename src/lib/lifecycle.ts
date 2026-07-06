@@ -611,6 +611,16 @@ async function runPageLifecycleOp(
       if (updated !== page!.content) {
         await writeWikiPage(entry.slug, updated, "system", "backlink strip");
         strippedBacklinksFrom.push(entry.slug);
+        // Sync the stripped page into its tenant silo so the silo copy doesn't
+        // retain the now-dead backlink. Without this, silo-primary reads serve
+        // stale content until the next full reconcileSilos() run.
+        try {
+          const ownerVal = parseFrontmatter(updated).data.owner;
+          const tenant = tenantForOwner(typeof ownerVal === "string" ? ownerVal : undefined);
+          await syncSiloForPage(entry.slug, tenant);
+        } catch (err) {
+          logger.warn("silo", `silo mirror skipped for backlink-strip of "${entry.slug}":`, err);
+        }
       }
     });
   }
