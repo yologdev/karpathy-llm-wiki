@@ -218,4 +218,22 @@ describe("reconcileSilos", () => {
       "Updated content.",
     );
   });
+
+  it("removes ghost silo files that have no index entry", async () => {
+    const storage = getStorage();
+
+    // A real page: in the index and synced to silo.
+    await writeWikiPage("real", "---\nowner: alice\n---\n# Real\n\nContent.");
+    await updateIndex([{ slug: "real", title: "Real", summary: "Content" }]);
+    await syncSiloForPage("real", "alice");
+
+    // A ghost: silo file exists but NO index entry.
+    await storage.writeFile("tenants/alice/wiki/ghost.md", "# Ghost");
+
+    const result = await reconcileSilos();
+    expect(result.removed).toBe(1);
+    expect(await storage.fileExists("tenants/alice/wiki/ghost.md")).toBe(false);
+    // Real page's silo is untouched.
+    expect(await storage.fileExists("tenants/alice/wiki/real.md")).toBe(true);
+  });
 });

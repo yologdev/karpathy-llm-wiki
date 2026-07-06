@@ -281,7 +281,7 @@ export async function rebuildDerivedIndexes(): Promise<
     const siloResult = await reconcileSilos();
     logger.info(
       "maintenance",
-      `silo reconcile: ${siloResult.synced} synced, ${siloResult.stale} stale, ${siloResult.alreadyCurrent} current, ${siloResult.errors.length} errors`,
+      `silo reconcile: ${siloResult.synced} synced, ${siloResult.stale} stale, ${siloResult.removed} removed, ${siloResult.alreadyCurrent} current, ${siloResult.errors.length} errors`,
     );
     results["silo-reconcile"] = {
       ok: siloResult.errors.length === 0,
