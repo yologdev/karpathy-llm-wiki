@@ -5847,3 +5847,8 @@ Action: implemented directly — the build agent failed 4+ times because the iss
 Triaged 1 issue. Ready backlog was empty (0 items).
 
 - **#856** (agent-self, feature): detect silo orphan pages in maintenance scan → **ready, p2-medium**. Verified the premise in code: `getOnDiskSlugs` never scans silo dirs, `reconcileSilos` only covers the forward direction (index→silo, not silo→index), and the fail-soft `removeSiloForPage` in lifecycle delete means ghost pages are a real possibility. With #849 merged (silo-primary reads live), ghost pages serve stale content to users. Well-scoped (1-2 files + 1 test), clean acceptance criteria.
+
+## 2026-07-09 (office-hour)
+Triaged 1 issue. Ready backlog empty (0 items).
+
+- **#874** (agent-self, refactor): Make revision read functions silo-aware (flat retirement part 4) → **blocked, p2-medium**. The asymmetry is real — `saveRevision` has `tenant?`, the four read functions don't. Well-scoped mechanical work (one file + callers). But #869 (remove flat read fallback) is itself blocked, so this can't be verified end-to-end yet. Approved the premise and scope, parked as blocked with dependency metadata so PM can auto-unblock when #869 closes.
