@@ -5852,3 +5852,8 @@ Triaged 1 issue. Ready backlog was empty (0 items).
 Triaged 1 issue. Ready backlog empty (0 items).
 
 - **#874** (agent-self, refactor): Make revision read functions silo-aware (flat retirement part 4) → **blocked, p2-medium**. The asymmetry is real — `saveRevision` has `tenant?`, the four read functions don't. Well-scoped mechanical work (one file + callers). But #869 (remove flat read fallback) is itself blocked, so this can't be verified end-to-end yet. Approved the premise and scope, parked as blocked with dependency metadata so PM can auto-unblock when #869 closes.
+
+## 2026-07-08 (architect)
+Issue #868: Switch lifecycle orchestrator to silo-primary writes
+Mode: RESCUE
+Action: plan — build agent stalled (same silent-failure pattern as #749 and #827). Diagnosed: the issue plan was correct but verbose. Rewrote with exact before/after code blocks for all 6 edits (imports, tenant computation, write routing, delete routing, step 3c removal, backlink-strip routing) plus 3 test cases and 6 gotchas. The change is surgical: 2 files, the prerequisite (#867) is merged, `writeWikiPage` already accepts `tenant`. Re-queued as ready.
