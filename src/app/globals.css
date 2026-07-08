@@ -528,8 +528,22 @@ body {
 .prose-article > * {
   max-width: 66ch;
 }
-.prose-article > :is(img, figure, pre, table, hr) {
+.prose-article > :is(img, figure, pre, table, hr, .mermaid-diagram) {
   max-width: 100%;
+}
+
+/* Mermaid diagrams: the renderer bakes a hard pixel width/height into the SVG
+   (e.g. width="1204") which overflows the column and spills into the sidebar.
+   The SVG also carries a viewBox, so clamping to the container width and letting
+   height follow scales the whole diagram down proportionally to fit. overflow-x
+   is a safety net for the rare case a scaled diagram is still wider than the
+   column. */
+.mermaid-diagram {
+  overflow-x: auto;
+}
+.mermaid-diagram svg {
+  max-width: 100%;
+  height: auto;
 }
 
 /* Slides: cap an image (e.g. a baked yoyo illustration) so it sits INSIDE the
