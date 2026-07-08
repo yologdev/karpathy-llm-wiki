@@ -535,9 +535,9 @@ body {
 /* Mermaid diagrams: the renderer bakes a hard pixel width/height into the SVG
    (e.g. width="1204") which overflows the column and spills into the sidebar.
    The SVG also carries a viewBox, so clamping to the container width and letting
-   height follow scales the whole diagram down proportionally to fit. overflow-x
-   is a safety net for the rare case a scaled diagram is still wider than the
-   column. */
+   height follow scales the whole diagram down proportionally to fit. The svg
+   max-width is what actually fixes the overflow; overflow-x is a harmless
+   belt-and-suspenders guard (with it clamped, horizontal scroll won't trigger). */
 .mermaid-diagram {
   overflow-x: auto;
 }
