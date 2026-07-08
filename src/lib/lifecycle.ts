@@ -14,11 +14,11 @@ import {
   appendToLog,
   wikiRelPath,
   tenantForOwner,
+  tenantWikiRelPath,
   isArtifactType,
   enrichEntry,
 } from "./wiki";
 import { syncPageIndexForPage, removePageIndexForSlug } from "./page-index";
-import { syncSiloForPage, removeSiloForPage } from "./silo";
 import { getStorage } from "./storage";
 import { withFileLock } from "./lock";
 import { escapeRegex } from "./links";
@@ -202,8 +202,20 @@ async function runPageLifecycleOp(
   //    fast before any filesystem mutation happens.
   validateSlug(slug);
 
-  // Capture the deleted page's owner BEFORE removing it, so step 3c knows which
-  // tenant silo to mirror the removal into (the flat file is gone afterward).
+  // --- Silo-primary: resolve the write tenant from content frontmatter ---
+  let writeTenant: string | undefined;
+  if (op.kind === "write") {
+    try {
+      const fm = parseFrontmatter(op.content).data;
+      const owner = typeof fm.owner === "string" ? fm.owner : undefined;
+      writeTenant = tenantForOwner(owner);
+    } catch {
+      writeTenant = tenantForOwner(undefined);
+    }
+  }
+
+  // Capture the deleted page's owner BEFORE removing it, so the delete path
+  // knows which tenant silo to target.
   let deletedOwner: string | undefined;
   let deletedContributors: string[] = [];
 
@@ -219,6 +231,11 @@ async function runPageLifecycleOp(
     } catch {
       // No prior page (new) or unreadable → treat as no previous links.
     }
+    // Silo-primary: write to tenants/<tenant>/wiki/<slug>.md
+    await writeWikiPage(slug, op.content, op.author, undefined, writeTenant);
+    // Also write flat copy (transition — removable after #869) so readWikiPage
+    // can find the page without a page index. writeWikiPage without tenant
+    // targets the flat path.
     await writeWikiPage(slug, op.content, op.author);
   } else {
     try {
@@ -235,10 +252,20 @@ async function runPageLifecycleOp(
     } catch {
       // Owner/contributors unknown → falls back to the default tenant in step 3c.
     }
+    // Delete from silo (primary target).
+    const deleteTenant = tenantForOwner(deletedOwner);
+    try {
+      await getStorage().deleteFile(tenantWikiRelPath(deleteTenant, `${slug}.md`));
+    } catch (err: unknown) {
+      if (!(err instanceof Error && 'code' in err && (err as NodeJS.ErrnoException).code === 'ENOENT')) {
+        throw err;
+      }
+    }
+    // Also delete flat copy (transition cleanup — removable after #869).
     try {
       await getStorage().deleteFile(wikiRelPath(`${slug}.md`));
     } catch (err: unknown) {
-      // If the file is already gone (concurrent delete), that's fine — treat as success.
+      // Flat copy may already be gone — swallow ENOENT.
       if (!(err instanceof Error && 'code' in err && (err as NodeJS.ErrnoException).code === 'ENOENT')) {
         throw err;
       }
@@ -528,21 +555,10 @@ async function runPageLifecycleOp(
     logger.warn("page-index", `page index sync skipped for "${slug}":`, err);
   }
 
-  // 3c. Mirror the page into its per-tenant silo — a live, self-contained vault
-  //     (`tenants/<tenant>/…`, Obsidian-servable). A derived per-page mirror of
-  //     flat (the write primary); fail-soft so a silo error never breaks the
-  //     write/delete. Reads from flat, so this runs AFTER the flat mutation.
-  try {
-    if (op.kind === "delete") {
-      await removeSiloForPage(slug, tenantForOwner(deletedOwner));
-    } else {
-      const o = parseFrontmatter(op.content).data.owner;
-      const owner = typeof o === "string" ? o : undefined;
-      await syncSiloForPage(slug, tenantForOwner(owner));
-    }
-  } catch (err) {
-    logger.warn("silo", `silo mirror skipped for "${slug}":`, err);
-  }
+  // 3c. (Retired) Silo writes now happen directly at step 2 — the lifecycle
+  //     write targets tenants/<tenant>/wiki/ via writeWikiPage(…, tenant), and
+  //     the delete targets the silo path explicitly. The redundant syncSiloForPage
+  //     / removeSiloForPage mirror is no longer needed here.
 
   // 3d. (removed) Pages no longer auto-join a vault. In the multi-vault model
   //     vault membership is EXPLICIT — a page joins a vault only via an
@@ -609,18 +625,19 @@ async function runPageLifecycleOp(
     await mapWithConcurrency(linkers, LIFECYCLE_CONCURRENCY, async ({ entry, page }) => {
       const updated = stripBacklinksTo(slug, page!.content);
       if (updated !== page!.content) {
-        await writeWikiPage(entry.slug, updated, "system", "backlink strip");
-        strippedBacklinksFrom.push(entry.slug);
-        // Sync the stripped page into its tenant silo so the silo copy doesn't
-        // retain the now-dead backlink. Without this, silo-primary reads serve
-        // stale content until the next full reconcileSilos() run.
+        // Resolve the stripped page's tenant so writeWikiPage targets the silo directly.
+        let stripTenant: string | undefined;
         try {
           const ownerVal = parseFrontmatter(updated).data.owner;
-          const tenant = tenantForOwner(typeof ownerVal === "string" ? ownerVal : undefined);
-          await syncSiloForPage(entry.slug, tenant);
-        } catch (err) {
-          logger.warn("silo", `silo mirror skipped for backlink-strip of "${entry.slug}":`, err);
+          stripTenant = tenantForOwner(typeof ownerVal === "string" ? ownerVal : undefined);
+        } catch {
+          stripTenant = tenantForOwner(undefined);
         }
+        // Silo-primary write for the stripped page.
+        await writeWikiPage(entry.slug, updated, "system", "backlink strip", stripTenant);
+        // Also write flat copy (transition — removable after #869).
+        await writeWikiPage(entry.slug, updated, "system", "backlink strip");
+        strippedBacklinksFrom.push(entry.slug);
       }
     });
   }
