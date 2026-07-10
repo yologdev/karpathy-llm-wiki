@@ -46,9 +46,8 @@ export const INFRASTRUCTURE_FILES = new Set(["index.md", "log.md"]);
  * directory, excluding infrastructure files. This preserves correct orphan /
  * stale-index detection before the first `rebuildPageIndex()` run.
  *
- * The `_wikiDir` parameter is kept for call-site compatibility.
  */
-export async function getOnDiskSlugs(_wikiDir: string): Promise<string[]> {
+export async function getOnDiskSlugs(): Promise<string[]> {
   try {
     const idx = await getPageIndex();
     if (idx) return Object.keys(idx);

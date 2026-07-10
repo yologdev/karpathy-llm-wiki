@@ -80,7 +80,7 @@ describe("getOnDiskSlugs", () => {
       beta: { slug: "beta", title: "Beta", summary: "B page" },
     });
 
-    const slugs = await getOnDiskSlugs("");
+    const slugs = await getOnDiskSlugs();
     expect(slugs.sort()).toEqual(["alpha", "beta"]);
   });
 
@@ -91,12 +91,12 @@ describe("getOnDiskSlugs", () => {
     await fs.writeFile(path.join(wikiDir, "index.md"), "# Index\n\n- alpha");
     await fs.writeFile(path.join(wikiDir, "log.md"), "# Log\n\n- entry");
 
-    const slugs = await getOnDiskSlugs(wikiDir);
+    const slugs = await getOnDiskSlugs();
     expect(slugs.sort()).toEqual(["alpha", "beta"]);
   });
 
   it("returns empty array when directory does not exist", async () => {
-    const slugs = await getOnDiskSlugs(path.join(tmpDir, "nonexistent"));
+    const slugs = await getOnDiskSlugs();
     expect(slugs).toEqual([]);
   });
 
@@ -107,13 +107,12 @@ describe("getOnDiskSlugs", () => {
     await fs.writeFile(path.join(wikiDir, "data.json"), "{}");
     await fs.writeFile(path.join(wikiDir, ".hidden"), "secret");
 
-    const slugs = await getOnDiskSlugs(wikiDir);
+    const slugs = await getOnDiskSlugs();
     expect(slugs).toEqual(["page"]);
   });
 
   it("returns empty array for an empty directory", async () => {
-    const wikiDir = process.env.WIKI_DIR!;
-    const slugs = await getOnDiskSlugs(wikiDir);
+    const slugs = await getOnDiskSlugs();
     expect(slugs).toEqual([]);
   });
 });

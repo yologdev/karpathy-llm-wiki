@@ -1,4 +1,4 @@
-import { appendToLog, getWikiDir, listWikiPages, withPageCache } from "./wiki";
+import { appendToLog, listWikiPages, withPageCache } from "./wiki";
 import { extractWikiLinks } from "./links";
 import type { LintIssue, LintOptions, LintResult } from "./types";
 import {
@@ -71,8 +71,6 @@ export {
  */
 export async function lint(options?: LintOptions): Promise<LintResult> {
   return withPageCache(async () => {
-    const wikiDir = getWikiDir();
-
     // Resolve which checks to run
     const enabledChecks = new Set<LintIssue["type"]>(
       options?.checks !== undefined
@@ -86,7 +84,7 @@ export async function lint(options?: LintOptions): Promise<LintResult> {
 
     // Gather on-disk slugs and index entries in parallel
     const [diskSlugs, indexPages] = await Promise.all([
-      getOnDiskSlugs(wikiDir),
+      getOnDiskSlugs(),
       listWikiPages(),
     ]);
 

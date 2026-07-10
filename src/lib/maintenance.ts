@@ -56,7 +56,7 @@ export async function scanForMaintenance(
   const eligibleSlugs = new Set<string>();
 
   // ── Orphan-page detection (file on disk, no index entry) ──
-  const diskSlugs = await getOnDiskSlugs("");
+  const diskSlugs = await getOnDiskSlugs();
   for (const slug of diskSlugs) {
     if (tasks.length >= cap) break;
     if (!pageSlugs.has(slug)) {
