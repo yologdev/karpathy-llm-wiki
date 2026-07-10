@@ -1,14 +1,14 @@
 /**
- * Per-tenant silo mirror (tenant-silos P5a).
+ * Per-tenant silo utilities (tenant-silos P5a).
  *
- * Each tenant's folder `tenants/<tenant>/…` is kept as a live, complete mirror
- * of that owner's pages — a self-contained vault (Obsidian-servable). Flat
- * storage stays the write/read primary; the silo is a DERIVED per-page mirror
- * synced on every lifecycle write/delete (the same fail-soft pattern as the
- * commons index). The one-shot migration backfills it; this module keeps it
- * current going forward.
+ * Each tenant's folder `tenants/<tenant>/…` is the PRIMARY storage location
+ * for that owner's pages — a self-contained vault (Obsidian-servable).
+ * lifecycle.ts writes silo-primary (tenants/<tenant>/wiki/<slug>.md) and
+ * readWikiPage tries the silo path first, falling back to the legacy flat
+ * path during the transition (#869). A redundant flat copy is still written
+ * during the transition but will be removed once flat retirement completes.
  *
- * Artifacts mirrored per page: wiki md, raw source, revision history, discussion
+ * Artifacts stored per page: wiki md, raw source, revision history, discussion
  * threads, and binary assets. The embedding vector store is internal (not part
  * of the vault) and stays global.
  */
