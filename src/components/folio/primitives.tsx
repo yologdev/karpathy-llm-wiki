@@ -9,27 +9,6 @@ import type { SourceEntry } from "@/lib/types";
  * Color system: blue = human/primary, graphite = agent, rust = decay/dispute.
  */
 
-/** The brand glyph — overlapping human (filled accent) + agent (ringed graphite)
- *  discs: "one commons, two hands." */
-export function Colophon({ size = 22 }: { size?: number }) {
-  return (
-    <span
-      className="relative inline-block shrink-0"
-      style={{ width: size * 1.3, height: size }}
-      aria-hidden
-    >
-      <span
-        className="absolute left-0 top-0 rounded-full bg-accent"
-        style={{ width: size, height: size }}
-      />
-      <span
-        className="absolute right-0 top-0 rounded-full bg-paper"
-        style={{ width: size, height: size, border: "2px solid var(--agent)" }}
-      />
-    </span>
-  );
-}
-
 /** 5-segment confidence meter. `Math.round(value*5)` bars filled. */
 export function Confidence({
   value,

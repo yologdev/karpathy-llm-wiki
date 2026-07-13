@@ -146,13 +146,6 @@ export function LivingPageMark({ className, size = "nav" }: LivingPageMarkProps)
   );
 }
 
-/** Back-compat alias — earlier code imported the node-constellation `LogoMark`. */
-export function LogoMark({ className, size }: { className?: string; size?: number }) {
-  // Map legacy pixel sizes onto the nearest living-page construction.
-  const variant: MarkSize = size !== undefined && size <= 18 ? "footer" : "nav";
-  return <LivingPageMark className={className} size={variant} />;
-}
-
 interface LogoProps {
   className?: string;
   /** Which mark construction to pair with the wordmark. */

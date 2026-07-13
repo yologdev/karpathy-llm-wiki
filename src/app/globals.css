@@ -348,8 +348,15 @@ body {
   animation: fade 0.5s ease both;
 }
 /* ---- Browse rows & chips (design 2a) — hover states need real CSS ------ */
+.browse-row {
+  transition: background 0.15s;
+}
 .browse-row:hover {
   background: var(--paper-hover, #f7f5ee);
+}
+/* Lens/sort pills darken their border on hover (f2pill); active stays inverted. */
+.browse-pill:not(.on):hover {
+  border-color: var(--ink) !important;
 }
 .browse-row:hover .browse-row-title {
   color: var(--accent);
@@ -368,7 +375,7 @@ body {
     opacity: 1;
   }
   50% {
-    opacity: 0.35;
+    opacity: 0.3;
   }
 }
 .pulse {

@@ -38,7 +38,9 @@ interface BrowseClientProps {
   initialTag?: string | null;
   /** How many agents (besides yoyo) tend the commons — the rail's tender line. */
   tenderAgents: number;
-  /** ISO timestamp of the scope's most recent update — "last sweep". */
+  /** ISO timestamp of the most recent update in the initially-rendered pool
+   * (scope-wide normally; tag-scoped when the page loads with `?tag=`) —
+   * the rail's "last sweep" line. */
   lastTended: string | null;
 }
 
@@ -86,7 +88,10 @@ function PageRow({
         }}
       >
         <div>
-          <div className="row" style={{ gap: 10, flexWrap: "wrap" }}>
+          <div
+            className="row"
+            style={{ gap: 10, flexWrap: "wrap", alignItems: "baseline" }}
+          >
             <h3
               className="browse-row-title"
               style={{
@@ -129,16 +134,21 @@ function PageRow({
               {page.summary}
             </p>
           )}
-          <div className="row" style={{ gap: 16, flexWrap: "wrap" }}>
-            {(page.tags ?? []).slice(0, 3).map((t) => (
+          <div
+            className="row"
+            style={{ gap: 16, flexWrap: "wrap", marginTop: 2 }}
+          >
+            {(page.tags ?? []).length > 0 && (
               <span
-                key={t}
                 className="receipt"
                 style={{ fontSize: 11.5, color: "var(--ink-2)" }}
               >
-                #{t}
+                {(page.tags ?? [])
+                  .slice(0, 3)
+                  .map((t) => `#${t}`)
+                  .join(" ")}
               </span>
-            ))}
+            )}
             {owner && <Mark id={owner} agent={agentOwned} />}
             <span
               className="receipt"
@@ -187,9 +197,12 @@ function FilterRow({
   disabled?: boolean;
 }) {
   return (
-    <div className="stack" style={{ gap: 9, opacity: disabled ? 0.45 : 1 }}>
+    <div className="stack" style={{ gap: 9 }}>
       <span className="fmark">{label}</span>
-      <div className="row" style={{ gap: 6, flexWrap: "wrap" }}>
+      <div
+        className="row"
+        style={{ gap: 6, flexWrap: "wrap", opacity: disabled ? 0.45 : 1 }}
+      >
         {options.map((o) => {
           const active = value === o.id;
           return (
@@ -197,6 +210,7 @@ function FilterRow({
               key={o.id}
               disabled={disabled}
               onClick={() => onChange(o.id)}
+              className={`browse-pill${active ? " on" : ""}`}
               style={{
                 fontSize: 13,
                 padding: "5px 12px",
@@ -215,6 +229,38 @@ function FilterRow({
         })}
       </div>
     </div>
+  );
+}
+
+/** One topic chip — mono, tabular-nums, accent when active (Folio `f2chip`). */
+function TopicChip({
+  label,
+  count,
+  active,
+  onClick,
+}: {
+  label: string;
+  count: number;
+  active: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className={`receipt browse-chip${active ? " on" : ""}`}
+      style={{
+        fontSize: 11.5,
+        padding: "4px 9px",
+        borderRadius: 6,
+        transition: "all .15s",
+        fontVariantNumeric: "tabular-nums",
+        border: `1px solid ${active ? "var(--accent)" : "var(--rule)"}`,
+        background: active ? "var(--accent-soft)" : "transparent",
+        color: active ? "var(--accent)" : "var(--muted)",
+      }}
+    >
+      #{label} <span style={{ opacity: 0.6 }}>{count}</span>
+    </button>
   );
 }
 
@@ -392,7 +438,7 @@ export function BrowseClient({
           }}
         >
           <span style={{ color: "var(--muted)" }}>
-            <Icon.search width="19" height="19" />
+            <Icon.search width="16" height="16" />
           </span>
           <input
             value={q}
@@ -463,6 +509,7 @@ export function BrowseClient({
                   <Link
                     key={o.scope}
                     href={lensHref(o.scope)}
+                    className={`browse-pill${o.active ? " on" : ""}`}
                     style={{
                       fontSize: 13,
                       padding: "5px 12px",
@@ -481,7 +528,7 @@ export function BrowseClient({
             </div>
           )}
 
-          <div className="stack" style={{ gap: 6 }}>
+          <div className="stack" style={{ gap: 9 }}>
             <FilterRow
               label="sort by"
               value={sort}
@@ -507,32 +554,24 @@ export function BrowseClient({
             <div className="stack" style={{ gap: 9 }}>
               <span className="fmark">topics</span>
               <div className="row" style={{ gap: 7, flexWrap: "wrap" }}>
-                {[
-                  ["all", initialTotal] as const,
-                  ...initialTags,
-                ].map(([t, n]) => {
-                  const isAll = t === "all";
-                  const active = isAll ? tag === null : tag === t;
-                  return (
-                    <button
-                      key={t}
-                      onClick={() => onTagChange(isAll || active ? null : t)}
-                      className={`receipt browse-chip${active ? " on" : ""}`}
-                      style={{
-                        fontSize: 11.5,
-                        padding: "4px 9px",
-                        borderRadius: 6,
-                        transition: "all .15s",
-                        fontVariantNumeric: "tabular-nums",
-                        border: `1px solid ${active ? "var(--accent)" : "var(--rule)"}`,
-                        background: active ? "var(--accent-soft)" : "transparent",
-                        color: active ? "var(--accent)" : "var(--muted)",
-                      }}
-                    >
-                      #{t} <span style={{ opacity: 0.6 }}>{n}</span>
-                    </button>
-                  );
-                })}
+                {/* The "#all" chip is rendered statically (not inferred from a
+                    tag string) so a real tag literally named "all" can never
+                    collide with it — no duplicate keys, no hijacked filter. */}
+                <TopicChip
+                  label="all"
+                  count={initialTotal}
+                  active={tag === null}
+                  onClick={() => onTagChange(null)}
+                />
+                {initialTags.map(([t, n]) => (
+                  <TopicChip
+                    key={t}
+                    label={t}
+                    count={n}
+                    active={tag === t}
+                    onClick={() => onTagChange(tag === t ? null : t)}
+                  />
+                ))}
               </div>
             </div>
           )}
@@ -682,7 +721,7 @@ export function BrowseClient({
                 <Link
                   href="/ingest"
                   style={{
-                    color: "var(--accent)",
+                    color: "inherit",
                     borderBottom: "1px solid var(--accent-soft)",
                     textDecoration: "none",
                   }}
@@ -693,81 +732,85 @@ export function BrowseClient({
               </p>
             </div>
           ) : (
-            <>
-              <ul
-                style={{
-                  listStyle: "none",
-                  margin: 0,
-                  padding: 0,
-                  borderTop: "1px solid var(--rule)",
-                  opacity: loading ? 0.55 : 1,
-                  transition: "opacity .15s",
-                }}
-              >
-                {results.map((p) => (
-                  <PageRow
-                    key={p.slug}
-                    page={p}
-                    discussion={discussionStats?.[p.slug]}
-                    removeVaultId={ownVaultLens ? ownVaultLens.id : undefined}
-                  />
-                ))}
-              </ul>
-
-              <div
-                className="row"
-                style={{
-                  gap: 16,
-                  justifyContent: "space-between",
-                  alignItems: "center",
-                  padding: "18px 0 6px",
-                  marginTop: 8,
-                  borderTop: "1px solid var(--rule)",
-                }}
-              >
-                  <button
-                    type="button"
-                    disabled={page <= 1 || loading}
-                    onClick={() => setPage((p) => Math.max(1, p - 1))}
-                    className="receipt"
-                    style={{
-                      fontSize: 13,
-                      padding: "6px 14px",
-                      borderRadius: 999,
-                      border: "1px solid var(--rule)",
-                      background: "transparent",
-                      color: page <= 1 ? "var(--faint)" : "var(--ink-2)",
-                      cursor: page <= 1 ? "default" : "pointer",
-                    }}
-                  >
-                    ← Prev
-                  </button>
-                  <span
-                    className="receipt"
-                    style={{ fontSize: 12.5, color: "var(--muted)" }}
-                  >
-                    {from}–{to} of {total} · page {page} of {totalPages}
-                  </span>
-                  <button
-                    type="button"
-                    disabled={page >= totalPages || loading}
-                    onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-                    className="receipt"
-                    style={{
-                      fontSize: 13,
-                      padding: "6px 14px",
-                      borderRadius: 999,
-                      border: "1px solid var(--rule)",
-                      background: "transparent",
-                      color: page >= totalPages ? "var(--faint)" : "var(--ink-2)",
-                      cursor: page >= totalPages ? "default" : "pointer",
-                    }}
-                  >
-                    Next →
-                  </button>
-              </div>
-            </>
+            <ul
+              style={{
+                listStyle: "none",
+                margin: 0,
+                padding: 0,
+                borderTop: "1px solid var(--rule)",
+                opacity: loading ? 0.55 : 1,
+                transition: "opacity .15s",
+              }}
+            >
+              {results.map((p) => (
+                <PageRow
+                  key={p.slug}
+                  page={p}
+                  discussion={discussionStats?.[p.slug]}
+                  removeVaultId={ownVaultLens ? ownVaultLens.id : undefined}
+                />
+              ))}
+            </ul>
           )}
+
+          {/* Pagination sits OUTSIDE the empty-state conditional (design 2a):
+              the row is always present, inert at page 1 of 1. */}
+          <div
+            className="row"
+            style={{
+              gap: 16,
+              justifyContent: "space-between",
+              alignItems: "center",
+              padding: "18px 0 6px",
+              marginTop: 8,
+              borderTop: "1px solid var(--rule)",
+            }}
+          >
+            <button
+              type="button"
+              disabled={page <= 1 || loading}
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+              className="receipt"
+              style={{
+                fontSize: 13,
+                padding: "6px 14px",
+                borderRadius: 999,
+                border: "1px solid var(--rule)",
+                background: "transparent",
+                color: page <= 1 ? "var(--faint)" : "var(--ink-2)",
+                cursor: page <= 1 ? "default" : "pointer",
+              }}
+            >
+              ← Prev
+            </button>
+            <span
+              className="receipt"
+              style={{
+                fontSize: 12.5,
+                color: "var(--muted)",
+                fontVariantNumeric: "tabular-nums",
+              }}
+            >
+              {from}–{to} of {total} · page {page} of {totalPages}
+            </span>
+            <button
+              type="button"
+              disabled={page >= totalPages || loading}
+              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+              className="receipt"
+              style={{
+                fontSize: 13,
+                padding: "6px 14px",
+                borderRadius: 999,
+                border: "1px solid var(--rule)",
+                background: "transparent",
+                color: page >= totalPages ? "var(--faint)" : "var(--ink-2)",
+                cursor: page >= totalPages ? "default" : "pointer",
+              }}
+            >
+              Next →
+            </button>
+          </div>
         </div>
       </section>
     </div>
