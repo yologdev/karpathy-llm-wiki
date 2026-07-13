@@ -9,7 +9,7 @@ import { wikiUrlFor, str } from "@/lib/share-url";
 import { parseSources, dedupeSourcesForDisplay, sourceLabel } from "@/lib/sources";
 import { stripLeadingH1 } from "@/lib/markdown";
 import type { SourceEntry } from "@/lib/types";
-import { Colophon } from "@/components/folio/primitives";
+import { LivingPageMark } from "@/components/Logo";
 import { HtmlPreview } from "@/components/HtmlPreview";
 import { isHtmlDeck } from "@/lib/html";
 import { MarkdownRenderer } from "@/components/MarkdownRenderer";
@@ -123,7 +123,7 @@ export default async function SharePage({ params }: ShareProps) {
           className="row"
           style={{ gap: 9, textDecoration: "none", color: "var(--ink)" }}
         >
-          <Colophon size={18} />
+          <LivingPageMark size="footer" />
           <span style={{ fontWeight: 600, fontSize: 16 }}>yopedia</span>
         </Link>
         <Link

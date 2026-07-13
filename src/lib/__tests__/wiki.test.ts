@@ -175,6 +175,16 @@ describe("updateIndex + listWikiPages roundtrip", () => {
     expect(gamma.sourceCount).toBeUndefined();
   });
 
+  it("enrichEntry: carries expiry through (Browse decay receipts key off it)", () => {
+    const base = { slug: "d", title: "D", summary: "" };
+    const fm = { expiry: "2026-01-01" } as unknown as import("../frontmatter").Frontmatter;
+    expect(enrichEntry(base, fm).expiry).toBe("2026-01-01");
+    // Absent or empty expiry stays undefined — no phantom decay.
+    expect(enrichEntry(base, {} as import("../frontmatter").Frontmatter).expiry).toBeUndefined();
+    const empty = { expiry: "" } as unknown as import("../frontmatter").Frontmatter;
+    expect(enrichEntry(base, empty).expiry).toBeUndefined();
+  });
+
   it("enrichEntry: sourceCount counts DISTINCT sources (by URL), not the event counter", () => {
     const base = { slug: "x", title: "X", summary: "" };
     // Same URL recorded twice (pdf then url) — 1 distinct source, even though

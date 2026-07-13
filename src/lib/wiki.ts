@@ -473,6 +473,9 @@ export function enrichEntry(
   const updated =
     typeof fm.updated === "string" && fm.updated.length > 0 ? fm.updated : undefined;
 
+  const expiry =
+    typeof fm.expiry === "string" && fm.expiry.length > 0 ? fm.expiry : undefined;
+
   // Displayed source count = number of DISTINCT sources (deduped by URL), so it
   // matches the SOURCES panel. `source_count` frontmatter is an ingest-EVENT
   // counter (re-ingesting one URL bumps it), so it overcounts — only fall back
@@ -530,6 +533,7 @@ export function enrichEntry(
     ...(owner ? { owner } : {}),
     ...(pageType ? { type: pageType } : {}),
     ...(visibility ? { visibility } : {}),
+    ...(expiry ? { expiry } : {}),
   };
 }
 

@@ -1,5 +1,6 @@
 import Link from "next/link";
-import { Colophon } from "./folio/primitives";
+import Image from "next/image";
+import { LivingPageMark } from "./Logo";
 
 type FLink = { href: string; label: string; external?: boolean };
 
@@ -73,7 +74,7 @@ export function Footer() {
           {/* Brand */}
           <div className="flex flex-col max-sm:col-span-2" style={{ gap: 14, maxWidth: 300 }}>
             <span className="flex items-center gap-2.5 text-ink">
-              <Colophon size={20} />
+              <LivingPageMark size="nav" />
               <span
                 className="display"
                 style={{ fontSize: 20, letterSpacing: "-0.03em", fontWeight: 600 }}
@@ -100,30 +101,41 @@ export function Footer() {
           ))}
         </div>
 
-        {/* Colophon row */}
+        {/* Colophon row — the 2a sign-off: the mark owns the left, yoyo the right. */}
         <div
-          className="receipt"
           style={{
             marginTop: 48,
             paddingTop: 20,
             borderTop: "1px solid var(--rule)",
             display: "flex",
             flexWrap: "wrap",
-            gap: 12,
+            alignItems: "center",
+            gap: 16,
             justifyContent: "space-between",
-            fontSize: 11.5,
-            color: "var(--faint)",
           }}
         >
+          <span className="inline-flex items-center" style={{ gap: 10 }}>
+            <LivingPageMark size="footer" />
+            <span style={{ fontSize: 13, color: "var(--muted)" }}>
+              yopedia — a wiki for the agent age
+            </span>
+          </span>
           <a
             href="https://github.com/yologdev/yoyo"
             target="_blank"
             rel="noreferrer"
-            className="hover:text-muted transition-colors"
+            className="receipt inline-flex items-center transition-opacity hover:opacity-80"
+            style={{ gap: 8, fontSize: 11, color: "var(--faint)" }}
           >
-            grown by yoyo
+            maintained by humans · agents · one octopus
+            <Image
+              src="/yoyo.png"
+              alt="yoyo, the steward octopus"
+              width={17}
+              height={15}
+              style={{ width: 17, height: "auto" }}
+            />
           </a>
-          <span>© 2026 · the commons is public</span>
         </div>
       </div>
     </footer>

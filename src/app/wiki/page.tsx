@@ -1,4 +1,5 @@
 import { listVaults } from "@/lib/vault";
+import { baseAgentId, listAgents } from "@/lib/agents";
 import { getPrincipal } from "@/lib/auth";
 import { searchCommons, BROWSE_PAGE_SIZE } from "@/lib/browse";
 import { BrowseClient } from "@/components/BrowseClient";
@@ -35,6 +36,16 @@ export default async function WikiIndex({
     principal,
   });
 
+  // The rail's tender block: yoyo (the canonical root agent) plus how many
+  // other agents tend the commons, and when anything was last touched. The
+  // initial page is sorted by recency, so its first row carries the scope's
+  // most recent `updated` — an honest "last sweep" signal without a separate
+  // maintenance log.
+  const agents = await listAgents();
+  const rootId = baseAgentId();
+  const tenderAgents = agents.filter((a) => a.id !== rootId).length;
+  const lastTended = initial.results[0]?.updated ?? null;
+
   return (
     <BrowseClient
       myHandle={myHandle}
@@ -50,6 +61,8 @@ export default async function WikiIndex({
       initialDiscussionStats={initial.discussionStats}
       pageSize={BROWSE_PAGE_SIZE}
       initialTag={tagParam ?? null}
+      tenderAgents={tenderAgents}
+      lastTended={lastTended}
     />
   );
 }

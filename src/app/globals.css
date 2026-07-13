@@ -17,6 +17,7 @@
   --paper: #fbfaf6; /* page background — warm paper       */
   --paper-2: #f4f1e9; /* recessed surface                 */
   --paper-3: #ece8dd; /* stronger surface / hover         */
+  --paper-hover: #f7f5ee; /* row hover — between paper and paper-2 */
   --ink: #1b1a16; /* primary text — warm near-black       */
   --ink-2: #423f38; /* secondary text                     */
   --muted: #756f62; /* metadata, captions                 */
@@ -76,6 +77,7 @@
   --paper: #14130f;
   --paper-2: #1c1b16;
   --paper-3: #25231c;
+  --paper-hover: #191813; /* row hover on warm ink */
   --ink: #efebdf;
   --ink-2: #c7c2b4;
   --muted: #948e7f;
@@ -345,6 +347,21 @@ body {
 .fade {
   animation: fade 0.5s ease both;
 }
+/* ---- Browse rows & chips (design 2a) — hover states need real CSS ------ */
+.browse-row:hover {
+  background: var(--paper-hover, #f7f5ee);
+}
+.browse-row:hover .browse-row-title {
+  color: var(--accent);
+}
+.browse-chip:hover {
+  border-color: var(--accent) !important;
+  color: var(--ink) !important;
+}
+.browse-chip.on:hover {
+  color: var(--accent) !important;
+}
+
 @keyframes pulse {
   0%,
   100% {

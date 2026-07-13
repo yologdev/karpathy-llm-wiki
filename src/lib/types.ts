@@ -28,6 +28,9 @@ export interface IndexEntry {
   type?: string;
   /** Visibility from frontmatter ("private" gates reads; absent/other = public). */
   visibility?: string;
+  /** ISO date from the page's `expiry` frontmatter — past dates mean the page
+   * is decaying (the Browse rows surface this as a rust receipt). */
+  expiry?: string;
 }
 
 /** Result returned after ingesting a source document. */

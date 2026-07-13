@@ -6,7 +6,8 @@ import { useState, useEffect } from "react";
 import { Show, SignInButton, UserButton, useUser } from "@clerk/nextjs";
 import { GlobalSearch } from "./GlobalSearch";
 import { ThemeToggle } from "./folio/ThemeToggle";
-import { Colophon, Avatar } from "./folio/primitives";
+import { Avatar } from "./folio/primitives";
+import { LivingPageMark } from "./Logo";
 import { isOwnerHandle } from "@/lib/owner";
 
 // Primary actions — the only links in the bar. Secondary/exploration links
@@ -80,7 +81,7 @@ export function NavHeader() {
             href="/"
             className="flex items-center gap-2.5 text-ink hover:opacity-90 transition-opacity"
           >
-            <Colophon size={22} />
+            <LivingPageMark size="nav" />
             <span
               className="display"
               style={{ fontSize: 22, letterSpacing: "-0.03em", fontWeight: 600 }}
