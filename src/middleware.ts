@@ -62,7 +62,18 @@ const AGENT_INGEST_RE = /^\/api\/agents\/[^/]+\/ingest$/;
 const AGENT_PUBLISH_RE = /^\/api\/agents\/[^/]+\/publish$/;
 // Wiki page mutations by slug: authenticated in-route via Clerk session OR the
 // service token (agents update/patch/delete pages via REST).
+// The regex matches /api/wiki/<segment> — but fixed sub-routes (browse,
+// dataview, etc.) are NOT slug routes and must NOT be exempted.
 const WIKI_SLUG_RE = /^\/api\/wiki\/[^/]+$/;
+const WIKI_FIXED_ROUTES = new Set([
+  "/api/wiki/browse",
+  "/api/wiki/dataview",
+  "/api/wiki/export",
+  "/api/wiki/graph",
+  "/api/wiki/routes",
+  "/api/wiki/search",
+  "/api/wiki/templates",
+]);
 // Wiki revision revert: POST /api/wiki/:slug/revisions — authenticated in-route
 // via Clerk session OR the service token (automated revert tasks).
 const WIKI_REVISIONS_RE = /^\/api\/wiki\/[^/]+\/revisions$/;
@@ -81,7 +92,7 @@ export function authenticatesInRoute(pathname: string): boolean {
     IN_ROUTE_AUTH_PATHS.has(pathname) ||
     AGENT_INGEST_RE.test(pathname) ||
     AGENT_PUBLISH_RE.test(pathname) ||
-    WIKI_SLUG_RE.test(pathname) ||
+    (WIKI_SLUG_RE.test(pathname) && !WIKI_FIXED_ROUTES.has(pathname)) ||
     WIKI_REVISIONS_RE.test(pathname) ||
     ADMIN_TENANT_RE.test(pathname)
   );

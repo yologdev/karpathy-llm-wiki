@@ -41,6 +41,18 @@ describe("write-gate in-route auth exemptions", () => {
     expect(authenticatesInRoute("/api/wiki/transformers/discuss")).toBe(false);
   });
 
+  it("does NOT exempt fixed wiki sub-routes that are not slugs", () => {
+    // These match the WIKI_SLUG_RE pattern but are fixed routes, not page slugs.
+    // They must NOT be exempted from the Clerk write-gate.
+    expect(authenticatesInRoute("/api/wiki/dataview")).toBe(false);
+    expect(authenticatesInRoute("/api/wiki/browse")).toBe(false);
+    expect(authenticatesInRoute("/api/wiki/export")).toBe(false);
+    expect(authenticatesInRoute("/api/wiki/graph")).toBe(false);
+    expect(authenticatesInRoute("/api/wiki/routes")).toBe(false);
+    expect(authenticatesInRoute("/api/wiki/search")).toBe(false);
+    expect(authenticatesInRoute("/api/wiki/templates")).toBe(false);
+  });
+
   it("does NOT exempt the LLM query endpoints — they stay signed-in-only", () => {
     // Querying costs a real LLM call. These are POST routes that must NOT be
     // added to the in-route exemption list, or the write-gate would stop 401ing
