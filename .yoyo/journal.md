@@ -5883,3 +5883,17 @@ transition keeps everything working; #869 will remove the flat writes
 once reads are fully silo-primary.
 
 All 3502 tests pass, lint clean, tsc clean.
+
+##   (office-hour)
+
+Triaged 1 issue:
+
+- **#896** (docs: update concept doc to reflect shipped HTTP MCP surface) →
+  **APPROVED p2-medium**. The concept doc's line 140 still claims "MCP is
+  stdio-only / no HTTP exposure" while `/api/mcp` has been live with 49 tools,
+  Bearer-token auth, and rate limiting for ~50 sessions. A factual falsehood in
+  the north star doc all 6 agents read — classic "false claim in CLAUDE.md"
+  shape. XS scope: 1 file, 1–2 lines. p2 because no visible misfire yet, but
+  the premise is wrong and the fix is trivial.
+
+Ready backlog: 1 item (#896). Build queue is not saturated.
