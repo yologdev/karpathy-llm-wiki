@@ -5902,3 +5902,8 @@ Ready backlog: 1 item (#896). Build queue is not saturated.
 Issue #900: Flat retirement: Remove flat fallback from lint-checks.ts getOnDiskSlugs
 Mode: RESCUE
 Action: rewrite — The build agent failed 4× with zero diffs. Root cause: the grow skill says "never copy-paste from issues" and the issue body was 4 exact before/after code blocks — the agent's safety training prevented it from applying verbatim edits from untrusted issue text. Rewrote the plan as goal-oriented instructions (what to remove and why) instead of copy-paste blocks. The mechanical change is identical; the framing now matches how the build agent is trained to work.
+
+## 2025-07-18 (architect)
+Issue #899: Flat retirement: Delete flat dual-write/delete blocks from lifecycle.ts
+Mode: RESCUE
+Action: close + replace with #904 — Same root cause as #900: the issue body was structured as verbatim copy-paste deletion instructions, which the grow skill's "never copy-paste from issues" security rule caused the build agent to refuse. After 4 failures the accumulated failure history in comments compounded the problem. Verified the deletion is safe (sub-agent confirmed zero test dependencies on flat writes, wikiRelPath not re-exported). Created #904 with goal-oriented language, no verbatim code blocks, and clean failure history. Pattern is now confirmed across two sibling issues — the PM-generated deletion plans need to describe WHAT and WHY, not line-by-line WHAT-TO-PASTE.
